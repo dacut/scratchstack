@@ -17,11 +17,12 @@ use std::io::Write;
 use std::str::from_utf8;
 use std::vec::Vec;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use hex;
 use lazy_static::lazy_static;
 use regex::Regex;
 use ring::digest::{digest, SHA256};
+use ring::hmac;
 
 /// Algorithm for AWS SigV4
 const AWS4_HMAC_SHA256: &str = "AWS4-HMAC-SHA256";
@@ -45,14 +46,14 @@ const SIGNATURE: &str = "Signature";
 /// Authorization header parameter specifying the signed headers
 const SIGNEDHEADERS: &str = "SignedHeaders";
 
-/// Query parameter for delivering the signing algorithm
-const X_AMZ_ALGORITHM: &str = "X-Amz-Algorithm";
-
 /// Query parameter for delivering the access key
 const X_AMZ_CREDENTIAL: &str = "X-Amz-Credential";
 
 /// Header/query parameter for delivering the date
 const X_AMZ_DATE: &str = "X-Amz-Date";
+
+/// Header/query parameter for delivering the session token
+const X_AMZ_SECURITY_TOKEN: &str = "X-Amz-Security-Token";
 
 /// Header/query parameter for delivering the signature
 const X_AMZ_SIGNATURE: &str = "X-Amz-Signature";
@@ -72,6 +73,7 @@ pub enum SignatureError {
     MissingParameterError(String),
     MultipleHeaderValuesError(String),
     MultipleParameterValuesError(String),
+    TimestampOutOfRangeError,
     UnknownAccessKeyError,
     UnknownSignatureAlgorithmError,
 }
@@ -106,6 +108,9 @@ impl fmt::Display for SignatureError {
             }
             Self::MultipleParameterValuesError(ref parameter) => {
                 write!(f, "Multiple values for query parameter: {}", parameter)
+            }
+            Self::TimestampOutOfRangeError => {
+                write!(f, "Request timestamp out of range")
             }
             Self::UnknownAccessKeyError => write!(f, "Unknown access key"),
             Self::UnknownSignatureAlgorithmError => {
@@ -282,8 +287,8 @@ pub trait AWSSigV4Variant {
                 ));
             }
 
-            let key = parts[0].to_string();
-            let value = parts[1].to_string();
+            let key = parts[0].trim_start().to_string();
+            let value = parts[1].trim_end().to_string();
 
             if result.contains_key(&key) {
                 return Err(SignatureError::MalformedSignatureError(
@@ -477,6 +482,31 @@ pub trait AWSSigV4Variant {
         }
     }
 
+    /// The session token sent with the access key.
+    ///
+    /// Session tokens are used only for temporary credentials. If a long-term
+    /// credential was used, the result is `Ok(None)`.
+    fn get_session_token(
+        &self,
+        req: &Request
+    ) -> Result<Option<String>, SignatureError> {
+        let qp_result = self.get_query_param_one(req, X_AMZ_SECURITY_TOKEN);
+        let h_result;
+
+        match qp_result {
+            Ok(token) => Ok(Some(token)),
+            Err(SignatureError::MissingParameterError(_)) => {
+                h_result = self.get_header_one(req, X_AMZ_SECURITY_TOKEN);
+                match h_result {
+                    Ok(token) => Ok(Some(token)),
+                    Err(SignatureError::MissingParameterError(_)) => Ok(None),
+                    Err(e) => Err(e),
+                }
+            }
+            Err(e) => Err(e)
+        }
+    }
+
     /// The signature passed into the request.
     fn get_request_signature(
         &self,
@@ -561,6 +591,112 @@ pub trait AWSSigV4Variant {
         req: &Request
     ) -> Result<String, SignatureError> {
         Ok(hex::encode(digest(&SHA256, &req.body).as_ref()))
+    }
+
+    /// The string to sign for the request.
+    fn get_string_to_sign(
+        &self,
+        req: &Request
+    ) -> Result<Vec<u8>, SignatureError> {
+        let mut result = Vec::new();
+        let timestamp = self.get_request_timestamp(req)?;
+        let credential_scope = self.get_credential_scope(req)?;
+        let canonical_request = self.get_canonical_request(req)?;
+
+        result.write(AWS4_HMAC_SHA256.as_bytes())?;
+        result.push(b'\n');
+        result.write(timestamp.to_rfc3339_opts(SecondsFormat::Secs, true)
+                     .as_bytes())?;
+        result.push(b'\n');
+        result.write(credential_scope.as_bytes())?;
+        result.write(
+            hex::encode(digest(&SHA256, &canonical_request).as_ref())
+                .as_bytes())?;
+
+        Ok(result)
+    }
+
+    /// The expected signature for the request.
+    fn get_expected_signature(
+        &self,
+        req: &Request,
+        secret_key_fn: &dyn Fn(&str, Option<&str>) -> Result<String, SignatureError>
+    ) -> Result<String, SignatureError> {
+        let access_key = self.get_access_key(req)?;
+        let session_token = self.get_session_token(req)?;
+        let secret_key = secret_key_fn(&access_key, session_token.as_ref().map(String::as_ref))?;
+        let timestamp = self.get_request_timestamp(req)?;
+        let req_date = format!("{}", timestamp.date().format("%Y%m%d"));
+        let string_to_sign = self.get_string_to_sign(req)?;
+
+        let mut k_secret = Vec::new();
+        k_secret.write(b"AWS4")?;
+        k_secret.write(secret_key.as_bytes())?;
+        let k_date = hmac::sign(
+            &hmac::Key::new(hmac::HMAC_SHA256, &k_secret),
+            req_date.as_bytes());
+        let k_region = hmac::sign(
+            &hmac::Key::new(hmac::HMAC_SHA256, k_date.as_ref()),
+            req.region.as_bytes());
+        let k_service = hmac::sign(
+            &hmac::Key::new(hmac::HMAC_SHA256, k_region.as_ref()),
+            req.service.as_bytes());
+        let k_signing = hmac::sign(
+            &hmac::Key::new(hmac::HMAC_SHA256, k_service.as_ref()),
+            AWS4_REQUEST.as_bytes());
+        
+        Ok(hex::encode(hmac::sign(
+            &hmac::Key::new(hmac::HMAC_SHA256, k_signing.as_ref()),
+            &string_to_sign).as_ref()))
+    }
+
+    /// Verify that the request timestamp is not beyond the allowed timestamp
+    /// mismatch and that the request signature matches our expected
+    /// signature.
+    ///
+    /// This version allows you to specify the server timestamp for testing.
+    /// For normal use, use `verify()`.
+    fn verify_at(
+        &self,
+        req: &Request,
+        secret_key_fn: &dyn Fn(&str, Option<&str>) -> Result<String, SignatureError>,
+        server_timestamp: &DateTime<Utc>,
+        allowed_mismatch: Option<&Duration>
+    ) -> Result<(), SignatureError> {
+        if let Some(mm) = allowed_mismatch {
+            let req_ts = self.get_request_timestamp(req)?;
+            let min_ts = server_timestamp.checked_sub_signed(*mm)
+                .unwrap_or(*server_timestamp);
+            let max_ts = server_timestamp.checked_add_signed(*mm)
+                .unwrap_or(*server_timestamp);
+
+            if req_ts < min_ts || req_ts > max_ts {
+                return Err(SignatureError::TimestampOutOfRangeError)
+            }
+        }
+
+        let expected_sig = self.get_expected_signature(&req, secret_key_fn)?;
+        let request_sig = self.get_request_signature(&req)?;
+
+        if expected_sig != request_sig {
+            Err(SignatureError::InvalidSignatureError(
+                format!("Expected {} instead of {}", expected_sig, request_sig)
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Verify that the request timestamp is not beyond the allowed timestamp
+    /// mismatch and that the request signature matches our expected
+    /// signature.
+    fn verify(
+        &self,
+        req: &Request,
+        secret_key_fn: &dyn Fn(&str, Option<&str>) -> Result<String, SignatureError>,
+        allowed_mismatch: Option<&Duration>
+    ) -> Result<(), SignatureError> {
+        self.verify_at(req, secret_key_fn, &Utc::now(), allowed_mismatch)
     }
 }
 
