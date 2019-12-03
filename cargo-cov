@@ -1,0 +1,14 @@
+#!/bin/bash
+RUSTFLAGS="-Ccodegen-units=1 -Clink-dead-code -Cpasses=insert-gcov-profiling -Zno-landing-pads";
+
+case "$(uname -s)" in
+    Darwin )
+        CLANG_VERSION=$(clang --version | grep 'clang version ' | sed -e 's/.*clang version *//' -e 's/ .*//')
+        RUSTFLAGS="$RUSTFLAGS -L/Library/Developer/CommandLineTools/usr/lib/clang/$CLANG_VERSION/lib/darwin/ -lclang_rt.profile_osx";;
+
+    Linux )
+        RUSTFLAGS="$RUSTFLAGS -L/usr/lib/llvm-3.8/lib/clang/3.8.1/lib/linux/ -lclang_rt.profile-x86_64";;
+esac;
+
+export RUSTFLAGS
+exec cargo "$@"

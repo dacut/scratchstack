@@ -52,5 +52,7 @@ no_llvm_build
 /target
 **/*.rs.bk
 
-# Coverage file
+# Coverage files
 *.gcno
+*.gcda
+*.gcov
