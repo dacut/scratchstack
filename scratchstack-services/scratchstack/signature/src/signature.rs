@@ -9,6 +9,7 @@
 //!
 
 use std::collections::{BTreeMap, HashMap};
+use std::convert::From;
 use std::error;
 use std::fmt;
 use std::io;
@@ -17,13 +18,17 @@ use std::str::from_utf8;
 use std::vec::Vec;
 
 use chrono::{DateTime, Utc};
-use hex::FromHex;
+use hex;
 use lazy_static::lazy_static;
 use regex::Regex;
+use ring::digest::{digest, SHA256};
 
 /// Algorithm for AWS SigV4
 const AWS4_HMAC_SHA256: &str = "AWS4-HMAC-SHA256";
 const AWS4_HMAC_SHA256_SPACE: &str = "AWS4-HMAC-SHA256 ";
+
+/// String included at the end of the AWS SigV4 credential scope
+const AWS4_REQUEST: &str = "aws4_request";
 
 /// Header parameter for the authorization
 const AUTHORIZATION: &str = "authorization";
@@ -58,8 +63,9 @@ const X_AMZ_SIGNEDHEADERS: &str = "X-Amz-SignedHeaders";
 #[derive(Debug)]
 pub enum SignatureError {
     DependencyError(io::Error),
+    InvalidCredentialError(String),
     InvalidSignatureError(String),
-    InvalidURIPathError,
+    InvalidURIPathError(String),
     MalformedHeaderError(String),
     MalformedSignatureError(String),
     MissingHeaderError(String),
@@ -74,10 +80,15 @@ impl fmt::Display for SignatureError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Self::DependencyError(ref e) => e.fmt(f),
+            Self::InvalidCredentialError(ref detail) => {
+                write!(f, "Invalid credential: {}", detail)
+            }
             Self::InvalidSignatureError(ref detail) => {
                 write!(f, "Invalid request signature: {}", detail)
             }
-            Self::InvalidURIPathError => write!(f, "Invalid URI path"),
+            Self::InvalidURIPathError(ref detail) => {
+                write!(f, "Invalid URI path: {}", detail)
+            }
             Self::MalformedHeaderError(ref header) => {
                 write!(f, "Malformed header: {}", header)
             }
@@ -110,6 +121,12 @@ impl error::Error for SignatureError {
             Self::DependencyError(ref e) => Some(e),
             _ => None,
         }
+    }
+}
+
+impl From<std::io::Error> for SignatureError {
+    fn from(e: std::io::Error) -> SignatureError {
+        SignatureError::DependencyError(e)
     }
 }
 
@@ -151,21 +168,33 @@ pub struct Request<'a> {
     pub timestamp_mismatch: u64,
 }
 
-impl Request<'_> {
-    /// The query parameters from the request, normalized, in a mapping format.
-    pub fn get_query_parameters(
+/// Trait for calculating various attributes of a SigV4 signature according
+/// to variants of the SigV4 algorithm.
+pub trait AWSSigV4Variant {
+    /// The canonicalized URI path for a request.
+    fn get_canonical_uri_path(
         &self,
+        req: &Request
+    ) -> Result<String, SignatureError> {
+        canonicalize_uri_path(&req.uri_path)
+    }
+
+    /// The query parameters from the request, normalized, in a mapping format.
+    fn get_query_parameters(
+        &self,
+        req: &Request
     ) -> Result<HashMap<String, Vec<String>>, SignatureError> {
-        normalize_query_parameters(&self.query_string)
+        normalize_query_parameters(&req.query_string)
     }
 
     /// The canonical query string from the query parameters.
     ///
     /// This takes the query_string from the request and orders the parameters.
-    pub fn get_canonical_query_string(
+    fn get_canonical_query_string(
         &self,
+        req: &Request
     ) -> Result<String, SignatureError> {
-        let query_parameters = self.get_query_parameters()?;
+        let query_parameters = self.get_query_parameters(req)?;
         let mut results = Vec::new();
 
         for (key, values) in query_parameters.iter() {
@@ -181,11 +210,13 @@ impl Request<'_> {
         Ok(results.join("&").to_string())
     }
 
-    /// Retrieve a query parameter, requiring that exactly one value be present.
+    /// Retrieve a query parameter, requiring exactly one value be present.
     fn get_query_param_one(
-        &self, parameter: &str
+        &self,
+        req: &Request,
+        parameter: &str
     ) -> Result<String, SignatureError> {
-        match self.get_query_parameters()?.get(parameter) {
+        match self.get_query_parameters(req)?.get(parameter) {
             None => Err(SignatureError::MissingParameterError(
                 parameter.to_string())),
             Some(ref values) => {
@@ -200,10 +231,13 @@ impl Request<'_> {
         }
     }
 
+    /// Retrieve a header value, requiring exactly one value be present.
     fn get_header_one(
-        &self, header: &str
+        &self,
+        req: &Request,
+        header: &str
     ) -> Result<String, SignatureError> {
-        match self.headers.get(header) {
+        match req.headers.get(header) {
             None => Err(SignatureError::MissingHeaderError(
                 header.to_string())),
             Some(ref values) => {
@@ -225,10 +259,11 @@ impl Request<'_> {
     /// The parameters from the Authorization header (only -- not the query
     /// parameter). If the Authorization header is not present or is not an
     /// AWS SigV4 header, an Err(SignatureError) is returned.
-    pub fn get_authorization_header_parameters(
+    fn get_authorization_header_parameters(
         &self,
+        req: &Request
     ) -> Result<HashMap<String, String>, SignatureError> {
-        let auth = self.get_header_one(AUTHORIZATION)?;
+        let auth = self.get_header_one(req, AUTHORIZATION)?;
 
         if !auth.starts_with(AWS4_HMAC_SHA256_SPACE) {
             return Err(
@@ -268,25 +303,20 @@ impl Request<'_> {
 
     /// Returns a sorted dictionary containing the signed header names and
     /// their values.
-    pub fn get_signed_headers(
+    fn get_signed_headers(
         &self,
+        req: &Request
     ) -> Result<BTreeMap<String, Vec<Vec<u8>>>, SignatureError> {
         // See if the signed headers are listed in the query string.
-        let query_parameters = self.get_query_parameters()?;
+        let qp_result = self.get_query_param_one(req, X_AMZ_SIGNEDHEADERS);
         let ah_result;
         let ah_signedheaders;
 
         let signed_headers =
-            match query_parameters.get(X_AMZ_SIGNEDHEADERS) {
-                Some(ref sh) => match sh.len() {
-                    1 => &sh[0],
-                    _ => return Err(SignatureError::MalformedSignatureError(
-                        "Cannot have multiple X-Amz-SignedHeader parameters"
-                            .to_string(),
-                    )),
-                },
-                None => {
-                    ah_result = self.get_authorization_header_parameters();
+            match qp_result {
+                Ok(ref sh) => sh,
+                Err(SignatureError::MissingParameterError(_)) => {
+                    ah_result = self.get_authorization_header_parameters(req);
                     match ah_result {
                         Err(e) => return Err(e),
                         Ok(ref ahp) => {
@@ -302,6 +332,7 @@ impl Request<'_> {
                         }
                     }
                 }
+                Err(e) => { return Err(e) }
             };
 
         // Header names are separated by semicolons.
@@ -323,7 +354,7 @@ impl Request<'_> {
 
         let mut result = BTreeMap::<String, Vec<Vec<u8>>>::new();
         for header in canonicalized.iter() {
-            match self.headers.get(header) {
+            match req.headers.get(header) {
                 None => {
                     return Err(SignatureError::MissingParameterError(
                         header.to_string()));
@@ -349,28 +380,25 @@ impl Request<'_> {
     /// YYYYMMDDTHHMM
     /// is not found, it checks the HTTP headers for an X-Amz-Date header
     /// value. If this is not 
-    pub fn get_request_timestamp(
-        &self
+    fn get_request_timestamp(
+        &self,
+        req: &Request
     ) -> Result<DateTime::<Utc>, SignatureError> {
         let date_str;
 
-        let qp_date_result = self.get_query_param_one(X_AMZ_DATE);
+        let qp_date_result = self.get_query_param_one(req, X_AMZ_DATE);
         let h_amz_date_result;
         let h_reg_date_result;
 
         date_str = match qp_date_result {
             Ok(dstr) => dstr,
             Err(SignatureError::MissingParameterError(_)) => {
-                h_amz_date_result = self.get_header_one(X_AMZ_DATE);
+                h_amz_date_result = self.get_header_one(req, X_AMZ_DATE);
                 match h_amz_date_result {
                     Ok(dstr) => dstr,
                     Err(SignatureError::MissingParameterError(_)) => {
-                        h_reg_date_result = self.get_header_one(DATE);
-                        if h_reg_date_result.is_ok() {
-                            h_reg_date_result.unwrap()
-                        } else {
-                            return Err(h_reg_date_result.unwrap_err())
-                        }
+                        h_reg_date_result = self.get_header_one(req, DATE);
+                        h_reg_date_result?
                     }
                     Err(e) => { return Err(e) }
                 }
@@ -393,6 +421,146 @@ impl Request<'_> {
         }
 
         Ok(dt_fixed.with_timezone(&Utc))
+    }
+
+    /// The scope of the credentials to use, as calculated by the service's
+    /// region and name, but using the timestamp of the request.
+    fn get_credential_scope(
+        &self,
+        req: &Request
+    ) -> Result<String, SignatureError> {
+        let ts = self.get_request_timestamp(req)?;
+        let date = ts.date().format("%Y%m%d");
+        Ok(format!(
+            "{}/{}/{}/{}", date, req.region, req.service, AWS4_REQUEST))
+    }
+
+    /// The access key used to sign the request.
+    ///
+    /// If the credential scope does not match our expected credential scope,
+    /// a SignatureError is returned.
+    fn get_access_key(
+        &self,
+        req: &Request
+    ) -> Result<String, SignatureError> {
+        let qp_result = self.get_query_param_one(req, X_AMZ_CREDENTIAL);
+        let h_result;
+
+        let credential = match qp_result {
+            Ok(c) => c,
+            Err(SignatureError::MissingParameterError(_)) => {
+                h_result = self.get_header_one(req, CREDENTIAL);
+                match h_result {
+                    Ok(c) => c,
+                    Err(e) => { return Err(e) }
+                }
+            }
+            Err(e) => { return Err(e) }
+        };
+
+        let parts: Vec<&str> = credential.splitn(2, '/').collect();
+        if parts.len() != 2 {
+            return Err(SignatureError::InvalidCredentialError(
+                "Malformed credential".to_string()))
+        }
+
+        let access_key = parts[0];
+        let request_scope = parts[1];
+
+        let server_scope = self.get_credential_scope(req)?;
+        if request_scope == server_scope {
+            Ok(access_key.to_string())
+        } else {
+            Err(SignatureError::InvalidCredentialError(
+                format!("Invalid credential scope: Expected {} instead of {}",
+                        server_scope, request_scope)))
+        }
+    }
+
+    /// The signature passed into the request.
+    fn get_request_signature(
+        &self,
+        req: &Request
+    ) -> Result<String, SignatureError> {
+        match self.get_query_param_one(req, X_AMZ_SIGNATURE) {
+            Ok(sig) => Ok(sig),
+            Err(SignatureError::MissingParameterError(_)) => {
+                self.get_header_one(req, SIGNATURE)
+            }
+            Err(e) => Err(e)
+        }
+    }
+
+    /// The AWS SigV4 canonical request given parameters from the HTTP request.
+    /// The process is outlined here:
+    /// http://docs.aws.amazon.com/general/latest/gr/sigv4-create-canonical-request.html
+    ///
+    /// The canonical request is:
+    ///     request_method + '\n' +
+    ///     canonical_uri_path + '\n' +
+    ///     canonical_query_string + '\n' +
+    ///     signed_headers + '\n' +
+    ///     sha256(body).hexdigest()
+    fn get_canonical_request(
+        &self,
+        req: &Request
+    ) -> Result<Vec<u8>, SignatureError> {
+        let mut result = Vec::<u8>::new();
+        let mut header_keys = Vec::<u8>::new();
+        let canonical_uri_path = self.get_canonical_uri_path(req)?;
+        let canonical_query_string = self.get_canonical_query_string(req)?;
+        let body_hex_digest = self.get_body_digest(req)?;
+
+        result.write(req.request_method.as_bytes())?;
+        result.push(b'\n');
+        result.write(canonical_uri_path.as_bytes())?;
+        result.push(b'\n');
+        result.write(canonical_query_string.as_bytes())?;
+        result.push(b'\n');
+
+        let mut is_first_key = true;
+
+        for (key, values) in self.get_signed_headers(req)? {
+            let key_bytes = key.as_bytes();
+
+            result.write(key_bytes)?;
+            result.push(b':');
+
+            let mut is_first_value = true;
+            for ref value in values {
+                if is_first_value {
+                    is_first_value = false;
+                } else {
+                    result.push(b',');
+                }
+
+                result.write(value)?;
+            }
+            result.push(b'\n');
+
+            if is_first_key {
+                is_first_key = false;
+            } else {
+                header_keys.push(b';');
+            }
+
+            header_keys.write(key_bytes)?;
+        }
+
+        result.push(b'\n');
+        result.append(&mut header_keys);
+        result.push(b'\n');
+        result.write(body_hex_digest.as_bytes())?;
+
+        Ok(result)
+    }
+
+    /// The SHA-256 hex digest of the body.
+    fn get_body_digest(
+        &self,
+        req: &Request
+    ) -> Result<String, SignatureError> {
+        Ok(hex::encode(digest(&SHA256, &req.body).as_ref()))
     }
 }
 
@@ -422,19 +590,20 @@ pub fn normalize_uri_path_component(
         } else if c == b'%' {
             if i + 2 > path_component.len() {
                 // % encoding would go beyond end of string; ignore it.
-                result.write(b"%25").unwrap();
+                result.write(b"%25")?;
                 i += 1;
                 continue;
             }
 
             let hex_digits = &path_component[i + 1..i + 3];
-            match Vec::from_hex(hex_digits) {
+            match hex::decode(hex_digits) {
                 Ok(_) => {
                     result.push(b'%');
-                    result.write(hex_digits).unwrap();
+                    result.write(hex_digits)?;
                 }
                 Err(_) => {
-                    return Err(SignatureError::InvalidURIPathError);
+                    return Err(SignatureError::InvalidURIPathError(
+                        String::from("Invalid hex encoding: {}")))
                 }
             }
         }
@@ -456,7 +625,8 @@ pub fn canonicalize_uri_path(
 
     // All other paths must be abolute.
     if !uri_path.starts_with("/") {
-        return Err(SignatureError::InvalidURIPathError);
+        return Err(SignatureError::InvalidURIPathError(
+            "Path must be absolute".to_string()))
     }
 
     // Replace double slashes; this makes it easier to handle slashes at the
@@ -482,7 +652,9 @@ pub fn canonicalize_uri_path(
 
             if i <= 1 {
                 // This isn't allowed at the beginning!
-                return Err(SignatureError::InvalidURIPathError);
+                return Err(SignatureError::InvalidURIPathError(
+                    "Relative path entry '..' navigates above root"
+                        .to_string()))
             }
 
             components.remove(i - 1);
