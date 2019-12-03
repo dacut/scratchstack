@@ -51,3 +51,6 @@ Session.vim
 no_llvm_build
 /target
 **/*.rs.bk
+
+# Coverage file
+*.gcno
