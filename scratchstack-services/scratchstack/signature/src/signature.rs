@@ -710,6 +710,16 @@ pub fn is_rfc3986_unreserved(c: u8) -> bool {
         || c == b'~'
 }
 
+/// Normalize the path component according to RFC 3986.  This performs the
+/// following operations:
+/// * Alpha, digit, and the symbols '-', '.', '_', and '~' (unreserved
+///   characters) are left alone.
+/// * Characters outside this range are percent-encoded.
+/// * Percent-encoded values are upper-cased ('%2a' becomes '%2A')
+/// * Percent-encoded values in the unreserved space (%41-%5A, %61-%7A,
+///   %30-%39, %2D, %2E, %5F, %7E) are converted to normal characters.
+///
+/// If a percent encoding is incomplete, the percent is encoded as %25.
 pub fn normalize_uri_path_component(
     path_component: &str,
 ) -> Result<String, SignatureError> {
@@ -733,15 +743,31 @@ pub fn normalize_uri_path_component(
 
             let hex_digits = &path_component[i + 1..i + 3];
             match hex::decode(hex_digits) {
-                Ok(_) => {
-                    result.push(b'%');
-                    result.write(hex_digits)?;
+                Ok(value) => {
+                    assert_eq!(value.len(), 1);
+                    let c = value[0];
+
+                    if is_rfc3986_unreserved(c) {
+                        result.push(c);
+                    } else {
+                        // Rewrite the hex-escape so it's always upper-cased.
+                        write!(result, "%{:02X}", c)?;
+                    }
+                    i += 3;
                 }
                 Err(_) => {
                     return Err(SignatureError::InvalidURIPathError(
                         String::from("Invalid hex encoding: {}")))
                 }
             }
+        } else if c == b'+' {
+            // Plus-encoded space. Convert this to %20.
+            result.write(b"%20")?;
+            i += 1;
+        } else {
+            // Character should have been encoded.
+            write!(result, "%{:02X}", c)?;
+            i += 1;
         }
     }
 
