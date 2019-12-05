@@ -7,8 +7,6 @@
 //! and [SigV4S3](https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-authenticating-requests.html)
 //! algorithms.
 //!
-#![feature(backtrace)]
-
 use std::backtrace::Backtrace;
 use std::collections::{BTreeMap, HashMap};
 use std::convert::From;
@@ -16,10 +14,12 @@ use std::error;
 use std::fmt;
 use std::io;
 use std::io::Write;
-use std::str::from_utf8;
+use std::str::{FromStr, from_utf8};
 use std::vec::Vec;
 
-use chrono::{DateTime, Duration, SecondsFormat, Utc};
+use chrono::{DateTime, Duration, Utc};
+use chrono::naive::{NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::offset::FixedOffset;
 use hex;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -28,7 +28,6 @@ use ring::hmac;
 
 /// Algorithm for AWS SigV4
 const AWS4_HMAC_SHA256: &str = "AWS4-HMAC-SHA256";
-const AWS4_HMAC_SHA256_SPACE: &str = "AWS4-HMAC-SHA256 ";
 
 /// String included at the end of the AWS SigV4 credential scope
 const AWS4_REQUEST: &str = "aws4_request";
@@ -42,6 +41,9 @@ const CREDENTIAL: &str = "Credential";
 /// Header parameter for the date
 const DATE: &str = "date";
 
+/// Compact ISO8601 format used for the string to sign
+const ISO_8601_COMPACT_FORMAT: &str = "%Y%m%dT%H%M%SZ";
+
 /// Signature field for the signature itself
 const SIGNATURE: &str = "Signature";
 
@@ -51,17 +53,43 @@ const SIGNEDHEADERS: &str = "SignedHeaders";
 /// Query parameter for delivering the access key
 const X_AMZ_CREDENTIAL: &str = "X-Amz-Credential";
 
-/// Header/query parameter for delivering the date
+/// Query parameter for delivering the date
 const X_AMZ_DATE: &str = "X-Amz-Date";
 
-/// Header/query parameter for delivering the session token
+/// Header for delivering the alternate date
+const X_AMZ_DATE_LOWER: &str = "x-amz-date";
+
+/// Query parameter for delivering the session token
 const X_AMZ_SECURITY_TOKEN: &str = "X-Amz-Security-Token";
 
-/// Header/query parameter for delivering the signature
+/// Header for delivering the session token
+const X_AMZ_SECURITY_TOKEN_LOWER: &str = "x-amz-security-token";
+
+/// Query parameter for delivering the signature
 const X_AMZ_SIGNATURE: &str = "X-Amz-Signature";
 
 /// Query parameter specifying the signed headers
 const X_AMZ_SIGNEDHEADERS: &str = "X-Amz-SignedHeaders";
+
+lazy_static! {
+    /// ISO 8601 timestamp format
+    static ref ISO_8601_REGEX: Regex = Regex::new(
+        r"(?x)^
+        (?P<year>\d{4})-?
+        (?P<month>0[1-9]|1[0-2])-?
+        (?P<day>0[1-9]|[12][0-9]|3[01])
+        T
+        (?P<hour>[01][0-9]|2[0-3]):?
+        (?P<minute>[0-5][0-9]):?
+        (?P<second>[0-5][0-9]|6[0-1])
+        (?P<offset>[-+][01][0-9]:?[0-5][0-9]|Z)$").unwrap();
+
+    /// Multiple slash pattern for condensing URIs
+    static ref MULTISLASH: Regex = Regex::new("//+").unwrap();
+
+    /// Multiple space pattern for condensing header values
+    static ref MULTISPACE: Regex = Regex::new("  +").unwrap();
+}
 
 #[derive(Debug)]
 pub struct SignatureError {
@@ -165,10 +193,6 @@ impl From<std::io::Error> for SignatureError {
         let msg = e.to_string();
         SignatureError::new(ErrorKind::IO(e), &msg)
     }
-}
-
-lazy_static! {
-    static ref MULTISLASH: Regex = Regex::new("//+").unwrap();
 }
 
 /// A data structure containing the elements of the request
@@ -438,11 +462,12 @@ pub trait AWSSigV4Algorithm {
             Ok(dstr) => dstr,
             Err(e) => match e.kind {
                 ErrorKind::MissingParameter => {
-                    h_amz_date_result = self.get_header_one(req, X_AMZ_DATE);
+                    h_amz_date_result = self.get_header_one(
+                        req, X_AMZ_DATE_LOWER);
                     match h_amz_date_result {
                         Ok(dstr) => dstr,
                         Err(e) => match e.kind {
-                            ErrorKind::MissingParameter => {
+                            ErrorKind::MissingHeader => {
                                 h_reg_date_result = self.get_header_one(
                                     req, DATE);
                                 h_reg_date_result?
@@ -458,18 +483,71 @@ pub trait AWSSigV4Algorithm {
         let dt_fixed;
         let dt_rfc2822_result = DateTime::parse_from_rfc2822(&date_str);
         let dt_rfc3339_result = DateTime::parse_from_rfc3339(&date_str);
+        let iso_parsed;
         
         // Try to match against the HTTP date format first.
-        if let Ok(ref d) = dt_rfc2822_result {
-            dt_fixed = d;
+        dt_fixed = if let Ok(ref d) = dt_rfc2822_result {
+            d
         } else if let Ok(ref d) = dt_rfc3339_result {
-            dt_fixed = d;
+            d
+        } else if let Some(cap) = ISO_8601_REGEX.captures(&date_str) {
+            let year_match = cap.name("year").unwrap();
+            let year_str: &str = year_match.as_str();
+            let year = i32::from_str(year_str).unwrap();
+
+            let month_match = cap.name("month").unwrap();
+            let month_str: &str = month_match.as_str();
+            let month = u32::from_str(month_str).unwrap();
+
+            let day_match = cap.name("day").unwrap();
+            let day_str: &str = day_match.as_str();
+            let day = u32::from_str(day_str).unwrap();
+
+            let naive_date = NaiveDate::from_ymd(year, month, day);
+
+            let hour_match = cap.name("hour").unwrap();
+            let hour_str: &str = hour_match.as_str();
+            let hour = u32::from_str(hour_str).unwrap();
+
+            let minute_match = cap.name("minute").unwrap();
+            let minute_str: &str = minute_match.as_str();
+            let minute = u32::from_str(minute_str).unwrap();
+
+            let second_match = cap.name("second").unwrap();
+            let second_str: &str = second_match.as_str();
+            let second = u32::from_str(second_str).unwrap();
+
+            let naive_time = NaiveTime::from_hms(hour, minute, second);
+            let naive_dt = NaiveDateTime::new(naive_date, naive_time);
+
+            let offset_match = cap.name("offset").unwrap();
+            let offset_str: &str = offset_match.as_str();
+
+            let offset_secs = if offset_str == "Z" {
+                0
+            } else {
+                let offset_condensed = offset_str.replace(':', "");
+                // Must be [+-]HHMM at this point
+                assert_eq!(offset_condensed.len(), 5);
+                let (sign_str, hm) = offset_condensed.split_at(1);
+                let (hour_off_str, minute_off_str) = hm.split_at(2);
+
+                let sign = if sign_str == "-" { -1 } else { 1 };
+
+                let hour = i32::from_str(hour_off_str).unwrap();
+                let min = i32::from_str(minute_off_str).unwrap();
+                sign * (hour * 3600 + min * 60)
+            };
+
+            let offset = FixedOffset::east(offset_secs);
+            iso_parsed = DateTime::from_utc(naive_dt, offset);
+            &iso_parsed
         } else {
             return Err(
                 SignatureError::new(
                     ErrorKind::MalformedSignature,
-                    &format!("Invalid date string {}", date_str)));
-        }
+                    &format!("Invalid date string {}", date_str)))
+        };
 
         Ok(dt_fixed.with_timezone(&Utc))
     }
@@ -549,7 +627,8 @@ pub trait AWSSigV4Algorithm {
             Ok(token) => Ok(Some(token)),
             Err(e) => match e.kind {
                 ErrorKind::MissingParameter => {
-                    h_result = self.get_header_one(req, X_AMZ_SECURITY_TOKEN);
+                    h_result = self.get_header_one(
+                        req, X_AMZ_SECURITY_TOKEN_LOWER);
                     match h_result {
                         Ok(token) => Ok(Some(token)),
                         Err(e) => match e.kind {
@@ -622,7 +701,9 @@ pub trait AWSSigV4Algorithm {
                     result.push(b',');
                 }
 
-                result.write(value)?;
+                let value_collapsed_space = MULTISPACE.replace_all(
+                    from_utf8(value).unwrap(), " ");
+                result.write(value_collapsed_space.as_bytes())?;
             }
             result.push(b'\n');
 
@@ -663,10 +744,10 @@ pub trait AWSSigV4Algorithm {
 
         result.write(AWS4_HMAC_SHA256.as_bytes())?;
         result.push(b'\n');
-        result.write(timestamp.to_rfc3339_opts(SecondsFormat::Secs, true)
-                     .as_bytes())?;
+        write!(&mut result, "{}", timestamp.format(ISO_8601_COMPACT_FORMAT))?;
         result.push(b'\n');
         result.write(credential_scope.as_bytes())?;
+        result.push(b'\n');
         result.write(
             hex::encode(digest(&SHA256, &canonical_request).as_ref())
                 .as_bytes())?;
@@ -925,7 +1006,11 @@ pub fn canonicalize_uri_path(
         }
     }
 
-    return Ok(components.join("/").to_string());
+    assert!(components.len() > 0);
+    match components.len() {
+        1 => Ok("/".to_string()),
+        _ => Ok(components.join("/")),
+    }
 }
 
 pub fn normalize_query_parameters(
