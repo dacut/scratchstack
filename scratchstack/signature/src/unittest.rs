@@ -1,5 +1,5 @@
-use super::signature::{AWSSigV4, canonicalize_uri_path, ErrorKind,
-    normalize_query_parameters, Request, SignatureError};
+use super::signature::{canonicalize_uri_path, ErrorKind,
+    normalize_query_parameters};
 
 macro_rules! expect_err {
     ($test:expr, $expected:pat) => {
