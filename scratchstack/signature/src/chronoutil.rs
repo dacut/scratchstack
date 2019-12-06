@@ -1,9 +1,9 @@
 use std::str::FromStr;
 
-use chrono::DateTime;
 use chrono::format::{ParseError, ParseResult};
 use chrono::naive::{NaiveDate, NaiveDateTime, NaiveTime};
 use chrono::offset::FixedOffset;
+use chrono::DateTime;
 use lazy_static::lazy_static;
 use regex::Regex;
 
@@ -19,7 +19,7 @@ lazy_static! {
         (?P<minute>[0-5][0-9]):?
         (?P<second>[0-5][0-9]|6[0-1])
         (?P<offset>[-+][01][0-9]:?[0-5][0-9]|Z)$").unwrap();
-    
+
     static ref INVALID: ParseError = DateTime::<FixedOffset>::from_str("").unwrap_err();
 }
 

@@ -1,15 +1,15 @@
 #![feature(backtrace)]
 
-use std::env;
 use std::collections::HashMap;
+use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
-use std::path::{PathBuf};
+use std::path::PathBuf;
 use std::str::from_utf8;
 
 extern crate scratchstack_signature;
-use scratchstack_signature::{AWSSigV4, Request};
 use scratchstack_signature::signature::AWSSigV4Algorithm;
+use scratchstack_signature::{AWSSigV4, Request};
 
 #[test]
 fn get_header_key_duplicate_get_header_key_duplicate() {
@@ -157,7 +157,8 @@ fn post_vanilla_post_vanilla() {
 }
 
 #[test]
-fn post_x_www_form_urlencoded_parameters_post_x_www_form_urlencoded_parameters() {
+fn post_x_www_form_urlencoded_parameters_post_x_www_form_urlencoded_parameters(
+) {
     run("post-x-www-form-urlencoded-parameters/post-x-www-form-urlencoded-parameters");
 }
 
@@ -191,17 +192,35 @@ fn run(basename: &str) {
     sts_path.push(&req_path);
     sts_path.set_extension("sts");
 
-    let sreq = File::open(&sreq_path).expect(&format!("Failed to open {:?}", sreq_path));
+    let sreq = File::open(&sreq_path)
+        .expect(&format!("Failed to open {:?}", sreq_path));
     let mut sreq_r = BufReader::new(sreq);
 
     let mut method_line_full: String = String::new();
-    sreq_r.read_line(&mut method_line_full).expect(&format!("No method line in {:?}", sreq_path));
+    sreq_r
+        .read_line(&mut method_line_full)
+        .expect(&format!("No method line in {:?}", sreq_path));
     let method_line = method_line_full.trim_end();
     let muq_and_ver: Vec<&str> = method_line.rsplitn(2, " ").collect();
-    assert_eq!(muq_and_ver.len(), 2, "muq_and_ver.len() != 2, method_line={}, {:?}", method_line, sreq_path);
+    assert_eq!(
+        muq_and_ver.len(),
+        2,
+        "muq_and_ver.len() != 2, method_line={}, {:?}",
+        method_line,
+        sreq_path
+    );
 
     let muq_parts: Vec<&str> = muq_and_ver[1].splitn(2, " ").collect();
-    assert_eq!(muq_parts.len(), 2, "muq_parts.len() != 2, method_line={}, muq_and_ver={:?}, muq_parts={:?}, {:?}", method_line, muq_and_ver, muq_parts, sreq_path);
+    assert_eq!(
+        muq_parts.len(),
+        2,
+        "muq_parts.len() != 2, method_line={}, muq_and_ver={:?}, \
+         muq_parts={:?}, {:?}",
+        method_line,
+        muq_and_ver,
+        muq_parts,
+        sreq_path
+    );
 
     let method = muq_parts[0];
     let uri_and_query: Vec<&str> = muq_parts[1].splitn(2, "?").collect();
@@ -238,7 +257,13 @@ fn run(basename: &str) {
             value = line.trim_start();
         } else {
             let parts: Vec<&str> = line.splitn(2, ":").collect();
-            assert_eq!(parts.len(), 2, "Malformed header line: {} in {:?}", line, sreq_path);
+            assert_eq!(
+                parts.len(),
+                2,
+                "Malformed header line: {} in {:?}",
+                line,
+                sreq_path
+            );
 
             key = parts[0].to_lowercase();
             value = parts[1].trim();
@@ -270,27 +295,44 @@ fn run(basename: &str) {
         service: "service".to_string(),
     };
 
-    let mut creq = File::open(&creq_path).expect(&format!("Failed to open {:?}", creq_path));
+    let mut creq = File::open(&creq_path)
+        .expect(&format!("Failed to open {:?}", creq_path));
     let mut expected_canonical_request = Vec::new();
     creq.read_to_end(&mut expected_canonical_request).unwrap();
     expected_canonical_request.retain(|c| *c != b'\r');
 
-    let mut sts = File::open(&sts_path).expect(&format!("Failed to open {:?}", sts_path));
+    let mut sts = File::open(&sts_path)
+        .expect(&format!("Failed to open {:?}", sts_path));
     let mut expected_string_to_sign = Vec::new();
     sts.read_to_end(&mut expected_string_to_sign).unwrap();
     expected_string_to_sign.retain(|c| *c != b'\r');
 
     let sig = AWSSigV4::new();
 
-    let canonical_request = sig.get_canonical_request(&request).expect(&format!("Failed to get canonical request: {:?}", sreq_path));
-    let string_to_sign = sig.get_string_to_sign(&request).expect(&format!("Failed to get string to sign: {:?}", sreq_path));
+    let canonical_request = sig
+        .get_canonical_request(&request)
+        .expect(&format!("Failed to get canonical request: {:?}", sreq_path));
+    let string_to_sign = sig
+        .get_string_to_sign(&request)
+        .expect(&format!("Failed to get string to sign: {:?}", sreq_path));
 
-    assert_eq!(from_utf8(&canonical_request), from_utf8(&expected_canonical_request), "Failed on {:?}", sreq_path);
-    assert_eq!(from_utf8(&string_to_sign), from_utf8(&expected_string_to_sign), "Failed on {:?}", sreq_path);
+    assert_eq!(
+        from_utf8(&canonical_request),
+        from_utf8(&expected_canonical_request),
+        "Failed on {:?}",
+        sreq_path
+    );
+    assert_eq!(
+        from_utf8(&string_to_sign),
+        from_utf8(&expected_string_to_sign),
+        "Failed on {:?}",
+        sreq_path
+    );
 
     let secret_key_fn = |_: &str, _: Option<&str>| {
         Ok("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY".to_string())
     };
 
-    sig.verify(&request, &secret_key_fn, None).expect(&format!("Signature verification failed: {:?}", sreq_path));
+    sig.verify(&request, &secret_key_fn, None)
+        .expect(&format!("Signature verification failed: {:?}", sreq_path));
 }
