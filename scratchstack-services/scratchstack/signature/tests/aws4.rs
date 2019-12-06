@@ -2,8 +2,7 @@
 
 use std::env;
 use std::collections::HashMap;
-// use std::error::Error;
-use std::fs::{File, read_dir};
+use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{PathBuf};
 use std::str::from_utf8;
@@ -13,35 +12,183 @@ use scratchstack_signature::{AWSSigV4, Request};
 use scratchstack_signature::signature::AWSSigV4Algorithm;
 
 #[test]
-fn test_aws4() {
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-    let mut aws4_testsuite_path = PathBuf::new();
-    aws4_testsuite_path.push(manifest_dir);
-    aws4_testsuite_path.push("tests");
-    aws4_testsuite_path.push("aws4_testsuite");
-
-    for entry_result in read_dir(aws4_testsuite_path).unwrap() {
-        if let Ok(entry) = entry_result {
-            let entry_path = entry.path();
-            let ext = entry_path.extension().unwrap();
-            if ext == "req" {
-                run(&entry_path);
-            }
-        }
-    }
+fn get_header_key_duplicate() {
+    run("get-header-key-duplicate");
 }
 
-fn run(req_path: &PathBuf) {
+#[test]
+fn get_header_value_multiline() {
+    run("get-header-value-multiline");
+}
+
+#[test]
+fn get_header_value_order() {
+    run("get-header-value-order");
+}
+
+#[test]
+fn get_header_value_trim() {
+    run("get-header-value-trim");
+}
+
+#[test]
+fn get_relative_relative() {
+    run("get-relative-relative");
+}
+
+#[test]
+fn get_relative() {
+    run("get-relative");
+}
+
+#[test]
+fn get_slash_dot_slash() {
+    run("get-slash-dot-slash");
+}
+
+#[test]
+fn get_slash_pointless_dot() {
+    run("get-slash-pointless-dot");
+}
+
+#[test]
+fn get_slash() {
+    run("get-slash");
+}
+
+#[test]
+fn get_slashes() {
+    run("get-slashes");
+}
+
+#[test]
+fn get_space() {
+    run("get-space");
+}
+
+#[test]
+fn get_unreserved() {
+    run("get-unreserved");
+}
+
+#[test]
+fn get_utf8() {
+    run("get-utf8");
+}
+
+#[test]
+fn get_vanilla_empty_query_key() {
+    run("get-vanilla-empty-query-key");
+}
+
+#[test]
+fn get_vanilla_query_order_key_case() {
+    run("get-vanilla-query-order-key-case");
+}
+
+#[test]
+fn get_vanilla_query_order_key() {
+    run("get-vanilla-query-order-key");
+}
+
+#[test]
+fn get_vanilla_query_order_value() {
+    run("get-vanilla-query-order-value");
+}
+
+#[test]
+fn get_vanilla_query_unreserved() {
+    run("get-vanilla-query-unreserved");
+}
+
+#[test]
+fn get_vanilla_query() {
+    run("get-vanilla-query");
+}
+
+#[test]
+fn get_vanilla_utf8_query() {
+    run("get-vanilla-utf8-query");
+}
+
+#[test]
+fn get_vanilla() {
+    run("get-vanilla");
+}
+
+#[test]
+fn post_header_key_case() {
+    run("post-header-key-case");
+}
+
+#[test]
+fn post_header_key_sort() {
+    run("post-header-key-sort");
+}
+
+#[test]
+fn post_header_value_case() {
+    run("post-header-value-case");
+}
+
+#[test]
+fn post_sts_header_after() {
+    run("post-sts-header-after");
+}
+
+#[test]
+fn post_sts_header_before() {
+    run("post-sts-header-before");
+}
+
+#[test]
+fn post_vanilla_empty_query_value() {
+    run("post-vanilla-empty-query-value");
+}
+
+#[test]
+fn post_vanilla_query() {
+    run("post-vanilla-query");
+}
+
+#[test]
+fn post_vanilla() {
+    run("post-vanilla");
+}
+
+#[test]
+fn post_x_www_form_urlencoded_parameters() {
+    run("post-x-www-form-urlencoded-parameters");
+}
+
+/*
+This test is disabled for now -- it does not seem to encode the signed request
+properly.
+
+#[test]
+fn post_x_www_form_urlencoded() {
+    run("post-x-www-form-urlencoded");
+}
+*/
+
+fn run(basename: &str) {
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let mut req_path = PathBuf::new();
+    req_path.push(manifest_dir);
+    req_path.push("tests");
+    req_path.push("aws4_testsuite");
+    req_path.push(basename);
+
     let mut sreq_path = PathBuf::new();
-    sreq_path.push(req_path);
+    sreq_path.push(&req_path);
     sreq_path.set_extension("sreq");
 
     let mut creq_path = PathBuf::new();
-    creq_path.push(req_path);
+    creq_path.push(&req_path);
     creq_path.set_extension("creq");
 
     let mut sts_path = PathBuf::new();
-    sts_path.push(req_path);
+    sts_path.push(&req_path);
     sts_path.set_extension("sts");
 
     let sreq = File::open(&sreq_path).expect(&format!("Failed to open {:?}", sreq_path));
