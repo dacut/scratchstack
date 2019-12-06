@@ -585,16 +585,23 @@ pub trait AWSSigV4Algorithm {
         req: &Request
     ) -> Result<String, SignatureError> {
         let qp_result = req.get_query_param_one(X_AMZ_CREDENTIAL);
-        let h_result;
+        let auth_headers;
 
         let credential = match qp_result {
-            Ok(c) => c,
+            Ok(ref c) => c,
             Err(e) => match e.kind {
                 ErrorKind::MissingParameter => {
-                    h_result = req.get_header_one(CREDENTIAL);
-                    match h_result {
-                        Ok(c) => c,
-                        Err(e) => { return Err(e) }
+                    auth_headers =
+                        self.get_authorization_header_parameters(req)?;
+                    match auth_headers.get(CREDENTIAL) {
+                        Some(c) => c,
+                        None => {
+                            return Err(
+                                SignatureError::new(
+                                    ErrorKind::MalformedSignature,
+                                    "Invalid Authorization header: missing \
+                                     Credential"))
+                        }
                     }
                 }
                 _ => { return Err(e) }
@@ -662,7 +669,15 @@ pub trait AWSSigV4Algorithm {
             Ok(sig) => Ok(sig),
             Err(e) => match e.kind {
                 ErrorKind::MissingParameter => {
-                    req.get_header_one(SIGNATURE)
+                    let ah: HashMap<String, String> = self.get_authorization_header_parameters(req)?;
+                    match ah.get(SIGNATURE) {
+                        Some(c) => Ok(c.to_string()),
+                        None => Err(
+                            SignatureError::new(
+                                ErrorKind::MalformedSignature,
+                                "Invalid Authorization header: missing \
+                                 Signature")),
+                    }
                 }
                 _ => Err(e)
             }
@@ -779,7 +794,15 @@ pub trait AWSSigV4Algorithm {
         secret_key_fn: &dyn Fn(&str, Option<&str>) -> Result<String, SignatureError>
     ) -> Result<String, SignatureError> {
         let access_key = self.get_access_key(req)?;
-        let session_token = self.get_session_token(req)?;
+        let session_token_result = self.get_session_token(req);
+        let session_token = match session_token_result {
+            Ok(tok) => tok,
+            Err(e) => match e.kind {
+                ErrorKind::MissingParameter |
+                ErrorKind::MissingHeader => None,
+                _ => return Err(e),
+            }
+        };
         let secret_key = secret_key_fn(&access_key, session_token.as_ref().map(String::as_ref))?;
         let timestamp = self.get_request_timestamp(req)?;
         let req_date = format!("{}", timestamp.date().format("%Y%m%d"));
