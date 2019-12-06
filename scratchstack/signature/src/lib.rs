@@ -7,7 +7,10 @@ extern crate regex;
 extern crate ring;
 
 pub mod signature;
-pub use crate::signature::{AWSSigV4, Request, SignatureError};
+mod chronoutil;
+pub use crate::signature::{
+    AWSSigV4, ErrorKind, Request, SignatureError
+};
 
 #[cfg(test)]
 mod unittest;
