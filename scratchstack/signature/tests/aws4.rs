@@ -12,153 +12,153 @@ use scratchstack_signature::{AWSSigV4, Request};
 use scratchstack_signature::signature::AWSSigV4Algorithm;
 
 #[test]
-fn get_header_key_duplicate() {
-    run("get-header-key-duplicate");
+fn get_header_key_duplicate_get_header_key_duplicate() {
+    run("get-header-key-duplicate/get-header-key-duplicate");
 }
 
 #[test]
-fn get_header_value_multiline() {
-    run("get-header-value-multiline");
+fn get_header_value_multiline_get_header_value_multiline() {
+    run("get-header-value-multiline/get-header-value-multiline");
 }
 
 #[test]
-fn get_header_value_order() {
-    run("get-header-value-order");
+fn get_header_value_order_get_header_value_order() {
+    run("get-header-value-order/get-header-value-order");
 }
 
 #[test]
-fn get_header_value_trim() {
-    run("get-header-value-trim");
+fn get_header_value_trim_get_header_value_trim() {
+    run("get-header-value-trim/get-header-value-trim");
 }
 
 #[test]
-fn get_relative_relative() {
-    run("get-relative-relative");
+fn get_unreserved_get_unreserved() {
+    run("get-unreserved/get-unreserved");
 }
 
 #[test]
-fn get_relative() {
-    run("get-relative");
+fn get_utf8_get_utf8() {
+    run("get-utf8/get-utf8");
 }
 
 #[test]
-fn get_slash_dot_slash() {
-    run("get-slash-dot-slash");
+fn get_vanilla_empty_query_key_get_vanilla_empty_query_key() {
+    run("get-vanilla-empty-query-key/get-vanilla-empty-query-key");
 }
 
 #[test]
-fn get_slash_pointless_dot() {
-    run("get-slash-pointless-dot");
+fn get_vanilla_query_order_key_case_get_vanilla_query_order_key_case() {
+    run("get-vanilla-query-order-key-case/get-vanilla-query-order-key-case");
 }
 
 #[test]
-fn get_slash() {
-    run("get-slash");
+fn get_vanilla_query_order_key_get_vanilla_query_order_key() {
+    run("get-vanilla-query-order-key/get-vanilla-query-order-key");
 }
 
 #[test]
-fn get_slashes() {
-    run("get-slashes");
+fn get_vanilla_query_order_value_get_vanilla_query_order_value() {
+    run("get-vanilla-query-order-value/get-vanilla-query-order-value");
 }
 
 #[test]
-fn get_space() {
-    run("get-space");
+fn get_vanilla_query_unreserved_get_vanilla_query_unreserved() {
+    run("get-vanilla-query-unreserved/get-vanilla-query-unreserved");
 }
 
 #[test]
-fn get_unreserved() {
-    run("get-unreserved");
+fn get_vanilla_query_get_vanilla_query() {
+    run("get-vanilla-query/get-vanilla-query");
 }
 
 #[test]
-fn get_utf8() {
-    run("get-utf8");
+fn get_vanilla_utf8_query_get_vanilla_utf8_query() {
+    run("get-vanilla-utf8-query/get-vanilla-utf8-query");
 }
 
 #[test]
-fn get_vanilla_empty_query_key() {
-    run("get-vanilla-empty-query-key");
+fn get_vanilla_get_vanilla() {
+    run("get-vanilla/get-vanilla");
 }
 
 #[test]
-fn get_vanilla_query_order_key_case() {
-    run("get-vanilla-query-order-key-case");
+fn normalize_path_get_relative_relative_get_relative_relative() {
+    run("normalize-path/get-relative-relative/get-relative-relative");
 }
 
 #[test]
-fn get_vanilla_query_order_key() {
-    run("get-vanilla-query-order-key");
+fn normalize_path_get_relative_get_relative() {
+    run("normalize-path/get-relative/get-relative");
 }
 
 #[test]
-fn get_vanilla_query_order_value() {
-    run("get-vanilla-query-order-value");
+fn normalize_path_get_slash_dot_slash_get_slash_dot_slash() {
+    run("normalize-path/get-slash-dot-slash/get-slash-dot-slash");
 }
 
 #[test]
-fn get_vanilla_query_unreserved() {
-    run("get-vanilla-query-unreserved");
+fn normalize_path_get_slash_pointless_dot_get_slash_pointless_dot() {
+    run("normalize-path/get-slash-pointless-dot/get-slash-pointless-dot");
 }
 
 #[test]
-fn get_vanilla_query() {
-    run("get-vanilla-query");
+fn normalize_path_get_slash_get_slash() {
+    run("normalize-path/get-slash/get-slash");
 }
 
 #[test]
-fn get_vanilla_utf8_query() {
-    run("get-vanilla-utf8-query");
+fn normalize_path_get_slashes_get_slashes() {
+    run("normalize-path/get-slashes/get-slashes");
 }
 
 #[test]
-fn get_vanilla() {
-    run("get-vanilla");
+fn normalize_path_get_space_get_space() {
+    run("normalize-path/get-space/get-space");
 }
 
 #[test]
-fn post_header_key_case() {
-    run("post-header-key-case");
+fn post_header_key_case_post_header_key_case() {
+    run("post-header-key-case/post-header-key-case");
 }
 
 #[test]
-fn post_header_key_sort() {
-    run("post-header-key-sort");
+fn post_header_key_sort_post_header_key_sort() {
+    run("post-header-key-sort/post-header-key-sort");
 }
 
 #[test]
-fn post_header_value_case() {
-    run("post-header-value-case");
+fn post_header_value_case_post_header_value_case() {
+    run("post-header-value-case/post-header-value-case");
 }
 
 #[test]
-fn post_sts_header_after() {
-    run("post-sts-header-after");
+fn post_sts_token_post_sts_header_after_post_sts_header_after() {
+    run("post-sts-token/post-sts-header-after/post-sts-header-after");
 }
 
 #[test]
-fn post_sts_header_before() {
-    run("post-sts-header-before");
+fn post_sts_token_post_sts_header_before_post_sts_header_before() {
+    run("post-sts-token/post-sts-header-before/post-sts-header-before");
 }
 
 #[test]
-fn post_vanilla_empty_query_value() {
-    run("post-vanilla-empty-query-value");
+fn post_vanilla_empty_query_value_post_vanilla_empty_query_value() {
+    run("post-vanilla-empty-query-value/post-vanilla-empty-query-value");
 }
 
 #[test]
-fn post_vanilla_query() {
-    run("post-vanilla-query");
+fn post_vanilla_query_post_vanilla_query() {
+    run("post-vanilla-query/post-vanilla-query");
 }
 
 #[test]
-fn post_vanilla() {
-    run("post-vanilla");
+fn post_vanilla_post_vanilla() {
+    run("post-vanilla/post-vanilla");
 }
 
 #[test]
-fn post_x_www_form_urlencoded_parameters() {
-    run("post-x-www-form-urlencoded-parameters");
+fn post_x_www_form_urlencoded_parameters_post_x_www_form_urlencoded_parameters() {
+    run("post-x-www-form-urlencoded-parameters/post-x-www-form-urlencoded-parameters");
 }
 
 /*
@@ -166,8 +166,8 @@ This test is disabled for now -- it does not seem to encode the signed request
 properly.
 
 #[test]
-fn post_x_www_form_urlencoded() {
-    run("post-x-www-form-urlencoded");
+fn post_x_www_form_urlencoded_post_x_www_form_urlencoded() {
+    run("post-x-www-form-urlencoded/post-x-www-form-urlencoded");
 }
 */
 
@@ -176,7 +176,7 @@ fn run(basename: &str) {
     let mut req_path = PathBuf::new();
     req_path.push(manifest_dir);
     req_path.push("tests");
-    req_path.push("aws4_testsuite");
+    req_path.push("aws-sig-v4-test-suite");
     req_path.push(basename);
 
     let mut sreq_path = PathBuf::new();
