@@ -287,4 +287,10 @@ fn run(basename: &str) {
 
     assert_eq!(from_utf8(&canonical_request), from_utf8(&expected_canonical_request), "Failed on {:?}", sreq_path);
     assert_eq!(from_utf8(&string_to_sign), from_utf8(&expected_string_to_sign), "Failed on {:?}", sreq_path);
+
+    let secret_key_fn = |_: &str, _: Option<&str>| {
+        Ok("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY".to_string())
+    };
+
+    sig.verify(&request, &secret_key_fn, None).expect(&format!("Signature verification failed: {:?}", sreq_path));
 }
