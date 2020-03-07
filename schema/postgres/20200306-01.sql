@@ -14,11 +14,12 @@ CREATE TABLE region(
     region                      VARCHAR(64) NOT NULL,
     CONSTRAINT pk_region PRIMARY KEY (region)
 );
-INSERT INTO region(region) VALUES('local');
+INSERT INTO region(region) VALUES('global'), ('local');
 
 CREATE TABLE limit_definition(
     limit_id                    BIGINT NOT NULL,
     service_name                VARCHAR(64) NOT NULL,
+    limit_name                  VARCHAR(64) NOT NULL,
     description                 TEXT,
     value_type                  VARCHAR(16) NOT NULL,
     default_int_value           INTEGER,
@@ -26,9 +27,13 @@ CREATE TABLE limit_definition(
     min_value                   INTEGER,
     max_value                   INTEGER,
     CONSTRAINT pk_limit_definition PRIMARY KEY (limit_id),
+    CONSTRAINT uk_limit_definition_service_name_limit_name
+    UNIQUE (service_name, limit_name),
     CONSTRAINT fk_limit_definition_value_type
     FOREIGN KEY (value_type) REFERENCES value_type(value_type)
 );
+CREATE SEQUENCE seq_limit_id MINVALUE 1 START WITH 1
+OWNED BY limit_definition.limit_id;
 
 CREATE TABLE account_limit(
     account_id                  CHAR(12) NOT NULL,
@@ -414,5 +419,22 @@ CREATE TABLE iam_role_token_key(
     expires_at                  TIMESTAMP(6) NOT NULL,
     CONSTRAINT pk_iam_role_token_key PRIMARY KEY (access_key_id)
 );
+
+-- Service limits for IAM
+SET SCHEMA 'limitstore';
+INSERT INTO limit_definition(
+    limit_id, service_name, limit_name,
+    description, value_type, default_int_value, min_value, max_value)
+VALUES (
+    nextval('seq_limit_id'), 'iam', 'CreateAccountApiAccess',
+    'Allow this account to access the CreateAccount API', 'INTEGER', 0, 0, 1);
+
+INSERT INTO account_limit(
+    account_id, limit_id, region, int_value)
+VALUES (
+    '000000000000',
+    (SELECT limit_id FROM limit_definition
+     WHERE service_name='iam' AND limit_name='CreateAccountApiAccess'),
+    'global', 1);
 
 UPDATE ss_schema.schema SET version='20200306-01';
