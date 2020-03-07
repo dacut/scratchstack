@@ -207,8 +207,8 @@ CREATE TABLE iam_user_inline_policy(
     policy_name_lower           VARCHAR(128) NOT NULL,
     policy_name_cased           VARCHAR(128) NOT NULL,
     policy_document             TEXT NOT NULL,
-    CONSTRAINT pk_user_inline_policy PRIMARY KEY (user_id, policy_name_lower),
-    CONSTRAINT fk_user_inline_policy_user_id
+    CONSTRAINT pk_iam_user_inline_policy PRIMARY KEY (user_id, policy_name_lower),
+    CONSTRAINT fk_iam_user_inline_policy_user_id
     FOREIGN KEY (user_id) REFERENCES iam_user(user_id)
 );
 
@@ -269,6 +269,150 @@ CREATE TABLE iam_user_service_specific_credential(
     CONSTRAINT pk_iam_user_service_specific_credential PRIMARY KEY (user_id, service_specific_credential_id),
     CONSTRAINT fk_iam_user_service_specific_credential_user_id
     FOREIGN KEY (user_id) REFERENCES iam_user(user_id)
+);
+
+CREATE TABLE iam_group(
+    group_id                    CHAR(17) NOT NULL,
+    account_id                  CHAR(12) NOT NULL,
+    group_name_lower            VARCHAR(64) NOT NULL,
+    group_name_cased            VARCHAR(64) NOT NULL,
+    path                        VARCHAR(512) NOT NULL,
+    created_at                  TIMESTAMP(6) NOT NULL,
+    CONSTRAINT pk_iam_group PRIMARY KEY (group_id),
+    CONSTRAINT uk_iam_group_account_id_group_name_lower
+    UNIQUE (account_id, group_name_lower)
+);
+
+CREATE TABLE deleted_iam_group(
+    group_id                    CHAR(17),
+    account_id                  CHAR(12),
+    group_name_lower            VARCHAR(64),
+    group_name_cased            VARCHAR(64),
+    path                        VARCHAR(512),
+    created_at                  TIMESTAMP(6),
+    deleted_at                  TIMESTAMP(6)
+);
+
+CREATE FUNCTION on_delete_iam_group() RETURNS TRIGGER AS $body$
+BEGIN
+    INSERT INTO deleted_iam_group(
+        group_id, account_id, group_name_lower, group_name_cased,
+        path, created_at, deleted_at)
+    VALUES(
+        old.group_id, old.account_id, old.group_name_lower, old.group_name_cased,
+        old.path, old.created_at, CURRENT_TIMESTAMP AT TIME ZONE 'UTC');
+    RETURN old;
+END
+$body$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trig_delete_iam_group
+AFTER DELETE ON iam_group
+FOR EACH ROW
+EXECUTE FUNCTION on_delete_iam_group();
+
+CREATE TABLE iam_group_attached_policy(
+    group_id                    CHAR(17) NOT NULL,
+    managed_policy_id           CHAR(17) NOT NULL,
+    CONSTRAINT pk_iam_group_attached_policy PRIMARY KEY (group_id, managed_policy_id),
+    CONSTRAINT fk_iam_group_attached_policy_group_id
+    FOREIGN KEY (group_id) REFERENCES iam_group(group_id),
+    CONSTRAINT fk_iam_group_attached_policy_managed_policy_id
+    FOREIGN KEY (managed_policy_id) REFERENCES managed_policy(managed_policy_id)
+);
+
+CREATE TABLE iam_group_inline_policy(
+    group_id                    CHAR(17) NOT NULL,
+    policy_name_lower           VARCHAR(128) NOT NULL,
+    policy_name_cased           VARCHAR(128) NOT NULL,
+    policy_document             TEXT NOT NULL,
+    CONSTRAINT pk_iam_group_inline_policy PRIMARY KEY (group_id, policy_name_lower),
+    CONSTRAINT fk_iam_group_inline_policy_group_id
+    FOREIGN KEY (group_id) REFERENCES iam_group(group_id)
+);
+
+CREATE TABLE iam_group_member(
+    group_id                    CHAR(17) NOT NULL,
+    user_id                     CHAR(17) NOT NULL,
+    CONSTRAINT pk_iam_group_member PRIMARY KEY (group_id, user_id),
+    CONSTRAINT fk_iam_group_member_group_id
+    FOREIGN KEY (group_id) REFERENCES iam_group(group_id),
+    CONSTRAINT fk_iam_group_member_user_id
+    FOREIGN KEY (user_id) REFERENCES iam_user(user_id)
+);
+
+CREATE TABLE iam_role(
+    role_id                     CHAR(17) NOT NULL,
+    account_id                  CHAR(12) NOT NULL,
+    role_name_lower             VARCHAR(64) NOT NULL,
+    role_name_cased             VARCHAR(64) NOT NULL,
+    path                        VARCHAR(512) NOT NULL,
+    permissions_boundary_managed_policy_id CHAR(17),
+    description                 VARCHAR(1000),
+    assume_role_policy_document TEXT NOT NULL,
+    created_at                  TIMESTAMP(6) NOT NULL,
+    CONSTRAINT pk_iam_role PRIMARY KEY(role_id),
+    CONSTRAINT uk_iam_role_account_id_role_name_lower
+    UNIQUE (account_id, role_name_lower)
+);
+
+CREATE TABLE deleted_iam_role(
+    role_id                     CHAR(17),
+    account_id                  CHAR(12),
+    role_name_lower             VARCHAR(64),
+    role_name_cased             VARCHAR(64),
+    path                        VARCHAR(512),
+    permissions_boundary_managed_policy_id CHAR(17),
+    description                 VARCHAR(1000),
+    assume_role_policy_document TEXT,
+    created_at                  TIMESTAMP(6)
+);
+
+CREATE FUNCTION on_delete_iam_role() RETURNS TRIGGER AS $body$
+BEGIN
+    INSERT INTO deleted_iam_role(
+        role_id, account_id, role_name_lower, role_name_cased,
+        path, permissions_boundary_managed_policy_id, description,
+        assume_role_policy_document, created_at, deleted_at)
+    VALUES(
+        old.role_id, old.account_id, old.role_name_lower, old.role_name_cased,
+        old.path, old.permissions_boundary_managed_policy_id, old.description,
+        old.created_at, CURRENT_TIMESTAMP AT TIME ZONE 'UTC');
+    RETURN old;
+END
+$body$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trig_delete_iam_role
+AFTER DELETE ON iam_role
+FOR EACH ROW
+EXECUTE FUNCTION on_delete_iam_role();
+
+CREATE TABLE iam_role_attached_policy(
+    role_id                     CHAR(17) NOT NULL,
+    managed_policy_id           CHAR(17) NOT NULL,
+    CONSTRAINT pk_iam_role_attached_policy PRIMARY KEY (role_id, managed_policy_id),
+    CONSTRAINT fk_iam_role_attached_policy_role_id
+    FOREIGN KEY (role_id) REFERENCES iam_role(role_id),
+    CONSTRAINT fk_iam_role_attached_policy_managed_policy_id
+    FOREIGN KEY (managed_policy_id) REFERENCES managed_policy(managed_policy_id)
+);
+
+CREATE TABLE iam_role_inline_policy(
+    role_id                     CHAR(17) NOT NULL,
+    policy_name_lower           VARCHAR(128) NOT NULL,
+    policy_name_cased           VARCHAR(128) NOT NULL,
+    policy_document             TEXT NOT NULL,
+    CONSTRAINT pk_iam_role_inline_policy PRIMARY KEY (role_id, policy_name_lower),
+    CONSTRAINT fk_iam_role_inline_policy_role_id
+    FOREIGN KEY (role_id) REFERENCES iam_role(role_id)
+);
+
+CREATE TABLE iam_role_token_key(
+    access_key_id               CHAR(17) NOT NULL,
+    encryption_algorithm        VARCHAR(16) NOT NULL,
+    encription_key              BYTEA NOT NULL,
+    valid_at                    TIMESTAMP(6) NOT NULL,
+    expires_at                  TIMESTAMP(6) NOT NULL,
+    CONSTRAINT pk_iam_role_token_key PRIMARY KEY (access_key_id)
 );
 
 UPDATE ss_schema.schema SET version='20200306-01';
