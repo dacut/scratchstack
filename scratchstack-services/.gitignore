@@ -56,3 +56,6 @@ no_llvm_build
 *.gcno
 *.gcda
 *.gcov
+
+# Postgres database password file
+postgres-ss-password.txt
