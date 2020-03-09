@@ -1,0 +1,23 @@
+version: "3.7"
+services:
+  postgres:
+    image: postgres:12
+    environment:
+      POSTGRES_USER: ss
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-ss-password
+      POSTGRES_DB: scratchstack
+    ports:
+      - target: 5432
+        published: 10811
+        protocol: tcp
+        mode: host
+    secrets:
+      - postgres-ss-password
+    volumes:
+      - type: bind
+        source: ./schema/postgres
+        target: /docker-entrypoint-initdb.d
+        read_only: true
+secrets:
+  postgres-ss-password:
+    file: postgres-ss-password.txt
