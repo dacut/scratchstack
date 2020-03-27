@@ -11,6 +11,7 @@ gotham-04 = ["gotham_middleware_aws_sig_verify/gotham-04"]
 default = ["gotham-04"]
 
 [dependencies]
+base64 = "^0.10"
 bb8-postgres = "^0.4"
 futures = "^0.1"
 getopts = "^0.2"
@@ -23,6 +24,7 @@ humantime = "^2.0"
 native-tls = "^0.2"
 postgres = "^0.17"
 postgres-native-tls = "^0.3"
+rustls = "^0.15"
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = "^1.0"
 tokio-postgres = "^0.5"
