@@ -1,0 +1,28 @@
+[package]
+name = "scratchstack-limitstore"
+version = "0.1.0"
+authors = ["David Cuthbert <dacut@kanga.org>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+gotham-04 = ["gotham_middleware_aws_sig_verify/gotham-04"]
+default = ["gotham-04"]
+
+[dependencies]
+bb8-postgres = "^0.4"
+futures = "^0.1"
+getopts = "^0.2"
+gotham = "^0.4"
+gotham_header_routematcher = "^0.1"
+gotham_middleware_aws_sig_verify = "^0.1"
+hyper = "^0.12"
+http = "^0.1"
+humantime = "^2.0"
+native-tls = "^0.2"
+postgres = "^0.17"
+postgres-native-tls = "^0.3"
+serde = { version = "^1.0", features = ["derive"] }
+serde_json = "^1.0"
+tokio-postgres = "^0.5"

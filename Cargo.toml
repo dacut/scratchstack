@@ -1,10 +1,4 @@
-[package]
-name = "scratchstack"
-version = "0.1.0"
-authors = ["David Cuthbert <dacut@kanga.org>"]
-edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-aws_sig_verify = "0.1.0"
+[workspace]
+members = [
+    "services/limitstore",
+]
