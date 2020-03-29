@@ -17,7 +17,7 @@ use getopts::Options;
 use gotham;
 use gotham::router::Router;
 use gotham::router::builder::{build_router, DefineSingleRoute, DrawRoutes};
-use gotham::pipeline::{new_pipeline, single_pipeline};
+use gotham::pipeline::{new_pipeline, single_middleware};
 use rustls::{ServerConfig as TlsServerConfig};
 
 mod config;

@@ -1,0 +1,28 @@
+[package]
+name = "scratchstack-iam"
+version = "0.1.0"
+authors = ["David Cuthbert <dacut@kanga.org>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+gotham-04 = ["gotham_middleware_aws_sig_verify/gotham-04"]
+default = ["gotham-04", "diesel/r2d2", "diesel/postgres"]
+
+[dependencies]
+base64 = "^0.10"
+diesel = "^1.4"
+futures = "^0.1"
+getopts = "^0.2"
+gotham = "^0.4"
+gotham_derive = "^0.4"
+gotham_header_routematcher = "^0.1"
+gotham_middleware_aws_sig_verify = { version = "^0.1", path = "../../../gotham-middleware-aws-sig-verify" }
+gotham_middleware_diesel = "^0.1"
+hyper = "^0.12"
+http = "^0.1"
+humantime = "^2.0"
+rustls = "^0.15"
+serde = { version = "^1.0", features = ["derive"] }
+serde_json = "^1.0"
