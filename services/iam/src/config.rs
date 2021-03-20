@@ -413,17 +413,19 @@ pub struct DatabaseConfig {
 
 #[derive(Debug)]
 pub enum DatabaseConfigError {
-    IO(IOError),
+    IO(IOError, Option<String>),
     InvalidPasswordFileEncoding(String, Utf8Error),
+    MissingPassword,
     Pool(PoolError),
 }
 
 impl Error for DatabaseConfigError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::IO(ref e) => Some(e),
+            Self::IO(ref e, _) => Some(e),
             Self::InvalidPasswordFileEncoding(_, ref e) => Some(e),
             Self::Pool(ref e) => Some(e),
+            _ => None,
         }
     }
 }
@@ -431,8 +433,12 @@ impl Error for DatabaseConfigError {
 impl Display for DatabaseConfigError {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match &self {
-            Self::IO(ref e) => write!(f, "I/O error: {}", e),
+            Self::IO(ref e, maybe_filename) => match maybe_filename {
+                None => write!(f, "I/O error: {}", e),
+                Some(filename) => write!(f, "{}: {}", filename, e),
+            }
             Self::InvalidPasswordFileEncoding(s, ref e) => write!(f, "Invalid password file encoding: {}: {}", s, e),
+            Self::MissingPassword => write!(f, "Database URL specifies a password placeholder but a password was not supplied"),
             Self::Pool(ref e) => write!(f, "Pool error: {}", e),
         }
     }
@@ -440,7 +446,7 @@ impl Display for DatabaseConfigError {
 
 impl From<IOError> for DatabaseConfigError {
     fn from(e: IOError) -> Self {
-        DatabaseConfigError::IO(e)
+        DatabaseConfigError::IO(e, None)
     }
 }
 
@@ -455,15 +461,30 @@ impl DatabaseConfig {
         let url = self.url.clone();
 
         if let Some(password) = &self.password {
+            debug!("Database password specified in config file -- replacing occurrences in URL");
             Ok(url.replace("${password}", password))
         } else if let Some(password_file) = &self.password_file {
+            debug!("Database password file specified.");
             match read(&password_file) {
                 Ok(password_u8) => match std::str::from_utf8(&password_u8) {
-                    Ok(password) => Ok(url.replace("${password}", password)),
-                    Err(e) => Err(DatabaseConfigError::InvalidPasswordFileEncoding(password_file.to_string(), e)),
+                    Ok(password) => {
+                        info!("Successfully read database password file {}; replacing URL", password_file);
+                        let password = password.trim();
+                        Ok(url.replace("${password}", password))
+                    }
+                    Err(e) => {
+                        error!("Found non-UTF-8 characters in database password file {}", password_file);
+                        Err(DatabaseConfigError::InvalidPasswordFileEncoding(password_file.to_string(), e))
+                    }
                 }
-                Err(e) => Err(DatabaseConfigError::IO(e)),
+                Err(e) => {
+                    error!("Failed to open database password file {}: {}", password_file, e);
+                    Err(DatabaseConfigError::IO(e, Some(password_file.to_string())))
+                }
             }
+        } else if url.contains("${password}") {
+            error!("Found password placeholder '${{password}}' in database URL but no password was supplied: {}", url);
+            Err(DatabaseConfigError::MissingPassword)
         } else {
             Ok(url)
         }
