@@ -1,0 +1,4 @@
+.vscode
+.git
+target
+local-testing/pgsql/data
