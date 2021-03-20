@@ -9,9 +9,14 @@ bootstrap-local-postgres:	## Bootstrap the local PostgreSQL database.
 	@chmod 750 $$PWD/local-testing/pgsql/data
 	PGPORT=10811 initdb -D $$PWD/local-testing/pgsql/data
 	cp $$PWD/local-testing/pgsql/etc/postgresql.conf $$PWD/local-testing/pgsql/data/postgresql.conf
+	$$PWD/local-testing/pgsql/etc/generate_hbaconf.sh $$PWD/local-testing/pgsql/data/pg_hba.conf
 	cargo install diesel_cli --no-default-features --features postgres
 	PGPORT=10811 pg_ctl --pgdata=$$PWD/local-testing/pgsql/data --log=$$PWD/local-testing/pgsql/postgresql.log start
 	DATABASE_URL=postgres://$$LOGNAME@localhost:10811/scratchstack diesel setup
+	if [[ ! -f $$PWD/local-testing/pgsql/etc/postgres-limitstore-password.txt ]]; then dd if=/dev/urandom bs=24 count=1 | base64 > $$PWD/local-testing/pgsql/etc/postgres-limitstore-password.txt; fi;
+	if [[ ! -f $$PWD/local-testing/pgsql/etc/postgres-iam-password.txt ]]; then dd if=/dev/urandom bs=24 count=1 | base64 > $$PWD/local-testing/pgsql/etc/postgres-iam-password.txt; fi;
+	@psql --port=10811 --dbname=postgres --command "CREATE USER limitstore PASSWORD '$$(cat $$PWD/local-testing/pgsql/etc/postgres-limitstore-password.txt)'; CREATE USER iam PASSWORD '$$(cat $$PWD/local-testing/pgsql/etc/postgres-iam-password.txt)'"
+	psql --port=10811 --dbname=scratchstack --command "GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA limitstore TO limitstore; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA iam TO iam; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA limitstore TO iam"
 
 # ----------------------------------------------------------------------------
 # Self-Documented Makefile
