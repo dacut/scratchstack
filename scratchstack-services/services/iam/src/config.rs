@@ -1,8 +1,7 @@
-
 use std::{
     error::Error,
-    fmt::{Display, Debug, Formatter, Result as FmtResult},
-    fs::{File, read},
+    fmt::{Debug, Display, Formatter, Result as FmtResult},
+    fs::{read, File},
     io::{BufRead, BufReader, Error as IOError},
     net::{AddrParseError, IpAddr, Ipv4Addr, SocketAddr},
     path::Path,
@@ -13,14 +12,17 @@ use std::{
 use base64;
 use diesel::{
     pg::PgConnection,
-    r2d2::{Builder as PoolBuilder, ConnectionManager, Pool, PoolError, ManageConnection},
+    r2d2::{
+        Builder as PoolBuilder, ConnectionManager, ManageConnection, Pool,
+        PoolError,
+    },
 };
 use hyper::Error as HyperError;
-use log::{debug, info, error};
-use rustls::{Certificate, PrivateKey, ServerConfig, NoClientAuth, TLSError};
-use tokio_rustls::rustls::ServerConfig as TlsServerConfig;
+use log::{debug, error, info};
+use rustls::{Certificate, NoClientAuth, PrivateKey, ServerConfig, TLSError};
 use serde::Deserialize;
 use serde_json;
+use tokio_rustls::rustls::ServerConfig as TlsServerConfig;
 
 const DEFAULT_PORT: u16 = 8080;
 
@@ -97,7 +99,7 @@ impl Config {
     }
 }
 
-/// The resolved configuration: optional values have been replaced 
+/// The resolved configuration: optional values have been replaced
 pub struct ResolvedConfig {
     pub address: SocketAddr,
     pub region: String,
@@ -109,8 +111,10 @@ pub struct ResolvedConfig {
 impl Debug for ResolvedConfig {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(
-            f, "ResolvedConfig{{address={:?}, region={:?}, threads={:?}, ", self.address, self.region,
-            self.threads)?;
+            f,
+            "ResolvedConfig{{address={:?}, region={:?}, threads={:?}, ",
+            self.address, self.region, self.threads
+        )?;
         match self.tls {
             None => write!(f, "tls=None, ")?,
             Some(ref tsc) => write!(
@@ -140,14 +144,22 @@ pub enum ConfigError {
 impl Display for ConfigError {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match &self {
-            Self::DatabasePoolError(e) => write!(f, "Database pool error: {}", e),
+            Self::DatabasePoolError(e) => {
+                write!(f, "Database pool error: {}", e)
+            }
             Self::HTTPServerError(e) => write!(f, "HTTP server error: {}", e),
             Self::IO(e) => write!(f, "I/O error: {}", e),
-            Self::JSONDeserializationError(e) => write!(f, "JSON deserialization error: {}", e),
-            Self::InvalidTlsConfiguration(e) => write!(f, "Invalid TLS configuration: {}", e),
-            Self::InvalidDatabaseConfiguration(e) => write!(f, "Invalid database configuration: {}", e),
+            Self::JSONDeserializationError(e) => {
+                write!(f, "JSON deserialization error: {}", e)
+            }
+            Self::InvalidTlsConfiguration(e) => {
+                write!(f, "Invalid TLS configuration: {}", e)
+            }
+            Self::InvalidDatabaseConfiguration(e) => {
+                write!(f, "Invalid database configuration: {}", e)
+            }
             Self::InvalidAddress(e) => write!(f, "Invalid address: {}", e),
-            Self::InvalidPort => write!( f, "Invalid port"),
+            Self::InvalidPort => write!(f, "Invalid port"),
         }
     }
 }
@@ -222,19 +234,23 @@ impl TlsConfig {
     /// Resolve files referenced in the TLS configuration to actual certificates and keys.
     pub fn to_server_config(&self) -> Result<ServerConfig, TlsConfigError> {
         let mut sc = ServerConfig::new(NoClientAuth::new());
-        
+
         let cert_file = File::open(&self.certificate_chain_file)?;
         let mut reader = BufReader::new(cert_file);
         let certs = read_certs(&mut reader)?;
         if certs.len() == 0 {
-            return Err(TlsConfigError { kind: TlsConfigErrorKind::InvalidCertificate });
+            return Err(TlsConfigError {
+                kind: TlsConfigErrorKind::InvalidCertificate,
+            });
         }
 
         let private_key_file = File::open(&self.private_key_file)?;
         let mut reader = BufReader::new(private_key_file);
         let mut private_keys = read_rsa_private_keys(&mut reader)?;
         if private_keys.len() != 1 {
-            return Err(TlsConfigError { kind: TlsConfigErrorKind::InvalidPrivateKey });
+            return Err(TlsConfigError {
+                kind: TlsConfigErrorKind::InvalidPrivateKey,
+            });
         }
         let private_key = private_keys.remove(0);
 
@@ -243,18 +259,17 @@ impl TlsConfig {
     }
 }
 
-
 /// Extract and decode all PEM sections from `rd`, which begin with `start_mark`
 /// and end with `end_mark`.  Apply the functor `f` to each decoded buffer,
 /// and return a Vec of `f`'s return values.
-/// 
+///
 /// Originally from rustls::pemfile::extract, modified to return errors.
 fn extract_cert_or_key<A>(
     rd: &mut dyn BufRead,
     start_mark: &str,
     end_mark: &str,
-    f: &dyn Fn(Vec<u8>) -> A)
--> Result<Vec<A>, TlsConfigError> {
+    f: &dyn Fn(Vec<u8>) -> A,
+) -> Result<Vec<A>, TlsConfigError> {
     let mut ders = Vec::new();
     let mut b64buf = String::new();
     let mut take_base64 = false;
@@ -291,26 +306,32 @@ fn extract_cert_or_key<A>(
 
 /// Extract all the certificates from rd, and return a vec of `rustls::Certificate`s
 /// containing the der-format contents.
-/// 
+///
 /// Originally from rustls::pemfile::certs, modified to return errors.
-fn read_certs(rd: &mut dyn BufRead) -> Result<Vec<Certificate>, TlsConfigError> {
+fn read_certs(
+    rd: &mut dyn BufRead,
+) -> Result<Vec<Certificate>, TlsConfigError> {
     extract_cert_or_key(
         rd,
         "-----BEGIN CERTIFICATE-----",
         "-----END CERTIFICATE-----",
-        &|v| Certificate(v))
+        &|v| Certificate(v),
+    )
 }
 
 /// Extract all RSA private keys from rd, and return a vec of `rustls::PrivateKey`s
 /// containing the der-format contents.
-/// 
+///
 /// Originally from rustls::pemfile::rsa_private_keys, modified to return errors.
-fn read_rsa_private_keys(rd: &mut dyn BufRead) -> Result<Vec<PrivateKey>, TlsConfigError> {
+fn read_rsa_private_keys(
+    rd: &mut dyn BufRead,
+) -> Result<Vec<PrivateKey>, TlsConfigError> {
     extract_cert_or_key(
         rd,
         "-----BEGIN RSA PRIVATE KEY-----",
         "-----END RSA PRIVATE KEY-----",
-        &|v| PrivateKey(v))
+        &|v| PrivateKey(v),
+    )
 }
 
 #[derive(Debug)]
@@ -466,20 +487,28 @@ impl DatabaseConfig {
         } else if let Some(password_file) = &self.password_file {
             debug!("Database password file specified.");
             match read(&password_file) {
-                Ok(password_u8) => match std::str::from_utf8(&password_u8) {
-                    Ok(password) => {
-                        info!("Successfully read database password file {}; replacing URL", password_file);
-                        let password = password.trim();
-                        Ok(url.replace("${password}", password))
-                    }
-                    Err(e) => {
-                        error!("Found non-UTF-8 characters in database password file {}", password_file);
-                        Err(DatabaseConfigError::InvalidPasswordFileEncoding(password_file.to_string(), e))
+                Ok(password_u8) => {
+                    match std::str::from_utf8(&password_u8) {
+                        Ok(password) => {
+                            info!("Successfully read database password file {}; replacing URL", password_file);
+                            let password = password.trim();
+                            Ok(url.replace("${password}", password))
+                        }
+                        Err(e) => {
+                            error!("Found non-UTF-8 characters in database password file {}", password_file);
+                            Err(DatabaseConfigError::InvalidPasswordFileEncoding(password_file.to_string(), e))
+                        }
                     }
                 }
                 Err(e) => {
-                    error!("Failed to open database password file {}: {}", password_file, e);
-                    Err(DatabaseConfigError::IO(e, Some(password_file.to_string())))
+                    error!(
+                        "Failed to open database password file {}: {}",
+                        password_file, e
+                    );
+                    Err(DatabaseConfigError::IO(
+                        e,
+                        Some(password_file.to_string()),
+                    ))
                 }
             }
         } else if url.contains("${password}") {
@@ -490,7 +519,9 @@ impl DatabaseConfig {
         }
     }
 
-    pub fn get_pool_builder<M: ManageConnection>(&self) -> Result<PoolBuilder<M>, DatabaseConfigError> {
+    pub fn get_pool_builder<M: ManageConnection>(
+        &self,
+    ) -> Result<PoolBuilder<M>, DatabaseConfigError> {
         let mut pb = PoolBuilder::new();
 
         if let Some(pool_size) = self.pool_size {
@@ -511,7 +542,10 @@ impl DatabaseConfig {
         Ok(pb)
     }
 
-    pub fn get_pool(&self) -> Result<Pool<ConnectionManager<PgConnection>>, DatabaseConfigError> {
+    pub fn get_pool(
+        &self,
+    ) -> Result<Pool<ConnectionManager<PgConnection>>, DatabaseConfigError>
+    {
         let url = self.get_postgres_url()?;
         let cm = ConnectionManager::<PgConnection>::new(url);
         let pb = self.get_pool_builder()?;

@@ -10,18 +10,12 @@ use std::{
 use env_logger;
 use getopts::Options;
 use hyper::{
-    Body, Error as HyperError, Response,
-    server::{
-        Builder as HyperBuilder, Server as HyperServer,
-        conn::Http,
-    },
+    server::{conn::Http, Builder as HyperBuilder, Server as HyperServer},
     service::{make_service_fn, service_fn},
+    Body, Error as HyperError, Response,
 };
-use log::{debug, info, error};
-use tokio::{
-    net::TcpListener,
-    runtime::{Builder as RuntimeBuilder},
-};
+use log::{debug, error, info};
+use tokio::{net::TcpListener, runtime::Builder as RuntimeBuilder};
 use tokio_rustls::TlsAcceptor;
 
 mod config;
@@ -31,7 +25,6 @@ use crate::tls::TlsIncoming;
 
 const DEFAULT_CONFIG_FILENAME: &str = "scratchstack.cfg";
 // const CONTENT_LENGTH_LIMIT: u64 = 10 << 20;
-
 
 #[derive(Debug)]
 enum ServerError {
@@ -52,7 +45,7 @@ impl Display for ServerError {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
             Self::Hyper(e) => write!(f, "Hyper error: {}", e),
-            Self::IO(e) => write!(f, "IO error: {}", e)
+            Self::IO(e) => write!(f, "IO error: {}", e),
         }
     }
 }
@@ -68,7 +61,6 @@ impl From<IOError> for ServerError {
         Self::IO(e)
     }
 }
-
 
 #[allow(unused_must_use)]
 fn print_usage(stream: &mut dyn Write, program: &str, opts: Options) {
@@ -86,7 +78,7 @@ fn main() {
     opts.optflag("h", "help", "print this usage information");
 
     let matches = match opts.parse(&args[1..]) {
-        Ok(m) => { m }
+        Ok(m) => m,
         Err(f) => {
             error!("{}", f);
             exit(2);
@@ -114,7 +106,10 @@ fn main() {
     let config = match Config::read_file(&config_filename) {
         Ok(c) => c,
         Err(e) => {
-            error!("Unable to read configuration file {}: {}", config_filename, e);
+            error!(
+                "Unable to read configuration file {}: {}",
+                config_filename, e
+            );
             exit(2);
         }
     };
@@ -134,8 +129,11 @@ fn main() {
     debug!("Resolved configuration: {:?}", config);
 
     info!("Creating runtime");
-    let runtime = match RuntimeBuilder::new_multi_thread().worker_threads(config.threads).thread_name("IAM")
-        .enable_all().build()
+    let runtime = match RuntimeBuilder::new_multi_thread()
+        .worker_threads(config.threads)
+        .thread_name("IAM")
+        .enable_all()
+        .build()
     {
         Ok(rt) => rt,
         Err(e) => {
@@ -147,33 +145,44 @@ fn main() {
     println!("{:#?}", runtime.block_on(run_server_from_config(config)));
 }
 
-
-async fn run_server_from_config(config: ResolvedConfig) -> Result<(), ServerError> {
+async fn run_server_from_config(
+    config: ResolvedConfig,
+) -> Result<(), ServerError> {
     match config.tls {
         Some(t) => {
             let make_service = make_service_fn(|_| async {
                 Ok::<_, HyperError>(service_fn(|_req| async {
-                    Ok::<_, HyperError>(Response::new(Body::from("Hello world")))
+                    Ok::<_, HyperError>(Response::new(Body::from(
+                        "Hello world",
+                    )))
                 }))
             });
-        
-            info!("TLS configuration detected; creating acceptor and listener");
+
+            info!(
+                "TLS configuration detected; creating acceptor and listener"
+            );
             let acceptor = TlsAcceptor::from(Arc::new(t));
             let tcp_listener = TcpListener::bind(&config.address).await?;
             let incoming = TlsIncoming::new(tcp_listener, acceptor);
             let http = Http::new();
             info!("Starting Hyper");
-            Ok(HyperBuilder::new(incoming, http).serve(make_service).await?)
+            Ok(HyperBuilder::new(incoming, http)
+                .serve(make_service)
+                .await?)
         }
         None => {
             let make_service = make_service_fn(|_| async {
                 Ok::<_, HyperError>(service_fn(|_req| async {
-                    Ok::<_, HyperError>(Response::new(Body::from("Hello world")))
+                    Ok::<_, HyperError>(Response::new(Body::from(
+                        "Hello world",
+                    )))
                 }))
             });
 
             info!("Non-TLS configuration detected; starting Hyper");
-            Ok(HyperServer::bind(&config.address).serve(make_service).await?)
+            Ok(HyperServer::bind(&config.address)
+                .serve(make_service)
+                .await?)
         }
     }
 }
