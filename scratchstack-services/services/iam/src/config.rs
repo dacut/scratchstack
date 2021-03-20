@@ -1,36 +1,62 @@
-use core::fmt::Debug;
-use std::error::Error;
-use std::fmt;
-use std::fs::{File, read};
-use std::io::{BufRead, BufReader, Error as IOError};
-use std::net::AddrParseError;
-use std::path::Path;
-use std::str::Utf8Error;
+
+use std::{
+    error::Error,
+    fmt::{Display, Debug, Formatter, Result as FmtResult},
+    fs::{File, read},
+    io::{BufRead, BufReader, Error as IOError},
+    net::{AddrParseError, IpAddr, Ipv4Addr, SocketAddr},
+    path::Path,
+    str::Utf8Error,
+    time::Duration,
+};
 
 use base64;
-use diesel::r2d2::{Builder, ManageConnection};
-use humantime::parse_duration;
-use rustls;
-use rustls::NoClientAuth;
+use diesel::{
+    pg::PgConnection,
+    r2d2::{Builder as PoolBuilder, ConnectionManager, Pool, PoolError, ManageConnection},
+};
+use hyper::Error as HyperError;
+use log::{debug, info, error};
+use rustls::{Certificate, PrivateKey, ServerConfig, NoClientAuth, TLSError};
+use tokio_rustls::rustls::ServerConfig as TlsServerConfig;
 use serde::Deserialize;
 use serde_json;
 
-#[derive(Clone, Deserialize, Debug)]
-pub struct Config {
-    #[serde(rename(deserialize = "Port"))]
-    pub port: Option<u16>,
+const DEFAULT_PORT: u16 = 8080;
 
-    #[serde(rename(deserialize = "Address"))]
-    pub address: Option<String>,
+#[inline]
+const fn get_default_port() -> u16 {
+    DEFAULT_PORT
+}
+
+#[inline]
+const fn get_default_address() -> IpAddr {
+    IpAddr::V4(Ipv4Addr::LOCALHOST)
+}
+
+#[inline]
+const fn get_default_threads() -> usize {
+    1
+}
+
+/// The configuration data for the server, as specified by the user. This allows for optional fields and references
+/// to files for things like TLS certificates and keys.
+#[derive(Debug, Deserialize)]
+pub struct Config {
+    #[serde(rename(deserialize = "Port"), default = "get_default_port")]
+    pub port: u16,
+
+    #[serde(rename(deserialize = "Address"), default = "get_default_address")]
+    pub address: IpAddr,
 
     #[serde(rename(deserialize = "Region"))]
     pub region: String,
 
-    #[serde(rename(deserialize = "TLS"))]
-    pub tls: Option<TLSConfig>,
+    #[serde(rename(deserialize = "TLS"), default)]
+    pub tls: Option<TlsConfig>,
 
-    #[serde(rename(deserialize = "Threads"))]
-    pub threads: Option<usize>,
+    #[serde(rename(deserialize = "Threads"), default = "get_default_threads")]
+    pub threads: usize,
 
     #[serde(rename(deserialize = "Database"))]
     pub database: DatabaseConfig,
@@ -39,117 +65,152 @@ pub struct Config {
 impl Config {
     pub fn read_file<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
         match File::open(path) {
-            Err(e) => Err(ConfigError{
-                kind: ConfigErrorKind::IO(e),
-            }),
+            Err(e) => Err(ConfigError::IO(e)),
             Ok(file) => {
                 let reader = BufReader::new(file);
                 match serde_json::from_reader(reader) {
                     Ok(config) => Ok(config),
-                    Err(e) => Err(ConfigError{
-                        kind: ConfigErrorKind::JSONDeserializationError(e),
-                    }),
+                    Err(e) => Err(ConfigError::JSONDeserializationError(e)),
                 }
             }
         }
     }
+
+    pub fn resolve(self) -> Result<ResolvedConfig, ConfigError> {
+        if self.port == 0 {
+            return Err(ConfigError::InvalidPort);
+        }
+
+        let tls_config = match &self.tls {
+            None => None,
+            Some(c) => Some(c.to_server_config()?),
+        };
+
+        let pool = self.database.get_pool()?;
+        Ok(ResolvedConfig {
+            address: SocketAddr::new(self.address, self.port),
+            region: self.region,
+            threads: self.threads,
+            tls: tls_config,
+            pool: pool,
+        })
+    }
+}
+
+/// The resolved configuration: optional values have been replaced 
+pub struct ResolvedConfig {
+    pub address: SocketAddr,
+    pub region: String,
+    pub threads: usize,
+    pub tls: Option<TlsServerConfig>,
+    pub pool: Pool<ConnectionManager<PgConnection>>,
+}
+
+impl Debug for ResolvedConfig {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        write!(
+            f, "ResolvedConfig{{address={:?}, region={:?}, threads={:?}, ", self.address, self.region,
+            self.threads)?;
+        match self.tls {
+            None => write!(f, "tls=None, ")?,
+            Some(ref tsc) => write!(
+                f, "tls=Some(ServerConfig{{ciphersuites={:?}, ignore_client_order={:?}, mtu={:?}, versions={:?}}}",
+                tsc.ciphersuites, tsc.ignore_client_order, tsc.mtu, tsc.versions)?,
+        }
+        write!(
+            f, "pool=Pool{{state={:?}, max_size={:?}, min_idle={:?}, test_on_check_out={:?}, max_lifetime={:?}, \
+            idle_timeout={:?}, connection_timeout={:?}}}}}", self.pool.state(), self.pool.max_size(),
+            self.pool.min_idle(), self.pool.test_on_check_out(), self.pool.max_lifetime(), self.pool.idle_timeout(),
+            self.pool.connection_timeout())
+    }
 }
 
 #[derive(Debug)]
-pub enum ConfigErrorKind {
+pub enum ConfigError {
+    DatabasePoolError(PoolError),
+    HTTPServerError(HyperError),
     IO(IOError),
     JSONDeserializationError(serde_json::error::Error),
-    InvalidTLSConfiguration(TLSConfigError),
+    InvalidTlsConfiguration(TlsConfigError),
     InvalidDatabaseConfiguration(DatabaseConfigError),
     InvalidAddress(AddrParseError),
     InvalidPort,
 }
 
-#[derive(Debug)]
-pub struct ConfigError {
-    pub kind: ConfigErrorKind,
-}
-
-impl fmt::Display for ConfigError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match &self.kind {
-            ConfigErrorKind::IO(e) => {
-                write!(f, "I/O error: {}", e)
-            }
-            ConfigErrorKind::JSONDeserializationError(e) => {
-                write!(f, "JSON deserialization error: {}", e)
-            }
-            ConfigErrorKind::InvalidTLSConfiguration(e) => {
-                write!(f, "Invalid TLS configuration: {}", e)
-            }
-            ConfigErrorKind::InvalidDatabaseConfiguration(e) => {
-                write!(f, "Invalid database configuration: {}", e)
-            }
-            ConfigErrorKind::InvalidAddress(e) => {
-                write!(f, "Invalid address: {}", e)
-            }
-            ConfigErrorKind::InvalidPort => {
-                write!(f, "Invalid port")
-            }
+impl Display for ConfigError {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match &self {
+            Self::DatabasePoolError(e) => write!(f, "Database pool error: {}", e),
+            Self::HTTPServerError(e) => write!(f, "HTTP server error: {}", e),
+            Self::IO(e) => write!(f, "I/O error: {}", e),
+            Self::JSONDeserializationError(e) => write!(f, "JSON deserialization error: {}", e),
+            Self::InvalidTlsConfiguration(e) => write!(f, "Invalid TLS configuration: {}", e),
+            Self::InvalidDatabaseConfiguration(e) => write!(f, "Invalid database configuration: {}", e),
+            Self::InvalidAddress(e) => write!(f, "Invalid address: {}", e),
+            Self::InvalidPort => write!( f, "Invalid port"),
         }
     }
 }
 
 impl Error for ConfigError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self.kind {
-            ConfigErrorKind::IO(ref e) => Some(e),
-            ConfigErrorKind::JSONDeserializationError(ref e) => Some(e),
-            ConfigErrorKind::InvalidTLSConfiguration(ref e) => Some(e),
-            ConfigErrorKind::InvalidDatabaseConfiguration(ref e) => Some(e),
-            ConfigErrorKind::InvalidAddress(ref e) => Some(e),
+        match self {
+            Self::DatabasePoolError(ref e) => Some(e),
+            Self::HTTPServerError(ref e) => Some(e),
+            Self::IO(ref e) => Some(e),
+            Self::JSONDeserializationError(ref e) => Some(e),
+            Self::InvalidTlsConfiguration(ref e) => Some(e),
+            Self::InvalidDatabaseConfiguration(ref e) => Some(e),
+            Self::InvalidAddress(ref e) => Some(e),
             _ => None,
-        }
-    }
-}
-
-impl From<IOError> for ConfigError {
-    fn from(e: IOError) -> Self {
-        ConfigError {
-            kind: ConfigErrorKind::IO(e),
-        }
-    }
-}
-
-impl From<serde_json::error::Error> for ConfigError {
-    fn from(e: serde_json::error::Error) -> Self {
-        ConfigError {
-            kind: ConfigErrorKind::JSONDeserializationError(e),
-        }
-    }
-}
-
-impl From<TLSConfigError> for ConfigError {
-    fn from(e: TLSConfigError) -> Self {
-        ConfigError {
-            kind: ConfigErrorKind::InvalidTLSConfiguration(e),
-        }
-    }
-}
-
-impl From<DatabaseConfigError> for ConfigError {
-    fn from(e: DatabaseConfigError) -> Self {
-        ConfigError {
-            kind: ConfigErrorKind::InvalidDatabaseConfiguration(e),
         }
     }
 }
 
 impl From<AddrParseError> for ConfigError {
     fn from(e: AddrParseError) -> Self {
-        ConfigError {
-            kind: ConfigErrorKind::InvalidAddress(e),
-        }
+        ConfigError::InvalidAddress(e)
+    }
+}
+
+impl From<DatabaseConfigError> for ConfigError {
+    fn from(e: DatabaseConfigError) -> Self {
+        ConfigError::InvalidDatabaseConfiguration(e)
+    }
+}
+
+impl From<HyperError> for ConfigError {
+    fn from(e: HyperError) -> Self {
+        ConfigError::HTTPServerError(e)
+    }
+}
+
+impl From<IOError> for ConfigError {
+    fn from(e: IOError) -> Self {
+        ConfigError::IO(e)
+    }
+}
+
+impl From<PoolError> for ConfigError {
+    fn from(e: PoolError) -> Self {
+        ConfigError::DatabasePoolError(e)
+    }
+}
+
+impl From<serde_json::error::Error> for ConfigError {
+    fn from(e: serde_json::error::Error) -> Self {
+        ConfigError::JSONDeserializationError(e)
+    }
+}
+
+impl From<TlsConfigError> for ConfigError {
+    fn from(e: TlsConfigError) -> Self {
+        ConfigError::InvalidTlsConfiguration(e)
     }
 }
 
 #[derive(Clone, Deserialize, Debug)]
-pub struct TLSConfig {
+pub struct TlsConfig {
     #[serde(rename(deserialize = "CertificateChainFile"))]
     certificate_chain_file: String,
 
@@ -157,22 +218,23 @@ pub struct TLSConfig {
     private_key_file: String,
 }
 
-impl TLSConfig {
-    pub fn to_server_config(&self) -> Result<rustls::ServerConfig, TLSConfigError> {
-        let mut sc = rustls::ServerConfig::new(NoClientAuth::new());
+impl TlsConfig {
+    /// Resolve files referenced in the TLS configuration to actual certificates and keys.
+    pub fn to_server_config(&self) -> Result<ServerConfig, TlsConfigError> {
+        let mut sc = ServerConfig::new(NoClientAuth::new());
         
         let cert_file = File::open(&self.certificate_chain_file)?;
         let mut reader = BufReader::new(cert_file);
         let certs = read_certs(&mut reader)?;
         if certs.len() == 0 {
-            return Err(TLSConfigError { kind: TLSConfigErrorKind::InvalidCertificate });
+            return Err(TlsConfigError { kind: TlsConfigErrorKind::InvalidCertificate });
         }
 
         let private_key_file = File::open(&self.private_key_file)?;
         let mut reader = BufReader::new(private_key_file);
         let mut private_keys = read_rsa_private_keys(&mut reader)?;
         if private_keys.len() != 1 {
-            return Err(TLSConfigError { kind: TLSConfigErrorKind::InvalidPrivateKey });
+            return Err(TlsConfigError { kind: TlsConfigErrorKind::InvalidPrivateKey });
         }
         let private_key = private_keys.remove(0);
 
@@ -192,7 +254,7 @@ fn extract_cert_or_key<A>(
     start_mark: &str,
     end_mark: &str,
     f: &dyn Fn(Vec<u8>) -> A)
--> Result<Vec<A>, TLSConfigError> {
+-> Result<Vec<A>, TlsConfigError> {
     let mut ders = Vec::new();
     let mut b64buf = String::new();
     let mut take_base64 = false;
@@ -231,179 +293,160 @@ fn extract_cert_or_key<A>(
 /// containing the der-format contents.
 /// 
 /// Originally from rustls::pemfile::certs, modified to return errors.
-fn read_certs(rd: &mut dyn BufRead) -> Result<Vec<rustls::Certificate>, TLSConfigError> {
+fn read_certs(rd: &mut dyn BufRead) -> Result<Vec<Certificate>, TlsConfigError> {
     extract_cert_or_key(
         rd,
         "-----BEGIN CERTIFICATE-----",
         "-----END CERTIFICATE-----",
-        &|v| rustls::Certificate(v))
+        &|v| Certificate(v))
 }
 
 /// Extract all RSA private keys from rd, and return a vec of `rustls::PrivateKey`s
 /// containing the der-format contents.
 /// 
 /// Originally from rustls::pemfile::rsa_private_keys, modified to return errors.
-fn read_rsa_private_keys(rd: &mut dyn BufRead) -> Result<Vec<rustls::PrivateKey>, TLSConfigError> {
+fn read_rsa_private_keys(rd: &mut dyn BufRead) -> Result<Vec<PrivateKey>, TlsConfigError> {
     extract_cert_or_key(
         rd,
         "-----BEGIN RSA PRIVATE KEY-----",
         "-----END RSA PRIVATE KEY-----",
-        &|v| rustls::PrivateKey(v))
+        &|v| PrivateKey(v))
 }
 
 #[derive(Debug)]
-pub enum TLSConfigErrorKind {
+pub enum TlsConfigErrorKind {
     IO(IOError),
     InvalidBase64Encoding(base64::DecodeError),
-    InvalidTLSConfiguration(rustls::TLSError),
+    InvalidTlsConfiguration(TLSError),
     InvalidCertificate,
     InvalidPrivateKey,
 }
 
 #[derive(Debug)]
-pub struct TLSConfigError {
-    kind: TLSConfigErrorKind,
+pub struct TlsConfigError {
+    kind: TlsConfigErrorKind,
 }
 
-impl Error for TLSConfigError {
+impl Error for TlsConfigError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self.kind {
-            TLSConfigErrorKind::IO(ref e) => Some(e),
-            TLSConfigErrorKind::InvalidBase64Encoding(ref e) => Some(e),
-            TLSConfigErrorKind::InvalidTLSConfiguration(ref e) => Some(e),
+            TlsConfigErrorKind::IO(ref e) => Some(e),
+            TlsConfigErrorKind::InvalidBase64Encoding(ref e) => Some(e),
+            TlsConfigErrorKind::InvalidTlsConfiguration(ref e) => Some(e),
             _ => None,
         }
     }
 }
 
-impl fmt::Display for TLSConfigError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl Display for TlsConfigError {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match &self.kind {
-            TLSConfigErrorKind::IO(e) => {
+            TlsConfigErrorKind::IO(e) => {
                 write!(f, "I/O error: {}", e)
             }
-            TLSConfigErrorKind::InvalidBase64Encoding(e) => {
+            TlsConfigErrorKind::InvalidBase64Encoding(e) => {
                 write!(f, "Invalid base64 encoding: {}", e)
             }
-            TLSConfigErrorKind::InvalidTLSConfiguration(e) => {
+            TlsConfigErrorKind::InvalidTlsConfiguration(e) => {
                 write!(f, "Invalid TLS configuration: {}", e)
             }
-            TLSConfigErrorKind::InvalidCertificate => {
+            TlsConfigErrorKind::InvalidCertificate => {
                 write!(f, "Invalid certificate")
             }
-            TLSConfigErrorKind::InvalidPrivateKey => {
+            TlsConfigErrorKind::InvalidPrivateKey => {
                 write!(f, "Invalid private key")
             }
         }
     }
 }
 
-impl From<IOError> for TLSConfigError {
+impl From<IOError> for TlsConfigError {
     fn from(e: IOError) -> Self {
-        TLSConfigError {
-            kind: TLSConfigErrorKind::IO(e),
+        TlsConfigError {
+            kind: TlsConfigErrorKind::IO(e),
         }
     }
 }
 
-impl From<base64::DecodeError> for TLSConfigError {
+impl From<base64::DecodeError> for TlsConfigError {
     fn from(e: base64::DecodeError) -> Self {
-        TLSConfigError {
-            kind: TLSConfigErrorKind::InvalidBase64Encoding(e),
+        TlsConfigError {
+            kind: TlsConfigErrorKind::InvalidBase64Encoding(e),
         }
     }
 }
 
-impl From<rustls::TLSError> for TLSConfigError {
-    fn from(e: rustls::TLSError) -> Self {
-        TLSConfigError {
-            kind: TLSConfigErrorKind::InvalidTLSConfiguration(e),
+impl From<TLSError> for TlsConfigError {
+    fn from(e: TLSError) -> Self {
+        TlsConfigError {
+            kind: TlsConfigErrorKind::InvalidTlsConfiguration(e),
         }
     }
 }
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct DatabaseConfig {
-    #[serde(rename(deserialize = "URL"))]
+    #[serde(rename = "URL")]
     pub url: String,
 
-    #[serde(rename(deserialize = "Password"))]
+    #[serde(rename = "Password", default)]
     pub password: Option<String>,
 
-    #[serde(rename(deserialize = "PasswordFile"))]
+    #[serde(rename = "PasswordFile", default)]
     pub password_file: Option<String>,
 
-    #[serde(rename(deserialize = "PoolSize"))]
+    #[serde(rename = "PoolSize", default)]
     pub pool_size: Option<u32>,
 
-    #[serde(rename(deserialize = "PoolMinIdle"))]
+    #[serde(rename = "PoolMinIdle", default)]
     pub pool_min_idle: Option<u32>,
 
-    #[serde(rename(deserialize = "ConnectTimeout"))]
-    pub connect_timeout_str: Option<String>,
+    #[serde(rename = "ConnectionTimeout", with = "humantime_serde", default)]
+    pub connection_timeout: Option<Duration>,
 
-    #[serde(rename(deserialize = "MaxLifetime"))]
-    pub max_lifetime_str: Option<String>,
+    #[serde(rename = "MaxLifetime", with = "humantime_serde", default)]
+    pub max_lifetime: Option<Duration>,
 
-    #[serde(rename(deserialize = "IdleTimeout"))]
-    pub idle_timeout_str: Option<String>,
+    #[serde(rename = "IdleTimeout", with = "humantime_serde", default)]
+    pub idle_timeout: Option<Duration>,
 }
 
 #[derive(Debug)]
-pub enum DatabaseConfigErrorKind {
+pub enum DatabaseConfigError {
     IO(IOError),
     InvalidPasswordFileEncoding(String, Utf8Error),
-    InvalidConnectionTimeout(String),
-    InvalidKeepalivePeriod(String),
-    InvalidMaxLifetime(String),
-    InvalidIdleTimeout(String),
-}
-
-#[derive(Debug)]
-pub struct DatabaseConfigError {
-    pub kind: DatabaseConfigErrorKind,
+    Pool(PoolError),
 }
 
 impl Error for DatabaseConfigError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self.kind {
-            DatabaseConfigErrorKind::IO(ref e) => Some(e),
-            DatabaseConfigErrorKind::InvalidPasswordFileEncoding(_, ref e) => Some(e),
-            _ => None,
+        match self {
+            Self::IO(ref e) => Some(e),
+            Self::InvalidPasswordFileEncoding(_, ref e) => Some(e),
+            Self::Pool(ref e) => Some(e),
         }
     }
 }
 
-impl fmt::Display for DatabaseConfigError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match &self.kind {
-            DatabaseConfigErrorKind::IO(ref e) => {
-                write!(f, "I/O error: {}", e)
-            }
-            DatabaseConfigErrorKind::InvalidPasswordFileEncoding(s, ref e) => {
-                write!(f, "Invalid password file encoding: {}: {}", s, e)
-            }
-            DatabaseConfigErrorKind::InvalidConnectionTimeout(s) => {
-                write!(f, "Invalid ConnectionTimeout: {}", s)
-            }
-            DatabaseConfigErrorKind::InvalidKeepalivePeriod(s) => {
-                write!(f, "Invalid KeepalivePeriod: {}", s)
-            }
-            DatabaseConfigErrorKind::InvalidMaxLifetime(s) => {
-                write!(f, "Invalid MaxLifetime: {}", s)
-            }
-            DatabaseConfigErrorKind::InvalidIdleTimeout(s) => {
-                write!(f, "Invalid IdleTimeout: {}", s)
-            }
+impl Display for DatabaseConfigError {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match &self {
+            Self::IO(ref e) => write!(f, "I/O error: {}", e),
+            Self::InvalidPasswordFileEncoding(s, ref e) => write!(f, "Invalid password file encoding: {}: {}", s, e),
+            Self::Pool(ref e) => write!(f, "Pool error: {}", e),
         }
     }
 }
 
 impl From<IOError> for DatabaseConfigError {
     fn from(e: IOError) -> Self {
-        DatabaseConfigError {
-            kind: DatabaseConfigErrorKind::IO(e),
-        }
+        DatabaseConfigError::IO(e)
+    }
+}
+
+impl From<PoolError> for DatabaseConfigError {
+    fn from(e: PoolError) -> Self {
+        DatabaseConfigError::Pool(e)
     }
 }
 
@@ -411,30 +454,23 @@ impl DatabaseConfig {
     pub fn get_postgres_url(&self) -> Result<String, DatabaseConfigError> {
         let url = self.url.clone();
 
-        let url = if let Some(password) = &self.password {
-            url.replace("${password}", password)
+        if let Some(password) = &self.password {
+            Ok(url.replace("${password}", password))
         } else if let Some(password_file) = &self.password_file {
             match read(&password_file) {
                 Ok(password_u8) => match std::str::from_utf8(&password_u8) {
-                    Ok(password) => url.replace("${password}", password),
-                    Err(e) => return Err(DatabaseConfigError {
-                        kind: DatabaseConfigErrorKind::InvalidPasswordFileEncoding(
-                            password_file.to_string(), e),
-                    }),
+                    Ok(password) => Ok(url.replace("${password}", password)),
+                    Err(e) => Err(DatabaseConfigError::InvalidPasswordFileEncoding(password_file.to_string(), e)),
                 }
-                Err(e) => return Err(DatabaseConfigError {
-                    kind: DatabaseConfigErrorKind::IO(e),
-                }),
+                Err(e) => Err(DatabaseConfigError::IO(e)),
             }
         } else {
-            url
-        };
-
-        Ok(url)
+            Ok(url)
+        }
     }
 
-    pub fn get_pool_builder<M: ManageConnection>(&self) -> Result<Builder<M>, DatabaseConfigError> {
-        let mut pb = Builder::new();
+    pub fn get_pool_builder<M: ManageConnection>(&self) -> Result<PoolBuilder<M>, DatabaseConfigError> {
+        let mut pb = PoolBuilder::new();
 
         if let Some(pool_size) = self.pool_size {
             pb = pb.max_size(pool_size);
@@ -444,42 +480,20 @@ impl DatabaseConfig {
             pb = pb.min_idle(Some(pool_min_idle));
         }
 
-        if let Some(max_lifetime_str) = &self.max_lifetime_str {
-            match parse_duration(max_lifetime_str) {
-                Ok(max_lifetime) => {
-                    pb = pb.max_lifetime(Some(max_lifetime));
-                }
-                Err(_) => return Err(DatabaseConfigError {
-                    kind: DatabaseConfigErrorKind::InvalidMaxLifetime(
-                        max_lifetime_str.to_string()),
-                }),
-            }
-        }
+        pb = pb.max_lifetime(self.max_lifetime);
+        pb = pb.idle_timeout(self.idle_timeout);
 
-        if let Some(idle_timeout_str) = &self.idle_timeout_str {
-            match parse_duration(idle_timeout_str) {
-                Ok(idle_timeout) => {
-                    pb = pb.idle_timeout(Some(idle_timeout));
-                }
-                Err(_) => return Err(DatabaseConfigError {
-                    kind: DatabaseConfigErrorKind::InvalidIdleTimeout(
-                        idle_timeout_str.to_string()),
-                }),
-            }
-        }
-
-        if let Some(connect_timeout_str) = &self.connect_timeout_str {
-            match parse_duration(connect_timeout_str) {
-                Ok(connect_timeout) => {
-                    pb = pb.connection_timeout(connect_timeout);
-                }
-                Err(_) => return Err(DatabaseConfigError {
-                    kind: DatabaseConfigErrorKind::InvalidConnectionTimeout(
-                        connect_timeout_str.to_string()),
-                }),
-            }
+        if let Some(connection_timeout) = self.connection_timeout {
+            pb = pb.connection_timeout(connection_timeout);
         }
 
         Ok(pb)
+    }
+
+    pub fn get_pool(&self) -> Result<Pool<ConnectionManager<PgConnection>>, DatabaseConfigError> {
+        let url = self.get_postgres_url()?;
+        let cm = ConnectionManager::<PgConnection>::new(url);
+        let pb = self.get_pool_builder()?;
+        Ok(pb.build(cm)?)
     }
 }
