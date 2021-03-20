@@ -1,5 +1,9 @@
 version: "3.7"
 services:
+  scratchstack-iam:
+    build:
+      context: .
+      dockerfile: Dockerfile
   postgres:
     image: postgres:12
     environment:
