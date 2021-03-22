@@ -1,19 +1,32 @@
 use std::{
     env,
     error::Error,
-    fmt::{Display, Formatter, Result as FmtResult},
+    fmt::{Debug, Display, Formatter, Result as FmtResult},
+    future::Future,
     io::{self, Error as IOError, Write},
+    net::{SocketAddr},
+    pin::Pin,
     process::exit,
     sync::Arc,
+    task::{Context, Poll},
 };
 
+use aws_sig_verify::{Principal, SignatureError, SigningKeyKind};
 use env_logger;
 use getopts::Options;
-use hyper::{
-    server::{conn::Http, Builder as HyperBuilder, Server as HyperServer},
-    service::{make_service_fn, service_fn},
-    Body, Error as HyperError, Response,
+use http::{
+    header::HeaderValue,
+    StatusCode,
 };
+use hyper::{
+    server::{
+        Builder as HyperBuilder, Server as HyperServer,
+        conn::{AddrStream, Http},
+    },
+    service::{Service, HttpService, make_service_fn, service_fn},
+    Body, Error as HyperError, Request, Response,
+};
+use hyper_aws_sig_verify::AwsSigV4VerifierService;
 use log::{debug, error, info};
 use tokio::{net::TcpListener, runtime::Builder as RuntimeBuilder};
 use tokio_rustls::TlsAcceptor;
@@ -30,6 +43,7 @@ const DEFAULT_CONFIG_FILENAME: &str = "scratchstack.cfg";
 enum ServerError {
     Hyper(HyperError),
     IO(IOError),
+    SignatureError(SignatureError),
 }
 
 impl Error for ServerError {
@@ -37,6 +51,7 @@ impl Error for ServerError {
         match self {
             Self::Hyper(e) => Some(e),
             Self::IO(e) => Some(e),
+            Self::SignatureError(e) => Some(e),
         }
     }
 }
@@ -46,6 +61,7 @@ impl Display for ServerError {
         match self {
             Self::Hyper(e) => write!(f, "Hyper error: {}", e),
             Self::IO(e) => write!(f, "IO error: {}", e),
+            Self::SignatureError(e) => write!(f, "Signature error: {}", e),
         }
     }
 }
@@ -59,6 +75,12 @@ impl From<HyperError> for ServerError {
 impl From<IOError> for ServerError {
     fn from(e: IOError) -> Self {
         Self::IO(e)
+    }
+}
+
+impl From<SignatureError> for ServerError {
+    fn from(e: SignatureError) -> Self {
+        Self::SignatureError(e)
     }
 }
 
@@ -150,14 +172,6 @@ async fn run_server_from_config(
 ) -> Result<(), ServerError> {
     match config.tls {
         Some(t) => {
-            let make_service = make_service_fn(|_| async {
-                Ok::<_, HyperError>(service_fn(|_req| async {
-                    Ok::<_, HyperError>(Response::new(Body::from(
-                        "Hello world",
-                    )))
-                }))
-            });
-
             info!(
                 "TLS configuration detected; creating acceptor and listener"
             );
@@ -166,23 +180,100 @@ async fn run_server_from_config(
             let incoming = TlsIncoming::new(tcp_listener, acceptor);
             let http = Http::new();
             info!("Starting Hyper");
-            Ok(HyperBuilder::new(incoming, http)
-                .serve(make_service)
-                .await?)
+            let hs = HyperServer::bind(&config.address);
+            Ok(())
         }
         None => {
-            let make_service = make_service_fn(|_| async {
-                Ok::<_, HyperError>(service_fn(|_req| async {
-                    Ok::<_, HyperError>(Response::new(Body::from(
-                        "Hello world",
-                    )))
-                }))
-            });
-
+            let service_maker = IAMServiceMaker{};
             info!("Non-TLS configuration detected; starting Hyper");
-            Ok(HyperServer::bind(&config.address)
-                .serve(make_service)
-                .await?)
+            let hs = HyperServer::bind(&config.address).serve(service_maker).await?;
+            Ok(())
         }
+    }
+}
+
+#[derive(Debug)]
+enum ServiceError {
+    Hyper(HyperError),
+    Signature(SignatureError),
+    IO(IOError),
+}
+
+impl Error for ServiceError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Hyper(e) => Some(e),
+            Self::Signature(e) => Some(e),
+            Self::IO(e) => Some(e)
+        }
+    }
+}
+
+impl From<HyperError> for ServiceError {
+    fn from(e: HyperError) -> Self {
+        Self::Hyper(e)
+    }
+}
+
+impl From<SignatureError> for ServiceError {
+    fn from(e: SignatureError) -> Self {
+        Self::Signature(e)
+    }
+}
+
+impl From<IOError> for ServiceError {
+    fn from(e: IOError) -> Self {
+        Self::IO(e)
+    }
+}
+
+impl Display for ServiceError {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        Debug::fmt(self, f)
+    }
+}
+
+#[derive(Clone, Debug)]
+struct IAMServiceMaker {}
+
+impl Service<&'_ AddrStream> for IAMServiceMaker {
+    type Response = AwsSigV4VerifierService<IAMService>;
+    type Error = ServiceError;
+    type Future = Pin<Box<dyn Future<Output=Result<Self::Response, Self::Error>> + Send + Sync + 'static>>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: &'_ AddrStream) -> Self::Future {
+        Box::pin(async {
+            Ok(AwsSigV4VerifierService::new("local", "iam", IAMService{}))
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+struct IAMService {
+}
+
+impl HttpService<Body> for IAMService {
+    type ResBody = Body;
+    type Error = Box<dyn Error + Send + Sync + 'static>;
+    type Future = Pin<Box<dyn Future<Output=Result<Response<Body>, Box<dyn Error + Send + Sync + 'static>>> + Send + Sync + 'static>>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: Request<Body>) -> Self::Future {
+        Box::pin(async {
+            Ok(
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", HeaderValue::from_static("text/plain"))
+                    .body(Body::from("Hello IAM"))
+                    .unwrap()
+            )
+        })
     }
 }
