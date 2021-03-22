@@ -23,7 +23,7 @@ use hyper::{
         Builder as HyperBuilder, Server as HyperServer,
         conn::{AddrStream, Http},
     },
-    service::{Service, HttpService, make_service_fn, service_fn},
+    service::{Service, make_service_fn, service_fn},
     Body, Error as HyperError, Request, Response,
 };
 use hyper_aws_sig_verify::AwsSigV4VerifierService;
@@ -256,8 +256,8 @@ impl Service<&'_ AddrStream> for IAMServiceMaker {
 struct IAMService {
 }
 
-impl HttpService<Body> for IAMService {
-    type ResBody = Body;
+impl Service<Request<Body>> for IAMService {
+    type Response = Response<Body>;
     type Error = Box<dyn Error + Send + Sync + 'static>;
     type Future = Pin<Box<dyn Future<Output=Result<Response<Body>, Box<dyn Error + Send + Sync + 'static>>> + Send + Sync + 'static>>;
 
