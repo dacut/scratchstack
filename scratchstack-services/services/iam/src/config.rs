@@ -41,26 +41,33 @@ const fn get_default_threads() -> usize {
     1
 }
 
+fn get_default_partition() -> String {
+    "aws".into()
+}
+
 /// The configuration data for the server, as specified by the user. This allows for optional fields and references
 /// to files for things like TLS certificates and keys.
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    #[serde(rename(deserialize = "Port"), default = "get_default_port")]
+    #[serde(rename = "Port", default = "get_default_port")]
     pub port: u16,
 
-    #[serde(rename(deserialize = "Address"), default = "get_default_address")]
+    #[serde(rename = "Address", default = "get_default_address")]
     pub address: IpAddr,
 
-    #[serde(rename(deserialize = "Region"))]
+    #[serde(rename = "Partition", default = "get_default_partition")]
+    pub partition: String,
+
+    #[serde(rename = "Region")]
     pub region: String,
 
-    #[serde(rename(deserialize = "TLS"), default)]
+    #[serde(rename = "TLS", default)]
     pub tls: Option<TlsConfig>,
 
-    #[serde(rename(deserialize = "Threads"), default = "get_default_threads")]
+    #[serde(rename = "Threads", default = "get_default_threads")]
     pub threads: usize,
 
-    #[serde(rename(deserialize = "Database"))]
+    #[serde(rename = "Database")]
     pub database: DatabaseConfig,
 }
 
@@ -83,6 +90,14 @@ impl Config {
             return Err(ConfigError::InvalidPort);
         }
 
+        if self.partition.len() == 0 {
+            return Err(ConfigError::InvalidPartition);
+        }
+
+        if self.region.len() == 0 {
+            return Err(ConfigError::InvalidRegion);
+        }
+
         let tls_config = match &self.tls {
             None => None,
             Some(c) => Some(c.to_server_config()?),
@@ -91,6 +106,7 @@ impl Config {
         let pool = self.database.get_pool()?;
         Ok(ResolvedConfig {
             address: SocketAddr::new(self.address, self.port),
+            partition: self.partition,
             region: self.region,
             threads: self.threads,
             tls: tls_config,
@@ -102,6 +118,7 @@ impl Config {
 /// The resolved configuration: optional values have been replaced
 pub struct ResolvedConfig {
     pub address: SocketAddr,
+    pub partition: String,
     pub region: String,
     pub threads: usize,
     pub tls: Option<TlsServerConfig>,
@@ -138,7 +155,9 @@ pub enum ConfigError {
     InvalidTlsConfiguration(TlsConfigError),
     InvalidDatabaseConfiguration(DatabaseConfigError),
     InvalidAddress(AddrParseError),
+    InvalidPartition,
     InvalidPort,
+    InvalidRegion,
 }
 
 impl Display for ConfigError {
@@ -159,7 +178,9 @@ impl Display for ConfigError {
                 write!(f, "Invalid database configuration: {}", e)
             }
             Self::InvalidAddress(e) => write!(f, "Invalid address: {}", e),
+            Self::InvalidPartition => write!(f, "Invalid partition"),
             Self::InvalidPort => write!(f, "Invalid port"),
+            Self::InvalidRegion => write!(f, "Invalid region"),
         }
     }
 }
