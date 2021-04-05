@@ -4,14 +4,20 @@ use std::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     future::Future,
     io::{self, Error as IOError, Write},
-    net::{SocketAddr},
+    iter::Iterator,
     pin::Pin,
     process::exit,
     sync::Arc,
     task::{Context, Poll},
 };
 
-use aws_sig_verify::{Principal, SignatureError, SigningKeyKind};
+use aws_sig_verify::{GetSigningKeyRequest, Principal, SignatureError, SigningKey, SigningKeyKind };
+use diesel::{
+    QueryDsl,
+    prelude::*,
+    pg::PgConnection,
+    r2d2::{ConnectionManager, Pool},
+};
 use env_logger;
 use getopts::Options;
 use http::{
@@ -20,20 +26,24 @@ use http::{
 };
 use hyper::{
     server::{
-        Builder as HyperBuilder, Server as HyperServer,
-        conn::{AddrStream, Http},
+        Server as HyperServer,
+        conn::AddrStream,
     },
-    service::{Service, make_service_fn, service_fn},
+    service::{Service},
     Body, Error as HyperError, Request, Response,
 };
 use hyper_aws_sig_verify::AwsSigV4VerifierService;
 use log::{debug, error, info};
-use tokio::{net::TcpListener, runtime::Builder as RuntimeBuilder};
-use tokio_rustls::TlsAcceptor;
+use tokio::{net::{TcpListener, TcpStream}, runtime::Builder as RuntimeBuilder};
+use tokio_rustls::{
+    TlsAcceptor, 
+    server::TlsStream
+};
+use tower::BoxError;
 
 mod config;
-use crate::config::{Config, ResolvedConfig};
 mod tls;
+use crate::config::{Config, ResolvedConfig};
 use crate::tls::TlsIncoming;
 
 const DEFAULT_CONFIG_FILENAME: &str = "scratchstack.cfg";
@@ -170,6 +180,8 @@ fn main() {
 async fn run_server_from_config(
     config: ResolvedConfig,
 ) -> Result<(), ServerError> {
+    let pool = Arc::new(config.pool);
+
     match config.tls {
         Some(t) => {
             info!(
@@ -178,22 +190,22 @@ async fn run_server_from_config(
             let acceptor = TlsAcceptor::from(Arc::new(t));
             let tcp_listener = TcpListener::bind(&config.address).await?;
             let incoming = TlsIncoming::new(tcp_listener, acceptor);
-            let http = Http::new();
             info!("Starting Hyper");
-            let hs = HyperServer::bind(&config.address);
+            let service_maker = IAMServiceMaker { pool: pool, partition: config.partition, region: config.region };
+            HyperServer::builder(incoming).serve(service_maker).await?;
             Ok(())
         }
         None => {
-            let service_maker = IAMServiceMaker{};
+            let service_maker = IAMServiceMaker { pool: pool, partition: config.partition, region: config.region };
             info!("Non-TLS configuration detected; starting Hyper");
-            let hs = HyperServer::bind(&config.address).serve(service_maker).await?;
+            HyperServer::bind(&config.address).serve(service_maker).await?;
             Ok(())
         }
     }
 }
 
 #[derive(Debug)]
-enum ServiceError {
+pub enum ServiceError {
     Hyper(HyperError),
     Signature(SignatureError),
     IO(IOError),
@@ -233,39 +245,69 @@ impl Display for ServiceError {
     }
 }
 
-#[derive(Clone, Debug)]
-struct IAMServiceMaker {}
+#[derive(Clone)]
+pub struct IAMServiceMaker {
+    pool: Arc<Pool<ConnectionManager<PgConnection>>>,
+    partition: String,
+    region: String,
+}
 
-impl Service<&'_ AddrStream> for IAMServiceMaker {
-    type Response = AwsSigV4VerifierService<IAMService>;
-    type Error = ServiceError;
-    type Future = Pin<Box<dyn Future<Output=Result<Self::Response, Self::Error>> + Send + Sync + 'static>>;
+type Verifier = AwsSigV4VerifierService<GetSigningKeyFromDatabase, IAMService>;
+
+impl Service<&AddrStream> for IAMServiceMaker {
+    type Response = Verifier;
+    type Error = BoxError;
+    type Future = Pin<Box<dyn Future<Output=Result<Self::Response, Self::Error>> + Send>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, req: &'_ AddrStream) -> Self::Future {
-        Box::pin(async {
-            Ok(AwsSigV4VerifierService::new("local", "iam", IAMService{}))
+    fn call(&mut self, _req: &AddrStream) -> Self::Future {
+        let pool = self.pool.clone();
+        let partition = self.partition.clone();
+        let region = self.region.clone();
+
+        Box::pin(async move {
+            Ok(AwsSigV4VerifierService::new("local", "iam", GetSigningKeyFromDatabase { pool: pool, partition: partition, region: region, service: "iam".to_string() }, IAMService{}))
+        })
+    }
+}
+
+impl Service<&TlsStream<TcpStream>> for IAMServiceMaker {
+    type Response = Verifier;
+    type Error = BoxError;
+    type Future = Pin<Box<dyn Future<Output=Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, _req: &TlsStream<TcpStream>) -> Self::Future {
+        let pool = self.pool.clone();
+        let partition = self.partition.clone();
+        let region = self.region.clone();
+
+        Box::pin(async move {
+            Ok(AwsSigV4VerifierService::new("local", "iam", GetSigningKeyFromDatabase { pool: pool, partition: partition, region: region, service: "iam".to_string() }, IAMService{}))
         })
     }
 }
 
 #[derive(Clone, Debug)]
-struct IAMService {
+pub struct IAMService {
 }
 
 impl Service<Request<Body>> for IAMService {
     type Response = Response<Body>;
-    type Error = Box<dyn Error + Send + Sync + 'static>;
-    type Future = Pin<Box<dyn Future<Output=Result<Response<Body>, Box<dyn Error + Send + Sync + 'static>>> + Send + Sync + 'static>>;
+    type Error = BoxError;
+    type Future = Pin<Box<dyn Future<Output=Result<Self::Response, Self::Error>> + Send>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, req: Request<Body>) -> Self::Future {
+    fn call(&mut self, _req: Request<Body>) -> Self::Future {
         Box::pin(async {
             Ok(
                 Response::builder()
@@ -274,6 +316,69 @@ impl Service<Request<Body>> for IAMService {
                     .body(Body::from("Hello IAM"))
                     .unwrap()
             )
+        })
+    }
+}
+
+#[derive(Clone)]
+pub struct GetSigningKeyFromDatabase {
+    pool: Arc<Pool<ConnectionManager<PgConnection>>>,
+    partition: String,
+    region: String,
+    service: String,
+}
+
+impl Service<GetSigningKeyRequest> for GetSigningKeyFromDatabase {
+    type Response = (Principal, SigningKey);
+    type Error = BoxError;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, _: &mut Context) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: GetSigningKeyRequest) -> Self::Future {
+        let pool = self.pool.clone();
+        let region = self.region.clone();
+        let service = self.region.clone();
+
+        Box::pin(async move {
+            // Access keys are 20 characters (at least) in length.
+            if req.access_key.len() < 20 {
+                return Err(SignatureError::UnknownAccessKey { access_key: req.access_key }.into())
+            }
+
+            let db = pool.get()?;
+
+            // The prefix tells us what kind of key it is.
+            let access_prefix = &req.access_key[..4];
+            match access_prefix {
+                "AKIA" => {
+                    use scratchstack_schema::schema::iam::iam_user_credential;
+                    use scratchstack_schema::schema::iam::iam_user;
+
+                    let results = iam_user_credential::table
+                        .filter(iam_user_credential::columns::access_key_id.eq(&req.access_key[4..]))
+                        .filter(iam_user_credential::columns::active.eq(true))
+                        .inner_join(
+                            iam_user::table.on(
+                                iam_user::columns::user_id.eq(iam_user_credential::columns::user_id)))
+                        .select((iam_user::columns::user_id, iam_user::columns::account_id, iam_user::columns::path,
+                                 iam_user::columns::user_name_cased, iam_user_credential::columns::secret_key))
+                        .load::<(String, String, String, String, String)>(&db)?;
+
+                    if results.len() == 0 {
+                        Err(SignatureError::UnknownAccessKey { access_key: req.access_key }.into())
+                    } else {
+                        let (user_id, account_id, path, user_name, secret_key) = &results[0];
+                        let sk = SigningKey { kind: SigningKeyKind::KSecret, key: secret_key.as_bytes().to_vec() };
+                        let sk = sk.derive(req.signing_key_kind, &req.request_date, &region, &service);
+                        Ok((Principal::user("aws", account_id, path, user_name, user_id)?, sk))
+                    }
+                }
+
+                _ => Err(SignatureError::UnknownAccessKey { access_key: req.access_key }.into()),
+            }
         })
     }
 }

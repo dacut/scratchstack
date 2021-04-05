@@ -1,0 +1,11 @@
+[package]
+name = "scratchstack_schema"
+version = "0.1.0"
+authors = ["David Cuthbert <dacut@kanga.org>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+chrono = "^0.4"
+diesel = { version = "^1.4", features = ["chrono", "postgres", "r2d2"] }
