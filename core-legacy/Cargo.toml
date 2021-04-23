@@ -1,0 +1,12 @@
+[package]
+name = "scratchstack-aws-principal"
+version = "0.1.0"
+authors = ["David Cuthbert <dacut@kanga.org>"]
+edition = "2018"
+
+[features]
+service = []
+
+[dependencies]
+log = "^0.4"
+serde = { version = "1.0", features = [ "derive" ]}
