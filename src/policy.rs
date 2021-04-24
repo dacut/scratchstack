@@ -11,6 +11,7 @@ pub type GroupDetails = details::GroupDetails<()>;
 pub type InstanceProfileDetails = details::InstanceProfileDetails<()>;
 pub type RoleDetails = details::RoleDetails<()>;
 pub type RootUserDetails = details::RootUserDetails;
+#[cfg(feature = "service")]
 pub type ServiceDetails = details::ServiceDetails<()>;
 pub type UserDetails = details::UserDetails<()>;
 

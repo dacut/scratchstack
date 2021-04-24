@@ -1,8 +1,10 @@
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 
 use crate::{
-    validate_identifier, validate_partition, validate_region, PrincipalError,
+    validate_identifier, validate_partition, PrincipalError,
 };
+#[cfg(feature = "service")]
+use crate::validate_region;
 use crate::details;
 
 /// Information about a temporary token.
@@ -22,6 +24,7 @@ pub type GroupDetails = details::GroupDetails<String>;
 pub type InstanceProfileDetails = details::InstanceProfileDetails<String>;
 pub type RoleDetails = details::RoleDetails<String>;
 pub type RootUserDetails = details::RootUserDetails;
+#[cfg(feature = "service")]
 pub type ServiceDetails = details::ServiceDetails<Option<String>>;
 pub type UserDetails = details::UserDetails<String>;
 
