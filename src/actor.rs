@@ -6,6 +6,7 @@ use crate::{
 #[cfg(feature = "service")]
 use crate::validate_region;
 use crate::details;
+use crate::policy::{PolicyPrincipal, PolicyPrincipalDetails};
 
 /// Information about a temporary token.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -324,6 +325,52 @@ impl PrincipalActor {
         })
     }
 
+    #[cfg(feature = "service")]
+    #[doc(cfg(feature = "service"))]
+    /// Return a principal for a service.
+    ///
+    /// # Arguments
+    ///
+    /// * `partition`: The partition being addressed. This must meet the following requirements or a
+    ///     [PrincipalError::InvalidPartition] error will be returned:
+    ///     *   The partition must be composed of ASCII alphanumeric characters or `-`.
+    ///     *   The partition must have between 1 and 32 characters.
+    ///     *   A `-` cannot appear in the first or last position, nor can it appear in two consecutive characters.
+    /// * `region`: The region the service is operating in, or `None` if the service is a global service. If specified,
+    ///     this must be a valid region in one of the following formats:
+    ///     * <code>( <i>name</i> - )+ <i>digit</i>+</code>: e.g., test-10, us-west-2, us-test-site-30
+    ///     * <code>( <i>name</i> - )+ <i>digit</i>+ - ( <i>name</i> - )+ <i>digit</i>+</code>: e.g., us-west-2-lax-1
+    ///     * The literal string `local`.
+    /// * `service_name`: The name of the service. This must meet the following requirements or a
+    ///     [PrincipalError::InvalidServiceName] error will be returned:
+    ///     *   The name must contain between 1 and 32 characters.
+    ///     *   The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
+    ///
+    /// If all of the requirements are met, a [PrincipalActor] with [ServiceDetails] details is returned.  Otherwise, a
+    /// [PrincipalError] error is returned.
+    pub fn service<S1, S2>(
+        partition: S1,
+        service_name: S2,
+        region: Option<String>,
+    ) -> Result<Self, PrincipalError>
+    where
+        S1: Into<String>,
+        S2: Into<String>,
+    {
+        Ok(Self {
+            partition: validate_partition(partition)?,
+            details: PrincipalActorDetails::Service(
+                ServiceDetails::new(
+                    service_name, 
+                    match region {
+                        None => None,
+                        Some(region) => Some(validate_region(region)?),
+                    }
+                )?,
+            )
+        })
+    }
+
     /// Return a principal for a user.
     ///
     /// # Arguments
@@ -372,52 +419,6 @@ impl PrincipalActor {
                 account_id, path, user_name,
                 validate_identifier(user_id, "AIDA").map_err(PrincipalError::InvalidUserId)?,
             )?),
-        })
-    }
-
-    #[cfg(feature = "service")]
-    #[doc(cfg(feature = "service"))]
-    /// Return a principal for a service.
-    ///
-    /// # Arguments
-    ///
-    /// * `partition`: The partition being addressed. This must meet the following requirements or a
-    ///     [PrincipalError::InvalidPartition] error will be returned:
-    ///     *   The partition must be composed of ASCII alphanumeric characters or `-`.
-    ///     *   The partition must have between 1 and 32 characters.
-    ///     *   A `-` cannot appear in the first or last position, nor can it appear in two consecutive characters.
-    /// * `region`: The region the service is operating in, or `None` if the service is a global service. If specified,
-    ///     this must be a valid region in one of the following formats:
-    ///     * <code>( <i>name</i> - )+ <i>digit</i>+</code>: e.g., test-10, us-west-2, us-test-site-30
-    ///     * <code>( <i>name</i> - )+ <i>digit</i>+ - ( <i>name</i> - )+ <i>digit</i>+</code>: e.g., us-west-2-lax-1
-    ///     * The literal string `local`.
-    /// * `service_name`: The name of the service. This must meet the following requirements or a
-    ///     [PrincipalError::InvalidServiceName] error will be returned:
-    ///     *   The name must contain between 1 and 32 characters.
-    ///     *   The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
-    ///
-    /// If all of the requirements are met, a [PrincipalActor] with [ServiceDetails] details is returned.  Otherwise, a
-    /// [PrincipalError] error is returned.
-    pub fn service<S1, S2>(
-        partition: S1,
-        service_name: S2,
-        region: Option<String>,
-    ) -> Result<Self, PrincipalError>
-    where
-        S1: Into<String>,
-        S2: Into<String>,
-    {
-        Ok(Self {
-            partition: validate_partition(partition)?,
-            details: PrincipalActorDetails::Service(
-                ServiceDetails::new(
-                    service_name, 
-                    match region {
-                        None => None,
-                        Some(region) => Some(validate_region(region)?),
-                    }
-                )?,
-            )
         })
     }
 }
@@ -480,80 +481,6 @@ impl Display for PrincipalActor {
     }
 }
 
-// impl FromStr for PrincipalActor {
-//     type Err = PrincipalError;
-
-//     fn from_str(arn: &str) -> Result<Self, Self::Err> {
-//         let parts: Vec<&str> = arn.split(':').collect();
-//         if parts.len() != 6 {
-//             trace!("Expected 6 parts in ARN; got {}: arn={:#?}, parts={:?}", parts.len(), arn, parts);
-//             return Err(PrincipalError::InvalidArn(arn.into()));
-//         }
-
-//         if parts[0] != "arn" {
-//             trace!("ARN does not start with \"arn:\": arn={:#?}, parts={:?}", arn, parts);
-//             return Err(PrincipalError::InvalidArn(arn.into()));
-//         }
-
-//         let partition = parts[1];
-//         let service = parts[2];
-//         if parts[3].is_empty() {
-//             trace!("ARN region (parts[3]) is not empty: arn={:#?}, parts={:?}", arn, parts);
-//             return Err(PrincipalError::InvalidArn(arn.into()));
-//         }
-
-//         let account_id = parts[4];
-//         let resource = parts[5];
-//         if service == "iam" && resource == "root" {
-//             return Self::root_user(partition, account_id);
-//         }
-
-//         let entity_start = match resource.find('/') {
-//             None => {
-//                 trace!("ARN resource (parts[5]) is missing a slash and is not \"root\": arn={:#?}, parts={:?}, resource={:#?}", arn, parts, resource);
-//                 return Err(PrincipalError::InvalidArn);
-//             }
-//             Some(index) => index,
-//         };
-
-//         let (restype, entity) = resource.split_at(entity_start);
-
-//         match (service, restype) {
-//             ("sts", "assumed-role") => {
-//                 // Remove leading '/' from entity
-//                 let entity_parts: Vec<&str> = entity[1..].split('/').collect();
-//                 if entity_parts.len() != 2 {
-//                     trace!("ARN resource (parts[5]) for assumed-role is not in the form assumed-role/role-name/session-name: arn={:#?}, parts={:#?}, resource={:#?}, entity={:#?}", arn, parts, resource, entity);
-//                     return Err(PrincipalError::InvalidArn);
-//                 }
-//                 Self::assumed_role(partition, account_id, entity_parts[0], entity_parts[1])
-//             }
-
-//             ("sts", "federated-user") => {
-//                 // Remove leading '/' from entity
-//                 Self::federated_user(partition, account_id, &entity[1..])
-//             }
-//             ("iam", "instance-profile") | ("iam", "group") |  ("iam", "role") | ("iam", "user") => {
-//                 // Pathed entities.
-//                 let path_end = entity.rfind('/').unwrap(); // Guaranteed to find a match since entity starts with '/'.
-//                 let (path, name) = entity.split_at(path_end);
-
-//                 match restype {
-//                     "instance-profile" => Self::instance_profile(partition, account_id, path, name, None),
-//                     "group" => Self::group(partition, account_id, path, name, None),
-//                     "role" => Self::role(partition, account_id, path, name, None),
-//                     "user" => Self::user(partition, account_id, path, name, None),
-//                     _ => panic!("restype {} cannot be reached!", restype)
-//                 }
-//             }
-//             _ => {
-//                 trace!("ARN does not match a known service/resource combination: arn={:#?}, service={:#?}, restype={:#?}", arn, service, restype);
-//                 Err(PrincipalError::InvalidArn)
-//             }
-//         }
-//     }
-// }
-
 /// Details for specific principal types.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PrincipalActorDetails {
@@ -563,11 +490,11 @@ pub enum PrincipalActorDetails {
     /// Details for a federated user.
     FederatedUser(FederatedUserDetails),
 
-    /// Details for an instance profile.
-    InstanceProfile(InstanceProfileDetails),
-
     /// Details for an IAM group.
     Group(GroupDetails),
+
+    /// Details for an instance profile.
+    InstanceProfile(InstanceProfileDetails),
 
     /// Details for an IAM role.
     Role(RoleDetails),
@@ -582,6 +509,106 @@ pub enum PrincipalActorDetails {
 
     /// Details for an IAM user.
     User(UserDetails),
+}
+
+impl From<PrincipalActor> for PolicyPrincipal {
+    /// Convert the PrincipalActor into a PolicyPrincipal.
+    /// 
+    /// This is a lossy conversion, losing the identifier or token details attached to the actor.
+    fn from(from: PrincipalActor) -> PolicyPrincipal {
+        PolicyPrincipal { partition: from.partition, details: from.details.into(), }
+    }
+}
+
+impl From<PrincipalActorDetails> for PolicyPrincipalDetails {
+    fn from(from: PrincipalActorDetails) -> PolicyPrincipalDetails {
+        match from {
+            PrincipalActorDetails::AssumedRole(d) => PolicyPrincipalDetails::AssumedRole(d.into()),
+            PrincipalActorDetails::FederatedUser(d) => PolicyPrincipalDetails::FederatedUser(d.into()),
+            PrincipalActorDetails::Group(d) => PolicyPrincipalDetails::Group(d.into()),
+            PrincipalActorDetails::InstanceProfile(d) => PolicyPrincipalDetails::InstanceProfile(d.into()),
+            PrincipalActorDetails::Role(d) => PolicyPrincipalDetails::Role(d.into()),
+            PrincipalActorDetails::RootUser(d) => PolicyPrincipalDetails::RootUser(d),
+            #[cfg(feature = "service")]
+            PrincipalActorDetails::Service(d) => PolicyPrincipalDetails::Service(d.into()),
+            PrincipalActorDetails::User(d) => PolicyPrincipalDetails::User(d.into()),
+        }
+    }
+}
+
+impl From<AssumedRoleDetails> for details::AssumedRoleDetails<()> {
+    fn from(from: AssumedRoleDetails) -> details::AssumedRoleDetails<()> {
+        details::AssumedRoleDetails {
+            account_id: from.account_id,
+            role_name: from.role_name,
+            session_name: from.session_name,
+            data: (),
+        }
+    }
+}
+
+impl From<FederatedUserDetails> for details::FederatedUserDetails<()>  {
+    fn from(from: FederatedUserDetails) -> details::FederatedUserDetails<()> {
+        details::FederatedUserDetails {
+            account_id: from.account_id,
+            user_name: from.user_name,
+            data: (),
+        }
+    }
+}
+
+impl From<GroupDetails> for details::GroupDetails<()> {
+    fn from(from: GroupDetails) -> details::GroupDetails<()> {
+        details::GroupDetails {
+            account_id: from.account_id,
+            path: from.path,
+            group_name: from.group_name,
+            data: (),
+        }
+    }
+}
+
+impl From<InstanceProfileDetails> for details::InstanceProfileDetails<()> {
+    fn from(from: InstanceProfileDetails) -> details::InstanceProfileDetails<()> {
+        details::InstanceProfileDetails {
+            account_id: from.account_id,
+            path: from.path,
+            instance_profile_name: from.instance_profile_name,
+            data: (),
+        }
+    }
+}
+
+impl From<RoleDetails> for details::RoleDetails<()> {
+    fn from(from: RoleDetails) -> details::RoleDetails<()> {
+        details::RoleDetails {
+            account_id: from.account_id,
+            path: from.path,
+            role_name: from.role_name,
+            data: (),
+        }
+    }
+}
+
+#[cfg(feature = "service")]
+impl From<ServiceDetails> for details::ServiceDetails<()> {
+    fn from(from: ServiceDetails) -> details::ServiceDetails<()> {
+        details::ServiceDetails {
+            service_name: from.service_name,
+            data: (),
+        }
+    }
+}
+
+impl From<UserDetails> for details::UserDetails<()>{
+    fn from(from: UserDetails) -> details::UserDetails<()> {
+        details::UserDetails {
+            account_id: from.account_id,
+            path: from.path,
+            user_name: from.user_name,
+            data: (),
+        }
+    }
 }
 
 #[cfg(test)]

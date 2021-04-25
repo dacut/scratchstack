@@ -1,4 +1,8 @@
-use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
+use std::{
+    fmt::{Debug, Display, Formatter, Result as FmtResult},
+    str::FromStr,
+};
+use log::trace;
 
 use crate::{
     validate_partition, PrincipalError,
@@ -406,79 +410,79 @@ impl Display for PolicyPrincipal {
     }
 }
 
-// impl FromStr for PolicyPrincipal {
-//     type Err = PrincipalError;
+impl FromStr for PolicyPrincipal {
+    type Err = PrincipalError;
 
-//     fn from_str(arn: &str) -> Result<Self, Self::Err> {
-//         let parts: Vec<&str> = arn.split(':').collect();
-//         if parts.len() != 6 {
-//             trace!("Expected 6 parts in ARN; got {}: arn={:#?}, parts={:?}", parts.len(), arn, parts);
-//             return Err(PrincipalError::InvalidArn(arn.into()));
-//         }
+    fn from_str(arn: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = arn.split(':').collect();
+        if parts.len() != 6 {
+            trace!("Expected 6 parts in ARN; got {}: arn={:#?}, parts={:?}", parts.len(), arn, parts);
+            return Err(PrincipalError::InvalidArn(arn.into()));
+        }
 
-//         if parts[0] != "arn" {
-//             trace!("ARN does not start with \"arn:\": arn={:#?}, parts={:?}", arn, parts);
-//             return Err(PrincipalError::InvalidArn(arn.into()));
-//         }
+        if parts[0] != "arn" {
+            trace!("ARN does not start with \"arn:\": arn={:#?}, parts={:?}", arn, parts);
+            return Err(PrincipalError::InvalidArn(arn.into()));
+        }
 
-//         let partition = parts[1];
-//         let service = parts[2];
-//         if parts[3].is_empty() {
-//             trace!("ARN region (parts[3]) is not empty: arn={:#?}, parts={:?}", arn, parts);
-//             return Err(PrincipalError::InvalidArn(arn.into()));
-//         }
+        let partition = parts[1];
+        let service = parts[2];
+        if parts[3].is_empty() {
+            trace!("ARN region (parts[3]) is not empty: arn={:#?}, parts={:?}", arn, parts);
+            return Err(PrincipalError::InvalidArn(arn.into()));
+        }
 
-//         let account_id = parts[4];
-//         let resource = parts[5];
-//         if service == "iam" && resource == "root" {
-//             return Self::root_user(partition, account_id);
-//         }
+        let account_id = parts[4];
+        let resource = parts[5];
+        if service == "iam" && resource == "root" {
+            return Self::root_user(partition, account_id);
+        }
 
-//         let entity_start = match resource.find('/') {
-//             None => {
-//                 trace!("ARN resource (parts[5]) is missing a slash and is not \"root\": arn={:#?}, parts={:?}, resource={:#?}", arn, parts, resource);
-//                 return Err(PrincipalError::InvalidArn);
-//             }
-//             Some(index) => index,
-//         };
+        let entity_start = match resource.find('/') {
+            None => {
+                trace!("ARN resource (parts[5]) is missing a slash and is not \"root\": arn={:#?}, parts={:?}, resource={:#?}", arn, parts, resource);
+                return Err(PrincipalError::InvalidArn(arn.to_string()));
+            }
+            Some(index) => index,
+        };
 
-//         let (restype, entity) = resource.split_at(entity_start);
+        let (restype, entity) = resource.split_at(entity_start);
 
-//         match (service, restype) {
-//             ("sts", "assumed-role") => {
-//                 // Remove leading '/' from entity
-//                 let entity_parts: Vec<&str> = entity[1..].split('/').collect();
-//                 if entity_parts.len() != 2 {
-//                     trace!("ARN resource (parts[5]) for assumed-role is not in the form assumed-role/role-name/session-name: arn={:#?}, parts={:#?}, resource={:#?}, entity={:#?}", arn, parts, resource, entity);
-//                     return Err(PrincipalError::InvalidArn);
-//                 }
-//                 Self::assumed_role(partition, account_id, entity_parts[0], entity_parts[1])
-//             }
+        match (service, restype) {
+            ("sts", "assumed-role") => {
+                // Remove leading '/' from entity
+                let entity_parts: Vec<&str> = entity[1..].split('/').collect();
+                if entity_parts.len() != 2 {
+                    trace!("ARN resource (parts[5]) for assumed-role is not in the form assumed-role/role-name/session-name: arn={:#?}, parts={:#?}, resource={:#?}, entity={:#?}", arn, parts, resource, entity);
+                    return Err(PrincipalError::InvalidArn(arn.to_string()));
+                }
+                Self::assumed_role(partition, account_id, entity_parts[0], entity_parts[1])
+            }
 
-//             ("sts", "federated-user") => {
-//                 // Remove leading '/' from entity
-//                 Self::federated_user(partition, account_id, &entity[1..])
-//             }
-//             ("iam", "instance-profile") | ("iam", "group") |  ("iam", "role") | ("iam", "user") => {
-//                 // Pathed entities.
-//                 let path_end = entity.rfind('/').unwrap(); // Guaranteed to find a match since entity starts with '/'.
-//                 let (path, name) = entity.split_at(path_end);
+            ("sts", "federated-user") => {
+                // Remove leading '/' from entity
+                Self::federated_user(partition, account_id, &entity[1..])
+            }
+            ("iam", "instance-profile") | ("iam", "group") |  ("iam", "role") | ("iam", "user") => {
+                // Pathed entities.
+                let path_end = entity.rfind('/').unwrap(); // Guaranteed to find a match since entity starts with '/'.
+                let (path, name) = entity.split_at(path_end);
 
-//                 match restype {
-//                     "instance-profile" => Self::instance_profile(partition, account_id, path, name, None),
-//                     "group" => Self::group(partition, account_id, path, name, None),
-//                     "role" => Self::role(partition, account_id, path, name, None),
-//                     "user" => Self::user(partition, account_id, path, name, None),
-//                     _ => panic!("restype {} cannot be reached!", restype)
-//                 }
-//             }
-//             _ => {
-//                 trace!("ARN does not match a known service/resource combination: arn={:#?}, service={:#?}, restype={:#?}", arn, service, restype);
-//                 Err(PrincipalError::InvalidArn)
-//             }
-//         }
-//     }
-// }
+                match restype {
+                    "instance-profile" => Self::instance_profile(partition, account_id, path, name),
+                    "group" => Self::group(partition, account_id, path, name),
+                    "role" => Self::role(partition, account_id, path, name),
+                    "user" => Self::user(partition, account_id, path, name),
+                    _ => panic!("restype {} cannot be reached!", restype)
+                }
+            }
+            _ => {
+                trace!("ARN does not match a known service/resource combination: arn={:#?}, service={:#?}, restype={:#?}", arn, service, restype);
+                Err(PrincipalError::InvalidArn(arn.to_string()))
+            }
+        }
+    }
+}
 
 /// Details for specific principal types.
 #[derive(Clone, Debug, PartialEq, Eq)]
