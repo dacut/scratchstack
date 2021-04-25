@@ -1,7 +1,7 @@
 [package]
 name = "scratchstack-aws-principal"
 description = "Principal types for AWS/AWS-like services"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["David Cuthbert <dacut@kanga.org>"]
 edition = "2018"
 license = "MIT"
