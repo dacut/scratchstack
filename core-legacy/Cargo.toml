@@ -1,7 +1,7 @@
 [package]
 name = "scratchstack-aws-principal"
 description = "Principal types for AWS/AWS-like services"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["David Cuthbert <dacut@kanga.org>"]
 edition = "2018"
 license = "MIT"
@@ -11,3 +11,7 @@ service = []
 
 [dependencies]
 log = "^0.4"
+
+[dev-dependencies]
+env_logger = "^0.8"
+test-env-log = "^0.2"

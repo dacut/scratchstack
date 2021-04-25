@@ -427,7 +427,7 @@ impl FromStr for PolicyPrincipal {
 
         let partition = parts[1];
         let service = parts[2];
-        if parts[3].is_empty() {
+        if !parts[3].is_empty() {
             trace!("ARN region (parts[3]) is not empty: arn={:#?}, parts={:?}", arn, parts);
             return Err(PrincipalError::InvalidArn(arn.into()));
         }
@@ -466,15 +466,22 @@ impl FromStr for PolicyPrincipal {
             ("iam", "instance-profile") | ("iam", "group") |  ("iam", "role") | ("iam", "user") => {
                 // Pathed entities.
                 let path_end = entity.rfind('/').unwrap(); // Guaranteed to find a match since entity starts with '/'.
-                let (path, name) = entity.split_at(path_end);
+                let (path, name) = entity.split_at(path_end + 1);
 
                 match restype {
                     "instance-profile" => Self::instance_profile(partition, account_id, path, name),
                     "group" => Self::group(partition, account_id, path, name),
                     "role" => Self::role(partition, account_id, path, name),
                     "user" => Self::user(partition, account_id, path, name),
-                    _ => panic!("restype {} cannot be reached!", restype)
+                    _ => unreachable!("restype {} cannot be reached!", restype)
                 }
+            }
+            #[cfg(feature = "service")]
+            ("iam", "service") => {
+                if ! account_id.is_empty() && account_id != "amazonaws" {
+                    return Err(PrincipalError::InvalidAccountId(account_id.to_string()));
+                }
+                Self::service(partition, &entity[1..])
             }
             _ => {
                 trace!("ARN does not match a known service/resource combination: arn={:#?}, service={:#?}, restype={:#?}", arn, service, restype);
@@ -516,7 +523,10 @@ pub enum PolicyPrincipalDetails {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
     use super::PolicyPrincipal;
+
+    use test_env_log::test;
 
     #[test]
     fn check_valid_assumed_roles() {
@@ -550,6 +560,9 @@ mod tests {
         let r1c = r1a.clone();
         assert!(r1a == r1c);
 
+        let r1d = PolicyPrincipal::from_str("arn:aws:sts::123456789012:assumed-role/Role_name/session_name").unwrap();
+        assert!(r1a == r1d);
+
         PolicyPrincipal::assumed_role(
             "partition-with-32-characters1234",
             "123456789012",
@@ -557,6 +570,7 @@ mod tests {
             "session_name",
         )
         .unwrap();
+
         PolicyPrincipal::assumed_role(
             "aws",
             "123456789012",
@@ -564,6 +578,7 @@ mod tests {
             "session@1234",
         )
         .unwrap();
+
         PolicyPrincipal::assumed_role(
             "aws",
             "123456789012",
@@ -693,6 +708,7 @@ mod tests {
             f1.to_string(),
             "arn:aws:sts::123456789012:federated-user/user@domain"
         );
+
         assert_eq!(
             PolicyPrincipal::federated_user(
                 "partition-with-32-characters1234",
@@ -703,6 +719,7 @@ mod tests {
             .to_string(),
             "arn:partition-with-32-characters1234:sts::123456789012:federated-user/user@domain"
         );
+
         assert_eq!(
             PolicyPrincipal::federated_user(
                 "aws",
@@ -716,6 +733,9 @@ mod tests {
 
         let f1_clone = f1.clone();
         assert!(f1 == f1_clone);
+
+        let f1_str = PolicyPrincipal::from_str("arn:aws:sts::123456789012:federated-user/user@domain").unwrap();
+        assert_eq!(f1, f1_str);
     }
 
     #[test]
@@ -775,12 +795,12 @@ mod tests {
 
     #[test]
     fn check_valid_groups() {
-        assert_eq!(
-            PolicyPrincipal::group("aws", "123456789012", "/", "group-name",)
-                .unwrap()
-                .to_string(),
-            "arn:aws:iam::123456789012:group/group-name"
-        );
+        let g1 = PolicyPrincipal::group("aws", "123456789012", "/", "group-name").unwrap();
+        assert_eq!(g1.to_string(), "arn:aws:iam::123456789012:group/group-name");
+
+        let g1_str = PolicyPrincipal::from_str("arn:aws:iam::123456789012:group/group-name").unwrap();
+        assert_eq!(g1, g1_str);
+
         assert_eq!(
             PolicyPrincipal::group("aws", "123456789012", "/path/test/", "group-name",)
                 .unwrap()
@@ -850,12 +870,13 @@ mod tests {
 
     #[test]
     fn check_valid_instance_profiles() {
-        assert_eq!(
-            PolicyPrincipal::instance_profile("aws", "123456789012", "/", "instance-profile-name",)
-                .unwrap()
-                .to_string(),
-            "arn:aws:iam::123456789012:instance-profile/instance-profile-name"
-        );
+        let ip1 = PolicyPrincipal::instance_profile("aws", "123456789012", "/", "instance-profile-name").unwrap();
+        assert_eq!(ip1.to_string(), "arn:aws:iam::123456789012:instance-profile/instance-profile-name");
+
+        let ip1_str = PolicyPrincipal::from_str(
+            "arn:aws:iam::123456789012:instance-profile/instance-profile-name").unwrap();
+        assert_eq!(ip1, ip1_str);
+
         assert_eq!(
             PolicyPrincipal::instance_profile(
                 "aws",
@@ -915,12 +936,12 @@ mod tests {
 
     #[test]
     fn check_valid_roles() {
-        assert_eq!(
-            PolicyPrincipal::role("aws", "123456789012", "/", "role-name",)
-                .unwrap()
-                .to_string(),
-            "arn:aws:iam::123456789012:role/role-name"
-        );
+        let r1 = PolicyPrincipal::role("aws", "123456789012", "/", "role-name").unwrap();
+        assert_eq!(r1.to_string(), "arn:aws:iam::123456789012:role/role-name");
+
+        let r1_str = PolicyPrincipal::from_str("arn:aws:iam::123456789012:role/role-name").unwrap();
+        assert_eq!(r1, r1_str);
+
         assert_eq!(
             PolicyPrincipal::role("aws", "123456789012", "/path/test/", "role-name",)
                 .unwrap()
@@ -1006,12 +1027,11 @@ mod tests {
 
     #[test]
     fn check_valid_root_users() {
-        assert_eq!(
-            PolicyPrincipal::root_user("aws", "123456789012")
-                .unwrap()
-                .to_string(),
-            "arn:aws:iam::123456789012:root"
-        );
+        let root = PolicyPrincipal::root_user("aws", "123456789012").unwrap();
+        assert_eq!(root.to_string(), "arn:aws:iam::123456789012:root");
+
+        let root_str = PolicyPrincipal::from_str("arn:aws:iam::123456789012:root").unwrap();
+        assert_eq!(root, root_str);
     }
 
     #[test]
@@ -1032,12 +1052,12 @@ mod tests {
 
     #[test]
     fn check_valid_users() {
-        assert_eq!(
-            PolicyPrincipal::user("aws", "123456789012", "/", "user-name",)
-                .unwrap()
-                .to_string(),
-            "arn:aws:iam::123456789012:user/user-name"
-        );
+        let u1 = PolicyPrincipal::user("aws", "123456789012", "/", "user-name").unwrap();
+        assert_eq!(u1.to_string(), "arn:aws:iam::123456789012:user/user-name");
+
+        let u1_str = PolicyPrincipal::from_str("arn:aws:iam::123456789012:user/user-name").unwrap();
+        assert_eq!(u1, u1_str);
+
         PolicyPrincipal::user("aws", "123456789012", "/path/test/", "user-name").unwrap();
         PolicyPrincipal::user(
             "aws",
@@ -1105,12 +1125,11 @@ mod tests {
 
     #[test]
     fn check_valid_services() {
-        assert_eq!(
-            PolicyPrincipal::service("aws", "service-name")
-                .unwrap()
-                .to_string(),
-            "arn:aws:iam::amazonaws:service/service-name"
-        );
+        let s1 = PolicyPrincipal::service("aws", "service-name").unwrap();
+        assert_eq!(s1.to_string(), "arn:aws:iam::amazonaws:service/service-name");
+
+        let s1_str = PolicyPrincipal::from_str("arn:aws:iam::amazonaws:service/service-name").unwrap();
+        assert_eq!(s1, s1_str);
     }
 
     #[test]
