@@ -5,6 +5,9 @@ version = "0.3.1"
 authors = ["David Cuthbert <dacut@kanga.org>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
+keywords = ["AWS", "IAM", "Aspen", "policy"]
+homepage = "https://github.com/dacut/scratchstack-aws-principal"
+repository = "https://github.com/dacut/scratchstack-aws-principal"
 
 [features]
 service = []
