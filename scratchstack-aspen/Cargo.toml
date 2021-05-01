@@ -5,6 +5,9 @@ version = "0.1.0"
 authors = ["David Cuthbert <dacut@kanga.org>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
+keywords = ["AWS", "IAM", "Aspen", "policy"]
+homepage = "https://github.com/dacut/scratchstack-aspen"
+repository = "https://github.com/dacut/scratchstack-aspen"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
