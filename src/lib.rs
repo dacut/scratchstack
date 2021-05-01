@@ -28,8 +28,8 @@ use std::{
 };
 
 pub mod actor;
-pub mod policy;
 pub mod details;
+pub mod policy;
 pub use actor::PrincipalActor;
 pub use policy::PolicyPrincipal;
 
@@ -104,11 +104,9 @@ impl Display for PrincipalError {
                 write!(f, "Invalid group name: {:#?}", group_name)
             }
             Self::InvalidGroupId(group_id) => write!(f, "Invalid group id: {:#?}", group_id),
-            Self::InvalidInstanceProfileName(instance_profile_name) => write!(
-                f,
-                "Invalid instance profile name: {:#?}",
-                instance_profile_name
-            ),
+            Self::InvalidInstanceProfileName(instance_profile_name) => {
+                write!(f, "Invalid instance profile name: {:#?}", instance_profile_name)
+            }
             Self::InvalidInstanceProfileId(instance_profile_id) => {
                 write!(f, "Invalid instance profile id: {:#?}", instance_profile_id)
             }
@@ -342,9 +340,7 @@ pub fn validate_region<S: Into<String>>(region: S) -> Result<String, PrincipalEr
             }
         } else if c.is_ascii_lowercase() {
             match state {
-                RegionParseState::Start
-                | RegionParseState::LastWasDash
-                | RegionParseState::LastWasAlpha => {
+                RegionParseState::Start | RegionParseState::LastWasDash | RegionParseState::LastWasAlpha => {
                     state = RegionParseState::LastWasAlpha;
                 }
                 _ => {
@@ -382,22 +378,11 @@ mod test {
         validate_region("us-west-2-lax-1").unwrap();
         validate_region("local").unwrap();
 
+        assert_eq!(validate_region("us-").unwrap_err().to_string(), "Invalid region: \"us-\"");
+        assert_eq!(validate_region("us-west").unwrap_err().to_string(), "Invalid region: \"us-west\"");
+        assert_eq!(validate_region("-us-west-2").unwrap_err().to_string(), "Invalid region: \"-us-west-2\"");
         assert_eq!(
-            validate_region("us-").unwrap_err().to_string(),
-            "Invalid region: \"us-\""
-        );
-        assert_eq!(
-            validate_region("us-west").unwrap_err().to_string(),
-            "Invalid region: \"us-west\""
-        );
-        assert_eq!(
-            validate_region("-us-west-2").unwrap_err().to_string(),
-            "Invalid region: \"-us-west-2\""
-        );
-        assert_eq!(
-            validate_region("us-west-2-lax-1-lax-2")
-                .unwrap_err()
-                .to_string(),
+            validate_region("us-west-2-lax-1-lax-2").unwrap_err().to_string(),
             "Invalid region: \"us-west-2-lax-1-lax-2\""
         );
     }

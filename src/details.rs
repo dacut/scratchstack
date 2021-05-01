@@ -1,25 +1,23 @@
 use std::fmt::Debug;
 
-use crate::{
-    validate_account_id, validate_name, validate_path, PrincipalError,
-};
+use crate::{validate_account_id, validate_name, validate_partition, validate_path, PrincipalError};
 
 /// A trait bound/alias for principal flavor-specific data. This is automatically implemented for any type which
 /// matches the required bounds.
 pub trait Data
 where
-    Self: Clone + Debug + PartialEq + Eq + Send + Sized + Sync + 'static
+    Self: Clone + Debug + PartialEq + Eq + Send + Sized + Sync + 'static,
 {
 }
 
-impl<T> Data for T
-    where T: Clone + Debug + PartialEq + Eq + Send + Sized + Sync + 'static
-{
-}
+impl<T> Data for T where T: Clone + Debug + PartialEq + Eq + Send + Sized + Sync + 'static {}
 
 /// Details about an assumed role.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AssumedRoleDetails<T: Data> {
+    /// The partition this principal exists in.
+    pub partition: String,
+
     /// The account id.
     pub account_id: String,
 
@@ -54,26 +52,29 @@ impl<T: Data> AssumedRoleDetails<T> {
     ///
     /// If all of the requirements are met, an [AssumedRoleDetails] object is returned. Otherwise,
     /// a [PrincipalError] error is returned.
-    pub fn new<S1, S2, S3>(
-        account_id: S1,
-        role_name: S2,
-        session_name: S3,
+    pub fn new<S1, S2, S3, S4>(
+        partition: S1,
+        account_id: S2,
+        role_name: S3,
+        session_name: S4,
         data: T,
     ) -> Result<Self, PrincipalError>
     where
         S1: Into<String>,
         S2: Into<String>,
         S3: Into<String>,
+        S4: Into<String>,
     {
+        let partition = validate_partition(partition)?;
         let account_id = validate_account_id(account_id)?;
         let role_name = validate_name(role_name, 64).map_err(PrincipalError::InvalidRoleName)?;
-        let session_name =
-            validate_name(session_name, 64).map_err(PrincipalError::InvalidSessionName)?;
+        let session_name = validate_name(session_name, 64).map_err(PrincipalError::InvalidSessionName)?;
 
         if session_name.len() < 2 {
             Err(PrincipalError::InvalidSessionName(session_name))
         } else {
             Ok(Self {
+                partition,
                 account_id,
                 role_name,
                 session_name,
@@ -86,6 +87,9 @@ impl<T: Data> AssumedRoleDetails<T> {
 /// Details about a federated user.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FederatedUserDetails<T: Data> {
+    /// The partition this principal exists in.
+    pub partition: String,
+
     /// The account id.
     pub account_id: String,
 
@@ -113,23 +117,21 @@ impl<T: Data> FederatedUserDetails<T> {
     ///
     /// If all of the requirements are met, a [FederatedUserDetails] object is returned. Otherwise,
     /// a [PrincipalError] error is returned.
-    pub fn new<S1, S2>(
-        account_id: S1,
-        user_name: S2,
-        data: T
-    ) -> Result<Self, PrincipalError>
+    pub fn new<S1, S2, S3>(partition: S1, account_id: S2, user_name: S3, data: T) -> Result<Self, PrincipalError>
     where
         S1: Into<String>,
         S2: Into<String>,
+        S3: Into<String>,
     {
+        let partition = validate_partition(partition)?;
         let account_id = validate_account_id(account_id)?;
-        let user_name =
-            validate_name(user_name, 32).map_err(PrincipalError::InvalidFederatedUserName)?;
+        let user_name = validate_name(user_name, 32).map_err(PrincipalError::InvalidFederatedUserName)?;
 
         if user_name.len() < 2 {
             Err(PrincipalError::InvalidFederatedUserName(user_name))
         } else {
             Ok(Self {
+                partition,
                 account_id,
                 user_name,
                 data,
@@ -141,6 +143,9 @@ impl<T: Data> FederatedUserDetails<T> {
 /// Details about an IAM group.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GroupDetails<T: Data> {
+    /// The partition this principal exists in.
+    pub partition: String,
+
     /// The account id.
     pub account_id: String,
 
@@ -177,18 +182,21 @@ impl<T: Data> GroupDetails<T> {
     /// # Return value
     /// If all of the requirements are met, a [GroupDetails] object is returned. Otherwise, a [PrincipalError] error
     /// is returned.
-    pub fn new<S1, S2, S3>(
-        account_id: S1,
-        path: S2,
-        group_name: S3,
-        data: T
+    pub fn new<S1, S2, S3, S4>(
+        partition: S1,
+        account_id: S2,
+        path: S3,
+        group_name: S4,
+        data: T,
     ) -> Result<Self, PrincipalError>
     where
         S1: Into<String>,
         S2: Into<String>,
         S3: Into<String>,
+        S4: Into<String>,
     {
         Ok(Self {
+            partition: validate_partition(partition)?,
             account_id: validate_account_id(account_id)?,
             path: validate_path(path)?,
             group_name: validate_name(group_name, 128).map_err(PrincipalError::InvalidGroupName)?,
@@ -200,6 +208,9 @@ impl<T: Data> GroupDetails<T> {
 /// Details about an AWS IAM instance profile.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InstanceProfileDetails<T: Data> {
+    /// The partition this principal exists in.
+    pub partition: String,
+
     /// The account id.
     pub account_id: String,
 
@@ -232,18 +243,21 @@ impl<T: Data> InstanceProfileDetails<T> {
     ///
     /// If all of the requirements are met, an [InstanceProfileDetails] object is returned.
     /// Otherwise, a [PrincipalError] error is returned.
-    pub fn new<S1, S2, S3>(
-        account_id: S1,
-        path: S2,
-        instance_profile_name: S3,
+    pub fn new<S1, S2, S3, S4>(
+        partition: S1,
+        account_id: S2,
+        path: S3,
+        instance_profile_name: S4,
         data: T,
     ) -> Result<Self, PrincipalError>
     where
         S1: Into<String>,
         S2: Into<String>,
         S3: Into<String>,
+        S4: Into<String>,
     {
         Ok(Self {
+            partition: validate_partition(partition)?,
             account_id: validate_account_id(account_id)?,
             path: validate_path(path)?,
             instance_profile_name: validate_name(instance_profile_name, 128)
@@ -256,6 +270,9 @@ impl<T: Data> InstanceProfileDetails<T> {
 /// Details about an AWS IAM role.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RoleDetails<T: Data> {
+    /// The partition this principal exists in.
+    pub partition: String,
+
     /// The account id.
     pub account_id: String,
 
@@ -292,18 +309,21 @@ impl<T: Data> RoleDetails<T> {
     ///
     /// If all of the requirements are met, a [RoleDetails] object is returned. Otherwise, a [PrincipalError] error
     /// is returned.
-    pub fn new<S1, S2, S3>(
-        account_id: S1,
-        path: S2,
-        role_name: S3,
-        data: T
+    pub fn new<S1, S2, S3, S4>(
+        partition: S1,
+        account_id: S2,
+        path: S3,
+        role_name: S4,
+        data: T,
     ) -> Result<Self, PrincipalError>
     where
         S1: Into<String>,
         S2: Into<String>,
         S3: Into<String>,
+        S4: Into<String>,
     {
         Ok(Self {
+            partition: validate_partition(partition)?,
             account_id: validate_account_id(account_id)?,
             path: validate_path(path)?,
             role_name: validate_name(role_name, 64).map_err(PrincipalError::InvalidRoleName)?,
@@ -315,6 +335,9 @@ impl<T: Data> RoleDetails<T> {
 /// Details about an AWS root user.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RootUserDetails {
+    /// The partition this principal exists in. If None, the current partition is assumed.
+    pub partition: Option<String>,
+
     /// The account id.
     pub account_id: String,
 }
@@ -331,12 +354,18 @@ impl RootUserDetails {
     ///
     /// If the requirement is met, a [RootUserDetails] object is returned. Otherwise, a
     /// [PrincipalError] error is returned.
-    pub fn new<S1>(account_id: S1) -> Result<Self, PrincipalError>
+    pub fn new<S1>(partition: Option<String>, account_id: S1) -> Result<Self, PrincipalError>
     where
         S1: Into<String>,
     {
+        let partition = match partition {
+            None => None,
+            Some(partition) => Some(validate_partition(partition)?),
+        };
+        let account_id = validate_account_id(account_id)?;
         Ok(Self {
-            account_id: validate_account_id(account_id)?,
+            partition,
+            account_id,
         })
     }
 }
@@ -346,6 +375,9 @@ impl RootUserDetails {
 #[cfg(feature = "service")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServiceDetails<T: Data> {
+    /// The partition this principal exists in. If None, the current partition is assumed.
+    pub partition: Option<String>,
+
     /// Name of the service.
     pub service_name: String,
 
@@ -368,14 +400,20 @@ impl<T: Data> ServiceDetails<T> {
     ///
     /// If all of the requirements are met, a [ServiceDetails] object is returned.  Otherwise, a [PrincipalError]
     /// error is returned.
-    pub fn new<S>(service_name: S, data: T) -> Result<Self, PrincipalError>
+    pub fn new<S>(partition: Option<String>, service_name: S, data: T) -> Result<Self, PrincipalError>
     where
         S: Into<String>,
     {
+        let partition = match partition {
+            None => None,
+            Some(partition) => Some(validate_partition(partition)?),
+        };
+        let service_name = validate_name(service_name, 32).map_err(PrincipalError::InvalidServiceName)?;
+
         Ok(Self {
-            service_name: validate_name(service_name, 32)
-                .map_err(PrincipalError::InvalidServiceName)?,
-            data
+            partition,
+            service_name,
+            data,
         })
     }
 }
@@ -383,6 +421,9 @@ impl<T: Data> ServiceDetails<T> {
 /// Details about an AWS IAM user.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UserDetails<T: Data> {
+    /// The partition this principal exists in.
+    pub partition: String,
+
     /// The account id.
     pub account_id: String,
 
@@ -419,18 +460,21 @@ impl<T: Data> UserDetails<T> {
     ///
     /// If all of the requirements are met, a [UserDetails] object is returned. Otherwise, a [PrincipalError] error
     /// is returned.
-    pub fn new<S1, S2, S3>(
-        account_id: S1,
-        path: S2,
-        user_name: S3,
-        data: T
+    pub fn new<S1, S2, S3, S4>(
+        partition: S1,
+        account_id: S2,
+        path: S3,
+        user_name: S4,
+        data: T,
     ) -> Result<Self, PrincipalError>
     where
         S1: Into<String>,
         S2: Into<String>,
         S3: Into<String>,
+        S4: Into<String>,
     {
         Ok(Self {
+            partition: validate_partition(partition)?,
             account_id: validate_account_id(account_id)?,
             path: validate_path(path)?,
             user_name: validate_name(user_name, 64).map_err(PrincipalError::InvalidUserName)?,
@@ -438,4 +482,3 @@ impl<T: Data> UserDetails<T> {
         })
     }
 }
-

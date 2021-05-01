@@ -1,13 +1,10 @@
+use log::trace;
 use std::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     str::FromStr,
 };
-use log::trace;
 
-use crate::{
-    validate_partition, PrincipalError,
-};
-use crate::details;
+use crate::{details, PrincipalError};
 
 pub type AssumedRoleDetails = details::AssumedRoleDetails<()>;
 pub type FederatedUserDetails = details::FederatedUserDetails<()>;
@@ -21,12 +18,32 @@ pub type UserDetails = details::UserDetails<()>;
 
 /// An AWS principal referred to in an Aspen policy.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PolicyPrincipal {
-    /// The partition this principal exists in.
-    pub partition: String,
+pub enum PolicyPrincipal {
+    /// Details for an assumed role.
+    AssumedRole(AssumedRoleDetails),
 
-    /// Specific details about the principal.
-    pub details: PolicyPrincipalDetails,
+    /// Details for a federated user.
+    FederatedUser(FederatedUserDetails),
+
+    /// Details for an instance profile.
+    InstanceProfile(InstanceProfileDetails),
+
+    /// Details for an IAM group.
+    Group(GroupDetails),
+
+    /// Details for an IAM role.
+    Role(RoleDetails),
+
+    /// Details for the root user of an account.
+    RootUser(RootUserDetails),
+
+    #[doc(cfg(feature = "service"))]
+    #[cfg(feature = "service")]
+    /// Details for a service.
+    Service(ServiceDetails),
+
+    /// Details for an IAM user.
+    User(UserDetails),
 }
 
 impl PolicyPrincipal {
@@ -66,15 +83,7 @@ impl PolicyPrincipal {
         S3: Into<String>,
         S4: Into<String>,
     {
-        Ok(Self {
-            partition: validate_partition(partition)?,
-            details: PolicyPrincipalDetails::AssumedRole(AssumedRoleDetails::new(
-                account_id,
-                role_name,
-                session_name,
-                ()
-            )?),
-        })
+        Ok(Self::AssumedRole(AssumedRoleDetails::new(partition, account_id, role_name, session_name, ())?))
     }
 
     /// Return a principal for a federated user.
@@ -97,22 +106,13 @@ impl PolicyPrincipal {
     ///
     /// If all of the requirements are met, a [PolicyPrincipal] with [FederatedUserDetails] details is returned. Otherwise,
     /// a [PrincipalError] error is returned.
-    pub fn federated_user<S1, S2, S3>(
-        partition: S1,
-        account_id: S2,
-        user_name: S3,
-    ) -> Result<Self, PrincipalError>
+    pub fn federated_user<S1, S2, S3>(partition: S1, account_id: S2, user_name: S3) -> Result<Self, PrincipalError>
     where
         S1: Into<String>,
         S2: Into<String>,
         S3: Into<String>,
     {
-        Ok(Self {
-            partition: validate_partition(partition)?,
-            details: PolicyPrincipalDetails::FederatedUser(FederatedUserDetails::new(
-                account_id, user_name, (),
-            )?),
-        })
+        Ok(Self::FederatedUser(FederatedUserDetails::new(partition, account_id, user_name, ())?))
     }
 
     /// Return a principal for a group.
@@ -152,12 +152,7 @@ impl PolicyPrincipal {
         S3: Into<String>,
         S4: Into<String>,
     {
-        Ok(Self {
-            partition: validate_partition(partition)?,
-            details: PolicyPrincipalDetails::Group(GroupDetails::new(
-                account_id, path, group_name, (),
-            )?),
-        })
+        Ok(Self::Group(GroupDetails::new(partition, account_id, path, group_name, ())?))
     }
 
     /// Return a principal for an instance profile.
@@ -198,15 +193,7 @@ impl PolicyPrincipal {
         S3: Into<String>,
         S4: Into<String>,
     {
-        Ok(Self {
-            partition: validate_partition(partition)?,
-            details: PolicyPrincipalDetails::InstanceProfile(InstanceProfileDetails::new(
-                account_id,
-                path,
-                instance_profile_name,
-                (),
-            )?),
-        })
+        Ok(Self::InstanceProfile(InstanceProfileDetails::new(partition, account_id, path, instance_profile_name, ())?))
     }
 
     /// Return a principal for a role.
@@ -235,22 +222,14 @@ impl PolicyPrincipal {
     ///
     /// If all of the requirements are met, a [PolicyPrincipal] with [RoleDetails] details is returned. Otherwise, a
     /// [PrincipalError] error is returned.
-    pub fn role<S1, S2, S3, S4>(
-        partition: S1,
-        account_id: S2,
-        path: S3,
-        role_name: S4,
-    ) -> Result<Self, PrincipalError>
+    pub fn role<S1, S2, S3, S4>(partition: S1, account_id: S2, path: S3, role_name: S4) -> Result<Self, PrincipalError>
     where
         S1: Into<String>,
         S2: Into<String>,
         S3: Into<String>,
         S4: Into<String>,
     {
-        Ok(Self {
-            partition: validate_partition(partition)?,
-            details: PolicyPrincipalDetails::Role(RoleDetails::new(account_id, path, role_name, ())?),
-        })
+        Ok(Self::Role(RoleDetails::new(partition, account_id, path, role_name, ())?))
     }
 
     /// Return a principal for the root user of an account.
@@ -269,15 +248,11 @@ impl PolicyPrincipal {
     ///
     /// If all of the requirements are met, a [PolicyPrincipal] with [RootUserDetails] details is returned. Otherwise, a
     /// [PrincipalError] error is returned.
-    pub fn root_user<S1, S2>(partition: S1, account_id: S2) -> Result<Self, PrincipalError>
+    pub fn root_user<S1>(partition: Option<String>, account_id: S1) -> Result<Self, PrincipalError>
     where
         S1: Into<String>,
-        S2: Into<String>,
     {
-        Ok(Self {
-            partition: validate_partition(partition)?,
-            details: PolicyPrincipalDetails::RootUser(RootUserDetails::new(account_id)?),
-        })
+        Ok(Self::RootUser(RootUserDetails::new(partition, account_id)?))
     }
 
     /// Return a principal for a user.
@@ -306,22 +281,14 @@ impl PolicyPrincipal {
     ///
     /// If all of the requirements are met, a [PolicyPrincipal] with [UserDetails] details is returned. Otherwise, a
     /// [PrincipalError] error is returned.
-    pub fn user<S1, S2, S3, S4>(
-        partition: S1,
-        account_id: S2,
-        path: S3,
-        user_name: S4,
-    ) -> Result<Self, PrincipalError>
+    pub fn user<S1, S2, S3, S4>(partition: S1, account_id: S2, path: S3, user_name: S4) -> Result<Self, PrincipalError>
     where
         S1: Into<String>,
         S2: Into<String>,
         S3: Into<String>,
         S4: Into<String>,
     {
-        Ok(Self {
-            partition: validate_partition(partition)?,
-            details: PolicyPrincipalDetails::User(UserDetails::new(account_id, path, user_name, ())?),
-        })
+        Ok(Self::User(UserDetails::new(partition, account_id, path, user_name, ())?))
     }
 
     #[cfg(feature = "service")]
@@ -342,70 +309,43 @@ impl PolicyPrincipal {
     ///
     /// If all of the requirements are met, a [PolicyPrincipal] with [ServiceDetails] details is returned.  Otherwise, a
     /// [PrincipalError] error is returned.
-    pub fn service<S1, S2>(partition: S1, service_name: S2) -> Result<Self, PrincipalError>
+    pub fn service<S1>(partition: Option<String>, service_name: S1) -> Result<Self, PrincipalError>
     where
         S1: Into<String>,
-        S2: Into<String>,
     {
-        Ok(Self {
-            partition: validate_partition(partition)?,
-            details: PolicyPrincipalDetails::Service(ServiceDetails::new(service_name, ())?),
-        })
+        Ok(Self::Service(ServiceDetails::new(partition, service_name, ())?))
     }
 }
 
 impl Display for PolicyPrincipal {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        match &self.details {
-            PolicyPrincipalDetails::AssumedRole(ref d) => write!(
+        match self {
+            PolicyPrincipal::AssumedRole(ref d) => {
+                write!(f, "arn:{}:sts::{}:assumed-role/{}/{}", d.partition, d.account_id, d.role_name, d.session_name)
+            }
+            PolicyPrincipal::FederatedUser(ref d) => {
+                write!(f, "arn:{}:sts::{}:federated-user/{}", d.partition, d.account_id, d.user_name)
+            }
+            PolicyPrincipal::InstanceProfile(ref d) => write!(
                 f,
-                "arn:{}:sts::{}:assumed-role/{}/{}",
-                self.partition, d.account_id, d.role_name, d.session_name
+                "arn:{}:iam::{}:instance-profile{}{}",
+                d.partition, d.account_id, d.path, d.instance_profile_name
             ),
-            PolicyPrincipalDetails::FederatedUser(ref d) => write!(
-                f,
-                "arn:{}:sts::{}:federated-user/{}",
-                self.partition, d.account_id, d.user_name,
-            ),
-            PolicyPrincipalDetails::InstanceProfile(ref d) => {
-                write!(
-                    f,
-                    "arn:{}:iam::{}:instance-profile{}{}",
-                    self.partition, d.account_id, d.path, d.instance_profile_name
-                )
+            PolicyPrincipal::Group(ref d) => {
+                write!(f, "arn:{}:iam::{}:group{}{}", d.partition, d.account_id, d.path, d.group_name)
             }
-            PolicyPrincipalDetails::Group(ref d) => {
-                write!(
-                    f,
-                    "arn:{}:iam::{}:group{}{}",
-                    self.partition, d.account_id, d.path, d.group_name
-                )
+            PolicyPrincipal::Role(ref d) => {
+                write!(f, "arn:{}:iam::{}:role{}{}", d.partition, d.account_id, d.path, d.role_name)
             }
-            PolicyPrincipalDetails::Role(ref d) => {
-                write!(
-                    f,
-                    "arn:{}:iam::{}:role{}{}",
-                    self.partition, d.account_id, d.path, d.role_name
-                )
-            }
-            PolicyPrincipalDetails::RootUser(ref d) => {
-                write!(f, "arn:{}:iam::{}:root", self.partition, d.account_id)
-            }
-            PolicyPrincipalDetails::User(ref d) => {
-                write!(
-                    f,
-                    "arn:{}:iam::{}:user{}{}",
-                    self.partition, d.account_id, d.path, d.user_name
-                )
+            PolicyPrincipal::RootUser(ref d) => match &d.partition {
+                None => write!(f, "{}", d.account_id),
+                Some(partition) => write!(f, "arn:{}:iam::{}:root", partition, d.account_id),
+            },
+            PolicyPrincipal::User(ref d) => {
+                write!(f, "arn:{}:iam::{}:user{}{}", d.partition, d.account_id, d.path, d.user_name)
             }
             #[cfg(feature = "service")]
-            PolicyPrincipalDetails::Service(s) => {
-                write!(
-                    f,
-                    "arn:{}:iam::amazonaws:service/{}",
-                    self.partition, s.service_name
-                )
-            }
+            PolicyPrincipal::Service(s) => write!(f, "{}", s.service_name),
         }
     }
 }
@@ -435,7 +375,7 @@ impl FromStr for PolicyPrincipal {
         let account_id = parts[4];
         let resource = parts[5];
         if service == "iam" && resource == "root" {
-            return Self::root_user(partition, account_id);
+            return Self::root_user(Some(partition.to_string()), account_id);
         }
 
         let entity_start = match resource.find('/') {
@@ -463,7 +403,7 @@ impl FromStr for PolicyPrincipal {
                 // Remove leading '/' from entity
                 Self::federated_user(partition, account_id, &entity[1..])
             }
-            ("iam", "instance-profile") | ("iam", "group") |  ("iam", "role") | ("iam", "user") => {
+            ("iam", "instance-profile") | ("iam", "group") | ("iam", "role") | ("iam", "user") => {
                 // Pathed entities.
                 let path_end = entity.rfind('/').unwrap(); // Guaranteed to find a match since entity starts with '/'.
                 let (path, name) = entity.split_at(path_end + 1);
@@ -473,67 +413,40 @@ impl FromStr for PolicyPrincipal {
                     "group" => Self::group(partition, account_id, path, name),
                     "role" => Self::role(partition, account_id, path, name),
                     "user" => Self::user(partition, account_id, path, name),
-                    _ => unreachable!("restype {} cannot be reached!", restype)
+                    _ => unreachable!("restype {} cannot be reached!", restype),
                 }
             }
             #[cfg(feature = "service")]
             ("iam", "service") => {
-                if ! account_id.is_empty() && account_id != "amazonaws" {
+                if !account_id.is_empty() && account_id != "amazonaws" {
                     return Err(PrincipalError::InvalidAccountId(account_id.to_string()));
                 }
-                Self::service(partition, &entity[1..])
+                Self::service(Some(partition.to_string()), &entity[1..])
             }
             _ => {
-                trace!("ARN does not match a known service/resource combination: arn={:#?}, service={:#?}, restype={:#?}", arn, service, restype);
+                trace!(
+                    "ARN does not match a known service/resource combination: arn={:#?}, service={:#?}, restype={:#?}",
+                    arn,
+                    service,
+                    restype
+                );
                 Err(PrincipalError::InvalidArn(arn.to_string()))
             }
         }
     }
 }
 
-/// Details for specific principal types.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PolicyPrincipalDetails {
-    /// Details for an assumed role.
-    AssumedRole(AssumedRoleDetails),
-
-    /// Details for a federated user.
-    FederatedUser(FederatedUserDetails),
-
-    /// Details for an instance profile.
-    InstanceProfile(InstanceProfileDetails),
-
-    /// Details for an IAM group.
-    Group(GroupDetails),
-
-    /// Details for an IAM role.
-    Role(RoleDetails),
-
-    /// Details for the root user of an account.
-    RootUser(RootUserDetails),
-
-    #[doc(cfg(feature = "service"))]
-    #[cfg(feature = "service")]
-    /// Details for a service.
-    Service(ServiceDetails),
-
-    /// Details for an IAM user.
-    User(UserDetails),
-}
-
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
     use super::PolicyPrincipal;
+    use std::str::FromStr;
 
     use test_env_log::test;
 
     #[test]
     fn check_valid_assumed_roles() {
-        let r1a = PolicyPrincipal::assumed_role("aws", "123456789012", "Role_name", "session_name")
-            .unwrap();
-        let r1b = PolicyPrincipal::assumed_role("aws", "123456789012", "Role_name", "session_name")
-            .unwrap();
+        let r1a = PolicyPrincipal::assumed_role("aws", "123456789012", "Role_name", "session_name").unwrap();
+        let r1b = PolicyPrincipal::assumed_role("aws", "123456789012", "Role_name", "session_name").unwrap();
         let r2 = PolicyPrincipal::assumed_role(
             "a-very-long-partition1",
             "123456789012",
@@ -545,14 +458,8 @@ mod tests {
         assert!(r1a == r1b);
         assert!(r1a != r2);
 
-        assert_eq!(
-            r1a.to_string(),
-            "arn:aws:sts::123456789012:assumed-role/Role_name/session_name"
-        );
-        assert_eq!(
-            r1b.to_string(),
-            "arn:aws:sts::123456789012:assumed-role/Role_name/session_name"
-        );
+        assert_eq!(r1a.to_string(), "arn:aws:sts::123456789012:assumed-role/Role_name/session_name");
+        assert_eq!(r1b.to_string(), "arn:aws:sts::123456789012:assumed-role/Role_name/session_name");
         assert_eq!(
             r2.to_string(),
             "arn:a-very-long-partition1:sts::123456789012:assumed-role/Role@Foo=bar,baz_=world-1234/Session@1234,_=-,.OK");
@@ -563,13 +470,8 @@ mod tests {
         let r1d = PolicyPrincipal::from_str("arn:aws:sts::123456789012:assumed-role/Role_name/session_name").unwrap();
         assert!(r1a == r1d);
 
-        PolicyPrincipal::assumed_role(
-            "partition-with-32-characters1234",
-            "123456789012",
-            "role-name",
-            "session_name",
-        )
-        .unwrap();
+        PolicyPrincipal::assumed_role("partition-with-32-characters1234", "123456789012", "role-name", "session_name")
+            .unwrap();
 
         PolicyPrincipal::assumed_role(
             "aws",
@@ -591,33 +493,23 @@ mod tests {
     #[test]
     fn check_invalid_assumed_roles() {
         assert_eq!(
-            PolicyPrincipal::assumed_role("", "123456789012", "role-name", "session-name")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::assumed_role("", "123456789012", "role-name", "session-name").unwrap_err().to_string(),
             "Invalid partition: \"\""
         );
         assert_eq!(
-            PolicyPrincipal::assumed_role("aws", "", "role-name", "session-name")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::assumed_role("aws", "", "role-name", "session-name").unwrap_err().to_string(),
             "Invalid account id: \"\""
         );
         assert_eq!(
-            PolicyPrincipal::assumed_role("aws", "123456789012", "", "session-name")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::assumed_role("aws", "123456789012", "", "session-name").unwrap_err().to_string(),
             "Invalid role name: \"\""
         );
         assert_eq!(
-            PolicyPrincipal::assumed_role("aws", "123456789012", "role-name", "")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::assumed_role("aws", "123456789012", "role-name", "").unwrap_err().to_string(),
             "Invalid session name: \"\""
         );
         assert_eq!(
-            PolicyPrincipal::assumed_role("aws", "123456789012", "role-name", "s")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::assumed_role("aws", "123456789012", "role-name", "s").unwrap_err().to_string(),
             "Invalid session name: \"s\""
         );
 
@@ -676,27 +568,19 @@ mod tests {
             "Invalid partition: \"aws--us\""
         );
         assert_eq!(
-            PolicyPrincipal::assumed_role("aw!", "123456789012", "role-name", "session-name",)
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::assumed_role("aw!", "123456789012", "role-name", "session-name",).unwrap_err().to_string(),
             "Invalid partition: \"aw!\""
         );
         assert_eq!(
-            PolicyPrincipal::assumed_role("aws", "a23456789012", "role-name", "session-name",)
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::assumed_role("aws", "a23456789012", "role-name", "session-name",).unwrap_err().to_string(),
             "Invalid account id: \"a23456789012\""
         );
         assert_eq!(
-            PolicyPrincipal::assumed_role("aws", "123456789012", "role+name", "session-name",)
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::assumed_role("aws", "123456789012", "role+name", "session-name",).unwrap_err().to_string(),
             "Invalid role name: \"role+name\""
         );
         assert_eq!(
-            PolicyPrincipal::assumed_role("aws", "123456789012", "role-name", "session+name",)
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::assumed_role("aws", "123456789012", "role-name", "session+name",).unwrap_err().to_string(),
             "Invalid session name: \"session+name\""
         );
     }
@@ -704,30 +588,19 @@ mod tests {
     #[test]
     fn check_valid_federated_users() {
         let f1 = PolicyPrincipal::federated_user("aws", "123456789012", "user@domain").unwrap();
-        assert_eq!(
-            f1.to_string(),
-            "arn:aws:sts::123456789012:federated-user/user@domain"
-        );
+        assert_eq!(f1.to_string(), "arn:aws:sts::123456789012:federated-user/user@domain");
 
         assert_eq!(
-            PolicyPrincipal::federated_user(
-                "partition-with-32-characters1234",
-                "123456789012",
-                "user@domain",
-            )
-            .unwrap()
-            .to_string(),
+            PolicyPrincipal::federated_user("partition-with-32-characters1234", "123456789012", "user@domain",)
+                .unwrap()
+                .to_string(),
             "arn:partition-with-32-characters1234:sts::123456789012:federated-user/user@domain"
         );
 
         assert_eq!(
-            PolicyPrincipal::federated_user(
-                "aws",
-                "123456789012",
-                "user@domain-with-32-characters==",
-            )
-            .unwrap()
-            .to_string(),
+            PolicyPrincipal::federated_user("aws", "123456789012", "user@domain-with-32-characters==",)
+                .unwrap()
+                .to_string(),
             "arn:aws:sts::123456789012:federated-user/user@domain-with-32-characters=="
         );
 
@@ -741,54 +614,36 @@ mod tests {
     #[test]
     fn check_invalid_federated_users() {
         assert_eq!(
-            PolicyPrincipal::federated_user("", "123456789012", "user@domain")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::federated_user("", "123456789012", "user@domain").unwrap_err().to_string(),
             "Invalid partition: \"\""
         );
         assert_eq!(
-            PolicyPrincipal::federated_user("aws", "", "user@domain")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::federated_user("aws", "", "user@domain").unwrap_err().to_string(),
             "Invalid account id: \"\""
         );
         assert_eq!(
-            PolicyPrincipal::federated_user("aws", "123456789012", "")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::federated_user("aws", "123456789012", "").unwrap_err().to_string(),
             "Invalid federated user name: \"\""
         );
         assert_eq!(
-            PolicyPrincipal::federated_user("aws", "123456789012", "u")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::federated_user("aws", "123456789012", "u").unwrap_err().to_string(),
             "Invalid federated user name: \"u\""
         );
 
         assert_eq!(
-            PolicyPrincipal::federated_user(
-                "partition-with-33-characters12345",
-                "123456789012",
-                "user@domain",
-            )
-            .unwrap_err()
-            .to_string(),
+            PolicyPrincipal::federated_user("partition-with-33-characters12345", "123456789012", "user@domain",)
+                .unwrap_err()
+                .to_string(),
             "Invalid partition: \"partition-with-33-characters12345\""
         );
         assert_eq!(
-            PolicyPrincipal::federated_user("aws", "1234567890123", "user@domain")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::federated_user("aws", "1234567890123", "user@domain").unwrap_err().to_string(),
             "Invalid account id: \"1234567890123\""
         );
         assert_eq!(
-            PolicyPrincipal::federated_user(
-                "aws",
-                "123456789012",
-                "user@domain-with-33-characters===",
-            )
-            .unwrap_err()
-            .to_string(),
+            PolicyPrincipal::federated_user("aws", "123456789012", "user@domain-with-33-characters===",)
+                .unwrap_err()
+                .to_string(),
             "Invalid federated user name: \"user@domain-with-33-characters===\""
         );
     }
@@ -802,20 +657,13 @@ mod tests {
         assert_eq!(g1, g1_str);
 
         assert_eq!(
-            PolicyPrincipal::group("aws", "123456789012", "/path/test/", "group-name",)
-                .unwrap()
-                .to_string(),
+            PolicyPrincipal::group("aws", "123456789012", "/path/test/", "group-name",).unwrap().to_string(),
             "arn:aws:iam::123456789012:group/path/test/group-name"
         );
         assert_eq!(
-            PolicyPrincipal::group(
-                "aws",
-                "123456789012",
-                "/path///multi-slash/test/",
-                "group-name",
-            )
-            .unwrap()
-            .to_string(),
+            PolicyPrincipal::group("aws", "123456789012", "/path///multi-slash/test/", "group-name",)
+                .unwrap()
+                .to_string(),
             "arn:aws:iam::123456789012:group/path///multi-slash/test/group-name"
         );
         assert_eq!(
@@ -829,9 +677,7 @@ mod tests {
                 ).unwrap().to_string(),
             "arn:aws:iam::123456789012:group/group-name-with-128-characters==================================================================================================");
         assert_eq!(
-            PolicyPrincipal::group("aws", "123456789012", "/", "group-name")
-                .unwrap()
-                .to_string(),
+            PolicyPrincipal::group("aws", "123456789012", "/", "group-name").unwrap().to_string(),
             "arn:aws:iam::123456789012:group/group-name"
         );
     }
@@ -842,28 +688,20 @@ mod tests {
         PolicyPrincipal::group("aws", "", "/", "group-name").unwrap_err();
         PolicyPrincipal::group("aws", "123456789012", "", "group-name").unwrap_err();
         assert_eq!(
-            PolicyPrincipal::group("aws", "123456789012", "/", "")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::group("aws", "123456789012", "/", "").unwrap_err().to_string(),
             "Invalid group name: \"\""
         );
 
         assert_eq!(
-            PolicyPrincipal::group("aws", "123456789012", "path/test/", "group-name",)
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::group("aws", "123456789012", "path/test/", "group-name",).unwrap_err().to_string(),
             "Invalid path: \"path/test/\""
         );
         assert_eq!(
-            PolicyPrincipal::group("aws", "123456789012", "/path/test", "group-name",)
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::group("aws", "123456789012", "/path/test", "group-name",).unwrap_err().to_string(),
             "Invalid path: \"/path/test\""
         );
         assert_eq!(
-            PolicyPrincipal::group("aws", "123456789012", "/path test/", "group-name",)
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::group("aws", "123456789012", "/path test/", "group-name",).unwrap_err().to_string(),
             "Invalid path: \"/path test/\""
         );
     }
@@ -873,25 +711,27 @@ mod tests {
         let ip1 = PolicyPrincipal::instance_profile("aws", "123456789012", "/", "instance-profile-name").unwrap();
         assert_eq!(ip1.to_string(), "arn:aws:iam::123456789012:instance-profile/instance-profile-name");
 
-        let ip1_str = PolicyPrincipal::from_str(
-            "arn:aws:iam::123456789012:instance-profile/instance-profile-name").unwrap();
+        let ip1_str =
+            PolicyPrincipal::from_str("arn:aws:iam::123456789012:instance-profile/instance-profile-name").unwrap();
         assert_eq!(ip1, ip1_str);
 
         assert_eq!(
-            PolicyPrincipal::instance_profile(
-                "aws",
-                "123456789012",
-                "/path/test/",
-                "instance-profile-name",
-            )
-            .unwrap()
-            .to_string(),
+            PolicyPrincipal::instance_profile("aws", "123456789012", "/path/test/", "instance-profile-name",)
+                .unwrap()
+                .to_string(),
             "arn:aws:iam::123456789012:instance-profile/path/test/instance-profile-name"
         );
         assert_eq!(
             PolicyPrincipal::instance_profile(
-                "aws", "123456789012", "/path///multi-slash/test/", "instance-profile-name").unwrap().to_string(),
-            "arn:aws:iam::123456789012:instance-profile/path///multi-slash/test/instance-profile-name");
+                "aws",
+                "123456789012",
+                "/path///multi-slash/test/",
+                "instance-profile-name"
+            )
+            .unwrap()
+            .to_string(),
+            "arn:aws:iam::123456789012:instance-profile/path///multi-slash/test/instance-profile-name"
+        );
         assert_eq!(
             PolicyPrincipal::instance_profile(
                 "aws", "123456789012",
@@ -902,8 +742,7 @@ mod tests {
             PolicyPrincipal::instance_profile("aws", "123456789012", "/", "instance-profile-name-with-128-characters======================================================================================="
             ).unwrap().to_string(),
             "arn:aws:iam::123456789012:instance-profile/instance-profile-name-with-128-characters=======================================================================================");
-        PolicyPrincipal::instance_profile("aws", "123456789012", "/", "instance-profile-name")
-            .unwrap();
+        PolicyPrincipal::instance_profile("aws", "123456789012", "/", "instance-profile-name").unwrap();
     }
 
     #[test]
@@ -915,9 +754,7 @@ mod tests {
             "Invalid partition: \"\""
         );
         assert_eq!(
-            PolicyPrincipal::instance_profile("aws", "", "/", "instance-profile-name",)
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::instance_profile("aws", "", "/", "instance-profile-name",).unwrap_err().to_string(),
             "Invalid account id: \"\""
         );
         assert_eq!(
@@ -927,9 +764,7 @@ mod tests {
             "Invalid path: \"\""
         );
         assert_eq!(
-            PolicyPrincipal::instance_profile("aws", "123456789012", "/", "",)
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::instance_profile("aws", "123456789012", "/", "",).unwrap_err().to_string(),
             "Invalid instance profile name: \"\""
         );
     }
@@ -943,20 +778,13 @@ mod tests {
         assert_eq!(r1, r1_str);
 
         assert_eq!(
-            PolicyPrincipal::role("aws", "123456789012", "/path/test/", "role-name",)
-                .unwrap()
-                .to_string(),
+            PolicyPrincipal::role("aws", "123456789012", "/path/test/", "role-name",).unwrap().to_string(),
             "arn:aws:iam::123456789012:role/path/test/role-name"
         );
         assert_eq!(
-            PolicyPrincipal::role(
-                "aws",
-                "123456789012",
-                "/path///multi-slash/test/",
-                "role-name",
-            )
-            .unwrap()
-            .to_string(),
+            PolicyPrincipal::role("aws", "123456789012", "/path///multi-slash/test/", "role-name",)
+                .unwrap()
+                .to_string(),
             "arn:aws:iam::123456789012:role/path///multi-slash/test/role-name"
         );
         assert_eq!(
@@ -967,8 +795,13 @@ mod tests {
             "arn:aws:iam::123456789012:role/!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~/role-name");
         assert_eq!(
             PolicyPrincipal::role(
-                "aws", "123456789012", "/", "role-name-with-64-characters===================================="
-                ).unwrap().to_string(),
+                "aws",
+                "123456789012",
+                "/",
+                "role-name-with-64-characters===================================="
+            )
+            .unwrap()
+            .to_string(),
             "arn:aws:iam::123456789012:role/role-name-with-64-characters===================================="
         );
         PolicyPrincipal::role("aws", "123456789012", "/", "role-name").unwrap();
@@ -977,57 +810,49 @@ mod tests {
     #[test]
     fn check_invalid_roles() {
         assert_eq!(
-            PolicyPrincipal::role("", "123456789012", "/", "role-name")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::role("", "123456789012", "/", "role-name").unwrap_err().to_string(),
             "Invalid partition: \"\""
         );
         assert_eq!(
-            PolicyPrincipal::role("aws", "", "/", "role-name")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::role("aws", "", "/", "role-name").unwrap_err().to_string(),
             "Invalid account id: \"\""
         );
         assert_eq!(
-            PolicyPrincipal::role("aws", "123456789012", "", "role-name",)
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::role("aws", "123456789012", "", "role-name",).unwrap_err().to_string(),
             "Invalid path: \"\""
         );
         assert_eq!(
-            PolicyPrincipal::role("aws", "123456789012", "/", "")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::role("aws", "123456789012", "/", "").unwrap_err().to_string(),
             "Invalid role name: \"\""
         );
         assert_eq!(
-            PolicyPrincipal::role("aws", "123456789012", "path/test/", "role-name",)
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::role("aws", "123456789012", "path/test/", "role-name",).unwrap_err().to_string(),
             "Invalid path: \"path/test/\""
         );
         assert_eq!(
-            PolicyPrincipal::role("aws", "123456789012", "/path/test", "role-name",)
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::role("aws", "123456789012", "/path/test", "role-name",).unwrap_err().to_string(),
             "Invalid path: \"/path/test\""
         );
         assert_eq!(
-            PolicyPrincipal::role("aws", "123456789012", "/path test/", "role-name",)
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::role("aws", "123456789012", "/path test/", "role-name",).unwrap_err().to_string(),
             "Invalid path: \"/path test/\""
         );
         assert_eq!(
             PolicyPrincipal::role(
-                "aws", "123456789012", "/", "role-name-with-65-characters====================================="
-                ).unwrap_err().to_string(),
-            "Invalid role name: \"role-name-with-65-characters=====================================\"");
+                "aws",
+                "123456789012",
+                "/",
+                "role-name-with-65-characters====================================="
+            )
+            .unwrap_err()
+            .to_string(),
+            "Invalid role name: \"role-name-with-65-characters=====================================\""
+        );
     }
 
     #[test]
     fn check_valid_root_users() {
-        let root = PolicyPrincipal::root_user("aws", "123456789012").unwrap();
+        let root = PolicyPrincipal::root_user(Some("aws".to_string()), "123456789012").unwrap();
         assert_eq!(root.to_string(), "arn:aws:iam::123456789012:root");
 
         let root_str = PolicyPrincipal::from_str("arn:aws:iam::123456789012:root").unwrap();
@@ -1037,15 +862,11 @@ mod tests {
     #[test]
     fn check_invalid_root_users() {
         assert_eq!(
-            PolicyPrincipal::root_user("", "123456789012")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::root_user(Some("".to_string()), "123456789012").unwrap_err().to_string(),
             "Invalid partition: \"\""
         );
         assert_eq!(
-            PolicyPrincipal::root_user("aws", "")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::root_user(Some("aws".to_string()), "").unwrap_err().to_string(),
             "Invalid account id: \"\""
         );
     }
@@ -1059,14 +880,14 @@ mod tests {
         assert_eq!(u1, u1_str);
 
         PolicyPrincipal::user("aws", "123456789012", "/path/test/", "user-name").unwrap();
+        PolicyPrincipal::user("aws", "123456789012", "/path///multi-slash/test/", "user-name").unwrap();
         PolicyPrincipal::user(
             "aws",
             "123456789012",
-            "/path///multi-slash/test/",
+            "/!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~/",
             "user-name",
         )
         .unwrap();
-        PolicyPrincipal::user("aws", "123456789012", "/!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~/", "user-name").unwrap();
         PolicyPrincipal::user(
             "aws",
             "123456789012",
@@ -1080,53 +901,39 @@ mod tests {
     #[test]
     fn check_invalid_users() {
         assert_eq!(
-            PolicyPrincipal::user("", "123456789012", "/", "user-name")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::user("", "123456789012", "/", "user-name").unwrap_err().to_string(),
             "Invalid partition: \"\""
         );
         assert_eq!(
-            PolicyPrincipal::user("aws", "", "/", "user-name")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::user("aws", "", "/", "user-name").unwrap_err().to_string(),
             "Invalid account id: \"\""
         );
         assert_eq!(
-            PolicyPrincipal::user("aws", "123456789012", "", "user-name",)
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::user("aws", "123456789012", "", "user-name",).unwrap_err().to_string(),
             "Invalid path: \"\""
         );
         assert_eq!(
-            PolicyPrincipal::user("aws", "123456789012", "/", "")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::user("aws", "123456789012", "/", "").unwrap_err().to_string(),
             "Invalid user name: \"\""
         );
         assert_eq!(
-            PolicyPrincipal::user("aws", "123456789012", "path/test/", "user-name",)
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::user("aws", "123456789012", "path/test/", "user-name",).unwrap_err().to_string(),
             "Invalid path: \"path/test/\""
         );
         assert_eq!(
-            PolicyPrincipal::user("aws", "123456789012", "/path/test", "user-name",)
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::user("aws", "123456789012", "/path/test", "user-name",).unwrap_err().to_string(),
             "Invalid path: \"/path/test\""
         );
         assert_eq!(
-            PolicyPrincipal::user("aws", "123456789012", "/path test/", "user-name",)
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::user("aws", "123456789012", "/path test/", "user-name",).unwrap_err().to_string(),
             "Invalid path: \"/path test/\""
         );
     }
 
     #[test]
     fn check_valid_services() {
-        let s1 = PolicyPrincipal::service("aws", "service-name").unwrap();
-        assert_eq!(s1.to_string(), "arn:aws:iam::amazonaws:service/service-name");
+        let s1 = PolicyPrincipal::service(Some("aws".to_string()), "service-name").unwrap();
+        assert_eq!(s1.to_string(), "service-name");
 
         let s1_str = PolicyPrincipal::from_str("arn:aws:iam::amazonaws:service/service-name").unwrap();
         assert_eq!(s1, s1_str);
@@ -1135,9 +942,7 @@ mod tests {
     #[test]
     fn check_invalid_services() {
         assert_eq!(
-            PolicyPrincipal::service("aws", "service name")
-                .unwrap_err()
-                .to_string(),
+            PolicyPrincipal::service(Some("aws".to_string()), "service name").unwrap_err().to_string(),
             "Invalid service name: \"service name\""
         );
     }

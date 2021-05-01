@@ -1,12 +1,10 @@
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 
-use crate::{
-    validate_identifier, validate_partition, PrincipalError,
-};
+use crate::details;
+use crate::policy::PolicyPrincipal;
 #[cfg(feature = "service")]
 use crate::validate_region;
-use crate::details;
-use crate::policy::{PolicyPrincipal, PolicyPrincipalDetails};
+use crate::{validate_identifier, PrincipalError};
 
 /// Information about a temporary token.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,18 +27,37 @@ pub type RootUserDetails = details::RootUserDetails;
 pub type ServiceDetails = details::ServiceDetails<Option<String>>;
 pub type UserDetails = details::UserDetails<String>;
 
-
 /// An active, identified AWS principal -- an actor who is making requests against a service.
 ///
 /// In addition to the ARN, an IAM principal actor also has a unique id that changes whenever the principal is
 /// recreated. This is in contrast to a PolicyPrincipal, which lacks this id.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PrincipalActor {
-    /// The partition this principal exists in.
-    pub partition: String,
+pub enum PrincipalActor {
+    /// Details for an assumed role.
+    AssumedRole(AssumedRoleDetails),
 
-    /// Specific details about the principal.
-    pub details: PrincipalActorDetails,
+    /// Details for a federated user.
+    FederatedUser(FederatedUserDetails),
+
+    /// Details for an IAM group.
+    Group(GroupDetails),
+
+    /// Details for an instance profile.
+    InstanceProfile(InstanceProfileDetails),
+
+    /// Details for an IAM role.
+    Role(RoleDetails),
+
+    /// Details for the root user of an account.
+    RootUser(RootUserDetails),
+
+    #[doc(cfg(feature = "service"))]
+    #[cfg(feature = "service")]
+    /// Details for a service.
+    Service(ServiceDetails),
+
+    /// Details for an IAM user.
+    User(UserDetails),
 }
 
 impl PrincipalActor {
@@ -84,18 +101,16 @@ impl PrincipalActor {
         S3: Into<String>,
         S4: Into<String>,
     {
-        Ok(Self {
-            partition: validate_partition(partition)?,
-            details: PrincipalActorDetails::AssumedRole(AssumedRoleDetails::new(
-                account_id,
-                role_name,
-                session_name,
-                TokenInfo {
-                    token_issue_time,
-                    token_expire_time,
-                }
-            )?),
-        })
+        Ok(Self::AssumedRole(AssumedRoleDetails::new(
+            partition,
+            account_id,
+            role_name,
+            session_name,
+            TokenInfo {
+                token_issue_time,
+                token_expire_time,
+            },
+        )?))
     }
 
     /// Return a principal for a federated user.
@@ -132,16 +147,15 @@ impl PrincipalActor {
         S2: Into<String>,
         S3: Into<String>,
     {
-        Ok(Self {
-            partition: validate_partition(partition)?,
-            details: PrincipalActorDetails::FederatedUser(FederatedUserDetails::new(
-                account_id,
-                user_name,
-                TokenInfo { token_issue_time,
-                    token_expire_time,
-                }
-            )?),
-        })
+        Ok(Self::FederatedUser(FederatedUserDetails::new(
+            partition,
+            account_id,
+            user_name,
+            TokenInfo {
+                token_issue_time,
+                token_expire_time,
+            },
+        )?))
     }
 
     /// Return a principal for a group.
@@ -185,13 +199,13 @@ impl PrincipalActor {
         S4: Into<String>,
         S5: Into<String>,
     {
-        Ok(Self {
-            partition: validate_partition(partition)?,
-            details: PrincipalActorDetails::Group(GroupDetails::new(
-                account_id, path, group_name,
-                validate_identifier(group_id, "AGPA").map_err(PrincipalError::InvalidGroupId)?,
-            )?),
-        })
+        Ok(Self::Group(GroupDetails::new(
+            partition,
+            account_id,
+            path,
+            group_name,
+            validate_identifier(group_id, "AGPA").map_err(PrincipalError::InvalidGroupId)?,
+        )?))
     }
 
     /// Return a principal for an instance profile.
@@ -236,15 +250,13 @@ impl PrincipalActor {
         S4: Into<String>,
         S5: Into<String>,
     {
-        Ok(Self {
-            partition: validate_partition(partition)?,
-            details: PrincipalActorDetails::InstanceProfile(InstanceProfileDetails::new(
-                account_id,
-                path,
-                instance_profile_name,
-                validate_identifier(instance_profile_id, "AIPA").map_err(PrincipalError::InvalidInstanceProfileId)?,
-            )?),
-        })
+        Ok(Self::InstanceProfile(InstanceProfileDetails::new(
+            partition,
+            account_id,
+            path,
+            instance_profile_name,
+            validate_identifier(instance_profile_id, "AIPA").map_err(PrincipalError::InvalidInstanceProfileId)?,
+        )?))
     }
 
     /// Return a principal for a role.
@@ -289,13 +301,13 @@ impl PrincipalActor {
         S4: Into<String>,
         S5: Into<String>,
     {
-        Ok(Self {
-            partition: validate_partition(partition)?,
-            details: PrincipalActorDetails::Role(RoleDetails::new(
-                account_id, path, role_name,
-                validate_identifier(role_id, "AROA").map_err(PrincipalError::InvalidRoleId)?,
-            )?),
-        })
+        Ok(Self::Role(RoleDetails::new(
+            partition,
+            account_id,
+            path,
+            role_name,
+            validate_identifier(role_id, "AROA").map_err(PrincipalError::InvalidRoleId)?,
+        )?))
     }
 
     /// Return a principal for the root user of an account.
@@ -319,10 +331,7 @@ impl PrincipalActor {
         S1: Into<String>,
         S2: Into<String>,
     {
-        Ok(Self {
-            partition: validate_partition(partition)?,
-            details: PrincipalActorDetails::RootUser(RootUserDetails::new(account_id)?),
-        })
+        Ok(Self::RootUser(RootUserDetails::new(Some(partition.into()), account_id)?))
     }
 
     #[cfg(feature = "service")]
@@ -348,27 +357,17 @@ impl PrincipalActor {
     ///
     /// If all of the requirements are met, a [PrincipalActor] with [ServiceDetails] details is returned.  Otherwise, a
     /// [PrincipalError] error is returned.
-    pub fn service<S1, S2>(
-        partition: S1,
-        service_name: S2,
-        region: Option<String>,
-    ) -> Result<Self, PrincipalError>
+    pub fn service<S1, S2>(partition: S1, service_name: S2, region: Option<String>) -> Result<Self, PrincipalError>
     where
         S1: Into<String>,
         S2: Into<String>,
     {
-        Ok(Self {
-            partition: validate_partition(partition)?,
-            details: PrincipalActorDetails::Service(
-                ServiceDetails::new(
-                    service_name, 
-                    match region {
-                        None => None,
-                        Some(region) => Some(validate_region(region)?),
-                    }
-                )?,
-            )
-        })
+        let region = match region {
+            None => None,
+            Some(region) => Some(validate_region(region)?),
+        };
+
+        Ok(Self::Service(ServiceDetails::new(Some(partition.into()), service_name, region)?))
     }
 
     /// Return a principal for a user.
@@ -413,125 +412,65 @@ impl PrincipalActor {
         S4: Into<String>,
         S5: Into<String>,
     {
-        Ok(Self {
-            partition: validate_partition(partition)?,
-            details: PrincipalActorDetails::User(UserDetails::new(
-                account_id, path, user_name,
-                validate_identifier(user_id, "AIDA").map_err(PrincipalError::InvalidUserId)?,
-            )?),
-        })
+        Ok(Self::User(UserDetails::new(
+            partition,
+            account_id,
+            path,
+            user_name,
+            validate_identifier(user_id, "AIDA").map_err(PrincipalError::InvalidUserId)?,
+        )?))
     }
 }
 
 impl Display for PrincipalActor {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        match &self.details {
-            PrincipalActorDetails::AssumedRole(ref d) => write!(
+        match self {
+            Self::AssumedRole(ref d) => {
+                write!(f, "arn:{}:sts::{}:assumed-role/{}/{}", d.partition, d.account_id, d.role_name, d.session_name)
+            }
+            Self::FederatedUser(ref d) => {
+                write!(f, "arn:{}:sts::{}:federated-user/{}", d.partition, d.account_id, d.user_name)
+            }
+            Self::InstanceProfile(ref d) => write!(
                 f,
-                "arn:{}:sts::{}:assumed-role/{}/{}",
-                self.partition, d.account_id, d.role_name, d.session_name
+                "arn:{}:iam::{}:instance-profile{}{}",
+                d.partition, d.account_id, d.path, d.instance_profile_name
             ),
-            PrincipalActorDetails::FederatedUser(ref d) => write!(
-                f,
-                "arn:{}:sts::{}:federated-user/{}",
-                self.partition, d.account_id, d.user_name,
-            ),
-            PrincipalActorDetails::InstanceProfile(ref d) => {
-                write!(
-                    f,
-                    "arn:{}:iam::{}:instance-profile{}{}",
-                    self.partition, d.account_id, d.path, d.instance_profile_name
-                )
+            Self::Group(ref d) => {
+                write!(f, "arn:{}:iam::{}:group{}{}", d.partition, d.account_id, d.path, d.group_name)
             }
-            PrincipalActorDetails::Group(ref d) => {
-                write!(
-                    f,
-                    "arn:{}:iam::{}:group{}{}",
-                    self.partition, d.account_id, d.path, d.group_name
-                )
-            }
-            PrincipalActorDetails::Role(ref d) => {
-                write!(
-                    f,
-                    "arn:{}:iam::{}:role{}{}",
-                    self.partition, d.account_id, d.path, d.role_name
-                )
-            }
-            PrincipalActorDetails::RootUser(ref d) => {
-                write!(f, "arn:{}:iam::{}:root", self.partition, d.account_id)
-            }
-            PrincipalActorDetails::User(ref d) => {
-                write!(
-                    f,
-                    "arn:{}:iam::{}:user{}{}",
-                    self.partition, d.account_id, d.path, d.user_name
-                )
-            }
+            Self::Role(ref d) => write!(f, "arn:{}:iam::{}:role{}{}", d.partition, d.account_id, d.path, d.role_name),
+            Self::RootUser(ref d) => match &d.partition {
+                None => write!(f, "{}", d.account_id),
+                Some(partition) => write!(f, "arn:{}:iam::{}:root", partition, d.account_id),
+            },
+            Self::User(ref d) => write!(f, "arn:{}:iam::{}:user{}{}", d.partition, d.account_id, d.path, d.user_name),
             #[cfg(feature = "service")]
-            PrincipalActorDetails::Service(s) => {
-                write!(
-                    f,
-                    "arn:{}:iam:{}:amazonaws:service/{}",
-                    self.partition,
-                    s.data.as_ref().unwrap_or(&"".into()),
-                    s.service_name
-                )
-            }
+            Self::Service(ref s) => match (&s.partition, &s.data) {
+                (Some(partition), Some(region)) => {
+                    write!(f, "arn:{}:iam:{}::service/{}", partition, region, s.service_name)
+                }
+                _ => write!(f, "{}", s.service_name),
+            },
         }
     }
 }
 
-/// Details for specific principal types.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PrincipalActorDetails {
-    /// Details for an assumed role.
-    AssumedRole(AssumedRoleDetails),
-
-    /// Details for a federated user.
-    FederatedUser(FederatedUserDetails),
-
-    /// Details for an IAM group.
-    Group(GroupDetails),
-
-    /// Details for an instance profile.
-    InstanceProfile(InstanceProfileDetails),
-
-    /// Details for an IAM role.
-    Role(RoleDetails),
-
-    /// Details for the root user of an account.
-    RootUser(RootUserDetails),
-
-    #[doc(cfg(feature = "service"))]
-    #[cfg(feature = "service")]
-    /// Details for a service.
-    Service(ServiceDetails),
-
-    /// Details for an IAM user.
-    User(UserDetails),
-}
-
 impl From<PrincipalActor> for PolicyPrincipal {
     /// Convert the PrincipalActor into a PolicyPrincipal.
-    /// 
+    ///
     /// This is a lossy conversion, losing the identifier or token details attached to the actor.
     fn from(from: PrincipalActor) -> PolicyPrincipal {
-        PolicyPrincipal { partition: from.partition, details: from.details.into(), }
-    }
-}
-
-impl From<PrincipalActorDetails> for PolicyPrincipalDetails {
-    fn from(from: PrincipalActorDetails) -> PolicyPrincipalDetails {
         match from {
-            PrincipalActorDetails::AssumedRole(d) => PolicyPrincipalDetails::AssumedRole(d.into()),
-            PrincipalActorDetails::FederatedUser(d) => PolicyPrincipalDetails::FederatedUser(d.into()),
-            PrincipalActorDetails::Group(d) => PolicyPrincipalDetails::Group(d.into()),
-            PrincipalActorDetails::InstanceProfile(d) => PolicyPrincipalDetails::InstanceProfile(d.into()),
-            PrincipalActorDetails::Role(d) => PolicyPrincipalDetails::Role(d.into()),
-            PrincipalActorDetails::RootUser(d) => PolicyPrincipalDetails::RootUser(d),
+            PrincipalActor::AssumedRole(d) => PolicyPrincipal::AssumedRole(d.into()),
+            PrincipalActor::FederatedUser(d) => PolicyPrincipal::FederatedUser(d.into()),
+            PrincipalActor::Group(d) => PolicyPrincipal::Group(d.into()),
+            PrincipalActor::InstanceProfile(d) => PolicyPrincipal::InstanceProfile(d.into()),
+            PrincipalActor::Role(d) => PolicyPrincipal::Role(d.into()),
+            PrincipalActor::RootUser(d) => PolicyPrincipal::RootUser(d),
             #[cfg(feature = "service")]
-            PrincipalActorDetails::Service(d) => PolicyPrincipalDetails::Service(d.into()),
-            PrincipalActorDetails::User(d) => PolicyPrincipalDetails::User(d.into()),
+            PrincipalActor::Service(d) => PolicyPrincipal::Service(d.into()),
+            PrincipalActor::User(d) => PolicyPrincipal::User(d.into()),
         }
     }
 }
@@ -539,6 +478,7 @@ impl From<PrincipalActorDetails> for PolicyPrincipalDetails {
 impl From<AssumedRoleDetails> for details::AssumedRoleDetails<()> {
     fn from(from: AssumedRoleDetails) -> details::AssumedRoleDetails<()> {
         details::AssumedRoleDetails {
+            partition: from.partition,
             account_id: from.account_id,
             role_name: from.role_name,
             session_name: from.session_name,
@@ -547,9 +487,10 @@ impl From<AssumedRoleDetails> for details::AssumedRoleDetails<()> {
     }
 }
 
-impl From<FederatedUserDetails> for details::FederatedUserDetails<()>  {
+impl From<FederatedUserDetails> for details::FederatedUserDetails<()> {
     fn from(from: FederatedUserDetails) -> details::FederatedUserDetails<()> {
         details::FederatedUserDetails {
+            partition: from.partition,
             account_id: from.account_id,
             user_name: from.user_name,
             data: (),
@@ -560,6 +501,7 @@ impl From<FederatedUserDetails> for details::FederatedUserDetails<()>  {
 impl From<GroupDetails> for details::GroupDetails<()> {
     fn from(from: GroupDetails) -> details::GroupDetails<()> {
         details::GroupDetails {
+            partition: from.partition,
             account_id: from.account_id,
             path: from.path,
             group_name: from.group_name,
@@ -571,6 +513,7 @@ impl From<GroupDetails> for details::GroupDetails<()> {
 impl From<InstanceProfileDetails> for details::InstanceProfileDetails<()> {
     fn from(from: InstanceProfileDetails) -> details::InstanceProfileDetails<()> {
         details::InstanceProfileDetails {
+            partition: from.partition,
             account_id: from.account_id,
             path: from.path,
             instance_profile_name: from.instance_profile_name,
@@ -582,6 +525,7 @@ impl From<InstanceProfileDetails> for details::InstanceProfileDetails<()> {
 impl From<RoleDetails> for details::RoleDetails<()> {
     fn from(from: RoleDetails) -> details::RoleDetails<()> {
         details::RoleDetails {
+            partition: from.partition,
             account_id: from.account_id,
             path: from.path,
             role_name: from.role_name,
@@ -594,15 +538,17 @@ impl From<RoleDetails> for details::RoleDetails<()> {
 impl From<ServiceDetails> for details::ServiceDetails<()> {
     fn from(from: ServiceDetails) -> details::ServiceDetails<()> {
         details::ServiceDetails {
+            partition: from.partition,
             service_name: from.service_name,
             data: (),
         }
     }
 }
 
-impl From<UserDetails> for details::UserDetails<()>{
+impl From<UserDetails> for details::UserDetails<()> {
     fn from(from: UserDetails) -> details::UserDetails<()> {
         details::UserDetails {
+            partition: from.partition,
             account_id: from.account_id,
             path: from.path,
             user_name: from.user_name,
@@ -617,24 +563,8 @@ mod tests {
 
     #[test]
     fn check_valid_assumed_roles() {
-        let r1a = PrincipalActor::assumed_role(
-            "aws",
-            "123456789012",
-            "Role_name",
-            "session_name",
-            0,
-            3600,
-        )
-        .unwrap();
-        let r1b = PrincipalActor::assumed_role(
-            "aws",
-            "123456789012",
-            "Role_name",
-            "session_name",
-            0,
-            3600,
-        )
-        .unwrap();
+        let r1a = PrincipalActor::assumed_role("aws", "123456789012", "Role_name", "session_name", 0, 3600).unwrap();
+        let r1b = PrincipalActor::assumed_role("aws", "123456789012", "Role_name", "session_name", 0, 3600).unwrap();
         let r2 = PrincipalActor::assumed_role(
             "a-very-long-partition1",
             "123456789012",
@@ -648,14 +578,8 @@ mod tests {
         assert!(r1a == r1b);
         assert!(r1a != r2);
 
-        assert_eq!(
-            r1a.to_string(),
-            "arn:aws:sts::123456789012:assumed-role/Role_name/session_name"
-        );
-        assert_eq!(
-            r1b.to_string(),
-            "arn:aws:sts::123456789012:assumed-role/Role_name/session_name"
-        );
+        assert_eq!(r1a.to_string(), "arn:aws:sts::123456789012:assumed-role/Role_name/session_name");
+        assert_eq!(r1b.to_string(), "arn:aws:sts::123456789012:assumed-role/Role_name/session_name");
         assert_eq!(
             r2.to_string(),
             "arn:a-very-long-partition1:sts::123456789012:assumed-role/Role@Foo=bar,baz_=world-1234/Session@1234,_=-,.OK");
@@ -701,27 +625,19 @@ mod tests {
             "Invalid partition: \"\""
         );
         assert_eq!(
-            PrincipalActor::assumed_role("aws", "", "role-name", "session-name", 0, 3600)
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::assumed_role("aws", "", "role-name", "session-name", 0, 3600).unwrap_err().to_string(),
             "Invalid account id: \"\""
         );
         assert_eq!(
-            PrincipalActor::assumed_role("aws", "123456789012", "", "session-name", 0, 3600)
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::assumed_role("aws", "123456789012", "", "session-name", 0, 3600).unwrap_err().to_string(),
             "Invalid role name: \"\""
         );
         assert_eq!(
-            PrincipalActor::assumed_role("aws", "123456789012", "role-name", "", 0, 3600)
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::assumed_role("aws", "123456789012", "role-name", "", 0, 3600).unwrap_err().to_string(),
             "Invalid session name: \"\""
         );
         assert_eq!(
-            PrincipalActor::assumed_role("aws", "123456789012", "role-name", "s", 0, 3600)
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::assumed_role("aws", "123456789012", "role-name", "s", 0, 3600).unwrap_err().to_string(),
             "Invalid session name: \"s\""
         );
 
@@ -739,16 +655,9 @@ mod tests {
             "Invalid partition: \"partition-with-33-characters12345\""
         );
         assert_eq!(
-            PrincipalActor::assumed_role(
-                "aws",
-                "1234567890123",
-                "role-name",
-                "session-name",
-                0,
-                3600
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::assumed_role("aws", "1234567890123", "role-name", "session-name", 0, 3600)
+                .unwrap_err()
+                .to_string(),
             "Invalid account id: \"1234567890123\""
         );
         assert!(PrincipalActor::assumed_role(
@@ -775,128 +684,63 @@ mod tests {
         .starts_with("Invalid session name: \"session-name-with-65-characters="));
 
         assert_eq!(
-            PrincipalActor::assumed_role(
-                "-aws",
-                "123456789012",
-                "role-name",
-                "session-name",
-                0,
-                3600
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::assumed_role("-aws", "123456789012", "role-name", "session-name", 0, 3600)
+                .unwrap_err()
+                .to_string(),
             "Invalid partition: \"-aws\""
         );
         assert_eq!(
-            PrincipalActor::assumed_role(
-                "aws-",
-                "123456789012",
-                "role-name",
-                "session-name",
-                0,
-                3600
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::assumed_role("aws-", "123456789012", "role-name", "session-name", 0, 3600)
+                .unwrap_err()
+                .to_string(),
             "Invalid partition: \"aws-\""
         );
         assert_eq!(
-            PrincipalActor::assumed_role(
-                "aws--us",
-                "123456789012",
-                "role-name",
-                "session-name",
-                0,
-                3600
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::assumed_role("aws--us", "123456789012", "role-name", "session-name", 0, 3600)
+                .unwrap_err()
+                .to_string(),
             "Invalid partition: \"aws--us\""
         );
         assert_eq!(
-            PrincipalActor::assumed_role(
-                "aw!",
-                "123456789012",
-                "role-name",
-                "session-name",
-                0,
-                3600
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::assumed_role("aw!", "123456789012", "role-name", "session-name", 0, 3600)
+                .unwrap_err()
+                .to_string(),
             "Invalid partition: \"aw!\""
         );
         assert_eq!(
-            PrincipalActor::assumed_role(
-                "aws",
-                "a23456789012",
-                "role-name",
-                "session-name",
-                0,
-                3600
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::assumed_role("aws", "a23456789012", "role-name", "session-name", 0, 3600)
+                .unwrap_err()
+                .to_string(),
             "Invalid account id: \"a23456789012\""
         );
         assert_eq!(
-            PrincipalActor::assumed_role(
-                "aws",
-                "123456789012",
-                "role+name",
-                "session-name",
-                0,
-                3600
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::assumed_role("aws", "123456789012", "role+name", "session-name", 0, 3600)
+                .unwrap_err()
+                .to_string(),
             "Invalid role name: \"role+name\""
         );
         assert_eq!(
-            PrincipalActor::assumed_role(
-                "aws",
-                "123456789012",
-                "role-name",
-                "session+name",
-                0,
-                3600
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::assumed_role("aws", "123456789012", "role-name", "session+name", 0, 3600)
+                .unwrap_err()
+                .to_string(),
             "Invalid session name: \"session+name\""
         );
     }
 
     #[test]
     fn check_valid_federated_users() {
-        let f1 =
-            PrincipalActor::federated_user("aws", "123456789012", "user@domain", 0, 3600).unwrap();
+        let f1 = PrincipalActor::federated_user("aws", "123456789012", "user@domain", 0, 3600).unwrap();
+        assert_eq!(f1.to_string(), "arn:aws:sts::123456789012:federated-user/user@domain");
         assert_eq!(
-            f1.to_string(),
-            "arn:aws:sts::123456789012:federated-user/user@domain"
-        );
-        assert_eq!(
-            PrincipalActor::federated_user(
-                "partition-with-32-characters1234",
-                "123456789012",
-                "user@domain",
-                0,
-                3600,
-            )
-            .unwrap()
-            .to_string(),
+            PrincipalActor::federated_user("partition-with-32-characters1234", "123456789012", "user@domain", 0, 3600,)
+                .unwrap()
+                .to_string(),
             "arn:partition-with-32-characters1234:sts::123456789012:federated-user/user@domain"
         );
         assert_eq!(
-            PrincipalActor::federated_user(
-                "aws",
-                "123456789012",
-                "user@domain-with-32-characters==",
-                0,
-                3600,
-            )
-            .unwrap()
-            .to_string(),
+            PrincipalActor::federated_user("aws", "123456789012", "user@domain-with-32-characters==", 0, 3600,)
+                .unwrap()
+                .to_string(),
             "arn:aws:sts::123456789012:federated-user/user@domain-with-32-characters=="
         );
 
@@ -907,27 +751,19 @@ mod tests {
     #[test]
     fn check_invalid_federated_users() {
         assert_eq!(
-            PrincipalActor::federated_user("", "123456789012", "user@domain", 0, 3600)
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::federated_user("", "123456789012", "user@domain", 0, 3600).unwrap_err().to_string(),
             "Invalid partition: \"\""
         );
         assert_eq!(
-            PrincipalActor::federated_user("aws", "", "user@domain", 0, 3600)
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::federated_user("aws", "", "user@domain", 0, 3600).unwrap_err().to_string(),
             "Invalid account id: \"\""
         );
         assert_eq!(
-            PrincipalActor::federated_user("aws", "123456789012", "", 0, 3600)
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::federated_user("aws", "123456789012", "", 0, 3600).unwrap_err().to_string(),
             "Invalid federated user name: \"\""
         );
         assert_eq!(
-            PrincipalActor::federated_user("aws", "123456789012", "u", 0, 3600)
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::federated_user("aws", "123456789012", "u", 0, 3600).unwrap_err().to_string(),
             "Invalid federated user name: \"u\""
         );
 
@@ -944,21 +780,13 @@ mod tests {
             "Invalid partition: \"partition-with-33-characters12345\""
         );
         assert_eq!(
-            PrincipalActor::federated_user("aws", "1234567890123", "user@domain", 0, 3600)
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::federated_user("aws", "1234567890123", "user@domain", 0, 3600).unwrap_err().to_string(),
             "Invalid account id: \"1234567890123\""
         );
         assert_eq!(
-            PrincipalActor::federated_user(
-                "aws",
-                "123456789012",
-                "user@domain-with-33-characters===",
-                0,
-                3600,
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::federated_user("aws", "123456789012", "user@domain-with-33-characters===", 0, 3600,)
+                .unwrap_err()
+                .to_string(),
             "Invalid federated user name: \"user@domain-with-33-characters===\""
         );
     }
@@ -966,27 +794,15 @@ mod tests {
     #[test]
     fn check_valid_groups() {
         assert_eq!(
-            PrincipalActor::group(
-                "aws",
-                "123456789012",
-                "/",
-                "group-name",
-                "AGPAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap()
-            .to_string(),
+            PrincipalActor::group("aws", "123456789012", "/", "group-name", "AGPAA2B3C4D5E6F7HIJK")
+                .unwrap()
+                .to_string(),
             "arn:aws:iam::123456789012:group/group-name"
         );
         assert_eq!(
-            PrincipalActor::group(
-                "aws",
-                "123456789012",
-                "/path/test/",
-                "group-name",
-                "AGPAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap()
-            .to_string(),
+            PrincipalActor::group("aws", "123456789012", "/path/test/", "group-name", "AGPAA2B3C4D5E6F7HIJK")
+                .unwrap()
+                .to_string(),
             "arn:aws:iam::123456789012:group/path/test/group-name"
         );
         assert_eq!(
@@ -1011,104 +827,52 @@ mod tests {
             PrincipalActor::group("aws", "123456789012", "/", "group-name-with-128-characters==================================================================================================", "AGPAA2B3C4D5E6F7HIJK").unwrap().to_string(),
             "arn:aws:iam::123456789012:group/group-name-with-128-characters==================================================================================================");
         assert_eq!(
-            PrincipalActor::group(
-                "aws",
-                "123456789012",
-                "/",
-                "group-name",
-                "AGPALMNOPQRSTUVWXY23"
-            )
-            .unwrap()
-            .to_string(),
+            PrincipalActor::group("aws", "123456789012", "/", "group-name", "AGPALMNOPQRSTUVWXY23")
+                .unwrap()
+                .to_string(),
             "arn:aws:iam::123456789012:group/group-name"
         );
     }
 
     #[test]
     fn check_invalid_groups() {
-        PrincipalActor::group(
-            "",
-            "123456789012",
-            "/",
-            "group-name",
-            "AGPAA2B3C4D5E6F7HIJK",
-        )
-        .unwrap_err();
+        PrincipalActor::group("", "123456789012", "/", "group-name", "AGPAA2B3C4D5E6F7HIJK").unwrap_err();
         PrincipalActor::group("aws", "", "/", "group-name", "AGPAA2B3C4D5E6F7HIJK").unwrap_err();
-        PrincipalActor::group(
-            "aws",
-            "123456789012",
-            "",
-            "group-name",
-            "AGPAA2B3C4D5E6F7HIJK",
-        )
-        .unwrap_err();
+        PrincipalActor::group("aws", "123456789012", "", "group-name", "AGPAA2B3C4D5E6F7HIJK").unwrap_err();
         assert_eq!(
-            PrincipalActor::group("aws", "123456789012", "/", "", "AGPAA2B3C4D5E6F7HIJK")
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::group("aws", "123456789012", "/", "", "AGPAA2B3C4D5E6F7HIJK").unwrap_err().to_string(),
             "Invalid group name: \"\""
         );
         PrincipalActor::group("aws", "123456789012", "/", "group-name", "").unwrap_err();
 
         assert_eq!(
-            PrincipalActor::group(
-                "aws",
-                "123456789012",
-                "/",
-                "group-name",
-                "AIDAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::group("aws", "123456789012", "/", "group-name", "AIDAA2B3C4D5E6F7HIJK")
+                .unwrap_err()
+                .to_string(),
             "Invalid group id: \"AIDAA2B3C4D5E6F7HIJK\""
         );
         assert_eq!(
-            PrincipalActor::group(
-                "aws",
-                "123456789012",
-                "/",
-                "group-name",
-                "AGPA________________"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::group("aws", "123456789012", "/", "group-name", "AGPA________________")
+                .unwrap_err()
+                .to_string(),
             "Invalid group id: \"AGPA________________\""
         );
         assert_eq!(
-            PrincipalActor::group(
-                "aws",
-                "123456789012",
-                "path/test/",
-                "group-name",
-                "AGPAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::group("aws", "123456789012", "path/test/", "group-name", "AGPAA2B3C4D5E6F7HIJK")
+                .unwrap_err()
+                .to_string(),
             "Invalid path: \"path/test/\""
         );
         assert_eq!(
-            PrincipalActor::group(
-                "aws",
-                "123456789012",
-                "/path/test",
-                "group-name",
-                "AGPAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::group("aws", "123456789012", "/path/test", "group-name", "AGPAA2B3C4D5E6F7HIJK")
+                .unwrap_err()
+                .to_string(),
             "Invalid path: \"/path/test\""
         );
         assert_eq!(
-            PrincipalActor::group(
-                "aws",
-                "123456789012",
-                "/path test/",
-                "group-name",
-                "AGPAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::group("aws", "123456789012", "/path test/", "group-name", "AGPAA2B3C4D5E6F7HIJK")
+                .unwrap_err()
+                .to_string(),
             "Invalid path: \"/path test/\""
         );
     }
@@ -1141,9 +905,16 @@ mod tests {
         );
         assert_eq!(
             PrincipalActor::instance_profile(
-                "aws", "123456789012", "/path///multi-slash/test/", "instance-profile-name",
-                "AIPAA2B3C4D5E6F7HIJK").unwrap().to_string(),
-            "arn:aws:iam::123456789012:instance-profile/path///multi-slash/test/instance-profile-name");
+                "aws",
+                "123456789012",
+                "/path///multi-slash/test/",
+                "instance-profile-name",
+                "AIPAA2B3C4D5E6F7HIJK"
+            )
+            .unwrap()
+            .to_string(),
+            "arn:aws:iam::123456789012:instance-profile/path///multi-slash/test/instance-profile-name"
+        );
         assert_eq!(
             PrincipalActor::instance_profile(
                 "aws", "123456789012",
@@ -1153,40 +924,22 @@ mod tests {
         assert_eq!(
             PrincipalActor::instance_profile("aws", "123456789012", "/", "instance-profile-name-with-128-characters=======================================================================================", "AIPAA2B3C4D5E6F7HIJK").unwrap().to_string(),
             "arn:aws:iam::123456789012:instance-profile/instance-profile-name-with-128-characters=======================================================================================");
-        PrincipalActor::instance_profile(
-            "aws",
-            "123456789012",
-            "/",
-            "instance-profile-name",
-            "AIPALMNOPQRSTUVWXY23",
-        )
-        .unwrap();
+        PrincipalActor::instance_profile("aws", "123456789012", "/", "instance-profile-name", "AIPALMNOPQRSTUVWXY23")
+            .unwrap();
     }
 
     #[test]
     fn check_invalid_instance_profiles() {
         assert_eq!(
-            PrincipalActor::instance_profile(
-                "",
-                "123456789012",
-                "/",
-                "instance-profile-name",
-                "AIPAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::instance_profile("", "123456789012", "/", "instance-profile-name", "AIPAA2B3C4D5E6F7HIJK")
+                .unwrap_err()
+                .to_string(),
             "Invalid partition: \"\""
         );
         assert_eq!(
-            PrincipalActor::instance_profile(
-                "aws",
-                "",
-                "/",
-                "instance-profile-name",
-                "AIPAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::instance_profile("aws", "", "/", "instance-profile-name", "AIPAA2B3C4D5E6F7HIJK")
+                .unwrap_err()
+                .to_string(),
             "Invalid account id: \"\""
         );
         assert_eq!(
@@ -1202,27 +955,15 @@ mod tests {
             "Invalid path: \"\""
         );
         assert_eq!(
-            PrincipalActor::instance_profile(
-                "aws",
-                "123456789012",
-                "/",
-                "",
-                "AIPAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::instance_profile("aws", "123456789012", "/", "", "AIPAA2B3C4D5E6F7HIJK")
+                .unwrap_err()
+                .to_string(),
             "Invalid instance profile name: \"\""
         );
         assert_eq!(
-            PrincipalActor::instance_profile(
-                "aws",
-                "123456789012",
-                "/",
-                "instance-profile-name",
-                ""
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::instance_profile("aws", "123456789012", "/", "instance-profile-name", "")
+                .unwrap_err()
+                .to_string(),
             "Invalid instance profile id: \"\""
         );
 
@@ -1255,27 +996,13 @@ mod tests {
     #[test]
     fn check_valid_roles() {
         assert_eq!(
-            PrincipalActor::role(
-                "aws",
-                "123456789012",
-                "/",
-                "role-name",
-                "AROAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap()
-            .to_string(),
+            PrincipalActor::role("aws", "123456789012", "/", "role-name", "AROAA2B3C4D5E6F7HIJK").unwrap().to_string(),
             "arn:aws:iam::123456789012:role/role-name"
         );
         assert_eq!(
-            PrincipalActor::role(
-                "aws",
-                "123456789012",
-                "/path/test/",
-                "role-name",
-                "AROAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap()
-            .to_string(),
+            PrincipalActor::role("aws", "123456789012", "/path/test/", "role-name", "AROAA2B3C4D5E6F7HIJK")
+                .unwrap()
+                .to_string(),
             "arn:aws:iam::123456789012:role/path/test/role-name"
         );
         assert_eq!(
@@ -1298,183 +1025,119 @@ mod tests {
             "arn:aws:iam::123456789012:role/!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~/role-name");
         assert_eq!(
             PrincipalActor::role(
-                "aws", "123456789012", "/", "role-name-with-64-characters====================================",
-                "AROAA2B3C4D5E6F7HIJK").unwrap().to_string(),
+                "aws",
+                "123456789012",
+                "/",
+                "role-name-with-64-characters====================================",
+                "AROAA2B3C4D5E6F7HIJK"
+            )
+            .unwrap()
+            .to_string(),
             "arn:aws:iam::123456789012:role/role-name-with-64-characters===================================="
         );
-        PrincipalActor::role(
-            "aws",
-            "123456789012",
-            "/",
-            "role-name",
-            "AROALMNOPQRSTUVWXY23",
-        )
-        .unwrap();
+        PrincipalActor::role("aws", "123456789012", "/", "role-name", "AROALMNOPQRSTUVWXY23").unwrap();
     }
 
     #[test]
     fn check_invalid_roles() {
         assert_eq!(
-            PrincipalActor::role("", "123456789012", "/", "role-name", "AROAA2B3C4D5E6F7HIJK")
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::role("", "123456789012", "/", "role-name", "AROAA2B3C4D5E6F7HIJK").unwrap_err().to_string(),
             "Invalid partition: \"\""
         );
         assert_eq!(
-            PrincipalActor::role("aws", "", "/", "role-name", "AROAA2B3C4D5E6F7HIJK")
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::role("aws", "", "/", "role-name", "AROAA2B3C4D5E6F7HIJK").unwrap_err().to_string(),
             "Invalid account id: \"\""
         );
         assert_eq!(
-            PrincipalActor::role(
-                "aws",
-                "123456789012",
-                "",
-                "role-name",
-                "AROAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::role("aws", "123456789012", "", "role-name", "AROAA2B3C4D5E6F7HIJK")
+                .unwrap_err()
+                .to_string(),
             "Invalid path: \"\""
         );
         assert_eq!(
-            PrincipalActor::role("aws", "123456789012", "/", "", "AROAA2B3C4D5E6F7HIJK")
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::role("aws", "123456789012", "/", "", "AROAA2B3C4D5E6F7HIJK").unwrap_err().to_string(),
             "Invalid role name: \"\""
         );
         assert_eq!(
-            PrincipalActor::role("aws", "123456789012", "/", "role-name", "")
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::role("aws", "123456789012", "/", "role-name", "").unwrap_err().to_string(),
             "Invalid role id: \"\""
         );
 
         assert_eq!(
-            PrincipalActor::role(
-                "aws",
-                "123456789012",
-                "/",
-                "role-name",
-                "AIDAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::role("aws", "123456789012", "/", "role-name", "AIDAA2B3C4D5E6F7HIJK")
+                .unwrap_err()
+                .to_string(),
             "Invalid role id: \"AIDAA2B3C4D5E6F7HIJK\""
         );
         assert_eq!(
-            PrincipalActor::role(
-                "aws",
-                "123456789012",
-                "/",
-                "role-name",
-                "AROA________________"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::role("aws", "123456789012", "/", "role-name", "AROA________________")
+                .unwrap_err()
+                .to_string(),
             "Invalid role id: \"AROA________________\""
         );
         assert_eq!(
-            PrincipalActor::role(
-                "aws",
-                "123456789012",
-                "path/test/",
-                "role-name",
-                "AROAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::role("aws", "123456789012", "path/test/", "role-name", "AROAA2B3C4D5E6F7HIJK")
+                .unwrap_err()
+                .to_string(),
             "Invalid path: \"path/test/\""
         );
         assert_eq!(
-            PrincipalActor::role(
-                "aws",
-                "123456789012",
-                "/path/test",
-                "role-name",
-                "AROAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::role("aws", "123456789012", "/path/test", "role-name", "AROAA2B3C4D5E6F7HIJK")
+                .unwrap_err()
+                .to_string(),
             "Invalid path: \"/path/test\""
         );
         assert_eq!(
-            PrincipalActor::role(
-                "aws",
-                "123456789012",
-                "/path test/",
-                "role-name",
-                "AROAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::role("aws", "123456789012", "/path test/", "role-name", "AROAA2B3C4D5E6F7HIJK")
+                .unwrap_err()
+                .to_string(),
             "Invalid path: \"/path test/\""
         );
         assert_eq!(
             PrincipalActor::role(
-                "aws", "123456789012", "/", "role-name-with-65-characters=====================================",
-                "AROAA2B3C4D5E6F7HIJK").unwrap_err().to_string(),
-            "Invalid role name: \"role-name-with-65-characters=====================================\"");
+                "aws",
+                "123456789012",
+                "/",
+                "role-name-with-65-characters=====================================",
+                "AROAA2B3C4D5E6F7HIJK"
+            )
+            .unwrap_err()
+            .to_string(),
+            "Invalid role name: \"role-name-with-65-characters=====================================\""
+        );
     }
 
     #[test]
     fn check_valid_root_users() {
         assert_eq!(
-            PrincipalActor::root_user("aws", "123456789012")
-                .unwrap()
-                .to_string(),
+            PrincipalActor::root_user("aws", "123456789012").unwrap().to_string(),
             "arn:aws:iam::123456789012:root"
         );
     }
 
     #[test]
     fn check_invalid_root_users() {
-        assert_eq!(
-            PrincipalActor::root_user("", "123456789012")
-                .unwrap_err()
-                .to_string(),
-            "Invalid partition: \"\""
-        );
-        assert_eq!(
-            PrincipalActor::root_user("aws", "")
-                .unwrap_err()
-                .to_string(),
-            "Invalid account id: \"\""
-        );
+        assert_eq!(PrincipalActor::root_user("", "123456789012").unwrap_err().to_string(), "Invalid partition: \"\"");
+        assert_eq!(PrincipalActor::root_user("aws", "").unwrap_err().to_string(), "Invalid account id: \"\"");
     }
 
     #[test]
     fn check_valid_users() {
         assert_eq!(
-            PrincipalActor::user(
-                "aws",
-                "123456789012",
-                "/",
-                "user-name",
-                "AIDAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap()
-            .to_string(),
+            PrincipalActor::user("aws", "123456789012", "/", "user-name", "AIDAA2B3C4D5E6F7HIJK").unwrap().to_string(),
             "arn:aws:iam::123456789012:user/user-name"
         );
+        PrincipalActor::user("aws", "123456789012", "/path/test/", "user-name", "AIDAA2B3C4D5E6F7HIJK").unwrap();
+        PrincipalActor::user("aws", "123456789012", "/path///multi-slash/test/", "user-name", "AIDAA2B3C4D5E6F7HIJK")
+            .unwrap();
         PrincipalActor::user(
             "aws",
             "123456789012",
-            "/path/test/",
+            "/!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~/",
             "user-name",
             "AIDAA2B3C4D5E6F7HIJK",
         )
         .unwrap();
-        PrincipalActor::user(
-            "aws",
-            "123456789012",
-            "/path///multi-slash/test/",
-            "user-name",
-            "AIDAA2B3C4D5E6F7HIJK",
-        )
-        .unwrap();
-        PrincipalActor::user("aws", "123456789012", "/!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~/", "user-name", "AIDAA2B3C4D5E6F7HIJK").unwrap();
         PrincipalActor::user(
             "aws",
             "123456789012",
@@ -1483,139 +1146,79 @@ mod tests {
             "AIDAA2B3C4D5E6F7HIJK",
         )
         .unwrap();
-        PrincipalActor::user(
-            "aws",
-            "123456789012",
-            "/",
-            "user-name",
-            "AIDALMNOPQRSTUVWXY23",
-        )
-        .unwrap();
+        PrincipalActor::user("aws", "123456789012", "/", "user-name", "AIDALMNOPQRSTUVWXY23").unwrap();
     }
 
     #[test]
     fn check_invalid_users() {
         assert_eq!(
-            PrincipalActor::user("", "123456789012", "/", "user-name", "AIDAA2B3C4D5E6F7HIJK")
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::user("", "123456789012", "/", "user-name", "AIDAA2B3C4D5E6F7HIJK").unwrap_err().to_string(),
             "Invalid partition: \"\""
         );
         assert_eq!(
-            PrincipalActor::user("aws", "", "/", "user-name", "AIDAA2B3C4D5E6F7HIJK")
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::user("aws", "", "/", "user-name", "AIDAA2B3C4D5E6F7HIJK").unwrap_err().to_string(),
             "Invalid account id: \"\""
         );
         assert_eq!(
-            PrincipalActor::user(
-                "aws",
-                "123456789012",
-                "",
-                "user-name",
-                "AIDAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::user("aws", "123456789012", "", "user-name", "AIDAA2B3C4D5E6F7HIJK")
+                .unwrap_err()
+                .to_string(),
             "Invalid path: \"\""
         );
         assert_eq!(
-            PrincipalActor::user("aws", "123456789012", "/", "", "AIDAA2B3C4D5E6F7HIJK")
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::user("aws", "123456789012", "/", "", "AIDAA2B3C4D5E6F7HIJK").unwrap_err().to_string(),
             "Invalid user name: \"\""
         );
         assert_eq!(
-            PrincipalActor::user("aws", "123456789012", "/", "user-name", "")
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::user("aws", "123456789012", "/", "user-name", "").unwrap_err().to_string(),
             "Invalid user id: \"\""
         );
 
         assert_eq!(
-            PrincipalActor::user(
-                "aws",
-                "123456789012",
-                "/",
-                "user-name",
-                "AGPAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::user("aws", "123456789012", "/", "user-name", "AGPAA2B3C4D5E6F7HIJK")
+                .unwrap_err()
+                .to_string(),
             "Invalid user id: \"AGPAA2B3C4D5E6F7HIJK\""
         );
         assert_eq!(
-            PrincipalActor::user(
-                "aws",
-                "123456789012",
-                "/",
-                "user-name",
-                "AIDA________________"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::user("aws", "123456789012", "/", "user-name", "AIDA________________")
+                .unwrap_err()
+                .to_string(),
             "Invalid user id: \"AIDA________________\""
         );
         assert_eq!(
-            PrincipalActor::user(
-                "aws",
-                "123456789012",
-                "path/test/",
-                "user-name",
-                "AIDAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::user("aws", "123456789012", "path/test/", "user-name", "AIDAA2B3C4D5E6F7HIJK")
+                .unwrap_err()
+                .to_string(),
             "Invalid path: \"path/test/\""
         );
         assert_eq!(
-            PrincipalActor::user(
-                "aws",
-                "123456789012",
-                "/path/test",
-                "user-name",
-                "AIDAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::user("aws", "123456789012", "/path/test", "user-name", "AIDAA2B3C4D5E6F7HIJK")
+                .unwrap_err()
+                .to_string(),
             "Invalid path: \"/path/test\""
         );
         assert_eq!(
-            PrincipalActor::user(
-                "aws",
-                "123456789012",
-                "/path test/",
-                "user-name",
-                "AIDAA2B3C4D5E6F7HIJK"
-            )
-            .unwrap_err()
-            .to_string(),
+            PrincipalActor::user("aws", "123456789012", "/path test/", "user-name", "AIDAA2B3C4D5E6F7HIJK")
+                .unwrap_err()
+                .to_string(),
             "Invalid path: \"/path test/\""
         );
     }
 
     #[test]
     fn check_valid_services() {
+        assert_eq!(PrincipalActor::service("aws", "service-name", None).unwrap().to_string(), "service-name");
         assert_eq!(
-            PrincipalActor::service("aws", "service-name", None)
-                .unwrap()
-                .to_string(),
-            "arn:aws:iam::amazonaws:service/service-name"
-        );
-        assert_eq!(
-            PrincipalActor::service("aws", "service-name", Some("us-east-1".to_string()))
-                .unwrap()
-                .to_string(),
-            "arn:aws:iam:us-east-1:amazonaws:service/service-name"
+            PrincipalActor::service("aws", "service-name", Some("us-east-1".to_string())).unwrap().to_string(),
+            "arn:aws:iam:us-east-1::service/service-name"
         );
     }
 
     #[test]
     fn check_invalid_services() {
         assert_eq!(
-            PrincipalActor::service("aws", "service name", None)
-                .unwrap_err()
-                .to_string(),
+            PrincipalActor::service("aws", "service name", None).unwrap_err().to_string(),
             "Invalid service name: \"service name\""
         );
     }
