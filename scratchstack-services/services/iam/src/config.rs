@@ -12,10 +12,7 @@ use std::{
 use base64;
 use diesel::{
     pg::PgConnection,
-    r2d2::{
-        Builder as PoolBuilder, ConnectionManager, ManageConnection, Pool,
-        PoolError,
-    },
+    r2d2::{Builder as PoolBuilder, ConnectionManager, ManageConnection, Pool, PoolError},
 };
 use hyper::Error as HyperError;
 use log::{debug, error, info};
@@ -135,14 +132,23 @@ impl Debug for ResolvedConfig {
         match self.tls {
             None => write!(f, "tls=None, ")?,
             Some(ref tsc) => write!(
-                f, "tls=Some(ServerConfig{{ciphersuites={:?}, ignore_client_order={:?}, mtu={:?}, versions={:?}}}",
-                tsc.ciphersuites, tsc.ignore_client_order, tsc.mtu, tsc.versions)?,
+                f,
+                "tls=Some(ServerConfig{{ciphersuites={:?}, ignore_client_order={:?}, mtu={:?}, versions={:?}}}",
+                tsc.ciphersuites, tsc.ignore_client_order, tsc.mtu, tsc.versions
+            )?,
         }
         write!(
-            f, "pool=Pool{{state={:?}, max_size={:?}, min_idle={:?}, test_on_check_out={:?}, max_lifetime={:?}, \
-            idle_timeout={:?}, connection_timeout={:?}}}}}", self.pool.state(), self.pool.max_size(),
-            self.pool.min_idle(), self.pool.test_on_check_out(), self.pool.max_lifetime(), self.pool.idle_timeout(),
-            self.pool.connection_timeout())
+            f,
+            "pool=Pool{{state={:?}, max_size={:?}, min_idle={:?}, test_on_check_out={:?}, max_lifetime={:?}, \
+            idle_timeout={:?}, connection_timeout={:?}}}}}",
+            self.pool.state(),
+            self.pool.max_size(),
+            self.pool.min_idle(),
+            self.pool.test_on_check_out(),
+            self.pool.max_lifetime(),
+            self.pool.idle_timeout(),
+            self.pool.connection_timeout()
+        )
     }
 }
 
@@ -329,24 +335,17 @@ fn extract_cert_or_key<A>(
 /// containing the der-format contents.
 ///
 /// Originally from rustls::pemfile::certs, modified to return errors.
-fn read_certs(
-    rd: &mut dyn BufRead,
-) -> Result<Vec<Certificate>, TlsConfigError> {
-    extract_cert_or_key(
-        rd,
-        "-----BEGIN CERTIFICATE-----",
-        "-----END CERTIFICATE-----",
-        &|v| Certificate(v),
-    )
+fn read_certs(rd: &mut dyn BufRead) -> Result<Vec<Certificate>, TlsConfigError> {
+    extract_cert_or_key(rd, "-----BEGIN CERTIFICATE-----", "-----END CERTIFICATE-----", &|v| {
+        Certificate(v)
+    })
 }
 
 /// Extract all RSA private keys from rd, and return a vec of `rustls::PrivateKey`s
 /// containing the der-format contents.
 ///
 /// Originally from rustls::pemfile::rsa_private_keys, modified to return errors.
-fn read_rsa_private_keys(
-    rd: &mut dyn BufRead,
-) -> Result<Vec<PrivateKey>, TlsConfigError> {
+fn read_rsa_private_keys(rd: &mut dyn BufRead) -> Result<Vec<PrivateKey>, TlsConfigError> {
     extract_cert_or_key(
         rd,
         "-----BEGIN RSA PRIVATE KEY-----",
@@ -478,9 +477,12 @@ impl Display for DatabaseConfigError {
             Self::IO(ref e, maybe_filename) => match maybe_filename {
                 None => write!(f, "I/O error: {}", e),
                 Some(filename) => write!(f, "{}: {}", filename, e),
-            }
+            },
             Self::InvalidPasswordFileEncoding(s, ref e) => write!(f, "Invalid password file encoding: {}: {}", s, e),
-            Self::MissingPassword => write!(f, "Database URL specifies a password placeholder but a password was not supplied"),
+            Self::MissingPassword => write!(
+                f,
+                "Database URL specifies a password placeholder but a password was not supplied"
+            ),
             Self::Pool(ref e) => write!(f, "Pool error: {}", e),
         }
     }
@@ -508,41 +510,40 @@ impl DatabaseConfig {
         } else if let Some(password_file) = &self.password_file {
             debug!("Database password file specified.");
             match read(&password_file) {
-                Ok(password_u8) => {
-                    match std::str::from_utf8(&password_u8) {
-                        Ok(password) => {
-                            info!("Successfully read database password file {}; replacing URL", password_file);
-                            let password = password.trim();
-                            Ok(url.replace("${password}", password))
-                        }
-                        Err(e) => {
-                            error!("Found non-UTF-8 characters in database password file {}", password_file);
-                            Err(DatabaseConfigError::InvalidPasswordFileEncoding(password_file.to_string(), e))
-                        }
+                Ok(password_u8) => match std::str::from_utf8(&password_u8) {
+                    Ok(password) => {
+                        info!(
+                            "Successfully read database password file {}; replacing URL",
+                            password_file
+                        );
+                        let password = password.trim();
+                        Ok(url.replace("${password}", password))
                     }
-                }
+                    Err(e) => {
+                        error!("Found non-UTF-8 characters in database password file {}", password_file);
+                        Err(DatabaseConfigError::InvalidPasswordFileEncoding(
+                            password_file.to_string(),
+                            e,
+                        ))
+                    }
+                },
                 Err(e) => {
-                    error!(
-                        "Failed to open database password file {}: {}",
-                        password_file, e
-                    );
-                    Err(DatabaseConfigError::IO(
-                        e,
-                        Some(password_file.to_string()),
-                    ))
+                    error!("Failed to open database password file {}: {}", password_file, e);
+                    Err(DatabaseConfigError::IO(e, Some(password_file.to_string())))
                 }
             }
         } else if url.contains("${password}") {
-            error!("Found password placeholder '${{password}}' in database URL but no password was supplied: {}", url);
+            error!(
+                "Found password placeholder '${{password}}' in database URL but no password was supplied: {}",
+                url
+            );
             Err(DatabaseConfigError::MissingPassword)
         } else {
             Ok(url)
         }
     }
 
-    pub fn get_pool_builder<M: ManageConnection>(
-        &self,
-    ) -> Result<PoolBuilder<M>, DatabaseConfigError> {
+    pub fn get_pool_builder<M: ManageConnection>(&self) -> Result<PoolBuilder<M>, DatabaseConfigError> {
         let mut pb = PoolBuilder::new();
 
         if let Some(pool_size) = self.pool_size {
@@ -563,10 +564,7 @@ impl DatabaseConfig {
         Ok(pb)
     }
 
-    pub fn get_pool(
-        &self,
-    ) -> Result<Pool<ConnectionManager<PgConnection>>, DatabaseConfigError>
-    {
+    pub fn get_pool(&self) -> Result<Pool<ConnectionManager<PgConnection>>, DatabaseConfigError> {
         let url = self.get_postgres_url()?;
         let cm = ConnectionManager::<PgConnection>::new(url);
         let pb = self.get_pool_builder()?;
