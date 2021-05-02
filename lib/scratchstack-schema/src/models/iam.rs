@@ -145,7 +145,7 @@ pub struct IamUserSshPublicKey {
     pub fingerprint: String,
     pub ssh_public_key_body: String,
     pub active: bool,
-    pub created_at: NaiveDateTime
+    pub created_at: NaiveDateTime,
 }
 
 #[derive(Debug, Queryable, PartialEq)]

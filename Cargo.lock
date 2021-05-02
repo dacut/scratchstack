@@ -40,23 +40,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8aac770f1885fd7e387acedd76065302551364496e46b3dd00860b2f8359b9d"
 
 [[package]]
-name = "aws_sig_verify"
-version = "0.8.0"
-dependencies = [
- "async-trait",
- "chrono",
- "hex",
- "http",
- "lazy_static",
- "log",
- "regex",
- "ring",
- "serde",
- "serde_derive",
- "tower",
-]
-
-[[package]]
 name = "base64"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -170,6 +153,7 @@ dependencies = [
  "byteorder",
  "chrono",
  "diesel_derives",
+ "libsqlite3-sys",
  "pq-sys",
  "r2d2",
 ]
@@ -481,22 +465,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hyper_aws_sig_verify"
-version = "0.1.0"
-dependencies = [
- "aws_sig_verify",
- "chrono",
- "futures",
- "http",
- "http-body",
- "hyper",
- "log",
- "serde_json",
- "tokio",
- "tower",
-]
-
-[[package]]
 name = "indexmap"
 version = "1.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -538,6 +506,16 @@ name = "libc"
 version = "0.2.90"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba4aede83fc3617411dc6993bc8c70919750c1c257c6ca6a502aed6e0e2394ae"
+
+[[package]]
+name = "libsqlite3-sys"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e704a02bcaecd4a08b93a23f6be59d0bd79cd161e0963e9499165a0a35df7bd"
+dependencies = [
+ "pkg-config",
+ "vcpkg",
+]
 
 [[package]]
 name = "lock_api"
@@ -760,6 +738,12 @@ name = "pin-utils"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
+
+[[package]]
+name = "pkg-config"
+version = "0.3.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3831453b3449ceb48b6d9c7ad7c96d5ea673e9b470a1dc578c2ce6521230884c"
 
 [[package]]
 name = "postgres"
@@ -988,10 +972,66 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 
 [[package]]
+name = "scratchstack-aws-principal"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75396d0ab7601d9a58a33574e6cd02ec36f92b82f667abafdc9eaeb454cbd9d8"
+dependencies = [
+ "log",
+]
+
+[[package]]
+name = "scratchstack-aws-signature"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91be12c4fb2f5cd4b1e918dfb1ee5532995b5867ff12a223be90e65289ce07cf"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "hex",
+ "http",
+ "lazy_static",
+ "log",
+ "regex",
+ "ring",
+ "scratchstack-aws-principal",
+ "tower",
+]
+
+[[package]]
+name = "scratchstack-aws-signature-hyper"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01cb28f67e307e9ec054c4f355d88a9ef0b7f94284ca772f2c0047dfc8b6b112"
+dependencies = [
+ "chrono",
+ "futures",
+ "http",
+ "http-body",
+ "hyper",
+ "log",
+ "scratchstack-aws-principal",
+ "scratchstack-aws-signature",
+ "tokio",
+ "tower",
+]
+
+[[package]]
+name = "scratchstack-get-signing-key-direct"
+version = "0.1.0"
+dependencies = [
+ "diesel",
+ "postgres",
+ "scratchstack-aws-principal",
+ "scratchstack-aws-signature",
+ "scratchstack-schema",
+ "tower",
+]
+
+[[package]]
 name = "scratchstack-iam"
 version = "0.1.0"
 dependencies = [
- "aws_sig_verify",
  "base64",
  "chrono",
  "diesel",
@@ -1003,11 +1043,13 @@ dependencies = [
  "humantime",
  "humantime-serde",
  "hyper",
- "hyper_aws_sig_verify",
  "log",
  "postgres",
  "rustls",
- "scratchstack_schema",
+ "scratchstack-aws-signature",
+ "scratchstack-aws-signature-hyper",
+ "scratchstack-get-signing-key-direct",
+ "scratchstack-schema",
  "serde",
  "serde_json",
  "tokio",
@@ -1016,18 +1058,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "scratchstack_aspen"
-version = "0.1.0"
-dependencies = [
- "env_logger",
- "log",
- "serde",
- "serde_json",
- "test-env-log",
-]
-
-[[package]]
-name = "scratchstack_schema"
+name = "scratchstack-schema"
 version = "0.1.0"
 dependencies = [
  "chrono",
@@ -1181,17 +1212,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dfed899f0eb03f32ee8c6a0aabdb8a7949659e3466561fc0adf54e26d88c5f4"
 dependencies = [
  "winapi-util",
-]
-
-[[package]]
-name = "test-env-log"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e61b8176952b2985e5916cccb929e14731fdad26d2923efe888003702467e6ad"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]

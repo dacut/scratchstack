@@ -1,6 +1,6 @@
 [workspace]
 members = [
     "services/iam",
-    "lib/scratchstack_schema",
-    "lib/scratchstack_aspen",
+    "lib/scratchstack-get-signing-key-direct",
+    "lib/scratchstack-schema",
 ]
