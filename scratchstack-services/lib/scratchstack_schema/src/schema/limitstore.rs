@@ -1,6 +1,6 @@
 table! {
     limitstore.account_limit (account_id, limit_id, region) {
-        account_id -> Bpchar,
+        account_id -> Varchar,
         limit_id -> Int8,
         region -> Varchar,
         int_value -> Nullable<Int4>,
