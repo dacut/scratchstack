@@ -131,10 +131,7 @@ fn main() {
     let config = match Config::read_file(&config_filename) {
         Ok(c) => c,
         Err(e) => {
-            error!(
-                "Unable to read configuration file {}: {}",
-                config_filename, e
-            );
+            error!("Unable to read configuration file {}: {}", config_filename, e);
             exit(2);
         }
     };
@@ -170,16 +167,12 @@ fn main() {
     println!("{:#?}", runtime.block_on(run_server_from_config(config)));
 }
 
-async fn run_server_from_config(
-    config: ResolvedConfig,
-) -> Result<(), ServerError> {
+async fn run_server_from_config(config: ResolvedConfig) -> Result<(), ServerError> {
     let pool = Arc::new(config.pool);
 
     match config.tls {
         Some(t) => {
-            info!(
-                "TLS configuration detected; creating acceptor and listener"
-            );
+            info!("TLS configuration detected; creating acceptor and listener");
             let acceptor = TlsAcceptor::from(Arc::new(t));
             let tcp_listener = TcpListener::bind(&config.address).await?;
             let incoming = TlsIncoming::new(tcp_listener, acceptor);
@@ -199,9 +192,7 @@ async fn run_server_from_config(
                 region: config.region,
             };
             info!("Non-TLS configuration detected; starting Hyper");
-            HyperServer::bind(&config.address)
-                .serve(service_maker)
-                .await?;
+            HyperServer::bind(&config.address).serve(service_maker).await?;
             Ok(())
         }
     }
@@ -255,22 +246,14 @@ pub struct IAMServiceMaker {
     region: String,
 }
 
-type Verifier = AwsSigV4VerifierService<
-    GetSigningKeyFromDatabase<PgConnection>,
-    IAMService,
->;
+type Verifier = AwsSigV4VerifierService<GetSigningKeyFromDatabase<PgConnection>, IAMService>;
 
 impl Service<&AddrStream> for IAMServiceMaker {
     type Response = Verifier;
     type Error = BoxError;
-    type Future = Pin<
-        Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>,
-    >;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
-    fn poll_ready(
-        &mut self,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
@@ -293,14 +276,9 @@ impl Service<&AddrStream> for IAMServiceMaker {
 impl Service<&TlsStream<TcpStream>> for IAMServiceMaker {
     type Response = Verifier;
     type Error = BoxError;
-    type Future = Pin<
-        Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>,
-    >;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
-    fn poll_ready(
-        &mut self,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
@@ -326,14 +304,9 @@ pub struct IAMService {}
 impl Service<Request<Body>> for IAMService {
     type Response = Response<Body>;
     type Error = BoxError;
-    type Future = Pin<
-        Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>,
-    >;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
-    fn poll_ready(
-        &mut self,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 

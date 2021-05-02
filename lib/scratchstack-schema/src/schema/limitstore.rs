@@ -40,9 +40,4 @@ joinable!(account_limit -> limit_definition (limit_id));
 joinable!(account_limit -> region (region));
 joinable!(limit_definition -> value_type (value_type));
 
-allow_tables_to_appear_in_same_query!(
-    account_limit,
-    limit_definition,
-    region,
-    value_type,
-);
+allow_tables_to_appear_in_same_query!(account_limit, limit_definition, region, value_type,);

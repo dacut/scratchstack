@@ -14,9 +14,7 @@ use diesel::{
     Connection, ExpressionMethods, JoinOnDsl, QueryDsl, RunQueryDsl,
 };
 use scratchstack_aws_principal::PrincipalActor;
-use scratchstack_aws_signature::{
-    GetSigningKeyRequest, SignatureError, SigningKey, SigningKeyKind,
-};
+use scratchstack_aws_signature::{GetSigningKeyRequest, SignatureError, SigningKey, SigningKeyKind};
 use tower::{BoxError, Service};
 
 pub struct GetSigningKeyFromDatabase<C>
@@ -45,20 +43,11 @@ where
 
 impl<C, B> GetSigningKeyFromDatabase<C>
 where
-    C: Connection<Backend = B, TransactionManager = AnsiTransactionManager>
-        + Send
-        + 'static,
-    B: Backend<RawValue = [u8]>
-        + HasSqlType<sql_types::Bool>
-        + UsesAnsiSavepointSyntax,
+    C: Connection<Backend = B, TransactionManager = AnsiTransactionManager> + Send + 'static,
+    B: Backend<RawValue = [u8]> + HasSqlType<sql_types::Bool> + UsesAnsiSavepointSyntax,
     bool: ToSql<sql_types::Bool, C::Backend>,
 {
-    pub fn new<S1, S2, S3>(
-        pool: Arc<Pool<ConnectionManager<C>>>,
-        partition: S1,
-        region: S2,
-        service: S3,
-    ) -> Self
+    pub fn new<S1, S2, S3>(pool: Arc<Pool<ConnectionManager<C>>>, partition: S1, region: S2, service: S3) -> Self
     where
         S1: Into<String>,
         S2: Into<String>,
@@ -75,24 +64,15 @@ where
 
 impl<C, B> Service<GetSigningKeyRequest> for GetSigningKeyFromDatabase<C>
 where
-    C: Connection<Backend = B, TransactionManager = AnsiTransactionManager>
-        + Send
-        + 'static,
-    B: Backend<RawValue = [u8]>
-        + HasSqlType<sql_types::Bool>
-        + UsesAnsiSavepointSyntax,
+    C: Connection<Backend = B, TransactionManager = AnsiTransactionManager> + Send + 'static,
+    B: Backend<RawValue = [u8]> + HasSqlType<sql_types::Bool> + UsesAnsiSavepointSyntax,
     bool: ToSql<sql_types::Bool, C::Backend>,
 {
     type Response = (PrincipalActor, SigningKey);
     type Error = BoxError;
-    type Future = Pin<
-        Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>,
-    >;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
-    fn poll_ready(
-        &mut self,
-        _: &mut Context,
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, _: &mut Context) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
@@ -121,14 +101,10 @@ where
                     use scratchstack_schema::schema::iam::iam_user_credential;
 
                     let query = iam_user_credential::table
-                        .filter(
-                            iam_user_credential::columns::access_key_id
-                                .eq(&req.access_key[4..]),
-                        )
+                        .filter(iam_user_credential::columns::access_key_id.eq(&req.access_key[4..]))
                         .filter(iam_user_credential::columns::active.eq(true))
                         .inner_join(
-                            iam_user::table.on(iam_user::columns::user_id
-                                .eq(iam_user_credential::columns::user_id)),
+                            iam_user::table.on(iam_user::columns::user_id.eq(iam_user_credential::columns::user_id)),
                         )
                         .select((
                             iam_user::columns::user_id,
@@ -137,11 +113,7 @@ where
                             iam_user::columns::user_name_cased,
                             iam_user_credential::columns::secret_key,
                         ));
-                    let results =
-                        query
-                            .load::<(String, String, String, String, String)>(
-                                &db,
-                            )?;
+                    let results = query.load::<(String, String, String, String, String)>(&db)?;
 
                     if results.len() == 0 {
                         Err(SignatureError::UnknownAccessKey {
@@ -149,24 +121,15 @@ where
                         }
                         .into())
                     } else {
-                        let (user_id, account_id, path, user_name, secret_key) =
-                            &results[0];
+                        let (user_id, account_id, path, user_name, secret_key) = &results[0];
                         let secret_key: &String = secret_key;
                         let sk = SigningKey {
                             kind: SigningKeyKind::KSecret,
                             key: secret_key.as_bytes().to_vec(),
                         };
-                        let sk = sk.derive(
-                            req.signing_key_kind,
-                            &req.request_date,
-                            &region,
-                            &service,
-                        );
+                        let sk = sk.derive(req.signing_key_kind, &req.request_date, &region, &service);
                         Ok((
-                            PrincipalActor::user(
-                                partition, account_id, path, user_name,
-                                user_id,
-                            )?,
+                            PrincipalActor::user(partition, account_id, path, user_name, user_id)?,
                             sk,
                         ))
                     }
