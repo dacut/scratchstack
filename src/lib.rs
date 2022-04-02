@@ -1,5 +1,4 @@
 #![warn(clippy::all)]
-#![feature(doc_cfg)]
 
 //! Principals for AWS and AWS-like services.
 //!
