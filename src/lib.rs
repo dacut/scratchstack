@@ -71,9 +71,8 @@ pub enum PrincipalError {
     /// Invalid role id. The argument contains the specified role id.
     InvalidRoleId(String),
 
-    /// Invalid service name. The argument contains the specified service name.
-    #[cfg(feature = "service")]
-    #[doc(cfg(feature = "service"))]
+    /// Invalid service name. The argument contains the specified service name. Requires the `service` feature.
+    #[cfg(any(feature = "service", doc))]
     InvalidServiceName(String),
 
     /// Invalid session name. The argument contains the specified session name.

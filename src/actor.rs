@@ -51,9 +51,8 @@ pub enum PrincipalActor {
     /// Details for the root user of an account.
     RootUser(RootUserDetails),
 
-    #[doc(cfg(feature = "service"))]
-    #[cfg(feature = "service")]
-    /// Details for a service.
+    #[cfg(any(feature = "service", doc))]
+    /// Details for a service. Requires the `service` feature.
     Service(ServiceDetails),
 
     /// Details for an IAM user.
@@ -334,9 +333,8 @@ impl PrincipalActor {
         Ok(Self::RootUser(RootUserDetails::new(Some(partition.into()), account_id)?))
     }
 
-    #[cfg(feature = "service")]
-    #[doc(cfg(feature = "service"))]
-    /// Return a principal for a service.
+    #[cfg(any(feature = "service", doc))]
+    /// Return a principal for a service. Requires the `service` feature.
     ///
     /// # Arguments
     ///

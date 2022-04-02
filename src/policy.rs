@@ -12,7 +12,7 @@ pub type GroupDetails = details::GroupDetails<()>;
 pub type InstanceProfileDetails = details::InstanceProfileDetails<()>;
 pub type RoleDetails = details::RoleDetails<()>;
 pub type RootUserDetails = details::RootUserDetails;
-#[cfg(feature = "service")]
+#[cfg(any(feature = "service", doc))]
 pub type ServiceDetails = details::ServiceDetails<()>;
 pub type UserDetails = details::UserDetails<()>;
 
@@ -37,9 +37,8 @@ pub enum PolicyPrincipal {
     /// Details for the root user of an account.
     RootUser(RootUserDetails),
 
-    #[doc(cfg(feature = "service"))]
-    #[cfg(feature = "service")]
-    /// Details for a service.
+    #[cfg(any(feature = "service", doc))]
+    /// Details for a service. Requires the `service` feature.
     Service(ServiceDetails),
 
     /// Details for an IAM user.
@@ -291,9 +290,8 @@ impl PolicyPrincipal {
         Ok(Self::User(UserDetails::new(partition, account_id, path, user_name, ())?))
     }
 
-    #[cfg(feature = "service")]
-    #[doc(cfg(feature = "service"))]
-    /// Return a principal for a service.
+    #[cfg(any(feature = "service", doc))]
+    /// Return a principal for a service. Requies the `service` feature.
     ///
     /// # Arguments
     ///

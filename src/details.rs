@@ -370,10 +370,9 @@ impl RootUserDetails {
     }
 }
 
-/// Details about a service.
-#[doc(cfg(feature = "service"))]
-#[cfg(feature = "service")]
+#[cfg(any(feature = "service", doc))]
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// Details about a service. Requires the `service` feature.
 pub struct ServiceDetails<T: Data> {
     /// The partition this principal exists in. If None, the current partition is assumed.
     pub partition: Option<String>,
@@ -385,10 +384,9 @@ pub struct ServiceDetails<T: Data> {
     pub data: T,
 }
 
-#[cfg(feature = "service")]
+#[cfg(any(feature = "service", doc))]
 impl<T: Data> ServiceDetails<T> {
-    #[doc(cfg(feature = "service"))]
-    /// Create a [ServiceDetails] object
+    /// Create a [ServiceDetails] object. Requires the `service` feature.
     ///
     /// # Arguments
     ///
