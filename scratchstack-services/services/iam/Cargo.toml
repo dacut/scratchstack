@@ -17,7 +17,7 @@ http = "^0.2"
 http-body = "^0.4"
 humantime = "^2.1"
 humantime-serde = "^1.1"
-hyper = { version = "^0.14", features = [ "http1", "http2", "runtime", "server", "tcp" ] }
+hyper = { version = "~0.14.19", features = [ "http1", "http2", "runtime", "server", "tcp" ] }
 log = "^0.4"
 postgres = "^0.19"
 rustls = "^0.20"
