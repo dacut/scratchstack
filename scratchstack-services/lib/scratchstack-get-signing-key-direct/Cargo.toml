@@ -12,12 +12,12 @@ readme = "../../README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-scratchstack-aws-principal = { version = "^0.3" }
-scratchstack-aws-signature = { version = "^0.10" }
+scratchstack-aws-principal = "^0.3"
+scratchstack-aws-signature = "^0.10"
 diesel = { version = "^1.4", features = [ "chrono" ] }
 postgres = "^0.19"
 scratchstack-schema = { version = "^0.1", path = "../scratchstack-schema" }
-tower = { version = "^0.4" }
+tower = "^0.4"
 
 [dev-dependencies]
 diesel = { version = "^1.4", features = [ "chrono", "sqlite" ] }
