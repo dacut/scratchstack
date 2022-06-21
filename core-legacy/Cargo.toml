@@ -16,5 +16,5 @@ service = []
 log = "^0.4"
 
 [dev-dependencies]
-env_logger = "^0.8"
+env_logger = "^0.9"
 test-env-log = "^0.2"
