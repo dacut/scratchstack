@@ -16,7 +16,7 @@ use diesel::{
 };
 use hyper::Error as HyperError;
 use log::{debug, error, info};
-use rustls::{Certificate, NoClientAuth, PrivateKey, ServerConfig, TLSError};
+use rustls::{Certificate, Error as TLSError, PrivateKey, ServerConfig};
 use serde::Deserialize;
 use serde_json;
 use tokio_rustls::rustls::ServerConfig as TlsServerConfig;
@@ -131,11 +131,7 @@ impl Debug for ResolvedConfig {
         )?;
         match self.tls {
             None => write!(f, "tls=None, ")?,
-            Some(ref tsc) => write!(
-                f,
-                "tls=Some(ServerConfig{{ciphersuites={:?}, ignore_client_order={:?}, mtu={:?}, versions={:?}}}",
-                tsc.ciphersuites, tsc.ignore_client_order, tsc.mtu, tsc.versions
-            )?,
+            Some(ref _tsc) => write!(f, "tls=Some(ServerConfig), ")?,
         }
         write!(
             f,
@@ -260,7 +256,7 @@ pub struct TlsConfig {
 impl TlsConfig {
     /// Resolve files referenced in the TLS configuration to actual certificates and keys.
     pub fn to_server_config(&self) -> Result<ServerConfig, TlsConfigError> {
-        let mut sc = ServerConfig::new(NoClientAuth::new());
+        let builder = ServerConfig::builder().with_safe_defaults().with_no_client_auth();
 
         let cert_file = File::open(&self.certificate_chain_file)?;
         let mut reader = BufReader::new(cert_file);
@@ -281,8 +277,7 @@ impl TlsConfig {
         }
         let private_key = private_keys.remove(0);
 
-        sc.set_single_cert(certs, private_key)?;
-        Ok(sc)
+        Ok(builder.with_single_cert(certs, private_key)?)
     }
 }
 
