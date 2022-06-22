@@ -1205,6 +1205,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "service")]
     fn check_valid_services() {
         assert_eq!(PrincipalActor::service("aws", "service-name", None).unwrap().to_string(), "service-name");
         assert_eq!(
@@ -1214,6 +1215,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "service")]
     fn check_invalid_services() {
         assert_eq!(
             PrincipalActor::service("aws", "service name", None).unwrap_err().to_string(),

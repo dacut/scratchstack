@@ -439,7 +439,7 @@ mod tests {
     use super::PolicyPrincipal;
     use std::str::FromStr;
 
-    use test_env_log::test;
+    use test_log::test;
 
     #[test]
     fn check_valid_assumed_roles() {
@@ -929,6 +929,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "service")]
     fn check_valid_services() {
         let s1 = PolicyPrincipal::service(Some("aws".to_string()), "service-name").unwrap();
         assert_eq!(s1.to_string(), "service-name");
@@ -938,6 +939,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "service")]
     fn check_invalid_services() {
         assert_eq!(
             PolicyPrincipal::service(Some("aws".to_string()), "service name").unwrap_err().to_string(),
