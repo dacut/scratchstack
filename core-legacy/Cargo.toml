@@ -1,9 +1,9 @@
 [package]
 name = "scratchstack-aws-principal"
 description = "Principal types for AWS/AWS-like services"
-version = "0.3.3"
+version = "0.3.4"
 authors = ["David Cuthbert <dacut@kanga.org>"]
-edition = "2018"
+edition = "2021"
 license = "MIT OR Apache-2.0"
 keywords = ["AWS", "IAM", "Aspen", "policy"]
 homepage = "https://github.com/dacut/scratchstack-aws-principal"
@@ -17,4 +17,4 @@ log = "^0.4"
 
 [dev-dependencies]
 env_logger = "^0.9"
-test-env-log = "^0.2"
+test-log = "^0.2"
