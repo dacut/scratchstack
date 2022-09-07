@@ -1,7 +1,9 @@
 #!/bin/bash
-export RUSTFLAGS="-Zinstrument-coverage"
-export LLVM_PROFILE_FILE="scratchstack-aws-principal-%m.profraw"
-rm -f scratchstack-aws-principal*.profraw
-cargo test --features service
-rm -f scratchstack-aws-principal*.profdata
-cargo profdata -- merge -sparse scratchstack-aws-principal*.profraw -o scratchstack-aws-principal.profdata
+ROOT=$(cd $(dirname $0); pwd)
+rm -f *.profdata *.profraw
+export RUSTFLAGS="-C instrument-coverage"
+export LLVM_PROFILE_FILE="$ROOT/scratchstack-core-%m.profraw"
+cargo clean
+(cd arn && cargo test --tests)
+(cd principal && cargo test --tests)
+llvm-profdata merge -sparse scratchstack-core-*.profraw -o scratchstack-core.profdata

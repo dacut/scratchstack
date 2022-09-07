@@ -1,0 +1,13 @@
+[package]
+name = "scratchstack-aws-principal"
+description = "Principal types for AWS/AWS-like services"
+authors = ["David Cuthbert <dacut@kanga.org>"]
+edition = "2021"
+license = "MIT"
+version = "0.4.0"
+keywords = ["AWS", "IAM", "Aspen"]
+homepage = "https://github.com/dacut/scratchstack-core"
+repository = "https://github.com/dacut/scratchstack-core"
+
+[dependencies]
+scratchstack-arn = { version = "0.4.0", path = "../arn" }

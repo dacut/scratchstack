@@ -1,0 +1,23 @@
+[package]
+name = "scratchstack-arn"
+description = "Basic Amazon Resource Name (ARN) type"
+authors = ["David Cuthbert <dacut@kanga.org>"]
+edition = "2021"
+license = "MIT"
+version = "0.4.0"
+keywords = ["AWS", "IAM", "ARN"]
+homepage = "https://github.com/dacut/scratchstack-core"
+repository = "https://github.com/dacut/scratchstack-core"
+
+[lib]
+name = "scratchstack_arn"
+test = true
+doctest = false
+doc = true
+
+[dependencies]
+regex = { version = "^1.6" }
+regex-syntax = { version = "^0.6" }
+
+[dev-dependencies]
+env_logger = { version = "^0.9" }
