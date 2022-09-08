@@ -153,6 +153,14 @@ impl SessionData {
         self.variables.reserve(additional)
     }
 
+    /// Retains only the elements specified by the predicate.
+    ///
+    /// In other words, remove all pairs `(k, v)` for which `f(&k, &mut v)` returns `false`. The elements are visited
+    /// in unsorted (and unspecified) order.
+    pub fn retain<F: FnMut(&str, &mut SessionValue) -> bool>(&mut self, mut f: F) {
+        self.variables.retain(|key, value| f(key.as_str(), value))
+    }
+
     /// Shrinks the capacity of the map with a lower limit. It will drop down no lower than the supplied limit while
     /// maintaining the internal rules and possibly leaving some space in accordance with the resize policy.
     ///
@@ -308,6 +316,9 @@ impl PartialEq<HashMap<String, SessionValue>> for SessionData {
 /// Associated data about a session key.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SessionValue {
+    /// Null value
+    Null,
+
     /// Boolean value.
     Bool(bool),
 
@@ -324,10 +335,511 @@ pub enum SessionValue {
 impl Display for SessionValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
+            Self::Null => f.write_str("Null"),
             Self::Bool(b) => write!(f, "Bool({})", b),
             Self::Integer(i) => write!(f, "Integer({})", i),
             Self::IpAddr(ip) => write!(f, "IpAddr({})", ip),
             Self::String(s) => write!(f, "String({})", s),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::{SessionData, SessionValue},
+        std::{
+            cmp::Ordering,
+            collections::hash_map::{DefaultHasher, HashMap},
+            hash::{Hash, Hasher},
+            iter::IntoIterator,
+            net::{IpAddr, Ipv4Addr, Ipv6Addr},
+        },
+    };
+
+    #[test]
+    fn check_session_value_derived() {
+        let sv1a = SessionValue::Null;
+        let sv1b = SessionValue::Null;
+        let sv2 = SessionValue::Bool(true);
+        let values = vec![
+            SessionValue::Null,
+            SessionValue::Bool(false),
+            SessionValue::Bool(true),
+            SessionValue::Integer(-1),
+            SessionValue::Integer(0),
+            SessionValue::Integer(1),
+            SessionValue::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+            SessionValue::IpAddr(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))),
+            SessionValue::String("test1".to_string()),
+            SessionValue::String("test2".to_string()),
+        ];
+        let display = vec![
+            "Null",
+            "Bool(false)",
+            "Bool(true)",
+            "Integer(-1)",
+            "Integer(0)",
+            "Integer(1)",
+            "IpAddr(127.0.0.1)",
+            "IpAddr(::1)",
+            "String(test1)",
+            "String(test2)",
+        ];
+        assert_eq!(sv1a, sv1b);
+        assert_ne!(sv1a, sv2);
+        assert_eq!(sv1a, sv1a.clone());
+
+        // Ensure session values are hashable.
+        let mut h1a = DefaultHasher::new();
+        let mut h1b = DefaultHasher::new();
+        let mut h2 = DefaultHasher::new();
+        sv1a.hash(&mut h1a);
+        sv1b.hash(&mut h1b);
+        sv2.hash(&mut h2);
+        let hash1a = h1a.finish();
+        let hash1b = h1b.finish();
+        let hash2 = h2.finish();
+        assert_eq!(hash1a, hash1b);
+        assert_ne!(hash1a, hash2);
+
+        // Ensure a logical ordering for session values.
+        for i in 0..values.len() {
+            for j in 0..values.len() {
+                assert_eq!(values[i].cmp(&values[j]), i.cmp(&j));
+
+                match i.cmp(&j) {
+                    Ordering::Less => assert!(values[i] < values[j]),
+                    Ordering::Equal => assert!(values[i] == values[j]),
+                    Ordering::Greater => assert!(values[i] > values[j]),
+                }
+            }
+        }
+
+        // Ensure we can debug print session values.
+        for ref value in values.iter() {
+            let _ = format!("{:?}", value);
+        }
+
+        // Ensure the display matches
+        for i in 0..values.len() {
+            assert_eq!(values[i].to_string(), display[i]);
+        }
+    }
+
+    #[test]
+    fn check_case_sensitivity() {
+        let mut sd = SessionData::new();
+        assert!(sd.is_empty());
+        sd.insert("test", SessionValue::Null);
+        assert!(sd.contains_key("TEST"));
+        assert!(sd.contains_key("test"));
+
+        sd.insert("Test", SessionValue::Bool(true));
+        sd.insert("TeST2", SessionValue::Integer(100));
+        assert!(sd.contains_key("tEsT"));
+        assert!(sd.contains_key("test"));
+
+        assert_eq!(sd.len(), 2);
+        assert!(!sd.is_empty());
+        assert_eq!(sd.get("test"), Some(&SessionValue::Bool(true)));
+        assert!(sd.contains_key("tEsT"));
+        assert!(sd.contains_key("test"));
+        assert_eq!(sd.get_key_value("tEST"), Some(("test", &SessionValue::Bool(true))));
+
+        let sv = sd.get_mut("tesT");
+        assert!(sv.is_some());
+        *sv.unwrap() = SessionValue::String("Hello".to_string());
+        assert_eq!(sd.get("test"), Some(&SessionValue::String("Hello".to_string())));
+
+        sd.entry("test2").and_modify(|v| *v = SessionValue::Integer(200));
+        assert_eq!(sd["test2"], SessionValue::Integer(200));
+
+        assert!(sd.remove("teST").is_some());
+        assert!(sd.remove("test").is_none());
+        assert!(sd.remove_entry("test2").is_some());
+    }
+
+    #[test]
+    fn check_clone_eq() {
+        let mut sd1 = SessionData::new();
+        sd1.insert("test", SessionValue::String("Hello World".to_string()));
+        let sd2 = sd1.clone();
+        assert_eq!(sd1, sd2);
+
+        let mut sd3 = SessionData::with_capacity(1);
+        assert!(sd3.capacity() > 0);
+        sd3.insert("TEST", SessionValue::String("Hello World".to_string()));
+        assert_eq!(sd1, sd3);
+        sd3.drain();
+        assert_ne!(sd1, sd3);
+        sd3.insert("test", SessionValue::String("Hello again".to_string()));
+        assert_ne!(sd1, sd3);
+        sd3.insert("test", SessionValue::Integer(1));
+        assert_ne!(sd1, sd3);
+        sd3.clear();
+        sd3.insert("TeST", SessionValue::String("Hello World".to_string()));
+        assert_eq!(sd1, sd3);
+
+        let mut h = HashMap::with_capacity(1);
+        h.insert("test".to_string(), SessionValue::String("Hello World".to_string()));
+        assert_eq!(sd1, h);
+        h.drain();
+        assert_ne!(sd1, h);
+        h.insert("test".to_string(), SessionValue::String("Hello again".to_string()));
+        assert_ne!(sd1, h);
+        h.insert("test".to_string(), SessionValue::Integer(1));
+        assert_ne!(sd1, h);
+        h.insert("test".to_string(), SessionValue::String("Hello World".to_string()));
+        assert_eq!(sd1, h);
+        h.drain();
+        h.insert("test2".to_string(), SessionValue::String("Hello World".to_string()));
+        assert_ne!(sd1, h);
+
+        sd1.clear();
+        sd1.shrink_to_fit();
+        assert_eq!(sd1.capacity(), 0);
+        sd1.reserve(100);
+        assert!(sd1.capacity() >= 100);
+        sd1.shrink_to(50);
+        assert!(sd1.capacity() >= 50);
+
+        // Ensure we can debug print session data.
+        let _ = format!("{:?}", sd1);
+    }
+
+    #[test]
+    fn check_from_hashmap() {
+        let mut h = HashMap::new();
+        h.insert("Test".to_string(), SessionValue::String("Hello World".to_string()));
+        let mut sd = SessionData::from(h);
+        assert_eq!(sd.len(), 1);
+        assert_eq!(sd["test"], SessionValue::String("Hello World".to_string()));
+
+        let to_add = vec![("Test2", SessionValue::Integer(100)), ("Test3", SessionValue::Bool(true))];
+
+        sd.extend(to_add.iter().map(|r| (r.0, &r.1)));
+        assert_eq!(sd.len(), 3);
+        assert_eq!(sd["test2"], SessionValue::Integer(100));
+        assert_eq!(sd["test3"], SessionValue::Bool(true));
+    }
+
+    #[test]
+    fn check_from_array() {
+        let values: [(String, SessionValue); 3] = [
+            ("Test".to_string(), SessionValue::String("Hello World".to_string())),
+            ("Test2".to_string(), SessionValue::Integer(100)),
+            ("Test3".to_string(), SessionValue::Bool(true)),
+        ];
+        let sd = SessionData::from(values);
+        assert_eq!(sd.len(), 3);
+        assert_eq!(sd["test"], SessionValue::String("Hello World".to_string()));
+        assert_eq!(sd["test2"], SessionValue::Integer(100));
+        assert_eq!(sd["test3"], SessionValue::Bool(true));
+    }
+
+    #[test]
+    fn check_from_iter() {
+        let values = vec![
+            ("Test".to_string(), SessionValue::String("Hello World".to_string())),
+            ("Test2".to_string(), SessionValue::Integer(100)),
+            ("Test3".to_string(), SessionValue::Bool(true)),
+        ];
+        let sd = SessionData::from_iter(values);
+        assert_eq!(sd.len(), 3);
+        assert_eq!(sd["test"], SessionValue::String("Hello World".to_string()));
+        assert_eq!(sd["test2"], SessionValue::Integer(100));
+        assert_eq!(sd["test3"], SessionValue::Bool(true));
+    }
+
+    #[test]
+    fn check_keys() {
+        let mut sd: SessionData = Default::default();
+        sd.try_reserve(3).unwrap();
+        sd.insert("test1", SessionValue::Null);
+        sd.insert("TEst2", SessionValue::Bool(true));
+        sd.insert("tesT3", SessionValue::Integer(1));
+
+        let mut test1_seen = false;
+        let mut test2_seen = false;
+        let mut test3_seen = false;
+        for key in sd.keys() {
+            match key.as_str() {
+                "test1" => {
+                    assert!(!test1_seen);
+                    test1_seen = true;
+                }
+                "test2" => {
+                    assert!(!test2_seen);
+                    test2_seen = true;
+                }
+                "test3" => {
+                    assert!(!test3_seen);
+                    test3_seen = true;
+                }
+                _ => panic!("Unexpected key: {}", key),
+            }
+        }
+        assert!(test1_seen);
+        assert!(test2_seen);
+        assert!(test3_seen);
+
+        test1_seen = false;
+        test2_seen = false;
+        test3_seen = false;
+        for key in sd.into_keys() {
+            match key.as_str() {
+                "test1" => {
+                    assert!(!test1_seen);
+                    test1_seen = true;
+                }
+                "test2" => {
+                    assert!(!test2_seen);
+                    test2_seen = true;
+                }
+                "test3" => {
+                    assert!(!test3_seen);
+                    test3_seen = true;
+                }
+                _ => panic!("Unexpected key: {}", key),
+            }
+        }
+        assert!(test1_seen);
+        assert!(test2_seen);
+        assert!(test3_seen);
+    }
+
+    #[test]
+    fn check_values() {
+        let mut sd: SessionData = Default::default();
+        sd.try_reserve(3).unwrap();
+        sd.insert("test1", SessionValue::Null);
+        sd.insert("TEst2", SessionValue::Bool(true));
+        sd.insert("tesT3", SessionValue::Integer(1));
+
+
+        let mut test1_seen = false;
+        let mut test2_seen = false;
+        let mut test3_seen = false;
+        for value in sd.values_mut() {
+            match value {
+                SessionValue::Null => {
+                    assert!(!test1_seen);
+                    test1_seen = true;
+                    *value = SessionValue::Integer(100);
+                }
+                SessionValue::Bool(true) => {
+                    assert!(!test2_seen);
+                    test2_seen = true;
+                    *value = SessionValue::Integer(101);
+                }
+                SessionValue::Integer(1) => {
+                    assert!(!test3_seen);
+                    test3_seen = true;
+                    *value = SessionValue::Integer(102);
+                }
+                _ => panic!("Unexpected value: {}", value),
+            }
+        }
+        assert!(test1_seen);
+        assert!(test2_seen);
+        assert!(test3_seen);
+
+
+        let mut test1_seen = false;
+        let mut test2_seen = false;
+        let mut test3_seen = false;
+        for value in sd.values() {
+            match value {
+                SessionValue::Integer(100) => {
+                    assert!(!test1_seen);
+                    test1_seen = true
+                }
+                SessionValue::Integer(101) => {
+                    assert!(!test2_seen);
+                    test2_seen = true
+                }
+                SessionValue::Integer(102) => {
+                    assert!(!test3_seen);
+                    test3_seen = true
+                }
+                _ => panic!("Unexpected value: {}", value),
+            }
+        }
+        assert!(test1_seen);
+        assert!(test2_seen);
+        assert!(test3_seen);
+
+        test1_seen = false;
+        test2_seen = false;
+        test3_seen = false;
+        for value in sd.into_values() {
+            match value {
+                SessionValue::Integer(100) => {
+                    assert!(!test1_seen);
+                    test1_seen = true
+                }
+                SessionValue::Integer(101) => {
+                    assert!(!test2_seen);
+                    test2_seen = true
+                }
+                SessionValue::Integer(102) => {
+                    assert!(!test3_seen);
+                    test3_seen = true
+                }
+                _ => panic!("Unexpected value: {}", value),
+            }
+        }
+        assert!(test1_seen);
+        assert!(test2_seen);
+        assert!(test3_seen);
+    }
+
+    #[test]
+    fn check_iter() {
+        let mut sd: SessionData = Default::default();
+        sd.try_reserve(3).unwrap();
+        sd.insert("test1", SessionValue::Null);
+        sd.insert("TEst2", SessionValue::Bool(true));
+        sd.insert("tesT3", SessionValue::Integer(1));
+
+
+        let mut test1_seen = false;
+        let mut test2_seen = false;
+        let mut test3_seen = false;
+        for (key, value) in sd.iter_mut() {
+            match key.as_str() {
+                "test1" => {
+                    assert_eq!(value, &SessionValue::Null);
+                    assert!(!test1_seen);
+                    *value = SessionValue::Integer(100);
+                    test1_seen = true;
+                }
+                "test2" => {
+                    assert_eq!(value, &SessionValue::Bool(true));
+                    assert!(!test2_seen);
+                    *value = SessionValue::Integer(101);
+                    test2_seen = true;
+                }
+                "test3" => {
+                    assert_eq!(value, &SessionValue::Integer(1));
+                    assert!(!test3_seen);
+                    *value = SessionValue::Integer(102);
+                    test3_seen = true;
+                }
+                _ => panic!("Unexpected value: {}", value),
+            }
+        }
+        assert!(test1_seen);
+        assert!(test2_seen);
+        assert!(test3_seen);
+
+
+        let mut test1_seen = false;
+        let mut test2_seen = false;
+        let mut test3_seen = false;
+        for (key, value) in sd.iter() {
+            match key.as_str() {
+                "test1" => {
+                    assert_eq!(value, &SessionValue::Integer(100));
+                    assert!(!test1_seen);
+                    test1_seen = true;
+                }
+                "test2" => {
+                    assert_eq!(value, &SessionValue::Integer(101));
+                    assert!(!test2_seen);
+                    test2_seen = true;
+                }
+                "test3" => {
+                    assert_eq!(value, &SessionValue::Integer(102));
+                    assert!(!test3_seen);
+                    test3_seen = true;
+                }
+                _ => panic!("Unexpected key: {}", key),
+            }
+        }
+        assert!(test1_seen);
+        assert!(test2_seen);
+        assert!(test3_seen);
+
+        let mut sd_mut = sd.clone();
+
+        test1_seen = false;
+        test2_seen = false;
+        test3_seen = false;
+        for (key, value) in (&sd).into_iter() {
+            match key.as_str() {
+                "test1" => {
+                    assert_eq!(value, &SessionValue::Integer(100));
+                    assert!(!test1_seen);
+                    test1_seen = true;
+                }
+                "test2" => {
+                    assert_eq!(value, &SessionValue::Integer(101));
+                    assert!(!test2_seen);
+                    test2_seen = true;
+                }
+                "test3" => {
+                    assert_eq!(value, &SessionValue::Integer(102));
+                    assert!(!test3_seen);
+                    test3_seen = true;
+                }
+                _ => panic!("Unexpected key: {}", key),
+            }
+        }
+        assert!(test1_seen);
+        assert!(test2_seen);
+        assert!(test3_seen);
+
+        test1_seen = false;
+        test2_seen = false;
+        test3_seen = false;
+        for (key, value) in sd.into_iter() {
+            match key.as_str() {
+                "test1" => {
+                    assert_eq!(value, SessionValue::Integer(100));
+                    assert!(!test1_seen);
+                    test1_seen = true;
+                }
+                "test2" => {
+                    assert_eq!(value, SessionValue::Integer(101));
+                    assert!(!test2_seen);
+                    test2_seen = true;
+                }
+                "test3" => {
+                    assert_eq!(value, SessionValue::Integer(102));
+                    assert!(!test3_seen);
+                    test3_seen = true;
+                }
+                _ => panic!("Unexpected key: {}", key),
+            }
+        }
+        assert!(test1_seen);
+        assert!(test2_seen);
+        assert!(test3_seen);
+
+        sd_mut.retain(|k, _| k != "test3");
+
+        test1_seen = false;
+        test2_seen = false;
+        test3_seen = false;
+        for (key, value) in (&mut sd_mut).into_iter() {
+            match key.as_str() {
+                "test1" => {
+                    assert_eq!(value, &SessionValue::Integer(100));
+                    assert!(!test1_seen);
+                    test1_seen = true;
+                }
+                "test2" => {
+                    assert_eq!(value, &SessionValue::Integer(101));
+                    assert!(!test2_seen);
+                    test2_seen = true;
+                }
+                _ => panic!("Unexpected key: {}", key),
+            }
+        }
+        assert!(test1_seen);
+        assert!(test2_seen);
+        assert!(!test3_seen);
     }
 }
