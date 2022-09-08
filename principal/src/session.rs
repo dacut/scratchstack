@@ -617,7 +617,6 @@ mod tests {
         sd.insert("TEst2", SessionValue::Bool(true));
         sd.insert("tesT3", SessionValue::Integer(1));
 
-
         let mut test1_seen = false;
         let mut test2_seen = false;
         let mut test3_seen = false;
@@ -644,7 +643,6 @@ mod tests {
         assert!(test1_seen);
         assert!(test2_seen);
         assert!(test3_seen);
-
 
         let mut test1_seen = false;
         let mut test2_seen = false;
@@ -703,7 +701,6 @@ mod tests {
         sd.insert("TEst2", SessionValue::Bool(true));
         sd.insert("tesT3", SessionValue::Integer(1));
 
-
         let mut test1_seen = false;
         let mut test2_seen = false;
         let mut test3_seen = false;
@@ -733,7 +730,6 @@ mod tests {
         assert!(test1_seen);
         assert!(test2_seen);
         assert!(test3_seen);
-
 
         let mut test1_seen = false;
         let mut test2_seen = false;
