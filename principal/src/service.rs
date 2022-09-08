@@ -4,8 +4,8 @@ use {
     std::fmt::{Display, Formatter, Result as FmtResult},
 };
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 /// Details about a service.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Service {
     /// Name of the service.
     service_name: String,

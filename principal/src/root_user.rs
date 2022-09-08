@@ -7,7 +7,7 @@ use {
     std::fmt::{Display, Formatter, Result as FmtResult},
 };
 
-/// Details about an AWS account.
+/// Details about an AWS account root user.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RootUser {
     /// The partition this principal exists in.

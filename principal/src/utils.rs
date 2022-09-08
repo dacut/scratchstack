@@ -198,7 +198,10 @@ mod test {
     use {
         super::{validate_identifier, validate_name, IamIdPrefix},
         crate::PrincipalError,
-        std::{collections::hash_map::DefaultHasher, hash::{Hash, Hasher}}
+        std::{
+            collections::hash_map::DefaultHasher,
+            hash::{Hash, Hasher},
+        },
     };
 
     #[test]
@@ -240,17 +243,13 @@ mod test {
         assert_eq!(err.to_string(), r#"Invalid group id: "AGPA234567ABCDEFGHI""#);
 
         validate_instance_profile_id("AIPAKLMNOPQRSTUVWXYZ").unwrap();
-        let err =
-            validate_instance_profile_id("AKIAKLMNOPQRSTUVWXYZ").unwrap_err();
+        let err = validate_instance_profile_id("AKIAKLMNOPQRSTUVWXYZ").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid instance profile id: "AKIAKLMNOPQRSTUVWXYZ""#);
-        let err =
-            validate_instance_profile_id("AIPAKLMNOPQRSTUVWXY!").unwrap_err();
+        let err = validate_instance_profile_id("AIPAKLMNOPQRSTUVWXY!").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid instance profile id: "AIPAKLMNOPQRSTUVWXY!""#);
-        let err =
-            validate_instance_profile_id("AIPAKLMNOPQRSTUVWXYZA").unwrap_err();
+        let err = validate_instance_profile_id("AIPAKLMNOPQRSTUVWXYZA").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid instance profile id: "AIPAKLMNOPQRSTUVWXYZA""#);
-        let err =
-            validate_instance_profile_id("AIPAKLMNOPQRSTUVWXY").unwrap_err();
+        let err = validate_instance_profile_id("AIPAKLMNOPQRSTUVWXY").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid instance profile id: "AIPAKLMNOPQRSTUVWXY""#);
 
         validate_role_id("AROAKLMNOPQRSTUVWXYZ").unwrap();
@@ -277,9 +276,18 @@ mod test {
     #[test]
     fn check_id_prefix_derived() {
         let prefixes = vec![
-            IamIdPrefix::AccessKey, IamIdPrefix::BearerToken, IamIdPrefix::Certificate, IamIdPrefix::ContextSpecificCredential, IamIdPrefix::Group,
-            IamIdPrefix::InstanceProfile, IamIdPrefix::ManagedPolicy, IamIdPrefix::ManagedPolicyVersion, IamIdPrefix::PublicKey, IamIdPrefix::Role,
-            IamIdPrefix::TemporaryAccessKey, IamIdPrefix::User,
+            IamIdPrefix::AccessKey,
+            IamIdPrefix::BearerToken,
+            IamIdPrefix::Certificate,
+            IamIdPrefix::ContextSpecificCredential,
+            IamIdPrefix::Group,
+            IamIdPrefix::InstanceProfile,
+            IamIdPrefix::ManagedPolicy,
+            IamIdPrefix::ManagedPolicyVersion,
+            IamIdPrefix::PublicKey,
+            IamIdPrefix::Role,
+            IamIdPrefix::TemporaryAccessKey,
+            IamIdPrefix::User,
         ];
         let p1a = IamIdPrefix::AccessKey;
         let p1b = p1a;
@@ -303,7 +311,7 @@ mod test {
 
         // Ensure the ordering is logical and we can print each one.
         for i in 0..prefixes.len() {
-            for j in i+1..prefixes.len() {
+            for j in i + 1..prefixes.len() {
                 assert!(prefixes[i] < prefixes[j]);
                 assert!(prefixes[j] > prefixes[i]);
                 assert_eq!(prefixes[i].max(prefixes[j]), prefixes[j]);

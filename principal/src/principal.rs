@@ -31,13 +31,13 @@ impl Display for PrincipalSource {
     }
 }
 
-/// Principal actor.
+/// A principal that is the source of an action in an AWS (or AWS-like) service.
 #[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Principal {
     /// Details for an assumed role.
     AssumedRole(AssumedRole),
 
-    /// Details for an S3 canonical user
+    /// Details for an S3 canonical user.
     CanonicalUser(CanonicalUser),
 
     /// Details for a federated user.
@@ -155,9 +155,15 @@ impl TryFrom<&Principal> for Arn {
 #[cfg(test)]
 mod test {
     use {
-        crate::{AssumedRole, CanonicalUser, FederatedUser, Principal, PrincipalError, PrincipalSource, RootUser, Service, User},
-        std::{collections::hash_map::DefaultHasher, hash::{Hash, Hasher}},
+        crate::{
+            AssumedRole, CanonicalUser, FederatedUser, Principal, PrincipalError, PrincipalSource, RootUser, Service,
+            User,
+        },
         scratchstack_arn::Arn,
+        std::{
+            collections::hash_map::DefaultHasher,
+            hash::{Hash, Hasher},
+        },
     };
 
     #[test]
@@ -205,7 +211,9 @@ mod test {
     #[test]
     fn check_hash_ord() {
         let p1 = Principal::from(AssumedRole::new("aws", "123456789012", "Role_name", "session_name").unwrap());
-        let p2 = Principal::from(CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d").unwrap());
+        let p2 = Principal::from(
+            CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d").unwrap(),
+        );
         let p3 = Principal::from(FederatedUser::new("aws", "123456789012", "user@domain").unwrap());
         let p4 = Principal::from(RootUser::new("aws", "123456789012").unwrap());
         let p5 = Principal::from(Service::new("service-name", None, "amazonaws.com").unwrap());

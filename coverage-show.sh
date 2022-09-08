@@ -3,7 +3,7 @@ mkdir -p coverage-html
 find coverage-html -type f -delete
 llvm-cov show \
     -format=html \
-    -ignore-filename-regex='/.cargo/registry' \
+    -ignore-filename-regex='/.cargo/registry|.*thread/local.rs' \
     -Xdemangler=rustfilt \
     -output-dir=coverage-html \
     -instr-profile=scratchstack-core.profdata \

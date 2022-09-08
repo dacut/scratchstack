@@ -13,6 +13,13 @@ use {
     },
 };
 
+/// An Amazon Resource Name (ARN) representing an exact resource.
+///
+/// This is used to represent a known resource, such as an S3 bucket, EC2 instance, assumed role instance, etc. This is
+/// _not_ used to represent resource _statements_ in the IAM Aspen policy language, which may contain wildcards. For
+/// ARNs used to match resource statements, see [ArnPattern].
+///
+/// [Arn] objects are immutable.
 #[derive(Debug, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Arn {
     partition: String,
@@ -23,6 +30,23 @@ pub struct Arn {
 }
 
 impl Arn {
+    /// Create a new ARN from the specified components.
+    ///
+    /// * `partition` - The partition the resource is in (required). This is usually `aws`, `aws-cn`, or `aws-us-gov`
+    ///     for actual AWS resources, but may be any string meeting the rules specified in [validate_partition] for
+    ///     non-AWS resources.
+    /// * `service` - The service the resource belongs to (required). This is a service name like `ec2` or `s3`.
+    ///     Non-AWS resources must conform to the naming rules specified in [validate_service].
+    /// * `region` - The region the resource is in (optional). If the resource is regional (and may other regions
+    ///     may have the resources with the same name), this is the region name. If the resource is global, this is
+    ///     empty.
+    /// * `account_id` - The account ID the resource belongs to (optional). This is the 12-digit account ID or the
+    ///     string `aws` for certain AWS-owned resources. Some resources (such as S3 buckets and objects) do not need
+    ///     the account ID (the bucket name is globally unique within a partition), so this may be empty.
+    /// * `resource` - The resource name (required). This is the name of the resource. The formatting is
+    ///     service-specific, but must be a valid UTF-8 string.
+    ///
+    /// If any of the arguments are invalid, an [ArnError] is returned.
     pub fn new(
         partition: &str,
         service: &str,
@@ -48,26 +72,31 @@ impl Arn {
         })
     }
 
+    /// Retrieve the partition the resource is in.
     #[inline]
     pub fn partition(&self) -> &str {
         &self.partition
     }
 
+    /// Retrieve the service the resource belongs to.
     #[inline]
     pub fn service(&self) -> &str {
         &self.service
     }
 
+    /// Retrieve the region the resource is in.
     #[inline]
     pub fn region(&self) -> &str {
         &self.region
     }
 
+    /// Retrieve the account ID the resource belongs to.
     #[inline]
     pub fn account_id(&self) -> &str {
         &self.account_id
     }
 
+    /// Retrieve the resource name.
     #[inline]
     pub fn resource(&self) -> &str {
         &self.resource
@@ -77,6 +106,7 @@ impl Arn {
 impl FromStr for Arn {
     type Err = ArnError;
 
+    /// Parse an ARN from a string.
     fn from_str(s: &str) -> Result<Self, ArnError> {
         let parts: Vec<&str> = s.splitn(6, ':').collect();
         if parts.len() != 6 {
@@ -92,11 +122,25 @@ impl FromStr for Arn {
 }
 
 impl Display for Arn {
+    /// Return the ARN.
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(f, "arn:{}:{}:{}:{}:{}", self.partition, self.service, self.region, self.account_id, self.resource)
     }
 }
 
+/// An Amazon Resource Name (ARN) statement in an IAM Aspen policy.
+///
+/// This is used to match [Arn] objects from a resource statement in the IAM Aspen policy language. For example,
+/// an [ArnPattern] created from `arn:aws*:ec2:us-*-?:123456789012:instance/i-*` would match the following [Arn]
+/// objects:
+/// * `arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0`
+/// * `arn:aws-us-gov:ec2:us-west-2:123456789012:instance/i-1234567890abcdef0`
+///
+/// Patterns are similar to glob statements with a few differences:
+/// * The `*` character matches any number of characters, including none, within a single segment of the ARN.
+/// * The `?` character matches any single character within a single segment of the ARN.
+///
+/// [ArnPattern] objects are immutable.
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
 pub struct ArnPattern {
     partition: ArnSegmentPattern,
@@ -107,6 +151,13 @@ pub struct ArnPattern {
 }
 
 impl ArnPattern {
+    /// Create a new ARN pattern from the specified components.
+    ///
+    /// * `partition` - The partition the resource is in.
+    /// * `service` - The service the resource belongs to.
+    /// * `region` - The region the resource is in.
+    /// * `account_id` - The account ID the resource belongs to.
+    /// * `resource` - The resource name.
     pub fn new(partition: &str, service: &str, region: &str, account_id: &str, resource: &str) -> Self {
         let partition = ArnSegmentPattern::new(partition);
         let service = ArnSegmentPattern::new(service);
@@ -123,31 +174,37 @@ impl ArnPattern {
         }
     }
 
+    /// Retreive the pattern for the partition.
     #[inline]
     pub fn partition(&self) -> &ArnSegmentPattern {
         &self.partition
     }
 
+    /// Retrieve the pattern for the service.
     #[inline]
     pub fn service(&self) -> &ArnSegmentPattern {
         &self.service
     }
 
+    /// Retrieve the pattern for the region.
     #[inline]
     pub fn region(&self) -> &ArnSegmentPattern {
         &self.region
     }
 
+    /// Retrieve the pattern for the account ID.
     #[inline]
     pub fn account_id(&self) -> &ArnSegmentPattern {
         &self.account_id
     }
 
+    /// Retrieve the pattern for the resource.
     #[inline]
     pub fn resource(&self) -> &ArnSegmentPattern {
         &self.resource
     }
 
+    /// Indicate whether the specified [Arn] matches this pattern.
     pub fn matches(&self, arn: &Arn) -> bool {
         // This is split out here for easier debugging breakpoints.
         let partition = arn.partition();
@@ -167,6 +224,7 @@ impl ArnPattern {
 impl FromStr for ArnPattern {
     type Err = ArnError;
 
+    /// Create an [ArnPattern] from a string.
     fn from_str(s: &str) -> Result<Self, ArnError> {
         let parts: Vec<&str> = s.splitn(6, ':').collect();
         if parts.len() != 6 {
@@ -187,6 +245,7 @@ impl Display for ArnPattern {
     }
 }
 
+/// A single segment pattern matcher in an [ArnPattern].
 #[derive(Debug, Clone)]
 pub enum ArnSegmentPattern {
     /// Empty match.
@@ -262,6 +321,7 @@ impl FromStr for ArnSegmentPattern {
 }
 
 impl ArnSegmentPattern {
+    /// Indicate whether the specified string from an [Arn] segment matches this pattern.
     pub fn matches(&self, segment: &str) -> bool {
         match self {
             Self::Empty => segment.is_empty(),
@@ -272,6 +332,7 @@ impl ArnSegmentPattern {
         }
     }
 
+    /// Create a new [ArnSegmentPattern] from a string.
     pub fn new(s: &str) -> Self {
         if s.is_empty() {
             return ArnSegmentPattern::Empty;

@@ -45,8 +45,8 @@ pub enum PrincipalError {
     /// Invalid region. The argument contains the specified region.
     InvalidRegion(String),
 
-        /// Invalid resource. The argument contains the specified resource.
-        InvalidResource(String),
+    /// Invalid resource. The argument contains the specified resource.
+    InvalidResource(String),
 
     /// Invalid role name. The argument contains the specified role name.
     InvalidRoleName(String),
