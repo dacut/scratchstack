@@ -362,7 +362,7 @@ mod test {
         assert_ne!(p1a, p2);
         assert_eq!(p1a, p1a.clone());
 
-        assert_eq!(p1a.to_string(), "arn:aws:iam::123456789012:root");
+        assert_eq!(p1a.to_string(), "123456789012");
         assert_eq!(p1a.source(), PrincipalSource::Aws);
         assert!(p1a.has_arn());
 

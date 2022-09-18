@@ -59,7 +59,7 @@ impl From<&RootUser> for Arn {
 
 impl Display for RootUser {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(f, "arn:{}:iam::{}:root", self.partition, self.account_id)
+        write!(f, "{}", self.account_id)
     }
 }
 
@@ -125,8 +125,8 @@ mod tests {
         assert_ne!(r1a, r2);
         assert_eq!(r1a, r1a.clone());
 
-        assert_eq!(r1a.to_string(), "arn:aws:iam::123456789012:root");
-        assert_eq!(r2.to_string(), "arn:aws:iam::123456789099:root");
+        assert_eq!(r1a.to_string(), "123456789012");
+        assert_eq!(r2.to_string(), "123456789099");
 
         let arn1a: Arn = (&r1a).into();
 
