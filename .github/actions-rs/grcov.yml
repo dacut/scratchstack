@@ -1,5 +1,5 @@
 branch: true
-excl-start: "#\\[cfg\\(test\\)\\]"
+excl-start: "#\[cfg\(test\)\]"
 excl-end: "end tests"
 filter: covered
 ignore:
