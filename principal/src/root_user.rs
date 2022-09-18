@@ -29,8 +29,7 @@ impl RootUser {
     ///
     /// # Return value
     ///
-    /// If the requirement is met, a [RootUserDetails] object is returned. Otherwise, a
-    /// [PrincipalError] error is returned.
+    /// If the requirement is met, a [RootUser] object is returned. Otherwise, a  [PrincipalError] error is returned.
     pub fn new(partition: &str, account_id: &str) -> Result<Self, PrincipalError> {
         validate_partition(partition)?;
         validate_account_id(account_id)?;
@@ -144,3 +143,4 @@ mod tests {
         assert_eq!(RootUser::new("aws", "",).unwrap_err().to_string(), r#"Invalid account id: """#);
     }
 }
+// end tests -- do not delete; needed for coverage.

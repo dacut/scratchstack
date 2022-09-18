@@ -695,3 +695,4 @@ mod test {
         assert_eq!(err, ArnError::InvalidScheme("https".to_string()));
     }
 }
+// end tests -- do not delete; needed for coverage.

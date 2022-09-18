@@ -311,3 +311,4 @@ mod tests {
         assert_eq!(err.to_string(), r#"Invalid session name: "session+name""#);
     }
 }
+// end tests -- do not delete; needed for coverage.

@@ -839,3 +839,4 @@ mod tests {
         assert!(!test3_seen);
     }
 }
+// end tests -- do not delete; needed for coverage.

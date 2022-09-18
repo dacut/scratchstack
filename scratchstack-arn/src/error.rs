@@ -62,3 +62,4 @@ mod tests {
         assert_eq!(err.to_string().as_str(), "Invalid resource: \"\"");
     }
 }
+// end tests -- do not delete; needed for coverage.

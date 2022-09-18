@@ -223,3 +223,4 @@ mod test {
         assert!(super::validate_service("execute-api").is_ok());
     }
 }
+// end tests -- do not delete; needed for coverage.

@@ -161,3 +161,4 @@ mod tests {
         check_arn_err_into(ArnError::InvalidService("foo".to_string()));
     }
 }
+// end tests -- do not delete; needed for coverage.

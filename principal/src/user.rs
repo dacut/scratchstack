@@ -46,7 +46,7 @@ impl User {
     ///
     /// # Return value
     ///
-    /// If all of the requirements are met, a [UserDetails] object is returned. Otherwise, a [PrincipalError] error
+    /// If all of the requirements are met, a [User] object is returned. Otherwise, a [PrincipalError] error
     /// is returned.
     pub fn new(partition: &str, account_id: &str, path: &str, user_name: &str) -> Result<Self, PrincipalError> {
         validate_partition(partition)?;
@@ -249,3 +249,4 @@ mod tests {
         assert_eq!(err.to_string(), r#"Invalid path: "/path test/""#);
     }
 }
+// end tests -- do not delete; needed for coverage.
