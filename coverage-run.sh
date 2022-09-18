@@ -18,14 +18,17 @@ done
 rm -f *.profdata *.profraw
 
 export CARGO_INCREMENTAL=0
-export RUSTFLAGS="-Ccodegen-units=1 -Cinstrument-coverage -Copt-level=0"
 export LLVM_PROFILE_FILE="$ROOT/scratchstack-core-%m.profraw"
+export RUSTFLAGS="-Cinstrument-coverage"
 if [[ $CLEAN -ne 0 ]]; then
     cargo clean
     cargo build
 fi
-#(cd arn && cargo test --tests)
-#(cd principal && cargo test --tests)
-#llvm-profdata merge -sparse scratchstack-core-*.profraw -o scratchstack-core.profdata
 cargo test
-grcov  --binary-path ./target/debug --excl-start '#\[cfg\(test\)\]' --excl-stop 'end tests' --filter covered --output-path coverage-html --output-type html --source-dir . .
+llvm-profdata merge -sparse scratchstack-core-*.profraw -o scratchstack-core.profdata
+llvm-cov export -format lcov -Xdemangler=rustfilt -ignore-filename-regex='/.cargo/registry|.*thread/local.rs' \
+    -instr-profile=scratchstack-core.profdata \
+    target/debug/deps/scratchstack_arn-[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9] \
+    -object target/debug/deps/scratchstack_aws_principal-[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9] \
+    > "$ROOT/lcov.info"
+"$ROOT/coverage-fixup.py" "$ROOT/lcov.info"

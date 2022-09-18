@@ -50,9 +50,28 @@ mod tests {
 
     #[test]
     fn check_derived() {
+        let errors = vec![
+            ArnError::InvalidAccountId("1234".to_string()),
+            ArnError::InvalidArn("arn:aws:iam::1234:role/role-name".to_string()),
+            ArnError::InvalidPartition("aws".to_string()),
+            ArnError::InvalidRegion("us-east-1".to_string()),
+            ArnError::InvalidResource("role/role-name".to_string()),
+            ArnError::InvalidScheme("arn".to_string()),
+            ArnError::InvalidService("iam".to_string()),
+        ];
+
+        for i in 0..errors.len() {
+            for j in 0..errors.len() {
+                if i == j {
+                    assert_eq!(errors[i], errors[j]);
+                } else {
+                    assert_ne!(errors[i], errors[j]);
+                }
+            }
+        }
+
         // Ensure we can debug print the error.
-        let err = ArnError::InvalidAccountId("1234".to_string());
-        let _ = format!("{:?}", err);
+        let _ = format!("{:?}", errors[0]);
     }
 
     #[test]
