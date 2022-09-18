@@ -31,13 +31,12 @@ jobs:
     - name: Build documentation
       run: cargo doc --verbose
     - name: Generate coverage report
-      id: coverage
-      uses: actions-rs/grcov@v0.1
+      run: ./coverage-run.sh
     - name: Upload coverage report to Coveralls
       uses: coverallsapp/github-action@master
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
-        path-to-lcov: ${{ steps.coverage.outputs.report }}
+        path-to-lcov: lcov.info
     - uses: actions-rs/clippy-check@v1
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
