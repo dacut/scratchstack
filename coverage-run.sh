@@ -17,7 +17,8 @@ done
 
 rm -f *.profdata *.profraw
 
-export RUSTFLAGS="-C instrument-coverage"
+export CARGO_INCREMENTAL=0
+export RUSTFLAGS="-Ccodegen-units=1 -Cinstrument-coverage -Copt-level=0"
 export LLVM_PROFILE_FILE="$ROOT/scratchstack-core-%m.profraw"
 if [[ $CLEAN -ne 0 ]]; then
     cargo clean
