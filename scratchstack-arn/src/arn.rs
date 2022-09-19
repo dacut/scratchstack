@@ -20,24 +20,13 @@ use {
 /// ARNs used to match resource statements, see [ArnPattern].
 ///
 /// [Arn] objects are immutable.
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Arn {
     partition: String,
     service: String,
     region: String,
     account_id: String,
     resource: String,
-}
-
-#[allow(clippy::derive_hash_xor_eq)]
-impl Hash for Arn {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.partition.hash(state);
-        self.service.hash(state);
-        self.region.hash(state);
-        self.account_id.hash(state);
-        self.resource.hash(state);
-    }
 }
 
 impl Arn {
