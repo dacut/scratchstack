@@ -305,8 +305,8 @@ mod test {
         scratchstack_arn::Arn,
         std::{
             collections::hash_map::DefaultHasher,
-            io::Write,
             hash::{Hash, Hasher},
+            io::Write,
         },
     };
 
@@ -700,7 +700,7 @@ mod test {
 
         // Exercise the failing display code path.
         for bufsize in 0..94 {
-            let mut buf = vec![0u8;bufsize];
+            let mut buf = vec![0u8; bufsize];
             let mut p: Principal = Default::default();
             p.add(u1.clone().into());
             p.add(u2.clone().into());
