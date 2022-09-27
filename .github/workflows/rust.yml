@@ -37,7 +37,7 @@ jobs:
       run: cargo test --verbose
     - name: Generate coverage report
       id: coverage
-      users: actions-rs/grcov@0.1
+      uses: actions-rs/grcov@0.1
     - name: Fix up coverage report
       run: ./coverage-fixup.py ${{ steps.coverage.outputs.report }}
     - name: Upload coverage report to Coveralls
