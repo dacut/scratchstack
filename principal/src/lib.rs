@@ -31,7 +31,7 @@ pub use {
     canonical_user::CanonicalUser,
     error::PrincipalError,
     federated_user::FederatedUser,
-    principal::{Principal, PrincipalSource},
+    principal::{Principal, PrincipalIdentity, PrincipalSource},
     root_user::RootUser,
     service::Service,
     session::{SessionData, SessionValue},

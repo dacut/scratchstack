@@ -51,7 +51,7 @@ impl Display for CanonicalUser {
 mod tests {
     use {
         super::CanonicalUser,
-        crate::{Principal, PrincipalSource},
+        crate::{PrincipalIdentity, PrincipalSource},
         std::{
             collections::hash_map::DefaultHasher,
             hash::{Hash, Hasher},
@@ -63,7 +63,7 @@ mod tests {
         let cu1a = CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d").unwrap();
         assert_eq!(cu1a.canonical_user_id(), "9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d");
 
-        let p = Principal::from(cu1a);
+        let p = PrincipalIdentity::from(cu1a);
         let source = p.source();
         assert_eq!(source, PrincipalSource::CanonicalUser);
         assert_eq!(source.to_string(), "CanonicalUser".to_string());

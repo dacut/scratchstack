@@ -99,7 +99,7 @@ impl Display for User {
 mod tests {
     use {
         super::User,
-        crate::{Principal, PrincipalSource},
+        crate::{PrincipalIdentity, PrincipalSource},
         scratchstack_arn::Arn,
         std::{
             collections::hash_map::DefaultHasher,
@@ -122,7 +122,7 @@ mod tests {
         assert_eq!(arn.account_id(), "123456789012");
         assert_eq!(arn.resource(), "user/my/path/user-name");
 
-        let p = Principal::from(user);
+        let p = PrincipalIdentity::from(user);
         let source = p.source();
         assert_eq!(source, PrincipalSource::Aws);
         assert_eq!(source.to_string(), "AWS".to_string());

@@ -110,7 +110,7 @@ impl Display for AssumedRole {
 mod tests {
     use {
         super::AssumedRole,
-        crate::{Principal, PrincipalSource},
+        crate::{PrincipalIdentity, PrincipalSource},
         scratchstack_arn::Arn,
         std::{
             collections::hash_map::DefaultHasher,
@@ -133,7 +133,7 @@ mod tests {
         assert_eq!(arn.account_id(), "123456789012");
         assert_eq!(arn.resource(), "assumed-role/role/session");
 
-        let p = Principal::from(role);
+        let p = PrincipalIdentity::from(role);
         let source = p.source();
         assert_eq!(source, PrincipalSource::Aws);
         assert_eq!(source.to_string(), "AWS".to_string());
