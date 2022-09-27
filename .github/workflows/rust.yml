@@ -9,8 +9,8 @@ on:
       - main
 env:
   CARGO_INCREMENTAL: '0'
-  RUSTFLAGS: '-Ccodegen-units=1 -Cinstrument-coverage -Copt-level=0'
-  RUSTDOCFLAGS: '-Ccodegen-units=1 -Cinstrument-coverage -Copt-level=0'
+  RUSTFLAGS: '-Ccodegen-units=1 -Cinstrument-coverage -Copt-level=0 -Zprofile'
+  RUSTDOCFLAGS: '-Ccodegen-units=1 -Cinstrument-coverage -Copt-level=0 -Zprofile'
 
 jobs:
   build:
