@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -ex
 CLEAN=1
 ROOT=$(cd $(dirname $0); pwd)
 
@@ -15,20 +15,31 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-rm -f *.profdata *.profraw
+find "$ROOT" -name "*.profdata" -delete -o -name "*.profraw" -delete
 
 export CARGO_INCREMENTAL=0
-export LLVM_PROFILE_FILE="$ROOT/scratchstack-core-%m.profraw"
-export RUSTFLAGS="-Cinstrument-coverage"
+export RUSTFLAGS="-Cinstrument-coverage -Ccodegen-units=1 -Copt-level=0"
 if [[ $CLEAN -ne 0 ]]; then
-    cargo clean
-    cargo build
+    cargo clean --target-dir "$ROOT/target/coverage/arn"
+    cargo clean --target-dir "$ROOT/target/coverage/principal"
 fi
-cargo test
-llvm-profdata merge -sparse scratchstack-core-*.profraw -o scratchstack-core.profdata
+
+(cd "$ROOT/arn" &&
+    LLVM_PROFILE_FILE="$ROOT/arn/cov-%m.profraw" cargo test --target-dir "$ROOT/target/coverage/arn")
+(cd "$ROOT/principal" &&
+    LLVM_PROFILE_FILE="$ROOT/principal/cov-%m.profraw" cargo test --target-dir "$ROOT/target/coverage/principal")
+llvm-profdata merge -sparse "$ROOT"/arn/cov-*.profraw -o "$ROOT/arn/cov.profdata"
+llvm-profdata merge -sparse "$ROOT"/principal/cov-*.profraw -o "$ROOT/principal/cov.profdata"
+
 llvm-cov export -format lcov -Xdemangler=rustfilt -ignore-filename-regex='/.cargo/registry|.*thread/local.rs' \
-    -instr-profile=scratchstack-core.profdata \
-    target/debug/deps/scratchstack_arn-[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9] \
-    -object target/debug/deps/scratchstack_aws_principal-[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9] \
-    > "$ROOT/lcov.info"
-"$ROOT/coverage-fixup.py" "$ROOT/lcov.info"
+    -instr-profile="$ROOT/arn/cov.profdata" \
+    target/coverage/arn/debug/deps/scratchstack_arn-[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9] \
+    > "$ROOT/scratchstack-arn.lcov"
+
+llvm-cov export -format lcov -Xdemangler=rustfilt -ignore-filename-regex='/.cargo/registry|.*thread/local.rs' \
+    -instr-profile="$ROOT/principal/cov.profdata" \
+    target/coverage/principal/debug/deps/scratchstack_aws_principal-[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9] \
+    > "$ROOT/scratchstack-aws-principal.lcov"
+
+"$ROOT/coverage-fixup.py" "$ROOT/scratchstack-arn.lcov"
+"$ROOT/coverage-fixup.py" "$ROOT/scratchstack-aws-principal.lcov"
