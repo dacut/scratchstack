@@ -9,8 +9,8 @@ on:
       - main
 env:
   CARGO_INCREMENTAL: '0'
-  RUSTFLAGS: '-Ccodegen-units=1 -Cinstrument-coverage -Copt-level=0 -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests -Zprofile'
-  RUSTDOCFLAGS: '-Ccodegen-units=1 -Cinstrument-coverage -Copt-level=0 -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests -Zprofile'
+  RUSTFLAGS: '-Ccodegen-units=1 -Cinstrument-coverage -Copt-level=0'
+  RUSTDOCFLAGS: '-Ccodegen-units=1 -Cinstrument-coverage -Copt-level=0'
 
 jobs:
   build:
@@ -31,10 +31,17 @@ jobs:
         args: --all-features
     - name: Run formatting check.
       run: cargo fmt --check
-    - name: Build, test, and generate coverage data.
-      run: ./coverage-run.sh
+    - name: Build
+      run: cargo build --verbose
+    - name: Run tests
+      run: cargo test --verbose
+    - name: Generate coverage report
+      id: coverage
+      users: actions-rs/grcov@0.1
+    - name: Fix up coverage report
+      run: ./coverage-fixup.py ${{ steps.coverage.outputs.report }}
     - name: Upload coverage report to Coveralls
       uses: coverallsapp/github-action@master
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
-        path-to-lcov: ./scratchstack-core.lcov
+        path-to-lcov: ${{ steps.coverage.outputs.report }}
