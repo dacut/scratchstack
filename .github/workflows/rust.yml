@@ -34,7 +34,7 @@ jobs:
     - name: Run formatting check.
       run: cargo fmt --check
     - name: Build and test with coverage data
-      run: ./coverage-run.sh
+      run: ./coverage-run.py
     - name: Combine coverage reports
       run: cat scratchstack-arn.lcov scratchstack-aws-principal.lcov > scratchstack-core.lcov
     - name: Upload coverage report to Coveralls
