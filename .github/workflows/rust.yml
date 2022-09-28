@@ -24,10 +24,11 @@ jobs:
         toolchain: nightly
         override: true
         profile: default
-    - name: Install LLVM
-      run: sudo apt-get install -y llvm
-    - name: Install Python toml
-      run: pip3 install --user toml
+    - name: Install coverage-run dependencies
+      run: |
+        sudo apt-get install -y llvm
+        pip3 install --user toml
+        cargo install rustfilt
     - name: Run Clippy check.
       uses: actions-rs/clippy-check@v1
       with:
