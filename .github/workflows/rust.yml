@@ -26,6 +26,8 @@ jobs:
         profile: default
     - name: Install LLVM
       run: sudo apt-get install -y llvm
+    - name: Install Python toml
+      run: pip3 install --user toml
     - name: Run Clippy check.
       uses: actions-rs/clippy-check@v1
       with:
