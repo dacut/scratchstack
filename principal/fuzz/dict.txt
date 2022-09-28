@@ -1,0 +1,4 @@
+kw1="arn:"
+kw2="us-east-1"
+kw3="amazonaws.com"
+kw4="us-east-1-lax-1"
