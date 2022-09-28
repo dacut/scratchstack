@@ -162,7 +162,7 @@ class Crate:
         if platform == "darwin":
             self.run(["open", path_join(self.html_dir, "index.html")])
         elif platform == "linux":
-            self.run(["open", path_join(self.html_dir, "index.html")])
+            self.run(["xdg-open", path_join(self.html_dir, "index.html")])
 
     def generate_report(self):
         args = [
