@@ -321,5 +321,12 @@ mod test {
             assert_eq!(prefixes[i].to_string().as_str(), prefixes[i].as_ref());
         }
     }
+
+    #[test]
+    fn check_access_key() {
+        // Miscellaneous bits for AKIA/access key.
+        assert_eq!(IamIdPrefix::AccessKey.as_ref(), "AKIA");
+        assert_eq!(format!("{}", IamIdPrefix::AccessKey).as_str(), "AKIA");
+    }
 }
 // end tests -- do not delete; needed for coverage.
