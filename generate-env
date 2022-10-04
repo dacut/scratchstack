@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+from base64 import urlsafe_b64encode
+from os import mkdir, rename, urandom
+from os.path import dirname, exists
+
+ROOT = dirname(__file__)
+ENVFILE = ROOT + '/.env'
+ENVFILE_TMP = ENVFILE + ".tmp"
+PGDATA = ROOT + "/pgdata"
+
+def pwgen():
+    return urlsafe_b64encode(urandom(18)).decode('utf-8').rstrip('=')
+
+def main():
+    seen_vars = set()
+
+    with open(ENVFILE_TMP, 'w') as ofd:
+        if exists(ENVFILE):
+            with open(ENVFILE) as ifd:
+                for line in ifd:
+                    ofd.write(line)
+
+                    line = line.strip()
+                    if not line.strip().startswith("#") and "=" in line:
+                        parts = line.split("=", 1)
+                        key = parts[0].strip()
+                        seen_vars.add(key)
+            
+        if "POSTGRES_DB" not in seen_vars:
+            ofd.write("POSTGRES_DB=scratchstack\n")
+
+        if "POSTGRES_PASSWORD" not in seen_vars:
+            password = pwgen()
+            ofd.write(f"POSTGRES_PASSWORD={password}\n")
+
+        if "POSTGRES_USER" not in seen_vars:
+            ofd.write("POSTGRES_USER=postgres\n")
+
+    rename(ENVFILE_TMP, ENVFILE)
+
+    if not exists(PGDATA):
+        mkdir(PGDATA)
+
+if __name__ == "__main__":
+    main()

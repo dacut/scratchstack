@@ -1,6 +1,6 @@
 use diesel::Queryable;
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct AccountLimit {
     pub account_id: String,
     pub limit_id: i128,
@@ -9,7 +9,7 @@ pub struct AccountLimit {
     pub string_value: Option<String>,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct LimitDefinition {
     pub limit_id: i128,
     pub service_name: String,
@@ -22,12 +22,12 @@ pub struct LimitDefinition {
     pub max_value: Option<i64>,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct Region {
     pub region_name: String,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct ValueType {
     pub name: String,
 }

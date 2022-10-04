@@ -1,7 +1,7 @@
 use chrono::NaiveDateTime;
 use diesel::Queryable;
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct IamAccount {
     pub account_id: String,
     pub email: Option<String>,
@@ -9,7 +9,7 @@ pub struct IamAccount {
     pub alias: Option<String>,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct IamGroup {
     pub group_id: String,
     pub account_id: String,
@@ -19,13 +19,13 @@ pub struct IamGroup {
     pub created_at: NaiveDateTime,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct IamGroupAttachedPolicy {
     pub group_id: String,
     pub managed_policy_id: String,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct IamGroupInlinePolicy {
     pub group_id: String,
     pub policy_name_lower: String,
@@ -33,13 +33,13 @@ pub struct IamGroupInlinePolicy {
     pub policy_document: String,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct IamGroupMember {
     pub group_id: String,
     pub user_id: String,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct IamRole {
     pub role_id: String,
     pub account_id: String,
@@ -52,13 +52,13 @@ pub struct IamRole {
     pub created_at: NaiveDateTime,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct IamRoleAttachedPolicy {
     pub role_id: String,
     pub managed_policy_id: String,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct IamRoleInlinePolicy {
     pub role_id: String,
     pub policy_name_lower: String,
@@ -66,7 +66,7 @@ pub struct IamRoleInlinePolicy {
     pub policy_document: String,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct IamRoleTokenKey {
     pub access_key_id: String,
     pub encryption_algorithm: String,
@@ -75,7 +75,7 @@ pub struct IamRoleTokenKey {
     pub expires_at: NaiveDateTime,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct IamUser {
     pub user_id: String,
     pub account_id: String,
@@ -86,13 +86,13 @@ pub struct IamUser {
     pub created_at: NaiveDateTime,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct IamUserAttachedPolicy {
     pub user_id: String,
     pub managed_policy_id: String,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct IamUserCredential {
     pub user_id: String,
     pub access_key_id: String,
@@ -101,7 +101,7 @@ pub struct IamUserCredential {
     pub created_at: NaiveDateTime,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct IamUserInlinePolicy {
     pub user_id: String,
     pub policy_name_lower: String,
@@ -109,7 +109,7 @@ pub struct IamUserInlinePolicy {
     pub policy_document: String,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct IamUserLoginProfile {
     pub user_id: String,
     pub password_hash_algorithm: String,
@@ -120,7 +120,7 @@ pub struct IamUserLoginProfile {
     pub last_used_at: NaiveDateTime,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct IamUserPasswordHistory {
     pub user_id: String,
     pub password_hash_algorithm: String,
@@ -128,7 +128,7 @@ pub struct IamUserPasswordHistory {
     pub password_changed_at: NaiveDateTime,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct IamUserServiceSpecificCredential {
     pub user_id: String,
     pub service_specific_credential_id: String,
@@ -138,7 +138,7 @@ pub struct IamUserServiceSpecificCredential {
     pub created_at: NaiveDateTime,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct IamUserSshPublicKey {
     pub user_id: String,
     pub public_key_id: String,
@@ -148,7 +148,7 @@ pub struct IamUserSshPublicKey {
     pub created_at: NaiveDateTime,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct ManagedPolicy {
     pub managed_policy_id: String,
     pub account_id: String,
@@ -162,7 +162,7 @@ pub struct ManagedPolicy {
     pub last_version: Option<i128>,
 }
 
-#[derive(Debug, Queryable, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Queryable)]
 pub struct ManagedPolicyVersion {
     pub managed_policy_id: String,
     pub version: i128,

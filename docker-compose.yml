@@ -1,11 +1,12 @@
 version: "3.7"
 services:
-  scratchstack-iam:
-    build:
-      context: .
-      dockerfile: Dockerfile
+  # scratchstack-iam:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
   postgres:
-    image: postgres:12
+    image: postgres:14
+    env_file: .env
     ports:
       - target: 5432
         published: 10811
@@ -13,6 +14,6 @@ services:
         mode: host
     volumes:
       - type: bind
-        source: ./schema/postgres
-        target: /docker-entrypoint-initdb.d
-        read_only: true
+        source: ./pgdata
+        target: /var/lib/postgresql/data
+  
