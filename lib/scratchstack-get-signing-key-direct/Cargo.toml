@@ -12,12 +12,9 @@ readme = "../../README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+log = { version = "^0.4" }
 scratchstack-arn = { git = "https://github.com/dacut/scratchstack-core", branch = "main" }
 scratchstack-aws-principal = { git = "https://github.com/dacut/scratchstack-core", branch = "main" }
 scratchstack-aws-signature = { git = "https://github.com/dacut/scratchstack-aws-signature", branch = "main" }
-diesel = { version = "^2.0", features = [ "chrono", "postgres", "r2d2", "sqlite" ] }
-scratchstack-schema = { version = "^0.1", path = "../scratchstack-schema" }
-tower = "^0.4"
-
-[dev-dependencies]
-diesel = { version = "^2.0", features = [ "chrono", "sqlite" ] }
+sqlx = { version = "^0.6", features = ["all-databases", "chrono", "macros", "migrate", "runtime-tokio-rustls"]}
+tower = { version = "^0.4" }

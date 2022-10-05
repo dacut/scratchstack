@@ -1,12 +1,15 @@
-use std::future::Future;
-use std::io;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::{
+    future::Future,
+    io,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
-use hyper::server::accept::Accept as HyperAccept;
-use tokio::net::{TcpListener, TcpStream};
-use tokio_rustls::server::TlsStream;
-use tokio_rustls::{Accept, TlsAcceptor};
+use {
+    hyper::server::accept::Accept as HyperAccept,
+    tokio::net::{TcpListener, TcpStream},
+    tokio_rustls::{server::TlsStream, Accept, TlsAcceptor},
+};
 
 pub struct TlsIncoming {
     listener: TcpListener,
@@ -17,8 +20,8 @@ pub struct TlsIncoming {
 impl TlsIncoming {
     pub fn new(listener: TcpListener, acceptor: TlsAcceptor) -> TlsIncoming {
         TlsIncoming {
-            listener: listener,
-            acceptor: acceptor,
+            listener,
+            acceptor,
             tls_stream_accept: None,
         }
     }
