@@ -6,11 +6,8 @@ edition = "2021"
 description = "The Scratchstack database schema"
 homepage = "https://github.com/dacut/scratchstack"
 repository = "https://github.com/dacut/scratchstack"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 readme = "../../README.md"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 chrono = "^0.4"
-diesel = { version = "^2.0", features = ["chrono", "mysql", "postgres", "r2d2", "sqlite"] }
