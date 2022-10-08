@@ -7,7 +7,7 @@ description = "HTTP framework for Scratchstack services"
 homepage = "https://github.com/dacut/scratchstack"
 repository = "https://github.com/dacut/scratchstack"
 license = "MIT"
-readme = "../README.md"
+readme = "README.md"
 
 [features]
 gsk_direct = []
@@ -24,9 +24,9 @@ hyper = { version = "~0.14.20", features = [ "http1", "http2", "runtime", "serve
 log = "^0.4"
 quick-xml = "^0.25"
 rustls = "^0.20"
-scratchstack-aws-principal = { git = "https://github.com/dacut/scratchstack-core", branch = "main" }
-scratchstack-aws-signature = { git = "https://github.com/dacut/scratchstack-aws-signature", branch = "main" }
-scratchstack-errors = { git = "https://github.com/dacut/scratchstack-core", branch = "main" }
+scratchstack-aws-principal = "^0.4"
+scratchstack-aws-signature = "^0.11"
+scratchstack-errors = "^0.4"
 tokio = { version = "^1.19", features = [ "macros", "rt" ] }
 tokio-rustls = "^0.23"
 tower = "^0.4"
