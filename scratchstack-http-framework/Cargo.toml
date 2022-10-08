@@ -1,0 +1,40 @@
+[package]
+name = "scratchstack-http-framework"
+version = "0.1.0"
+authors = ["David Cuthbert <dacut@kanga.org>"]
+edition = "2021"
+description = "HTTP framework for Scratchstack services"
+homepage = "https://github.com/dacut/scratchstack"
+repository = "https://github.com/dacut/scratchstack"
+license = "MIT"
+readme = "../README.md"
+
+[features]
+gsk_direct = []
+
+[dependencies]
+async-trait = "^0.1"
+bytes = "^1.2"
+chrono = "^0.4"
+derive_builder = "^0.11"
+futures = "^0.3"
+http = "^0.2"
+http-body = "^0.4"
+hyper = { version = "~0.14.20", features = [ "http1", "http2", "runtime", "server", "tcp" ] }
+log = "^0.4"
+quick-xml = "^0.25"
+rustls = "^0.20"
+scratchstack-aws-principal = { git = "https://github.com/dacut/scratchstack-core", branch = "main" }
+scratchstack-aws-signature = { git = "https://github.com/dacut/scratchstack-aws-signature", branch = "main" }
+scratchstack-errors = { git = "https://github.com/dacut/scratchstack-core", branch = "main" }
+tokio = { version = "^1.19", features = [ "macros", "rt" ] }
+tokio-rustls = "^0.23"
+tower = "^0.4"
+
+[dev-dependencies]
+env_logger = "^0.9"
+hyper = { version = "^0.14", features = [ "client", "server", "stream", "tcp", "http1", "http2" ] }
+rusoto_core = "^0.48"
+rusoto_credential = "^0.48"
+rusoto_signature = "^0.48"
+test-log = "^0.2"
