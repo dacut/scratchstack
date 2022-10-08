@@ -1,0 +1,23 @@
+[package]
+name = "scratchstack-config"
+version = "0.1.0"
+edition = "2021"
+description = "Scratchstack configuration schema and logic"
+homepage = "https://github.com/dacut/scratchstack"
+repository = "https://github.com/dacut/scratchstack"
+license = "MIT"
+readme = "../../README.md"
+
+[dependencies]
+base64 = "^0.13"
+chrono = "^0.4"
+futures = "^0.3"
+humantime = "^2.1"
+humantime-serde = "^1.1"
+log = "^0.4"
+rustls = "^0.20"
+serde = { version = "^1.0", features = ["derive"] }
+sqlx = { version = "^0.6", features = ["all-databases", "chrono", "macros", "migrate", "runtime-tokio-rustls"]}
+toml = "^0.5"
+tokio-rustls = "^0.23"
+tower = "^0.4"
