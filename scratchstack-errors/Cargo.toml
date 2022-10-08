@@ -1,7 +1,13 @@
 [package]
 name = "scratchstack-errors"
-version = "0.1.0"
-edition = "2021"
+description = "Error trait for AWS/AWS-like services"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+keywords = ["AWS"]
+license.workspace = true
+repository.workspace = true
+version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

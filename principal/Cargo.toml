@@ -1,13 +1,13 @@
 [package]
 name = "scratchstack-aws-principal"
 description = "Principal types for AWS/AWS-like services"
-authors = ["David Cuthbert <dacut@kanga.org>"]
-edition = "2021"
-license = "MIT"
-version = "0.4.0"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
 keywords = ["AWS", "IAM", "Aspen"]
-homepage = "https://github.com/dacut/scratchstack-core"
-repository = "https://github.com/dacut/scratchstack-core"
+license.workspace = true
+repository.workspace = true
+version.workspace = true
 
 [dependencies]
 scratchstack-arn = { version = "0.4.0", path = "../arn" }
