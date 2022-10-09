@@ -1,6 +1,6 @@
 [package]
 name = "scratchstack-http-framework"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["David Cuthbert <dacut@kanga.org>"]
 edition = "2021"
 description = "HTTP framework for Scratchstack services"
@@ -23,9 +23,8 @@ http-body = "^0.4"
 log = "^0.4"
 rustls = "^0.20"
 scratchstack-aws-principal = "^0.4"
-scratchstack-aws-signature = "^0.11"
+scratchstack-aws-signature = "^0.11.1-preview.1"
 scratchstack-errors = "^0.4"
-serde = "^1"
 tokio-rustls = "^0.23"
 tower = "^0.4"
 
@@ -44,6 +43,10 @@ features = [ "std", "std_rng" ]
 [dependencies.scratchstack-arn]
 version = "^0.4"
 optional = true
+
+[dependencies.serde]
+version = "^1"
+features = [ "derive" ]
 
 [dependencies.sqlx]
 version = "^0.6"

@@ -1,7 +1,11 @@
 use {
     crate::{AwsSigV4VerifierService, ErrorMapper},
+    derive_builder::Builder,
+    http::method::Method,
     hyper::{body::Body, server::conn::AddrStream, service::Service, Request, Response},
-    scratchstack_aws_signature::{GetSigningKeyRequest, GetSigningKeyResponse, SignedHeaderRequirements},
+    scratchstack_aws_signature::{
+        GetSigningKeyRequest, GetSigningKeyResponse, SignatureOptions, SignedHeaderRequirements,
+    },
     std::{
         future::Future,
         pin::Pin,
@@ -12,7 +16,7 @@ use {
     tower::BoxError,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Builder, Clone, Debug)]
 pub struct SpawnService<G, S, E>
 where
     G: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = BoxError> + Clone + Send + 'static,
@@ -21,11 +25,32 @@ where
     S::Future: Send,
     E: ErrorMapper,
 {
+    #[builder(setter(into))]
     region: String,
+
+    #[builder(setter(into))]
     service: String,
+
+    #[builder(default)]
+    allowed_request_methods: Vec<Method>,
+
+    #[builder(default)]
+    allowed_content_types: Vec<String>,
+
+    #[builder(default)]
+    signed_header_requirements: SignedHeaderRequirements,
+
+    #[builder(setter(into))]
     get_signing_key: G,
-    service_handler: S,
+
+    #[builder(setter(into))]
+    implementation: S,
+
+    #[builder(setter(into))]
     error_mapper: E,
+
+    #[builder(default)]
+    signature_options: SignatureOptions,
 }
 
 impl<G, S, E> SpawnService<G, S, E>
@@ -36,14 +61,8 @@ where
     S::Future: Send,
     E: ErrorMapper,
 {
-    pub fn new(region: &str, service: &str, get_signing_key: G, service_handler: S, error_mapper: E) -> Self {
-        Self {
-            region: region.to_string(),
-            service: service.to_string(),
-            get_signing_key,
-            service_handler,
-            error_mapper,
-        }
+    pub fn builder() -> SpawnServiceBuilder<G, S, E> {
+        SpawnServiceBuilder::default()
     }
 }
 
@@ -66,20 +85,25 @@ where
     fn call(&mut self, _req: &AddrStream) -> Self::Future {
         let region = self.region.clone();
         let service = self.service.clone();
-        let mut shr = SignedHeaderRequirements::empty();
-        shr.add_always_present("host");
+        let allowed_request_methods = self.allowed_request_methods.clone();
+        let allowed_content_types = self.allowed_content_types.clone();
+        let signed_header_requirements = self.signed_header_requirements.clone();
         let get_signing_key = self.get_signing_key.clone();
-        let service_handler = self.service_handler.clone();
+        let implementation = self.implementation.clone();
         let error_mapper = self.error_mapper.clone();
+        let signature_options = self.signature_options;
 
         Box::pin(async move {
             AwsSigV4VerifierService::builder()
                 .region(region)
                 .service(service)
-                .signed_header_requirements(shr)
+                .allowed_request_methods(allowed_request_methods)
+                .allowed_content_types(allowed_content_types)
+                .signed_header_requirements(signed_header_requirements)
                 .get_signing_key(get_signing_key)
-                .implementation(service_handler)
+                .implementation(implementation)
                 .error_mapper(error_mapper)
+                .signature_options(signature_options)
                 .build()
                 .map_err(Into::into)
         })
@@ -105,20 +129,25 @@ where
     fn call(&mut self, _req: &TlsStream<TcpStream>) -> Self::Future {
         let region = self.region.clone();
         let service = self.service.clone();
-        let mut shr = SignedHeaderRequirements::empty();
-        shr.add_always_present("host");
+        let allowed_request_methods = self.allowed_request_methods.clone();
+        let allowed_content_types = self.allowed_content_types.clone();
+        let signed_header_requirements = self.signed_header_requirements.clone();
         let get_signing_key = self.get_signing_key.clone();
-        let service_handler = self.service_handler.clone();
+        let implementation = self.implementation.clone();
         let error_mapper = self.error_mapper.clone();
+        let signature_options = self.signature_options;
 
         Box::pin(async move {
             AwsSigV4VerifierService::builder()
                 .region(region)
                 .service(service)
-                .signed_header_requirements(shr)
+                .allowed_request_methods(allowed_request_methods)
+                .allowed_content_types(allowed_content_types)
+                .signed_header_requirements(signed_header_requirements)
                 .get_signing_key(get_signing_key)
-                .implementation(service_handler)
+                .implementation(implementation)
                 .error_mapper(error_mapper)
+                .signature_options(signature_options)
                 .build()
                 .map_err(Into::into)
         })

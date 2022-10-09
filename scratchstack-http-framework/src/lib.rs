@@ -8,7 +8,7 @@ mod tls;
 
 pub use {
     request_id::RequestId,
-    service_spawn::SpawnService,
+    service_spawn::{SpawnService, SpawnServiceBuilder},
     sigv4::{AwsSigV4VerifierService, ErrorMapper, XmlErrorMapper},
     tls::TlsIncoming,
 };

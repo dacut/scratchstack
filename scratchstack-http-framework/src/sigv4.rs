@@ -5,7 +5,7 @@ use {
     derive_builder::Builder,
     http::method::Method,
     hyper::{body::Body, Request, Response},
-    log::trace,
+    log::{trace, info},
     scratchstack_aws_signature::{
         canonical::get_content_type_and_charset, sigv4_validate_request, GetSigningKeyRequest, GetSigningKeyResponse,
         SignatureError, SignatureOptions, SignedHeaderRequirements,
@@ -220,6 +220,7 @@ where
                     }
 
                     if !get_ok {
+                        info!("Invalid Content-Type: {}", ctc.content_type);
                         return error_mapper
                             .map_error(
                                 SignatureError::InvalidContentType(
@@ -245,9 +246,10 @@ where
             .await;
 
             match result {
-                Ok((mut parts, body, principal)) => {
+                Ok((mut parts, body, principal, session_data)) => {
                     let body = Body::from(body);
                     parts.extensions.insert(principal);
+                    parts.extensions.insert(session_data);
                     let req = Request::from_parts(parts, body);
                     implementation.oneshot(req).await.map_err(Into::into)
                 }
