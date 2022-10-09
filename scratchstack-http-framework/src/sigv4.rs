@@ -1,17 +1,17 @@
 use {
+    crate::RequestId,
     async_trait::async_trait,
-    bytes::Bytes,
     chrono::Utc,
     derive_builder::Builder,
     http::method::Method,
     hyper::{body::Body, Request, Response},
     log::trace,
-    quick_xml::{events::BytesText, writer::Writer as XmlWriter},
     scratchstack_aws_signature::{
         canonical::get_content_type_and_charset, sigv4_validate_request, GetSigningKeyRequest, GetSigningKeyResponse,
         SignatureError, SignatureOptions, SignedHeaderRequirements,
     },
     scratchstack_errors::ServiceError,
+    serde::Serialize,
     std::{
         any::type_name,
         error::Error,
@@ -162,7 +162,7 @@ where
         }
     }
 
-    fn call(&mut self, req: Request<Body>) -> Self::Future {
+    fn call(&mut self, mut req: Request<Body>) -> Self::Future {
         let region = self.region.clone();
         let service = self.service.clone();
         let allowed_request_methods = self.allowed_request_methods.clone();
@@ -174,12 +174,26 @@ where
         let signature_options = self.signature_options;
 
         Box::pin(async move {
+            // Do we have a request id?
+            let extensions = req.extensions_mut();
+            let request_id = match extensions.get::<RequestId>() {
+                Some(request_id) => *request_id,
+                None => {
+                    let new_request_id = RequestId::new();
+                    trace!("Generated request-id: {}", new_request_id);
+                    extensions.insert(new_request_id);
+
+                    new_request_id
+                }
+            };
+
             // Rule 2: Is the request method appropriate?
             if !allowed_request_methods.is_empty() && !allowed_request_methods.contains(req.method()) {
                 return error_mapper
                     .map_error(
                         SignatureError::InvalidRequestMethod(format!("Unsupported request method '{}", req.method()))
                             .into(),
+                        Some(request_id),
                     )
                     .await;
             }
@@ -212,6 +226,7 @@ where
                                     "The content-type of the request is unsupported".to_string(),
                                 )
                                 .into(),
+                                Some(request_id),
                             )
                             .await;
                     }
@@ -236,7 +251,7 @@ where
                     let req = Request::from_parts(parts, body);
                     implementation.oneshot(req).await.map_err(Into::into)
                 }
-                Err(e) => error_mapper.map_error(e).await,
+                Err(e) => error_mapper.map_error(e, Some(request_id)).await,
             }
         })
     }
@@ -244,7 +259,7 @@ where
 
 #[async_trait]
 pub trait ErrorMapper: Clone + Send + 'static {
-    async fn map_error(self, error: BoxError) -> Result<Response<Body>, BoxError>;
+    async fn map_error(self, error: BoxError, request_id: Option<RequestId>) -> Result<Response<Body>, BoxError>;
 }
 
 #[derive(Clone)]
@@ -260,35 +275,64 @@ impl XmlErrorMapper {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename = "ErrorResponse")]
+pub struct XmlErrorResponse {
+    pub xmlns: String,
+
+    #[serde(rename = "Error")]
+    pub error: XmlError,
+
+    #[serde(rename = "$unflatten=RequestId", skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<RequestId>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct XmlError {
+    #[serde(rename = "$unflatten=Type")]
+    pub r#type: String,
+
+    #[serde(rename = "$unflatten=Code")]
+    pub code: String,
+
+    #[serde(rename = "$unflatten=Message", skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+impl From<&SignatureError> for XmlError {
+    fn from(error: &SignatureError) -> Self {
+        XmlError {
+            r#type: if error.http_status().as_u16() >= 500 {
+                "Receiver"
+            } else {
+                "Sender"
+            }
+            .to_string(),
+            code: error.error_code().to_string(),
+            message: {
+                let message = error.to_string();
+                if message.is_empty() {
+                    None
+                } else {
+                    Some(message)
+                }
+            },
+        }
+    }
+}
+
 #[async_trait]
 impl ErrorMapper for XmlErrorMapper {
-    async fn map_error(self, e: BoxError) -> Result<Response<Body>, BoxError> {
+    async fn map_error(self, e: BoxError, request_id: Option<RequestId>) -> Result<Response<Body>, BoxError> {
         match e.downcast::<SignatureError>() {
             Ok(e) => {
-                let error_type = if e.http_status().as_u16() >= 500 {
-                    "Receiver"
-                } else {
-                    "Sender"
+                let xml_response = XmlErrorResponse {
+                    xmlns: self.namespace,
+                    error: XmlError::from(e.as_ref()),
+                    request_id,
                 };
-                let buffer = Vec::with_capacity(1024);
-                let mut xml = XmlWriter::new_with_indent(buffer, b' ', 4);
-                xml.create_element("ErrorResponse")
-                    .with_attribute(("xmlns", self.namespace.as_str()))
-                    .write_inner_content(|xml| {
-                        xml.create_element("Error").write_inner_content(|xml| {
-                            xml.create_element("Type").write_text_content(BytesText::new(error_type))?;
-                            xml.create_element("Code").write_text_content(BytesText::new(e.error_code()))?;
-                            let message = e.to_string();
-                            if !message.is_empty() {
-                                xml.create_element("Message").write_text_content(BytesText::new(message.as_str()))?;
-                            }
-                            Ok(())
-                        })?;
-                        Ok(())
-                    })?;
-                let mut xml = xml.into_inner();
-                xml.push(b'\n');
-                let body = Body::from(Bytes::from(xml));
+
+                let body = Body::from(quick_xml::se::to_string(&xml_response).unwrap());
                 let result: Result<Response<Body>, Box<dyn Error + Send + Sync>> = Response::builder()
                     .status(e.http_status())
                     .header("Content-Type", "text/xml; charset=utf-8")
@@ -314,6 +358,8 @@ mod tests {
             Body, Request, Response, Server,
         },
         log::info,
+        pretty_assertions::assert_eq,
+        regex::Regex,
         rusoto_core::{DispatchSignedRequest, HttpClient, Region},
         rusoto_credential::AwsCredentials,
         rusoto_signature::SignedRequest,
@@ -492,14 +538,10 @@ mod tests {
                         eprintln!();
                         assert_eq!(r.status, 403);
                         let body_str = String::from_utf8(body).unwrap();
-                        assert_eq!(&body_str, r#"<ErrorResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
-    <Error>
-        <Type>Sender</Type>
-        <Code>SignatureDoesNotMatch</Code>
-        <Message>The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.</Message>
-    </Error>
-</ErrorResponse>
-"#);
+                        // Remove the RequestId from the body.
+                        let body_str = Regex::new("<RequestId>[-0-9a-f]+</RequestId>").unwrap().replace_all(&body_str, "");
+                        
+                        assert_eq!(&body_str, r#"<ErrorResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><Error><Type>Sender</Type><Code>SignatureDoesNotMatch</Code><Message>The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.</Message></Error></ErrorResponse>"#);
                     }
                     Err(e) => panic!("Error from server: {:?}", e),
                 };
