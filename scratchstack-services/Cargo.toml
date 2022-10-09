@@ -1,6 +1,14 @@
 [workspace]
 members = [
-    "services/iam",
-    "lib/scratchstack-config",
-    "lib/scratchstack-get-signing-key-direct",
+    "service-iam",
+    "service-sts",
 ]
+
+[workspace.package]
+authors = ["David Cuthbert <dacut@kanga.org>"]
+edition = "2021"
+homepage = "https://github.com/dacut/scratchstack"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/dacut/scratchstack"
+version = "0.1.0"
