@@ -5,6 +5,7 @@ use {
     },
     regex::Regex,
     regex_syntax::escape_into,
+    serde::{de, Deserialize, Serialize},
     std::{
         convert::Infallible,
         fmt::{Display, Formatter, Result as FmtResult},
@@ -12,6 +13,8 @@ use {
         str::FromStr,
     },
 };
+
+const PARTITION_START: usize = 4;
 
 /// An Amazon Resource Name (ARN) representing an exact resource.
 ///
@@ -22,11 +25,11 @@ use {
 /// [Arn] objects are immutable.
 #[derive(Debug, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Arn {
-    partition: String,
-    service: String,
-    region: String,
-    account_id: String,
-    resource: String,
+    arn: String,
+    service_start: usize,
+    region_start: usize,
+    account_id_start: usize,
+    resource_start: usize,
 }
 
 impl Arn {
@@ -63,43 +66,56 @@ impl Arn {
             validate_account_id(account_id)?
         }
 
+        let arn = format!("arn:{}:{}:{}:{}:{}", partition, service, region, account_id, resource);
+        let service_start = PARTITION_START + partition.len() + 1;
+        let region_start = service_start + service.len() + 1;
+        let account_id_start = region_start + region.len() + 1;
+        let resource_start = account_id_start + account_id.len() + 1;
+
         Ok(Self {
-            partition: partition.to_string(),
-            service: service.to_string(),
-            region: region.to_string(),
-            account_id: account_id.to_string(),
-            resource: resource.to_string(),
+            arn,
+            service_start,
+            region_start,
+            account_id_start,
+            resource_start,
         })
     }
 
     /// Retrieve the partition the resource is in.
     #[inline]
     pub fn partition(&self) -> &str {
-        &self.partition
+        &self.arn[PARTITION_START..self.service_start - 1]
     }
 
     /// Retrieve the service the resource belongs to.
     #[inline]
     pub fn service(&self) -> &str {
-        &self.service
+        &self.arn[self.service_start..self.region_start - 1]
     }
 
     /// Retrieve the region the resource is in.
     #[inline]
     pub fn region(&self) -> &str {
-        &self.region
+        &self.arn[self.region_start..self.account_id_start - 1]
     }
 
     /// Retrieve the account ID the resource belongs to.
     #[inline]
     pub fn account_id(&self) -> &str {
-        &self.account_id
+        &self.arn[self.account_id_start..self.resource_start - 1]
     }
 
     /// Retrieve the resource name.
     #[inline]
     pub fn resource(&self) -> &str {
-        &self.resource
+        &self.arn[self.resource_start..]
+    }
+}
+
+impl Display for Arn {
+    /// Return the ARN.
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        f.write_str(&self.arn)
     }
 }
 
@@ -121,10 +137,22 @@ impl FromStr for Arn {
     }
 }
 
-impl Display for Arn {
-    /// Return the ARN.
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(f, "arn:{}:{}:{}:{}:{}", self.partition, self.service, self.region, self.account_id, self.resource)
+impl<'de> Deserialize<'de> for Arn {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Self::from_str(&s).map_err(de::Error::custom)
+    }
+}
+
+impl Serialize for Arn {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.arn)
     }
 }
 
@@ -393,6 +421,7 @@ mod test {
             utils::{validate_account_id, validate_region},
             ArnError,
         },
+        pretty_assertions::{assert_eq, assert_ne},
         regex::Regex,
         std::{
             collections::hash_map::DefaultHasher,
@@ -695,6 +724,25 @@ mod test {
         let err =
             ArnPattern::from_str("https:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0").unwrap_err();
         assert_eq!(err, ArnError::InvalidScheme("https".to_string()));
+    }
+
+    #[test]
+    fn check_serialization() {
+        let arn: Arn = serde_json::from_str(r#""arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0""#).unwrap();
+        assert_eq!(arn.partition(), "aws");
+        assert_eq!(arn.service(), "ec2");
+        assert_eq!(arn.region(), "us-east-1");
+        assert_eq!(arn.account_id(), "123456789012");
+        assert_eq!(arn.resource(), "instance/i-1234567890abcdef0");
+
+        let arn_str = serde_json::to_string(&arn).unwrap();
+        assert_eq!(arn_str, r#""arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0""#);
+
+        let arn_err = serde_json::from_str::<Arn>(r#""arn:aws:ec2:us-east-1""#).unwrap_err();
+        assert_eq!(arn_err.to_string(), r#"Invalid ARN: "arn:aws:ec2:us-east-1""#);
+
+        let arn_err = serde_json::from_str::<Arn>(r#"{}"#);
+        assert_eq!(arn_err.unwrap_err().to_string(), "invalid type: map, expected a string at line 1 column 0");
     }
 }
 // end tests -- do not delete; needed for coverage.
