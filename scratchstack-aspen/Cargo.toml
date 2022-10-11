@@ -8,7 +8,7 @@ keywords = [ "AWS", "IAM", "Aspen" ]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/dacut/scratchstack-aspen"
-version = "0.1.0"
+version = "0.2.0"
 
 [lib]
 name = "scratchstack_aspen"
