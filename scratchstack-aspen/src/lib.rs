@@ -4,6 +4,7 @@ pub(crate) mod condition;
 pub(crate) mod effect;
 pub(crate) mod error;
 pub(crate) mod policy;
+pub(crate) mod policyset;
 pub(crate) mod principal;
 pub(crate) mod resource;
 pub(crate) mod statement;
@@ -17,6 +18,7 @@ pub use {
     effect::Effect,
     error::AspenError,
     policy::Policy,
+    policyset::{PolicySet, PolicySource},
     principal::{AwsPrincipal, Principal, SpecifiedPrincipal},
     resource::{Resource, ResourceList},
     statement::{Statement, StatementList},
