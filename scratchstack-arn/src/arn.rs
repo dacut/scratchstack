@@ -728,7 +728,8 @@ mod test {
 
     #[test]
     fn check_serialization() {
-        let arn: Arn = serde_json::from_str(r#""arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0""#).unwrap();
+        let arn: Arn =
+            serde_json::from_str(r#""arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0""#).unwrap();
         assert_eq!(arn.partition(), "aws");
         assert_eq!(arn.service(), "ec2");
         assert_eq!(arn.region(), "us-east-1");

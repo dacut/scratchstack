@@ -313,6 +313,8 @@ impl PartialEq<HashMap<String, SessionValue>> for SessionData {
     }
 }
 
+impl Eq for SessionData {}
+
 /// Associated data about a session key.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SessionValue {
