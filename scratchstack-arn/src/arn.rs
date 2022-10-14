@@ -1,15 +1,12 @@
 use {
     crate::{
         utils::{validate_account_id, validate_partition, validate_region, validate_service},
-        ArnError,
+        ArnError, GlobPattern,
     },
-    regex::Regex,
-    regex_syntax::escape_into,
     serde::{de, Deserialize, Serialize},
     std::{
-        convert::Infallible,
         fmt::{Display, Formatter, Result as FmtResult},
-        hash::{Hash, Hasher},
+        hash::Hash,
         str::FromStr,
     },
 };
@@ -171,11 +168,11 @@ impl Serialize for Arn {
 /// [ArnPattern] objects are immutable.
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
 pub struct ArnPattern {
-    partition: ArnSegmentPattern,
-    service: ArnSegmentPattern,
-    region: ArnSegmentPattern,
-    account_id: ArnSegmentPattern,
-    resource: ArnSegmentPattern,
+    partition: GlobPattern,
+    service: GlobPattern,
+    region: GlobPattern,
+    account_id: GlobPattern,
+    resource: GlobPattern,
 }
 
 impl ArnPattern {
@@ -187,11 +184,11 @@ impl ArnPattern {
     /// * `account_id` - The account ID the resource belongs to.
     /// * `resource` - The resource name.
     pub fn new(partition: &str, service: &str, region: &str, account_id: &str, resource: &str) -> Self {
-        let partition = ArnSegmentPattern::new(partition);
-        let service = ArnSegmentPattern::new(service);
-        let region = ArnSegmentPattern::new(region);
-        let account_id = ArnSegmentPattern::new(account_id);
-        let resource = ArnSegmentPattern::new(resource);
+        let partition = GlobPattern::new(partition);
+        let service = GlobPattern::new(service);
+        let region = GlobPattern::new(region);
+        let account_id = GlobPattern::new(account_id);
+        let resource = GlobPattern::new(resource);
 
         Self {
             partition,
@@ -204,31 +201,31 @@ impl ArnPattern {
 
     /// Retreive the pattern for the partition.
     #[inline]
-    pub fn partition(&self) -> &ArnSegmentPattern {
+    pub fn partition(&self) -> &GlobPattern {
         &self.partition
     }
 
     /// Retrieve the pattern for the service.
     #[inline]
-    pub fn service(&self) -> &ArnSegmentPattern {
+    pub fn service(&self) -> &GlobPattern {
         &self.service
     }
 
     /// Retrieve the pattern for the region.
     #[inline]
-    pub fn region(&self) -> &ArnSegmentPattern {
+    pub fn region(&self) -> &GlobPattern {
         &self.region
     }
 
     /// Retrieve the pattern for the account ID.
     #[inline]
-    pub fn account_id(&self) -> &ArnSegmentPattern {
+    pub fn account_id(&self) -> &GlobPattern {
         &self.account_id
     }
 
     /// Retrieve the pattern for the resource.
     #[inline]
-    pub fn resource(&self) -> &ArnSegmentPattern {
+    pub fn resource(&self) -> &GlobPattern {
         &self.resource
     }
 
@@ -273,150 +270,10 @@ impl Display for ArnPattern {
     }
 }
 
-/// A single segment pattern matcher in an [ArnPattern].
-#[derive(Debug, Clone)]
-pub enum ArnSegmentPattern {
-    /// Empty match.
-    Empty,
-
-    /// Wildcard match.
-    Any,
-
-    /// Exact string match.
-    Exact(String),
-
-    /// StartsWith is a simple prefix match.
-    StartsWith(String),
-
-    /// Regex pattern contains the original Arn glob-like pattern followed by the compiled regex.
-    Regex(String, Regex),
-}
-
-impl Display for ArnSegmentPattern {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        match self {
-            ArnSegmentPattern::Empty => Ok(()),
-            ArnSegmentPattern::Any => write!(f, "*"),
-            ArnSegmentPattern::Exact(s) => f.write_str(s),
-            ArnSegmentPattern::StartsWith(s) => write!(f, "{}*", s),
-            ArnSegmentPattern::Regex(orig, _) => f.write_str(orig),
-        }
-    }
-}
-
-impl PartialEq for ArnSegmentPattern {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Empty, Self::Empty) => true,
-            (Self::Any, Self::Any) => true,
-            (Self::Exact(a), Self::Exact(b)) => a == b,
-            (Self::StartsWith(a), Self::StartsWith(b)) => a == b,
-            (Self::Regex(orig_a, _), Self::Regex(orig_b, _)) => orig_a == orig_b,
-            _ => false,
-        }
-    }
-}
-
-impl Eq for ArnSegmentPattern {}
-
-impl Hash for ArnSegmentPattern {
-    fn hash<H: Hasher>(&self, hasher: &mut H) {
-        match self {
-            Self::Empty => hasher.write_u8(0),
-            Self::Any => hasher.write_u8(1),
-            Self::Exact(s) => {
-                hasher.write_u8(2);
-                s.hash(hasher);
-            }
-            Self::StartsWith(s) => {
-                hasher.write_u8(3);
-                s.hash(hasher);
-            }
-            Self::Regex(orig, _) => {
-                hasher.write_u8(4);
-                orig.hash(hasher);
-            }
-        }
-    }
-}
-
-impl FromStr for ArnSegmentPattern {
-    type Err = Infallible;
-
-    fn from_str(s: &str) -> Result<Self, Infallible> {
-        Ok(Self::new(s))
-    }
-}
-
-impl ArnSegmentPattern {
-    /// Indicate whether the specified string from an [Arn] segment matches this pattern.
-    pub fn matches(&self, segment: &str) -> bool {
-        match self {
-            Self::Empty => segment.is_empty(),
-            Self::Any => true,
-            Self::Exact(value) => segment == value,
-            Self::StartsWith(prefix) => segment.starts_with(prefix),
-            Self::Regex(_, regex) => regex.is_match(segment),
-        }
-    }
-
-    /// Create a new [ArnSegmentPattern] from a string.
-    pub fn new(s: &str) -> Self {
-        if s.is_empty() {
-            return ArnSegmentPattern::Empty;
-        }
-
-        if s == "*" {
-            return ArnSegmentPattern::Any;
-        }
-
-        let mut regex_pattern = String::with_capacity(s.len() + 2);
-        let mut must_use_regex = false;
-        let mut wildcard_seen = false;
-
-        regex_pattern.push('^');
-
-        for c in s.chars() {
-            match c {
-                '*' => {
-                    wildcard_seen = true;
-                    regex_pattern.push_str(".*");
-                }
-
-                '?' => {
-                    must_use_regex = true;
-                    regex_pattern.push('.');
-                }
-
-                _ => {
-                    // Escape any special Regex characters
-                    let c_s = c.to_string();
-                    escape_into(c_s.as_str(), &mut regex_pattern);
-
-                    if wildcard_seen {
-                        must_use_regex = true;
-                        wildcard_seen = false;
-                    }
-                }
-            }
-        }
-
-        if must_use_regex {
-            regex_pattern.push('$');
-            Self::Regex(s.to_string(), Regex::new(regex_pattern.as_str()).expect("Regex should always compile"))
-        } else if wildcard_seen {
-            // If we saw a wildcard but didn't need to use a regex, then the wildcard was at the end
-            Self::StartsWith(s[..s.len() - 1].to_string())
-        } else {
-            Self::Exact(s.to_string())
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use {
-        super::{Arn, ArnPattern, ArnSegmentPattern},
+        super::{Arn, ArnPattern, GlobPattern},
         crate::{
             utils::{validate_account_id, validate_region},
             ArnError,
@@ -680,7 +537,7 @@ mod test {
         assert_ne!(pat1a, pat2);
         assert_eq!(pat1c, pat1b);
 
-        assert!(pat1a.service().eq(&ArnSegmentPattern::Exact("ec2".to_string())));
+        assert!(pat1a.service().eq(&GlobPattern::Exact("ec2".to_string())));
 
         // Ensure we can derive a hash for the arn.
         let mut h2 = DefaultHasher::new();
@@ -693,21 +550,21 @@ mod test {
         assert_eq!(pat3.to_string(), "arn:aws:ec*:us-*-1::*".to_string());
 
         // FromStr for ArnSegmentPattern
-        ArnSegmentPattern::from_str("").unwrap();
-        ArnSegmentPattern::from_str("*").unwrap();
-        ArnSegmentPattern::from_str("us-east-1").unwrap();
-        ArnSegmentPattern::from_str("us*").unwrap();
-        ArnSegmentPattern::from_str("us-*-1").unwrap();
+        GlobPattern::from_str("").unwrap();
+        GlobPattern::from_str("*").unwrap();
+        GlobPattern::from_str("us-east-1").unwrap();
+        GlobPattern::from_str("us*").unwrap();
+        GlobPattern::from_str("us-*-1").unwrap();
     }
 
     #[test]
     fn check_arn_pattern_components() {
         let pat = ArnPattern::from_str("arn:aws:ec*:us-*-1::*").unwrap();
-        assert_eq!(pat.partition(), &ArnSegmentPattern::Exact("aws".to_string()));
-        assert_eq!(pat.service(), &ArnSegmentPattern::StartsWith("ec".to_string()));
-        assert_eq!(pat.region(), &ArnSegmentPattern::Regex("us-*-1".to_string(), Regex::new("us-.*-1").unwrap()));
-        assert_eq!(pat.account_id(), &ArnSegmentPattern::Empty);
-        assert_eq!(pat.resource(), &ArnSegmentPattern::Any);
+        assert_eq!(pat.partition(), &GlobPattern::Exact("aws".to_string()));
+        assert_eq!(pat.service(), &GlobPattern::StartsWith("ec".to_string()));
+        assert_eq!(pat.region(), &GlobPattern::Regex("us-*-1".to_string(), Regex::new("us-.*-1").unwrap()));
+        assert_eq!(pat.account_id(), &GlobPattern::Empty);
+        assert_eq!(pat.resource(), &GlobPattern::Any);
     }
 
     #[test]
