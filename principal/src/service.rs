@@ -64,6 +64,17 @@ impl Service {
     pub fn dns_suffix(&self) -> &str {
         &self.dns_suffix
     }
+
+    pub fn regional_dns_name(&self) -> String {
+        match &self.region {
+            None => format!("{}.{}", self.service_name, self.dns_suffix),
+            Some(region) => format!("{}.{}.{}", self.service_name, region, self.dns_suffix),
+        }
+    }
+
+    pub fn global_dns_name(&self) -> String {
+        format!("{}.{}", self.service_name, self.dns_suffix)
+    }
 }
 
 impl Display for Service {

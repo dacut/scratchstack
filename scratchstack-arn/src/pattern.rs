@@ -19,13 +19,13 @@ pub enum GlobPattern {
     Any,
 
     /// Exact string match.
-    Exact(String),
+    Exact(Box<String>),
 
     /// StartsWith is a simple prefix match.
-    StartsWith(String),
+    StartsWith(Box<String>),
 
     /// Regex pattern contains the original Arn glob-like pattern followed by the compiled regex.
-    Regex(String, Regex),
+    Regex(Box<(String, Regex)>),
 }
 
 impl Display for GlobPattern {
@@ -35,7 +35,7 @@ impl Display for GlobPattern {
             GlobPattern::Any => write!(f, "*"),
             GlobPattern::Exact(s) => f.write_str(s),
             GlobPattern::StartsWith(s) => write!(f, "{}*", s),
-            GlobPattern::Regex(orig, _) => f.write_str(orig),
+            GlobPattern::Regex(sr) => f.write_str(sr.0.as_str()),
         }
     }
 }
@@ -47,7 +47,7 @@ impl PartialEq for GlobPattern {
             (Self::Any, Self::Any) => true,
             (Self::Exact(a), Self::Exact(b)) => a == b,
             (Self::StartsWith(a), Self::StartsWith(b)) => a == b,
-            (Self::Regex(orig_a, _), Self::Regex(orig_b, _)) => orig_a == orig_b,
+            (Self::Regex(sr_a), Self::Regex(sr_b)) => sr_a.0 == sr_b.0,
             _ => false,
         }
     }
@@ -68,11 +68,17 @@ impl Hash for GlobPattern {
                 hasher.write_u8(3);
                 s.hash(hasher);
             }
-            Self::Regex(orig, _) => {
+            Self::Regex(sr) => {
                 hasher.write_u8(4);
-                orig.hash(hasher);
+                sr.0.hash(hasher);
             }
         }
+    }
+}
+
+impl<T: AsRef<str>> From<T> for GlobPattern {
+    fn from(s: T) -> Self {
+        Self::new(s.as_ref())
     }
 }
 
@@ -90,9 +96,9 @@ impl GlobPattern {
         match self {
             Self::Empty => segment.is_empty(),
             Self::Any => true,
-            Self::Exact(value) => segment == value,
-            Self::StartsWith(prefix) => segment.starts_with(prefix),
-            Self::Regex(_, regex) => regex.is_match(segment),
+            Self::Exact(value) => segment == value.as_str(),
+            Self::StartsWith(prefix) => segment.starts_with(prefix.as_str()),
+            Self::Regex(sr) => sr.1.is_match(segment),
         }
     }
 
@@ -139,12 +145,15 @@ impl GlobPattern {
 
         if must_use_regex {
             regex_pattern.push('$');
-            Self::Regex(s.to_string(), Regex::new(regex_pattern.as_str()).expect("Regex should always compile"))
+            Self::Regex(Box::new((
+                s.to_string(),
+                Regex::new(regex_pattern.as_str()).expect("Regex should always compile"),
+            )))
         } else if wildcard_seen {
             // If we saw a wildcard but didn't need to use a regex, then the wildcard was at the end
-            Self::StartsWith(s[..s.len() - 1].to_string())
+            Self::StartsWith(Box::new(s[..s.len() - 1].to_string()))
         } else {
-            Self::Exact(s.to_string())
+            Self::Exact(Box::new(s.to_string()))
         }
     }
 }

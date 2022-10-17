@@ -1,14 +1,17 @@
-use std::{
-    collections::{
-        hash_map::{Drain, Entry, IntoIter, IntoKeys, IntoValues, Iter, IterMut, Keys, Values, ValuesMut},
-        HashMap, TryReserveError,
+use {
+    chrono::{DateTime, FixedOffset, Utc},
+    std::{
+        collections::{
+            hash_map::{Drain, Entry, IntoIter, IntoKeys, IntoValues, Iter, IterMut, Keys, Values, ValuesMut},
+            HashMap, TryReserveError,
+        },
+        fmt::{Display, Formatter, Result as FmtResult},
+        hash::Hash,
+        iter::{Extend, FromIterator, IntoIterator},
+        net::IpAddr,
+        ops::Index,
+        panic::UnwindSafe,
     },
-    fmt::{Display, Formatter, Result as FmtResult},
-    hash::Hash,
-    iter::{Extend, FromIterator, IntoIterator},
-    net::IpAddr,
-    ops::Index,
-    panic::UnwindSafe,
 };
 
 /// Associated data about a principal. This is a map of ASCII case-insensitive strings to [SessionValue] values.
@@ -321,27 +324,102 @@ pub enum SessionValue {
     /// Null value
     Null,
 
-    /// Boolean value.
+    /// Binary value
+    Binary(Vec<u8>),
+
+    /// Boolean value
     Bool(bool),
 
-    /// Integer value.
+    /// Integer value
     Integer(i64),
 
-    /// IP address value.
+    /// IP address value
     IpAddr(IpAddr),
 
-    /// String value.
+    /// String value
     String(String),
+
+    /// Timestamp value
+    Timestamp(DateTime<Utc>),
+}
+
+impl SessionValue {
+    /// Indicates whether this is a null value.
+    #[inline]
+    pub fn is_null(&self) -> bool {
+        matches!(self, Self::Null)
+    }
+
+    pub fn as_variable_value(&self) -> String {
+        match self {
+            Self::Null => "".to_string(),
+            Self::Binary(value) => base64::encode(value),
+            Self::Bool(b) => if *b {
+                "true"
+            } else {
+                "false"
+            }
+            .to_string(),
+            Self::Integer(i) => format!("{}", i),
+            Self::IpAddr(ip) => format!("{}", ip),
+            Self::String(s) => s.clone(),
+            Self::Timestamp(t) => format!("{}", t),
+        }
+    }
+}
+
+impl From<bool> for SessionValue {
+    fn from(value: bool) -> Self {
+        Self::Bool(value)
+    }
+}
+
+impl From<i64> for SessionValue {
+    fn from(value: i64) -> Self {
+        Self::Integer(value)
+    }
+}
+
+impl From<IpAddr> for SessionValue {
+    fn from(value: IpAddr) -> Self {
+        Self::IpAddr(value)
+    }
+}
+
+impl From<&str> for SessionValue {
+    fn from(value: &str) -> Self {
+        Self::String(value.to_string())
+    }
+}
+
+impl From<String> for SessionValue {
+    fn from(value: String) -> Self {
+        Self::String(value)
+    }
+}
+
+impl From<DateTime<FixedOffset>> for SessionValue {
+    fn from(value: DateTime<FixedOffset>) -> Self {
+        Self::Timestamp(value.into())
+    }
+}
+
+impl From<DateTime<Utc>> for SessionValue {
+    fn from(value: DateTime<Utc>) -> Self {
+        Self::Timestamp(value)
+    }
 }
 
 impl Display for SessionValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
-            Self::Null => f.write_str("Null"),
-            Self::Bool(b) => write!(f, "Bool({})", b),
-            Self::Integer(i) => write!(f, "Integer({})", i),
-            Self::IpAddr(ip) => write!(f, "IpAddr({})", ip),
-            Self::String(s) => write!(f, "String({})", s),
+            Self::Null => f.write_str("null"),
+            Self::Binary(value) => f.write_str(&base64::encode(value)),
+            Self::Bool(b) => Display::fmt(b, f),
+            Self::Integer(i) => Display::fmt(i, f),
+            Self::IpAddr(ip) => Display::fmt(ip, f),
+            Self::String(s) => f.write_str(s),
+            Self::Timestamp(t) => Display::fmt(t, f),
         }
     }
 }
@@ -377,16 +455,16 @@ mod tests {
             SessionValue::String("test2".to_string()),
         ];
         let display = vec![
-            "Null",
-            "Bool(false)",
-            "Bool(true)",
-            "Integer(-1)",
-            "Integer(0)",
-            "Integer(1)",
-            "IpAddr(127.0.0.1)",
-            "IpAddr(::1)",
-            "String(test1)",
-            "String(test2)",
+            "null",
+            "false",
+            "true",
+            "-1",
+            "0",
+            "1",
+            "127.0.0.1",
+            "::1",
+            "test1",
+            "test2",
         ];
         assert_eq!(sv1a, sv1b);
         assert_ne!(sv1a, sv2);

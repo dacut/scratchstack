@@ -537,7 +537,7 @@ mod test {
         assert_ne!(pat1a, pat2);
         assert_eq!(pat1c, pat1b);
 
-        assert!(pat1a.service().eq(&GlobPattern::Exact("ec2".to_string())));
+        assert!(pat1a.service().eq(&GlobPattern::Exact(Box::new("ec2".to_string()))));
 
         // Ensure we can derive a hash for the arn.
         let mut h2 = DefaultHasher::new();
@@ -560,9 +560,9 @@ mod test {
     #[test]
     fn check_arn_pattern_components() {
         let pat = ArnPattern::from_str("arn:aws:ec*:us-*-1::*").unwrap();
-        assert_eq!(pat.partition(), &GlobPattern::Exact("aws".to_string()));
-        assert_eq!(pat.service(), &GlobPattern::StartsWith("ec".to_string()));
-        assert_eq!(pat.region(), &GlobPattern::Regex("us-*-1".to_string(), Regex::new("us-.*-1").unwrap()));
+        assert_eq!(pat.partition(), &GlobPattern::Exact(Box::new("aws".to_string())));
+        assert_eq!(pat.service(), &GlobPattern::StartsWith(Box::new("ec".to_string())));
+        assert_eq!(pat.region(), &GlobPattern::Regex(Box::new(("us-*-1".to_string(), Regex::new("us-.*-1").unwrap()))));
         assert_eq!(pat.account_id(), &GlobPattern::Empty);
         assert_eq!(pat.resource(), &GlobPattern::Any);
     }
