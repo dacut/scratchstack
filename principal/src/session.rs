@@ -454,18 +454,7 @@ mod tests {
             SessionValue::String("test1".to_string()),
             SessionValue::String("test2".to_string()),
         ];
-        let display = vec![
-            "null",
-            "false",
-            "true",
-            "-1",
-            "0",
-            "1",
-            "127.0.0.1",
-            "::1",
-            "test1",
-            "test2",
-        ];
+        let display = vec!["null", "false", "true", "-1", "0", "1", "127.0.0.1", "::1", "test1", "test2"];
         assert_eq!(sv1a, sv1b);
         assert_ne!(sv1a, sv2);
         assert_eq!(sv1a, sv1a.clone());
