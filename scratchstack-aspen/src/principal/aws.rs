@@ -3,6 +3,7 @@ use {
     lazy_static::lazy_static,
     regex::Regex,
     scratchstack_arn::Arn,
+    scratchstack_aws_principal::{PrincipalIdentity, PrincipalSource},
     serde::{
         de::{self, Deserializer, Unexpected, Visitor},
         ser::Serializer,
@@ -23,6 +24,26 @@ pub enum AwsPrincipal {
     Account(String),
     Any,
     Arn(Arn),
+}
+
+impl AwsPrincipal {
+    pub fn matches(&self, identity: &PrincipalIdentity) -> bool {
+        if identity.source() != PrincipalSource::Aws {
+            return false;
+        }
+
+        match self {
+            Self::Any => true,
+            Self::Account(account_id) => {
+                let identity_arn: Arn = identity.try_into().expect("AWS principal identity must have an ARN");
+                identity_arn.account_id() == account_id
+            }
+            Self::Arn(arn) => {
+                let identity_arn: Arn = identity.try_into().expect("AWS principal identity must have an ARN");
+                identity_arn == *arn
+            }
+        }
+    }
 }
 
 impl Display for AwsPrincipal {

@@ -14,11 +14,15 @@ version = "0.2.0"
 name = "scratchstack_aspen"
 
 [dependencies]
+base64 = "^0.13"
+chrono = "^0.4"
 derive_builder = "^0.11"
+ipnet = "^2.5"
 lazy_static = "^1.4.0"
 log = "^0.4"
-regex = "^1.3"
-scratchstack-arn = "^0.4"
+regex = "^1.6"
+scratchstack-arn = { version = "^0.4", path = "../scratchstack-core/arn" }
+scratchstack-aws-principal = { version = "^0.4", path = "../scratchstack-core/principal" }
 serde_json = "^1.0"
 
 [dependencies.serde]

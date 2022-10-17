@@ -1,27 +1,54 @@
 use {
-    log::debug,
+    log::{debug, error},
     serde::{
         de::{
             self,
             value::{MapAccessDeserializer, SeqAccessDeserializer},
-            Deserializer, IntoDeserializer, MapAccess, SeqAccess, Unexpected, Visitor,
+            Deserializer, MapAccess, SeqAccess, Unexpected, Visitor,
         },
         ser::{SerializeSeq, Serializer},
         Deserialize, Serialize,
     },
     std::{
-        fmt::{Debug, Display, Formatter, Result as FmtResult},
+        any::type_name,
+        fmt::{Debug, Display, Error as FmtError, Formatter, Result as FmtResult},
         marker::PhantomData,
-        ops::Index,
-        sync::Arc,
+        str::{from_utf8, FromStr},
     },
 };
+
+/// Return the simplified type name of a type.
+fn simple_type_name<E>() -> &'static str {
+    // Get the type name of the element we're serializing.
+    let tn = type_name::<E>();
+
+    // If it's wrapped in an Option or the like, unwrap it.
+    let tn = match tn.rfind('<') {
+        None => tn,
+        Some(i) => {
+            let sub = &tn[i + 1..tn.len() - 1];
+            match sub.find('>') {
+                None => sub,
+                Some(j) => &sub[..j],
+            }
+        }
+    };
+
+    // If it's a reference, unwrap it.
+    let tn = tn.trim_start_matches('&');
+
+    // If it's a path, use just the last component.
+    match tn.rfind("::") {
+        None => tn,
+        Some(i) => &tn[i + 2..],
+    }
+}
 
 /// Implement Display for a given class by formatting it as pretty-printed JSON.
 #[macro_export]
 macro_rules! display_json {
-    ($cls:ident) => {
-        impl std::fmt::Display for $cls {
+    ($cls:ty) => {
+        impl ::std::fmt::Display for $cls {
             fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                 let buf = Vec::new();
                 let serde_formatter = ::serde_json::ser::PrettyFormatter::with_indent(b"    ");
@@ -65,179 +92,204 @@ macro_rules! from_str_json {
     };
 }
 
-/// ElementList allows a JSON field to an element (represented as a JSON object) or a list of elements (represented as a JSON array).
-pub enum ElementList<E> {
-    Single(Arc<E>),
-    List(Vec<Arc<E>>),
+/// The kind of list we're storing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ListKind {
+    Single,
+    List,
 }
 
-impl<E> ElementList<E> {
-    pub fn to_vec(&self) -> Vec<Arc<E>> {
-        match self {
-            Self::Single(element) => vec![element.clone()],
-            Self::List(element_list) => {
-                let mut result = Vec::with_capacity(element_list.len());
-                for element in element_list {
-                    result.push(element.clone());
+macro_rules! define_list_like_type {
+    ($list_like_type:ident) => {
+        /// $llt allows a JSON field to be represented as the element itself (equivalent to a list of 1 item) or as s
+        /// list of elements.
+
+        pub struct $list_like_type<E> {
+            elements: ::std::vec::Vec<E>,
+            kind: $crate::serutil::ListKind,
+        }
+
+        impl<E> $list_like_type<E> {
+            #[inline]
+            pub fn kind(&self) -> $crate::serutil::ListKind {
+                self.kind
+            }
+
+            #[inline]
+            pub fn as_slice(&self) -> &[E] {
+                self.elements.as_slice()
+            }
+
+            pub fn to_vec(&self) -> Vec<&E> {
+                let mut result = ::std::vec::Vec::with_capacity(self.elements.len());
+                for element in self.elements.iter() {
+                    result.push(element);
                 }
                 result
             }
-        }
-    }
 
-    pub fn is_empty(&self) -> bool {
-        match self {
-            Self::Single(_) => false,
-            Self::List(element_list) => element_list.is_empty(),
-        }
-    }
+            #[inline]
+            pub fn is_empty(&self) -> bool {
+                self.elements.is_empty()
+            }
 
-    pub fn len(&self) -> usize {
-        match self {
-            Self::Single(_) => 1,
-            Self::List(element_list) => element_list.len(),
-        }
-    }
-}
-
-impl<E: Clone> Clone for ElementList<E> {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Single(v) => Self::Single(v.clone()),
-            Self::List(v) => Self::List(v.clone()),
-        }
-    }
-}
-
-impl<E: Debug> Debug for ElementList<E> {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        match self {
-            Self::Single(v) => write!(f, "{:?}", v),
-            Self::List(v) => write!(f, "{:?}", v),
-        }
-    }
-}
-
-impl<E: Display> Display for ElementList<E> {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        match self {
-            Self::Single(v) => write!(f, "{}", v),
-            Self::List(v) => {
-                let mut first = true;
-                f.write_str("[")?;
-                for e in v {
-                    if first {
-                        first = false;
-                    } else {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{}", e)?;
-                }
-                f.write_str("]")
+            #[inline]
+            pub fn len(&self) -> usize {
+                self.elements.len()
             }
         }
-    }
-}
 
-impl<E> PartialEq for ElementList<E>
-where
-    E: PartialEq,
-{
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Single(v1), Self::Single(v2)) => v1 == v2,
-            (Self::List(v1), Self::List(v2)) => v1 == v2,
-            (Self::Single(v1), Self::List(v2)) => v2.len() == 1 && v1 == &v2[0],
-            (Self::List(v1), Self::Single(v2)) => v1.len() == 1 && &v1[0] == v2,
-        }
-    }
-}
-
-impl<E> Eq for ElementList<E> where E: Eq {}
-
-impl<E> From<Arc<E>> for ElementList<E> {
-    fn from(v: Arc<E>) -> Self {
-        Self::Single(v)
-    }
-}
-
-impl<E> From<E> for ElementList<E> {
-    fn from(v: E) -> Self {
-        Self::Single(Arc::new(v))
-    }
-}
-
-impl<E> From<Vec<Arc<E>>> for ElementList<E> {
-    fn from(v: Vec<Arc<E>>) -> Self {
-        Self::List(v)
-    }
-}
-
-impl<E> Index<usize> for ElementList<E> {
-    type Output = Arc<E>;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        match self {
-            Self::Single(v) => {
-                if index == 0 {
-                    v
-                } else {
-                    panic!("index out of bounds: the len is 1 but the index is {}", index);
+        impl<E> ::std::clone::Clone for $list_like_type<E>
+        where
+            E: ::std::clone::Clone,
+        {
+            fn clone(&self) -> Self {
+                Self {
+                    elements: self.elements.clone(),
+                    kind: self.kind,
                 }
             }
-            Self::List(v) => &v[index],
         }
-    }
+
+        impl<E> ::std::fmt::Debug for $list_like_type<E>
+        where
+            E: ::std::fmt::Debug,
+        {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                match self.kind {
+                    $crate::serutil::ListKind::Single => (&self.elements[0] as &dyn ::std::fmt::Debug).fmt(f),
+                    $crate::serutil::ListKind::List => (&self.elements as &dyn ::std::fmt::Debug).fmt(f),
+                }
+            }
+        }
+
+        impl<E> ::std::cmp::PartialEq for $list_like_type<E>
+        where
+            E: ::std::cmp::PartialEq,
+        {
+            fn eq(&self, other: &Self) -> bool {
+                self.elements == other.elements
+            }
+        }
+
+        impl<E> ::std::cmp::Eq for $list_like_type<E> where E: ::std::cmp::Eq {}
+
+        impl<E> ::std::convert::From<E> for $list_like_type<E> {
+            fn from(v: E) -> Self {
+                Self {
+                    elements: vec![v],
+                    kind: $crate::serutil::ListKind::Single,
+                }
+            }
+        }
+
+        impl<E> ::std::convert::From<Vec<E>> for $list_like_type<E> {
+            fn from(v: ::std::vec::Vec<E>) -> Self {
+                Self {
+                    elements: v,
+                    kind: $crate::serutil::ListKind::List,
+                }
+            }
+        }
+
+        impl<E, I> ::std::ops::Index<I> for $list_like_type<E>
+        where
+            I: ::std::slice::SliceIndex<[E]>,
+        {
+            type Output = <I as ::std::slice::SliceIndex<[E]>>::Output;
+
+            fn index(&self, index: I) -> &<::std::vec::Vec<E> as ::std::ops::Index<I>>::Output {
+                self.elements.index(index)
+            }
+        }
+
+        impl<E> ::std::ops::Deref for $list_like_type<E> {
+            type Target = [E];
+
+            fn deref(&self) -> &[E] {
+                self.elements.deref()
+            }
+        }
+    };
 }
 
-struct ElementListVisitor<E> {
+define_list_like_type!(MapList);
+
+struct MapListVisitor<E> {
     phantom: PhantomData<E>,
 }
 
-impl<'de, E: Clone + Debug + Deserialize<'de> + Serialize> Visitor<'de> for ElementListVisitor<E> {
-    type Value = ElementList<E>;
+impl<'de, E: Deserialize<'de>> Visitor<'de> for MapListVisitor<E> {
+    type Value = MapList<E>;
 
     fn expecting(&self, f: &mut Formatter) -> FmtResult {
-        write!(f, "element or list of elements")
-    }
-
-    fn visit_str<SE: de::Error>(self, str: &str) -> Result<Self::Value, SE> {
-        Ok(ElementList::<E>::Single(Arc::new(E::deserialize(str.into_deserializer())?)))
+        let tn = simple_type_name::<E>();
+        write!(f, "{} or list of {}", tn, tn)
     }
 
     fn visit_map<A: MapAccess<'de>>(self, access: A) -> Result<Self::Value, A::Error> {
-        Ok(ElementList::<E>::Single(Arc::new(E::deserialize(MapAccessDeserializer::new(access))?)))
+        let el = E::deserialize(MapAccessDeserializer::new(access))?;
+        Ok(MapList {
+            elements: vec![el],
+            kind: ListKind::Single,
+        })
     }
 
     fn visit_seq<A: SeqAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
-        let mut result: Vec<Arc<E>> = match access.size_hint() {
+        let mut result: Vec<E> = match access.size_hint() {
             None => Vec::new(),
             Some(size) => Vec::with_capacity(size),
         };
 
         while let Some(item) = access.next_element::<E>()? {
-            result.push(Arc::new(item));
+            result.push(item);
         }
-        Ok(ElementList::List(result))
+
+        Ok(MapList {
+            elements: result,
+            kind: ListKind::List,
+        })
     }
 }
 
-impl<'de, E: Clone + Debug + Deserialize<'de> + Serialize> Deserialize<'de> for ElementList<E> {
+impl<E: Serialize> Display for MapList<E> {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        let buf = Vec::new();
+        let serde_formatter = serde_json::ser::PrettyFormatter::with_indent(b"    ");
+        let mut ser = serde_json::Serializer::with_formatter(buf, serde_formatter);
+        match self.serialize(&mut ser) {
+            Ok(()) => (),
+            Err(e) => {
+                error!("Failed to serialize: {}", e);
+                return Err(FmtError {});
+            }
+        };
+        match from_utf8(&ser.into_inner()) {
+            Ok(s) => f.write_str(s),
+            Err(e) => {
+                error!("JSON serialization contained non-UTF-8 characters: {}", e);
+                Err(FmtError {})
+            }
+        }
+    }
+}
+
+impl<'de, E: Deserialize<'de>> Deserialize<'de> for MapList<E> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_any(ElementListVisitor {
+        deserializer.deserialize_any(MapListVisitor {
             phantom: PhantomData,
         })
     }
 }
 
-impl<E: Clone + Debug + Serialize> Serialize for ElementList<E> {
+impl<E: Serialize> Serialize for MapList<E> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Self::Single(v) => v.serialize(serializer),
-            Self::List(v) => {
-                let mut seq = serializer.serialize_seq(Some(v.len()))?;
-                for e in v {
-                    seq.serialize_element(&**e)?;
+        match self.kind {
+            ListKind::Single => self.elements[0].serialize(serializer),
+            ListKind::List => {
+                let mut seq = serializer.serialize_seq(Some(self.elements.len()))?;
+                for e in &self.elements {
+                    seq.serialize_element(e)?;
                 }
                 seq.end()
             }
@@ -245,54 +297,40 @@ impl<E: Clone + Debug + Serialize> Serialize for ElementList<E> {
     }
 }
 
-/// StringList allows a JSON field to be a string or list of strings.
-#[derive(Clone, Debug)]
-pub enum StringList {
-    Single(String),
-    List(Vec<String>),
+define_list_like_type!(StringLikeList);
+
+struct StringListVisitor<T> {
+    _phantom: PhantomData<T>,
 }
 
-impl StringList {
-    pub fn to_vec(&self) -> Vec<&str> {
-        match self {
-            Self::Single(s) => vec![s.as_str()],
-            Self::List(s_list) => {
-                let mut result = Vec::with_capacity(s_list.len());
-                for s in s_list {
-                    result.push(s.as_str());
-                }
-                result
-            }
-        }
-    }
-}
-
-impl PartialEq<StringList> for StringList {
-    fn eq(&self, other: &StringList) -> bool {
-        match (self, other) {
-            (Self::Single(my_el), Self::Single(other_el)) => my_el == other_el,
-            (Self::Single(my_el), Self::List(other_el)) => other_el.len() == 1 && my_el == &other_el[0],
-            (Self::List(my_el), Self::Single(other_el)) => my_el.len() == 1 && &my_el[0] == other_el,
-            (Self::List(my_el), Self::List(other_el)) => my_el == other_el,
-        }
-    }
-}
-
-impl Eq for StringList {}
-
-struct StringListVisitor {}
-
-impl<'de> Visitor<'de> for StringListVisitor {
-    type Value = StringList;
+impl<'de, T> Visitor<'de> for StringListVisitor<T>
+where
+    T: FromStr,
+    <T as FromStr>::Err: Display,
+{
+    type Value = StringLikeList<T>;
 
     fn expecting(&self, f: &mut Formatter) -> FmtResult {
-        write!(f, "string or list of strings")
+        let tn = simple_type_name::<T>();
+        write!(f, "{} or list of {}", tn, tn)
     }
 
     fn visit_seq<A: SeqAccess<'de>>(self, access: A) -> Result<Self::Value, A::Error> {
         let deserializer = SeqAccessDeserializer::new(access);
         match Vec::<String>::deserialize(deserializer) {
-            Ok(l) => Ok(StringList::List(l)),
+            Ok(l) => {
+                let mut result = Vec::with_capacity(l.len());
+                for e in &l {
+                    match T::from_str(e) {
+                        Ok(s) => result.push(s),
+                        Err(e) => return Err(de::Error::custom(e)),
+                    }
+                }
+                Ok(StringLikeList {
+                    elements: result,
+                    kind: ListKind::List,
+                })
+            }
             Err(e) => {
                 debug!("Failed to deserialize string list: {:?}", e);
                 Err(<A::Error as de::Error>::invalid_value(Unexpected::Seq, &self))
@@ -301,21 +339,68 @@ impl<'de> Visitor<'de> for StringListVisitor {
     }
 
     fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
-        Ok(StringList::Single(v.to_string()))
+        match T::from_str(v) {
+            Ok(s) => Ok(StringLikeList {
+                elements: vec![s],
+                kind: ListKind::Single,
+            }),
+            Err(e) => Err(de::Error::custom(e)),
+        }
     }
 }
 
-impl<'de> Deserialize<'de> for StringList {
+impl<E: ToString> Display for StringLikeList<E> {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        let buf = Vec::new();
+        let serde_formatter = serde_json::ser::PrettyFormatter::with_indent(b"    ");
+        let mut ser = serde_json::Serializer::with_formatter(buf, serde_formatter);
+        match self.serialize(&mut ser) {
+            Ok(()) => (),
+            Err(e) => {
+                error!("Failed to serialize: {}", e);
+                return Err(FmtError {});
+            }
+        };
+        match from_utf8(&ser.into_inner()) {
+            Ok(s) => f.write_str(s),
+            Err(e) => {
+                error!("JSON serialization contained non-UTF-8 characters: {}", e);
+                Err(FmtError {})
+            }
+        }
+    }
+}
+
+impl<'de, T> Deserialize<'de> for StringLikeList<T>
+where
+    T: FromStr,
+    <T as FromStr>::Err: Display,
+{
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_any(StringListVisitor {})
+        deserializer.deserialize_any(StringListVisitor {
+            _phantom: PhantomData,
+        })
     }
 }
 
-impl Serialize for StringList {
+impl<T> Serialize for StringLikeList<T>
+where
+    T: ToString,
+{
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Self::Single(v) => v.serialize(serializer),
-            Self::List(v) => v.serialize(serializer),
+        match self.kind {
+            ListKind::Single => {
+                let s = self.elements[0].to_string();
+                s.serialize(serializer)
+            }
+            ListKind::List => {
+                let mut seq = Vec::with_capacity(self.elements.len());
+                for e in &self.elements {
+                    let s = e.to_string();
+                    seq.push(s);
+                }
+                seq.serialize(serializer)
+            }
         }
     }
 }
@@ -323,18 +408,32 @@ impl Serialize for StringList {
 #[cfg(test)]
 mod tests {
     use {
-        crate::serutil::ElementList,
-        serde::Serialize,
-        std::{panic::catch_unwind, sync::Arc},
+        super::{MapList, StringLikeList},
+        indoc::indoc,
+        serde::{Deserialize, Serialize},
+        std::panic::catch_unwind,
     };
+
+    #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+    struct SimpleMap {
+        pub value: u32,
+    }
 
     #[test_log::test]
     fn test_basic_ops() {
-        let el1a = ElementList::<u32>::Single(Arc::new(1));
-        let el1b = ElementList::<u32>::List(vec![Arc::new(1)]);
-        let el2a = ElementList::<u32>::List(vec![Arc::new(1), Arc::new(2)]);
-        let el2b = ElementList::<u32>::List(vec![Arc::new(1), Arc::new(2)]);
-        let el3 = ElementList::<u32>::List(vec![]);
+        let map1 = SimpleMap {
+            value: 42,
+        };
+
+        let map2 = SimpleMap {
+            value: 43,
+        };
+
+        let el1a: MapList<SimpleMap> = map1.clone().into();
+        let el1b: MapList<SimpleMap> = vec![map1.clone()].into();
+        let el2a: MapList<SimpleMap> = vec![map1.clone(), map2.clone()].into();
+        let el2b: MapList<SimpleMap> = vec![map1.clone(), map2].into();
+        let el3: MapList<SimpleMap> = vec![].into();
         assert_eq!(el1a, el1b);
         assert_eq!(el1b, el1a);
         assert_ne!(el1a, el2a);
@@ -353,55 +452,60 @@ mod tests {
 
         assert_eq!(el1a.clone(), el1a);
 
-        assert_eq!(format!("{:?}", el1a), "1");
-        assert_eq!(format!("{:?}", el1b), "[1]");
-        assert_eq!(format!("{}", el2a), "[1, 2]");
+        assert_eq!(
+            format!("{}", el1a),
+            indoc! { r#"
+            {
+                "value": 42
+            }"#}
+        );
+        assert_eq!(
+            format!("{}", el1b),
+            indoc! { r#"
+            [
+                {
+                    "value": 42
+                }
+            ]"#}
+        );
+        assert_eq!(
+            format!("{}", el2a),
+            indoc! { r#"
+            [
+                {
+                    "value": 42
+                },
+                {
+                    "value": 43
+                }
+            ]"# }
+        );
 
-        assert_eq!(*el1a[0], 1);
-        assert_eq!(*el1b[0], 1);
+        assert_eq!(el1a[0].value, 42);
+        assert_eq!(el1b[0].value, 42);
         let e = catch_unwind(|| {
-            let new_el = ElementList::<u32>::Single(Arc::new(1));
-            println!("This won't print: {}", &new_el[1]);
+            let new_el: MapList<SimpleMap> = map1.clone().into();
+            println!("This won't print: {:?}", &new_el[1]);
         })
         .unwrap_err();
         assert_eq!(*e.downcast::<String>().unwrap(), "index out of bounds: the len is 1 but the index is 1");
     }
 
     #[derive(Clone, Debug)]
-    #[allow(dead_code)]
-    struct SerFail {}
-    display_json!(SerFail);
-
-    impl Serialize for SerFail {
-        fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
-            Err(serde::ser::Error::custom("Serialization failed"))
-        }
-    }
-
-    #[derive(Clone, Debug)]
     struct SerBadUtf8 {}
-    display_json!(SerBadUtf8);
+    const BAD_UTF8: [u8; 4] = [0x80, 0x80, 0x80, 0x80];
 
-    impl Serialize for SerBadUtf8 {
-        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-            let bad = unsafe { String::from_utf8_unchecked(vec![0xc0]) };
-            serializer.serialize_str(&bad)
+    impl ToString for SerBadUtf8 {
+        fn to_string(&self) -> String {
+            unsafe { String::from_utf8_unchecked(BAD_UTF8.to_vec()) }
         }
     }
 
     #[test_log::test]
     fn test_ser_fail() {
-        let el = ElementList::Single(Arc::new(SerFail {}));
-        let result = serde_json::to_string(&el);
-        assert!(result.is_err());
-
-        let e = catch_unwind(|| el.to_string()).unwrap_err();
+        let el: StringLikeList<SerBadUtf8> = vec![SerBadUtf8 {}].into();
+        let e = catch_unwind(|| format!("{}", el)).unwrap_err();
         let e2 = e.downcast::<String>().unwrap();
-        assert!((*e2).contains("a Display implementation returned an error"));
-
-        let el = ElementList::List(vec![Arc::new(SerBadUtf8 {})]);
-        let e = catch_unwind(|| el.to_string()).unwrap_err();
-        let e2 = e.downcast::<String>().unwrap();
-        assert!((*e2).contains("a Display implementation returned an error"));
+        assert!((*e2).contains("a formatting trait implementation returned an error"));
     }
 }

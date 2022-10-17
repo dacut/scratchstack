@@ -1,140 +1,49 @@
 use {
-    crate::{display_json, AspenError},
+    crate::{serutil::StringLikeList, AspenError},
     log::debug,
+    scratchstack_arn::GlobPattern,
     serde::{
-        de::{self, Deserializer, IntoDeserializer, SeqAccess, Unexpected, Visitor},
+        de::{self, Deserializer, Unexpected, Visitor},
         ser::Serializer,
         Deserialize, Serialize,
     },
     std::{
         fmt::{Display, Formatter, Result as FmtResult},
-        ops::Index,
         str::FromStr,
     },
 };
 
-#[derive(Clone, Debug, Eq, Serialize)]
-#[serde(untagged)]
-pub enum ActionList {
-    Single(Action),
-    List(Vec<Action>),
-}
+pub type ActionList = StringLikeList<Action>;
 
-impl PartialEq for ActionList {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Single(ref action), Self::Single(ref other_action)) => action == other_action,
-            (Self::List(ref action_list), Self::List(ref other_action_list)) => action_list == other_action_list,
-            (Self::Single(ref action), Self::List(ref other_action_list)) => {
-                other_action_list.len() == 1 && action == &other_action_list[0]
-            }
-            (Self::List(ref action_list), Self::Single(ref other_action)) => {
-                action_list.len() == 1 && &action_list[0] == other_action
-            }
-        }
-    }
-}
-
-impl ActionList {
-    pub fn to_vec(&self) -> Vec<&Action> {
-        match self {
-            Self::Single(ref action) => vec![action],
-            Self::List(ref action_list) => {
-                let mut result = Vec::with_capacity(action_list.len());
-                for action in action_list {
-                    result.push(action);
-                }
-                result
-            }
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        match self {
-            Self::Single(_) => false,
-            Self::List(ref action_list) => action_list.is_empty(),
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        match self {
-            Self::Single(_) => 1,
-            Self::List(ref action_list) => action_list.len(),
-        }
-    }
-}
-
-impl From<Action> for ActionList {
-    fn from(action: Action) -> Self {
-        Self::Single(action)
-    }
-}
-
-impl From<Vec<Action>> for ActionList {
-    fn from(actions: Vec<Action>) -> Self {
-        Self::List(actions)
-    }
-}
-
-impl Index<usize> for ActionList {
-    type Output = Action;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        match self {
-            Self::Single(ref action) => {
-                if index == 0 {
-                    action
-                } else {
-                    panic!("index out of bounds: the len is 1 but the index is {}", index)
-                }
-            }
-            Self::List(ref action_list) => &action_list[index],
-        }
-    }
-}
-
-display_json!(ActionList);
-
-struct ActionListVisitor;
-
-impl<'de> Visitor<'de> for ActionListVisitor {
-    type Value = ActionList;
-
-    fn expecting(&self, f: &mut Formatter) -> FmtResult {
-        write!(f, "a string or a list of strings")
-    }
-
-    fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
-        Ok(ActionList::Single(Action::deserialize(v.into_deserializer())?))
-    }
-
-    fn visit_seq<A: SeqAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
-        let mut result = match access.size_hint() {
-            Some(size) => Vec::with_capacity(size),
-            None => Vec::new(),
-        };
-
-        while let Some(resource) = access.next_element()? {
-            result.push(resource);
-        }
-
-        Ok(ActionList::List(result))
-    }
-}
-
-impl<'de> Deserialize<'de> for ActionList {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_any(ActionListVisitor)
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum Action {
     Any,
     Specific {
         service: String,
         action: String,
+        action_pattern: GlobPattern,
     },
+}
+
+impl PartialEq for Action {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Any, Self::Any) => true,
+            (
+                Self::Specific {
+                    service,
+                    action,
+                    ..
+                },
+                Self::Specific {
+                    service: other_service,
+                    action: other_action,
+                    ..
+                },
+            ) => service == other_service && action == other_action,
+            _ => false,
+        }
+    }
 }
 
 impl Action {
@@ -171,9 +80,12 @@ impl Action {
             }
         }
 
+        let action_pattern = GlobPattern::new(&action);
+
         Ok(Action::Specific {
             service,
             action,
+            action_pattern,
         })
     }
 
@@ -208,6 +120,23 @@ impl Action {
             } => action,
         }
     }
+
+    pub fn matches(&self, service: &str, action: &str) -> bool {
+        match self {
+            Self::Any => true,
+            Self::Specific {
+                service: self_service,
+                action_pattern,
+                ..
+            } => {
+                if self_service == service {
+                    action_pattern.matches(action)
+                } else {
+                    false
+                }
+            }
+        }
+    }
 }
 
 impl FromStr for Action {
@@ -236,6 +165,7 @@ impl Display for Action {
             Self::Specific {
                 service,
                 action,
+                ..
             } => write!(f, "{}:{}", service, action),
         }
     }
@@ -270,6 +200,7 @@ impl Serialize for Action {
             Self::Specific {
                 service,
                 action,
+                ..
             } => serializer.serialize_str(&format!("{}:{}", service, action)),
         }
     }
@@ -286,14 +217,14 @@ mod tests {
 
     #[test_log::test]
     fn test_eq() {
-        let a1a = ActionList::Single(Action::new("s1", "a1").unwrap());
-        let a1b = ActionList::List(vec![Action::new("s1", "a1").unwrap()]);
-        let a2a = ActionList::Single(Action::new("s2", "a1").unwrap());
-        let a2b = ActionList::List(vec![Action::new("s2", "a1").unwrap()]);
-        let a3a = ActionList::Single(Action::new("s1", "a2").unwrap());
-        let a3b = ActionList::List(vec![Action::new("s1", "a2").unwrap()]);
-        let a4a = ActionList::List(vec![]);
-        let a4b = ActionList::List(vec![]);
+        let a1a: ActionList = Action::new("s1", "a1").unwrap().into();
+        let a1b: ActionList = vec![Action::new("s1", "a1").unwrap()].into();
+        let a2a: ActionList = Action::new("s2", "a1").unwrap().into();
+        let a2b: ActionList = vec![Action::new("s2", "a1").unwrap()].into();
+        let a3a: ActionList = Action::new("s1", "a2").unwrap().into();
+        let a3b: ActionList = vec![Action::new("s1", "a2").unwrap()].into();
+        let a4a: ActionList = vec![].into();
+        let a4b: ActionList = vec![].into();
 
         assert_eq!(a1a, a1a.clone());
         assert_eq!(a1b, a1b.clone());

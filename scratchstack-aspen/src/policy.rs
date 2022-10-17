@@ -1,8 +1,61 @@
 use {
-    crate::{display_json, from_str_json, StatementList},
+    crate::{display_json, from_str_json, AspenError, Context, Decision, StatementList},
     derive_builder::Builder,
-    serde::{Deserialize, Serialize},
+    serde::{de::Deserializer, ser::Serializer, Deserialize, Serialize},
+    std::{
+        fmt::{Display, Formatter, Result as FmtResult},
+        str::FromStr,
+    },
 };
+
+/// Policy versions.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum PolicyVersion {
+    None,
+    V2012_10_17,
+}
+
+impl Default for PolicyVersion {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+impl Display for PolicyVersion {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            Self::None => Ok(()),
+            Self::V2012_10_17 => f.write_str("2012-10-17"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PolicyVersion {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        match value.as_str() {
+            "2012-10-17" => Ok(Self::V2012_10_17),
+            _ => Err(serde::de::Error::custom(format!("invalid policy version: {}", value))),
+        }
+    }
+}
+
+impl FromStr for PolicyVersion {
+    type Err = AspenError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "2012-10-17" => Ok(Self::V2012_10_17),
+            _ => Err(AspenError::InvalidPolicyVersion(s.to_string())),
+        }
+    }
+}
+
+impl Serialize for PolicyVersion {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
 
 /// The top-level structure for holding an Aspen policy.
 #[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -13,7 +66,7 @@ pub struct Policy {
     /// If omitted, this is equivalent to `2008-10-17`.
     #[builder(setter(into, strip_option), default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    version: Option<String>,
+    version: Option<PolicyVersion>,
 
     /// An optional identifier for the policy. Some services may require this element and have uniqueness requirements.
     #[builder(setter(into, strip_option), default)]
@@ -32,9 +85,11 @@ impl Policy {
         PolicyBuilder::default()
     }
 
-    #[inline]
-    pub fn version(&self) -> Option<&str> {
-        self.version.as_deref()
+    pub fn version(&self) -> PolicyVersion {
+        match self.version {
+            None => PolicyVersion::None,
+            Some(version) => version,
+        }
     }
 
     #[inline]
@@ -46,6 +101,18 @@ impl Policy {
     pub fn statement(&self) -> &StatementList {
         &self.statement
     }
+
+    pub fn evaluate(&self, context: &Context) -> Result<Decision, crate::AspenError> {
+        for statement in self.statement.iter() {
+            match statement.evaluate(context, self.version()) {
+                Ok(Decision::Allow) => return Ok(Decision::Allow),
+                Ok(Decision::Deny) => return Ok(Decision::Deny),
+                Ok(Decision::DefaultDeny) => (),
+                Err(err) => return Err(err),
+            }
+        }
+        Ok(Decision::DefaultDeny)
+    }
 }
 
 display_json!(Policy);
@@ -54,10 +121,12 @@ from_str_json!(Policy);
 #[cfg(test)]
 mod tests {
     use {
-        crate::{Action, AwsPrincipal, Effect, Policy, Principal, Resource, SpecifiedPrincipal, Statement},
+        crate::{
+            Action, AwsPrincipal, Effect, Policy, PolicyVersion, Principal, Resource, SpecifiedPrincipal, Statement,
+        },
         indoc::indoc,
         pretty_assertions::{assert_eq, assert_ne},
-        std::{str::FromStr, sync::Arc},
+        std::str::FromStr,
     };
 
     #[test_log::test]
@@ -120,22 +189,18 @@ mod tests {
 
     #[test_log::test]
     fn test_builder() {
-        let s = Arc::new(
-            Statement::builder()
-                .effect(Effect::Allow)
-                .action(Action::from_str("ec2:RunInstances").unwrap())
-                .resource(
-                    Resource::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-01234567890abcdef").unwrap(),
-                )
-                .principal(
-                    SpecifiedPrincipal::builder().aws(AwsPrincipal::from_str("123456789012").unwrap()).build().unwrap(),
-                )
-                .build()
-                .unwrap(),
-        );
+        let s = Statement::builder()
+            .effect(Effect::Allow)
+            .action(Action::from_str("ec2:RunInstances").unwrap())
+            .resource(Resource::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-01234567890abcdef").unwrap())
+            .principal(
+                SpecifiedPrincipal::builder().aws(AwsPrincipal::from_str("123456789012").unwrap()).build().unwrap(),
+            )
+            .build()
+            .unwrap();
         let p1a = Policy::builder().statement(s.clone()).build().unwrap();
         let p1b = Policy::builder().statement(s.clone()).build().unwrap();
-        let p2 = Policy::builder().version("2012-10-17").id("test").statement(s).build().unwrap();
+        let p2 = Policy::builder().version(PolicyVersion::V2012_10_17).id("test").statement(s).build().unwrap();
 
         assert_eq!(p1a, p1b);
         assert_eq!(p1a, p1a.clone());

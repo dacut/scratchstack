@@ -1,6 +1,7 @@
 use {
     crate::{
-        display_json, from_str_json, serutil::ElementList, ActionList, Condition, Effect, Principal, ResourceList,
+        display_json, from_str_json, serutil::MapList, ActionList, AspenError, Condition, Context, Decision, Effect,
+        PolicyVersion, Principal, ResourceList,
     },
     derive_builder::Builder,
     serde::{
@@ -97,6 +98,92 @@ impl Statement {
     #[inline]
     pub fn condition(&self) -> Option<&Condition> {
         self.condition.as_ref()
+    }
+
+    pub fn evaluate(&self, context: &Context, pv: PolicyVersion) -> Result<Decision, AspenError> {
+        // Does the action match the context?
+        if let Some(actions) = self.action() {
+            let mut matched = false;
+            for action in actions.iter() {
+                if action.matches(context.service(), context.action()) {
+                    matched = true;
+                    break;
+                }
+            }
+
+            if !matched {
+                return Ok(Decision::DefaultDeny);
+            }
+        } else if let Some(actions) = self.not_action() {
+            let mut matched = false;
+            for action in actions.iter() {
+                if action.matches(context.service(), context.action()) {
+                    matched = true;
+                    break;
+                }
+            }
+
+            if matched {
+                return Ok(Decision::DefaultDeny);
+            }
+        } else {
+            unreachable!("Statement must have either an Action or NotAction");
+        }
+
+        // Does the resource match the context?
+        if let Some(resources) = self.resource() {
+            let mut matched = false;
+            for resource in resources.iter() {
+                if resource.matches(context, pv)? {
+                    matched = true;
+                    break;
+                }
+            }
+
+            if !matched {
+                return Ok(Decision::DefaultDeny);
+            }
+        } else if let Some(resources) = self.not_resource() {
+            let mut matched = false;
+            for resource in resources.iter() {
+                if resource.matches(context, pv)? {
+                    matched = true;
+                    break;
+                }
+            }
+
+            if matched {
+                return Ok(Decision::DefaultDeny);
+            }
+        }
+        // We're allowed to not have a resource if this is a resource-based policy.
+
+        // Does the principal match the context?
+        if let Some(principal) = self.principal() {
+            if !principal.matches(context.actor()) {
+                return Ok(Decision::DefaultDeny);
+            }
+        } else if let Some(principal) = self.not_principal() {
+            if !principal.matches(context.actor()) {
+                return Ok(Decision::DefaultDeny);
+            }
+        }
+        // We're allowed to not have a principal if this is a principal-based policy.
+
+        // Do the conditions match?
+        if let Some(conditions) = self.condition() {
+            for (key, values) in conditions.iter() {
+                if !key.matches(values, context, pv)? {
+                    return Ok(Decision::DefaultDeny);
+                }
+            }
+        }
+
+        // Everything matches here. Return the effect.
+        match self.effect() {
+            Effect::Allow => Ok(Decision::Allow),
+            Effect::Deny => Ok(Decision::Deny),
+        }
     }
 }
 
@@ -263,19 +350,19 @@ impl StatementBuilder {
     }
 }
 
-pub type StatementList = ElementList<Statement>;
+pub type StatementList = MapList<Statement>;
 
 #[cfg(test)]
 mod tests {
     use {
         crate::{
-            Action, ActionList, AwsPrincipal, ConditionOp, Effect, Policy, Principal, Resource, SpecifiedPrincipal,
-            Statement, StatementList,
+            serutil::ListKind, Action, AwsPrincipal, Effect, Policy, PolicyVersion, Principal, Resource,
+            SpecifiedPrincipal, Statement,
         },
         indoc::indoc,
         pretty_assertions::assert_eq,
         scratchstack_arn::Arn,
-        std::{str::FromStr, sync::Arc},
+        std::str::FromStr,
     };
 
     #[test_log::test]
@@ -286,7 +373,7 @@ mod tests {
                 "Statement": []
             }"# })
         .unwrap();
-        assert_eq!(policy.version(), Some("2012-10-17"));
+        assert_eq!(policy.version(), PolicyVersion::V2012_10_17);
         assert!(policy.id().is_none());
 
         let policy_str = policy.to_string();
@@ -343,48 +430,48 @@ mod tests {
         }"# };
         let policy = Policy::from_str(policy_str).unwrap();
 
-        assert_eq!(policy.version(), Some("2012-10-17"));
+        assert_eq!(policy.version(), PolicyVersion::V2012_10_17);
         assert_eq!(policy.id(), Some("PolicyId"));
 
-        if let StatementList::List(ref statements) = policy.statement() {
-            let s = &statements[0];
-            assert_eq!(*s.effect(), Effect::Allow);
-            match &s.action() {
-                None | Some(ActionList::Single(_)) => {
-                    panic!("Expected a list of actions")
-                }
-                Some(ActionList::List(ref a_list)) => {
-                    match &a_list[0] {
-                        Action::Specific {
-                            service,
-                            action,
-                        } => {
-                            assert_eq!(service, "ec2");
-                            assert_eq!(action, "Get*");
-                        }
-                        _ => {
-                            panic!("Expected a specific action");
-                        }
+        assert_eq!(policy.statement().len(), 2);
+        let s = &policy.statement()[0];
+        assert_eq!(*s.effect(), Effect::Allow);
+        match &s.action() {
+            None => panic!("Expected a list of actions"),
+            Some(a_list) => {
+                assert_eq!(a_list.kind(), ListKind::List);
+                match &a_list[0] {
+                    Action::Specific {
+                        service,
+                        action,
+                        ..
+                    } => {
+                        assert_eq!(service, "ec2");
+                        assert_eq!(action, "Get*");
                     }
-                    match &a_list[1] {
-                        Action::Specific {
-                            service,
-                            action,
-                        } => {
-                            assert_eq!(service, "ecs");
-                            assert_eq!(action, "*");
-                        }
-                        _ => {
-                            panic!("Expected a specific action");
-                        }
+                    _ => {
+                        panic!("Expected a specific action");
+                    }
+                }
+                match &a_list[1] {
+                    Action::Specific {
+                        service,
+                        action,
+                        ..
+                    } => {
+                        assert_eq!(service, "ecs");
+                        assert_eq!(action, "*");
+                    }
+                    _ => {
+                        panic!("Expected a specific action");
                     }
                 }
             }
-            assert!(s.condition().is_some());
-            assert!(s.condition().unwrap().get(&ConditionOp::StringEquals).is_some());
-        } else {
-            panic!("Expected single statement: {:?}", policy.statement());
         }
+        assert!(s.condition().is_some());
+        let c = s.condition().unwrap();
+        let se = c.get("StringEquals");
+        assert!(se.is_some());
 
         let new_policy_str = policy.to_string();
         assert_eq!(new_policy_str, policy_str);
@@ -821,7 +908,7 @@ mod tests {
         let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
         assert_eq!(
             e.to_string(),
-            r#"invalid type: string "Deny", expected a map of statement properties at line 4 column 23"#
+            r#"invalid type: string "Deny", expected Statement or list of Statement at line 4 column 23"#
         );
 
         let policy_str = indoc! { r#"
@@ -913,7 +1000,7 @@ mod tests {
             }
         }"# };
         let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "invalid type: map, expected a string or a list of strings at line 8 column 12");
+        assert_eq!(e.to_string(), "invalid type: map, expected Action or list of Action at line 8 column 12");
 
         let policy_str = indoc! { r#"
         {
@@ -939,7 +1026,7 @@ mod tests {
             }
         }"# };
         let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "invalid type: map, expected a string or a list of strings at line 8 column 12");
+        assert_eq!(e.to_string(), "invalid type: map, expected Action or list of Action at line 8 column 12");
 
         let policy_str = indoc! { r#"
         {
@@ -963,7 +1050,7 @@ mod tests {
             }
         }"# };
         let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "invalid type: map, expected resource or list of resources at line 8 column 21");
+        assert_eq!(e.to_string(), "invalid type: map, expected Resource or list of Resource at line 8 column 21");
 
         let policy_str = indoc! { r#"
         {
@@ -987,7 +1074,7 @@ mod tests {
             }
         }"# };
         let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "invalid type: map, expected resource or list of resources at line 8 column 24");
+        assert_eq!(e.to_string(), "invalid type: map, expected Resource or list of Resource at line 8 column 24");
 
         let policy_str = indoc! { r#"
         {
@@ -1057,10 +1144,7 @@ mod tests {
             }
         }"# };
         let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(
-            e.to_string(),
-            r#"unknown variant `ec2:Region`, expected one of `ArnEquals`, `ArnEqualsIfExists`, `ArnLike`, `ArnLikeIfExists`, `ArnNotEquals`, `ArnNotEqualsIfExists`, `ArnNotLike`, `ArnNotLikeIfExists`, `BinaryEquals`, `BinaryEqualsIfExists`, `Bool`, `BoolIfExists`, `DateEquals`, `DateEqualsIfExists`, `DateGreaterThan`, `DateGreaterThanEquals`, `DateGreaterThanEqualsIfExists`, `DateGreaterThanIfExists`, `DateLessThan`, `DateLessThanEquals`, `DateLessThanEqualsIfExists`, `DateLessThanIfExists`, `DateNotEquals`, `DateNotEqualsIfExists`, `IpAddress`, `IpAddressIfExists`, `NotIpAddress`, `NotIpAddressIfExists`, `Null`, `NumericEquals`, `NumericEqualsIfExists`, `NumericGreaterThan`, `NumericGreaterThanEquals`, `NumericGreaterThanEqualsIfExists`, `NumericGreaterThanIfExists`, `NumericLessThan`, `NumericLessThanEquals`, `NumericLessThanEqualsIfExists`, `NumericLessThanIfExists`, `NumericNotEquals`, `NumericNotEqualsIfExists`, `StringEquals`, `StringEqualsIfExists`, `StringEqualsIgnoreCase`, `StringEqualsIgnoreCaseIfExists`, `StringLike`, `StringLikeIfExists`, `StringNotEquals`, `StringNotEqualsIfExists`, `StringNotEqualsIgnoreCase`, `StringNotEqualsIgnoreCaseIfExists`, `StringNotLike`, `StringNotLikeIfExists` at line 11 column 24"#
-        );
+        assert_eq!(e.to_string(), r#"Invalid condition operator: ec2:Region at line 11 column 24"#);
     }
 
     #[test_log::test]
@@ -1167,9 +1251,9 @@ mod tests {
         if let Principal::Specified(specified) = principal {
             let aws = specified.aws().unwrap();
             assert_eq!(aws.len(), 1);
-            assert_eq!(*aws[0], AwsPrincipal::Any);
+            assert_eq!(aws[0], AwsPrincipal::Any);
             assert_eq!(format!("{}", aws[0]), "*");
-            assert_eq!(aws.to_vec(), vec![Arc::new(AwsPrincipal::Any)]);
+            assert_eq!(aws.to_vec(), vec![&AwsPrincipal::Any]);
         } else {
             panic!("principal is not SpecifiedPrincipal");
         }
@@ -1204,7 +1288,7 @@ mod tests {
         if let Principal::Specified(specified) = principal {
             let aws = specified.aws().unwrap();
             assert_eq!(aws.len(), 1);
-            assert_eq!(*aws[0], AwsPrincipal::Arn(Arn::from_str("arn:aws:iam::123456789012:root").unwrap()));
+            assert_eq!(aws[0], AwsPrincipal::Arn(Arn::from_str("arn:aws:iam::123456789012:root").unwrap()));
             assert_eq!(format!("{}", aws[0]), "arn:aws:iam::123456789012:root");
         } else {
             panic!("principal is not SpecifiedPrincipal");
@@ -1226,10 +1310,7 @@ mod tests {
                 }
             }"# };
         let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(
-            e.to_string(),
-            r#"invalid value: string "ec2:", expected service:action or "*" at line 5 column 25"#
-        );
+        assert_eq!(e.to_string(), r#"Invalid action: ec2: at line 5 column 26"#);
     }
 
     #[test_log::test]
@@ -1247,10 +1328,7 @@ mod tests {
                 }
             }"# };
         let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(
-            e.to_string(),
-            r#"invalid value: string "arn:aws:", expected AWS account ID or ARN pattern at line 8 column 30"#
-        );
+        assert_eq!(e.to_string(), r#"Invalid principal: arn:aws: at line 8 column 31"#);
     }
 
     #[test_log::test]
@@ -1266,7 +1344,10 @@ mod tests {
                 }
             }"# };
         let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), r#"invalid type: integer `2`, expected resource ARN or "*" at line 6 column 22"#);
+        assert_eq!(
+            e.to_string(),
+            r#"invalid value: sequence, expected Resource or list of Resource at line 6 column 23"#
+        );
 
         let policy_str = indoc! { r#"
             {
@@ -1279,9 +1360,6 @@ mod tests {
                 }
             }"# };
         let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(
-            e.to_string(),
-            r#"invalid value: string "foo-bar-baz", expected resource ARN or "*" at line 6 column 34"#
-        );
+        assert_eq!(e.to_string(), r#"Invalid resource: foo-bar-baz at line 6 column 35"#);
     }
 }

@@ -6,6 +6,7 @@ pub use {aws::AwsPrincipal, specified::SpecifiedPrincipal};
 use {
     crate::display_json,
     log::debug,
+    scratchstack_aws_principal::Principal as PrincipalActor,
     serde::{
         de::{self, value::MapAccessDeserializer, Deserializer, MapAccess, Unexpected, Visitor},
         ser::Serializer,
@@ -18,6 +19,15 @@ use {
 pub enum Principal {
     Any,
     Specified(SpecifiedPrincipal),
+}
+
+impl Principal {
+    pub fn matches(&self, actor: &PrincipalActor) -> bool {
+        match self {
+            Self::Any => true,
+            Self::Specified(specified_principal) => specified_principal.matches(actor),
+        }
+    }
 }
 
 impl From<SpecifiedPrincipal> for Principal {
@@ -90,14 +100,14 @@ mod tests {
         crate::{AwsPrincipal, Principal, SpecifiedPrincipal},
         indoc::indoc,
         pretty_assertions::assert_eq,
-        std::{str::FromStr, sync::Arc},
+        std::str::FromStr,
     };
 
     #[test_log::test]
     fn test_formatting() {
         let aws_principal = vec![
-            Arc::new(AwsPrincipal::from_str("123456789012").unwrap()),
-            Arc::new(AwsPrincipal::from_str("arn:aws:iam::123456789012:role/test").unwrap()),
+            AwsPrincipal::from_str("123456789012").unwrap(),
+            AwsPrincipal::from_str("arn:aws:iam::123456789012:role/test").unwrap(),
         ];
         let p1 = Principal::Any;
         let p2 = Principal::Specified(SpecifiedPrincipal::builder().aws(aws_principal).build().unwrap());

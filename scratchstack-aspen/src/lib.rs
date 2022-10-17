@@ -3,6 +3,7 @@ pub(crate) mod action;
 pub(crate) mod condition;
 pub(crate) mod effect;
 pub(crate) mod error;
+pub(crate) mod eval;
 pub(crate) mod policy;
 pub(crate) mod policyset;
 pub(crate) mod principal;
@@ -17,7 +18,8 @@ pub use {
     condition::{Condition, ConditionMap, ConditionOp},
     effect::Effect,
     error::AspenError,
-    policy::Policy,
+    eval::{Context, Decision},
+    policy::{Policy, PolicyVersion},
     policyset::{PolicySet, PolicySource},
     principal::{AwsPrincipal, Principal, SpecifiedPrincipal},
     resource::{Resource, ResourceList},
