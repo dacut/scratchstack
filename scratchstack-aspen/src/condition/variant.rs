@@ -39,8 +39,7 @@ impl From<u8> for Variant {
 
 #[cfg(test)]
 mod tests {
-    use super::Variant;
-    use std::panic::catch_unwind;
+    use {super::Variant, std::panic::catch_unwind};
 
     #[test]
     fn test_variant_values() {

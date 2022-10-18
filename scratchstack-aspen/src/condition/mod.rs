@@ -7,9 +7,9 @@ mod null;
 mod numeric;
 mod op;
 mod string;
-mod variant;
 #[cfg(test)]
 mod tests;
+mod variant;
 
 pub use op::ConditionOp;
 use {

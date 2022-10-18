@@ -98,7 +98,10 @@ fn test_arn_equals() {
 
 #[test_log::test]
 fn test_arn_equals_variables() {
-    let cmap: Condition = serde_json::from_str(r#"{"ArnEquals": {"hello": ["arn:aws:s3:::bucket/${aws:username}/*", "arn:aws:s3:::bucket/${unterminated"]}}"#).unwrap();
+    let cmap: Condition = serde_json::from_str(
+        r#"{"ArnEquals": {"hello": ["arn:aws:s3:::bucket/${aws:username}/*", "arn:aws:s3:::bucket/${unterminated"]}}"#,
+    )
+    .unwrap();
     let principal: Principal =
         vec![PrincipalIdentity::from(Service::new("example", None, "amazonaws.com").unwrap())].into();
     let mut session_data = SessionData::new();
