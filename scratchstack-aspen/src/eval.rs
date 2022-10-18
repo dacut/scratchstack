@@ -1,6 +1,7 @@
 use {
     crate::{AspenError, PolicyVersion},
     derive_builder::Builder,
+    log::trace,
     regex::RegexBuilder,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::{Principal, SessionData},
@@ -86,7 +87,7 @@ impl Context {
                         "?" => pattern.push_str(&regex::escape("?")),
                         var => {
                             if let Some(value) = self.session_data.get(var) {
-                                pattern.push_str(&value.as_variable_value());
+                                pattern.push_str(&regex::escape(&value.as_variable_value()));
                             }
                         }
                     }
@@ -98,6 +99,7 @@ impl Context {
         }
 
         pattern.push('$');
+        trace!("subst_vars: {} -> {}", s, pattern);
         Ok(RegexBuilder::new(&pattern))
     }
 
@@ -157,7 +159,7 @@ pub(crate) fn regex_from_glob(s: &str) -> RegexBuilder {
         }
     }
     pattern.push('$');
-
+    trace!("regex_from_glob: {} -> {}", s, pattern);
     RegexBuilder::new(&pattern)
 }
 

@@ -36,3 +36,20 @@ impl From<u8> for Variant {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Variant;
+    use std::panic::catch_unwind;
+
+    #[test]
+    fn test_variant_values() {
+        assert_eq!(Variant::None, Variant::from(0));
+        assert_eq!(Variant::IfExists, Variant::from(1));
+        assert_eq!(Variant::Negated, Variant::from(2));
+        assert_eq!(Variant::IfExistsNegated, Variant::from(3));
+
+        let e = catch_unwind(|| Variant::from(4)).unwrap_err();
+        assert_eq!(e.downcast_ref::<String>().unwrap(), "Invalid variant value: 4");
+    }
+}

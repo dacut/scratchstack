@@ -1,13 +1,13 @@
 use {
     super::variant::Variant,
-    crate::{serutil::StringLikeList, AspenError, Context, PolicyVersion},
+    crate::{eval::regex_from_glob, serutil::StringLikeList, AspenError, Context, PolicyVersion},
     log::trace,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::SessionValue,
     std::str::FromStr,
 };
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum ArnCmp {
     Equals = 0,
@@ -55,14 +55,14 @@ pub(super) fn arn_match(
                 Ok(value) => {
                     for el in allowed.iter() {
                         let parts = el.splitn(6, ':').collect::<Vec<&str>>();
-                        if parts.len() != 6 {
+                        if parts.len() != 6 || parts[0] != "arn" {
                             continue;
                         }
 
-                        let partition = context.matcher(parts[1], PolicyVersion::None)?.build().unwrap();
-                        let service = context.matcher(parts[2], PolicyVersion::None)?.build().unwrap();
-                        let region = context.matcher(parts[3], PolicyVersion::None)?.build().unwrap();
-                        let account_id = context.matcher(parts[4], PolicyVersion::None)?.build().unwrap();
+                        let partition = regex_from_glob(parts[1]).build().unwrap();
+                        let service = regex_from_glob(parts[2]).build().unwrap();
+                        let region = regex_from_glob(parts[3]).build().unwrap();
+                        let account_id = regex_from_glob(parts[4]).build().unwrap();
                         let resource = context.matcher(parts[5], pv)?.build().unwrap();
 
                         trace!(

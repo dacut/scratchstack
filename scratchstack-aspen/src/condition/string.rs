@@ -20,7 +20,7 @@ const STRING_DISPLAY_NAMES: [&str; 12] = [
     "StringNotLikeIfExists",
 ];
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum StringCmp {
     Equals = 0,

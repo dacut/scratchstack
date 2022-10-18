@@ -21,7 +21,7 @@ pub(super) const NUMERIC_DISPLAY_NAMES: [&str; 12] = [
     "NumericGreaterThanIfExists",
 ];
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum NumericCmp {
     Equals = 0,
@@ -63,6 +63,36 @@ pub(super) fn numeric_match(
 
                 if let Ok(parsed) = i64::from_str(&el) {
                     if fn_op(*value, parsed) {
+                        return Ok(true);
+                    }
+                }
+            }
+
+            Ok(false)
+        }
+        SessionValue::String(value) => {
+            let value = match i64::from_str(value) {
+                Ok(value) => value,
+                Err(_) => return Ok(false),
+            };
+
+            let fn_op = match (cmp, variant.negated()) {
+                (NumericCmp::Equals, false) => |a: i64, b: i64| a == b,
+                (NumericCmp::Equals, true) => |a: i64, b: i64| a != b,
+                (NumericCmp::LessThan, false) => |a: i64, b: i64| a < b,
+                (NumericCmp::LessThan, true) => |a: i64, b: i64| a >= b,
+                (NumericCmp::LessThanEquals, false) => |a: i64, b: i64| a <= b,
+                (NumericCmp::LessThanEquals, true) => |a: i64, b: i64| a > b,
+            };
+
+            for el in allowed.iter() {
+                let el = match pv {
+                    PolicyVersion::None => el.clone(),
+                    PolicyVersion::V2012_10_17 => context.subst_vars_plain(el)?,
+                };
+
+                if let Ok(parsed) = i64::from_str(&el) {
+                    if fn_op(value, parsed) {
                         return Ok(true);
                     }
                 }
