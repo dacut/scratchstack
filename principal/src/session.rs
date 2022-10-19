@@ -8,7 +8,7 @@ use {
         fmt::{Display, Formatter, Result as FmtResult},
         hash::Hash,
         iter::{Extend, FromIterator, IntoIterator},
-        net::IpAddr,
+        net::{IpAddr, Ipv4Addr, Ipv6Addr},
         ops::Index,
         panic::UnwindSafe,
     },
@@ -383,6 +383,18 @@ impl From<i64> for SessionValue {
 impl From<IpAddr> for SessionValue {
     fn from(value: IpAddr) -> Self {
         Self::IpAddr(value)
+    }
+}
+
+impl From<Ipv4Addr> for SessionValue {
+    fn from(value: Ipv4Addr) -> Self {
+        Self::IpAddr(IpAddr::V4(value))
+    }
+}
+
+impl From<Ipv6Addr> for SessionValue {
+    fn from(value: Ipv6Addr) -> Self {
+        Self::IpAddr(IpAddr::V6(value))
     }
 }
 
