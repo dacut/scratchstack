@@ -37,8 +37,10 @@ impl Display for PrincipalSource {
     }
 }
 
-/// A principal that is the source of an action in an AWS (or AWS-like) service. This principal may have multiple
-/// aspects to its identity: for example, an assumed role may have an associated service and S3 canonical user.
+/// A principal that is the source of an action in an AWS (or AWS-like) service.
+///
+/// This principal may have multiple aspects to its identity: for example, an assumed role may have an associated
+/// service and S3 canonical user. Thus, the principal is represented as a set of [PrincipalIdentity] values.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Principal {
     /// A sorted vector of identities.
@@ -204,48 +206,65 @@ impl PrincipalIdentity {
     }
 
     /// Indicates whether this principal has an associated ARN.
+    ///
+    /// To obtain the ARN, use code similar to the following:
+    /// ```
+    /// # use scratchstack_aws_principal::{PrincipalIdentity, User};
+    /// # use scratchstack_arn::Arn;
+    ///
+    /// let ident = PrincipalIdentity::User(User::new("aws", "123456789012", "/", "username").unwrap());
+    /// if ident.has_arn() {
+    ///     let arn: Arn = ident.try_into().unwrap();
+    /// }
+    /// ```
     pub fn has_arn(&self) -> bool {
         !matches!(self, Self::CanonicalUser(_) | Self::Service(_))
     }
 }
 
+/// Wrap an [AssumedRole] in a [PrincipalIdentity].
 impl From<AssumedRole> for PrincipalIdentity {
-    /// Wrap an [AssumedRole] in a [Principal].
+    /// Wrap an [AssumedRole] in a [PrincipalIdentity].
     fn from(assumed_role: AssumedRole) -> Self {
         PrincipalIdentity::AssumedRole(assumed_role)
     }
 }
 
+/// Wrap a [CanonicalUser] in a [PrincipalIdentity].
 impl From<CanonicalUser> for PrincipalIdentity {
-    /// Wrap a [CanonicalUser] in a [Principal].
+    /// Wrap a [CanonicalUser] in a [PrincipalIdentity].
     fn from(canonical_user: CanonicalUser) -> Self {
         PrincipalIdentity::CanonicalUser(canonical_user)
     }
 }
 
+/// Wrap a [FederatedUser] in a [PrincipalIdentity].
 impl From<FederatedUser> for PrincipalIdentity {
-    /// Wrap a [FederatedUser] in a [Principal].
+    /// Wrap a [FederatedUser] in a [PrincipalIdentity].
     fn from(federated_user: FederatedUser) -> Self {
         PrincipalIdentity::FederatedUser(federated_user)
     }
 }
 
+/// Wrap a [RootUser] in a [PrincipalIdentity].
 impl From<RootUser> for PrincipalIdentity {
-    /// Wrap a [RootUser] in a [Principal].
+    /// Wrap a [RootUser] in a [PrincipalIdentity].
     fn from(root_user: RootUser) -> Self {
         PrincipalIdentity::RootUser(root_user)
     }
 }
 
+/// Wrap a [Service] in a [PrincipalIdentity].
 impl From<Service> for PrincipalIdentity {
-    /// Wrap a [Service] in a [Principal].
+    /// Wrap a [Service] in a [PrincipalIdentity].
     fn from(service: Service) -> Self {
         PrincipalIdentity::Service(service)
     }
 }
 
+/// Wrap a [User] in a [PrincipalIdentity].
 impl From<User> for PrincipalIdentity {
-    /// Wrap a [User] in a [Principal].
+    /// Wrap a [User] in a [PrincipalIdentity].
     fn from(user: User) -> Self {
         PrincipalIdentity::User(user)
     }
@@ -284,6 +303,20 @@ impl Display for PrincipalIdentity {
 impl TryFrom<&PrincipalIdentity> for Arn {
     type Error = PrincipalError;
     fn try_from(p: &PrincipalIdentity) -> Result<Arn, Self::Error> {
+        match p {
+            PrincipalIdentity::AssumedRole(ref d) => Ok(d.into()),
+            PrincipalIdentity::CanonicalUser(_) => Err(PrincipalError::CannotConvertToArn),
+            PrincipalIdentity::FederatedUser(ref d) => Ok(d.into()),
+            PrincipalIdentity::RootUser(ref d) => Ok(d.into()),
+            PrincipalIdentity::Service(_) => Err(PrincipalError::CannotConvertToArn),
+            PrincipalIdentity::User(ref d) => Ok(d.into()),
+        }
+    }
+}
+
+impl TryFrom<PrincipalIdentity> for Arn {
+    type Error = PrincipalError;
+    fn try_from(p: PrincipalIdentity) -> Result<Arn, Self::Error> {
         match p {
             PrincipalIdentity::AssumedRole(ref d) => Ok(d.into()),
             PrincipalIdentity::CanonicalUser(_) => Err(PrincipalError::CannotConvertToArn),
@@ -426,6 +459,9 @@ mod test {
         assert_eq!(p1a.source(), PrincipalSource::Aws);
         assert!(p1a.has_arn());
 
+        // Make sure we can debug the assumed role
+        let _ = format!("{:?}", p1a);
+
         let arn: Arn = (&p1a).try_into().unwrap();
         assert_eq!(arn.partition(), "aws");
         assert_eq!(arn.service(), "sts");
@@ -433,8 +469,12 @@ mod test {
         assert_eq!(arn.account_id(), "123456789012");
         assert_eq!(arn.resource(), "assumed-role/Role_name/session_name");
 
-        // Make sure we can debug the assumed role
-        let _ = format!("{:?}", p1a);
+        let arn: Arn = p1a.try_into().unwrap();
+        assert_eq!(arn.partition(), "aws");
+        assert_eq!(arn.service(), "sts");
+        assert_eq!(arn.region(), "");
+        assert_eq!(arn.account_id(), "123456789012");
+        assert_eq!(arn.resource(), "assumed-role/Role_name/session_name");
     }
 
     #[test]
@@ -455,12 +495,16 @@ mod test {
         assert_eq!(p1a.source(), PrincipalSource::CanonicalUser);
         assert!(!p1a.has_arn());
 
+        // Make sure we can debug the canonical user
+        let _ = format!("{:?}", p1a);
+
         let err = TryInto::<Arn>::try_into(&p1a).unwrap_err();
         assert_eq!(err, PrincipalError::CannotConvertToArn);
         assert_eq!(err.to_string(), "Cannot convert entity to ARN");
 
-        // Make sure we can debug the canonical user
-        let _ = format!("{:?}", p1a);
+        let err = TryInto::<Arn>::try_into(p1a).unwrap_err();
+        assert_eq!(err, PrincipalError::CannotConvertToArn);
+        assert_eq!(err.to_string(), "Cannot convert entity to ARN");
     }
 
     #[test]
@@ -481,6 +525,9 @@ mod test {
         assert_eq!(p1a.source(), PrincipalSource::Federated);
         assert!(p1a.has_arn());
 
+        // Make sure we can debug the federated user
+        let _ = format!("{:?}", p1a);
+
         let arn: Arn = (&p1a).try_into().unwrap();
         assert_eq!(arn.partition(), "aws");
         assert_eq!(arn.service(), "sts");
@@ -488,8 +535,12 @@ mod test {
         assert_eq!(arn.account_id(), "123456789012");
         assert_eq!(arn.resource(), "federated-user/user@domain");
 
-        // Make sure we can debug the federated user
-        let _ = format!("{:?}", p1a);
+        let arn: Arn = p1a.try_into().unwrap();
+        assert_eq!(arn.partition(), "aws");
+        assert_eq!(arn.service(), "sts");
+        assert_eq!(arn.region(), "");
+        assert_eq!(arn.account_id(), "123456789012");
+        assert_eq!(arn.resource(), "federated-user/user@domain");
     }
 
     #[test]
@@ -510,6 +561,9 @@ mod test {
         assert_eq!(p1a.source(), PrincipalSource::Aws);
         assert!(p1a.has_arn());
 
+        // Make sure we can debug the root user
+        let _ = format!("{:?}", p1a);
+
         let arn: Arn = (&p1a).try_into().unwrap();
         assert_eq!(arn.partition(), "aws");
         assert_eq!(arn.service(), "iam");
@@ -517,8 +571,12 @@ mod test {
         assert_eq!(arn.account_id(), "123456789012");
         assert_eq!(arn.resource(), "root");
 
-        // Make sure we can debug the root user
-        let _ = format!("{:?}", p1a);
+        let arn: Arn = p1a.try_into().unwrap();
+        assert_eq!(arn.partition(), "aws");
+        assert_eq!(arn.service(), "iam");
+        assert_eq!(arn.region(), "");
+        assert_eq!(arn.account_id(), "123456789012");
+        assert_eq!(arn.resource(), "root");
     }
 
     #[test]
@@ -539,11 +597,14 @@ mod test {
         assert_eq!(p1a.source(), PrincipalSource::Service);
         assert!(!p1a.has_arn());
 
+        // Make sure we can debug the root user
+        let _ = format!("{:?}", p1a);
+
         let err = TryInto::<Arn>::try_into(&p1a).unwrap_err();
         assert_eq!(err, PrincipalError::CannotConvertToArn);
 
-        // Make sure we can debug the root user
-        let _ = format!("{:?}", p1a);
+        let err = TryInto::<Arn>::try_into(p1a).unwrap_err();
+        assert_eq!(err, PrincipalError::CannotConvertToArn);
     }
 
     #[test]
@@ -564,6 +625,9 @@ mod test {
         assert_eq!(p1a.source(), PrincipalSource::Aws);
         assert!(p1a.has_arn());
 
+        // Make sure we can debug the root user
+        let _ = format!("{:?}", p1a);
+
         let arn: Arn = (&p1a).try_into().unwrap();
         assert_eq!(arn.partition(), "aws");
         assert_eq!(arn.service(), "iam");
@@ -571,8 +635,12 @@ mod test {
         assert_eq!(arn.account_id(), "123456789012");
         assert_eq!(arn.resource(), "user/user-name");
 
-        // Make sure we can debug the root user
-        let _ = format!("{:?}", p1a);
+        let arn: Arn = p1a.try_into().unwrap();
+        assert_eq!(arn.partition(), "aws");
+        assert_eq!(arn.service(), "iam");
+        assert_eq!(arn.region(), "");
+        assert_eq!(arn.account_id(), "123456789012");
+        assert_eq!(arn.resource(), "user/user-name");
     }
 
     #[test]

@@ -4,10 +4,11 @@
 //!
 //! Principals come in two "flavors": actor principals and policy principals. Policy principals are used in Aspen
 //! documents and have a source ("AWS", "CanonicalUser", "Federated", or "Service") and an associated value which may
-//! contain wildcards. These are implemented in the scratchstack-aspen crate.
+//! contain wildcards. These are implemented in the [`scratchstack-aspen` crate](https://docs.rs/scratchstack-aspen).
 //!
-//! On the service implementation side, actor principals (represented by the [Principal] enum here) are exact, without
-//! wildcards. Beyond the core details, there are additional details attached to a principal actor that can be referenced in
+//! On the service implementation side, actor principals (represented by [Principal] here) are exact, without
+//! wildcards. Beyond the core details, there are additional details attached to a principal actor that can be
+//! referenced in
 //! [policy variables](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_variables.html).
 //! For example, IAM users have a
 //! [universally unique ID](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_identifiers.html#identifiers-unique-ids).
@@ -24,6 +25,8 @@ mod root_user;
 mod service;
 mod session;
 mod user;
+
+/// Validation routines used internally by `scratchstack-aws-principal` but may be useful elsewhere.
 pub mod utils;
 
 pub use {

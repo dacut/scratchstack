@@ -193,6 +193,12 @@ mod tests {
         assert_eq!(s2.to_string(), "service-name2.amazonaws.com");
         assert_eq!(s3.to_string(), "service-name.us-east-1.amazonaws.com");
         assert_eq!(s4.to_string(), "aservice-name-with-32-characters.amazonaws.com");
+
+        assert_eq!(s1a.regional_dns_name(), "service-name.amazonaws.com");
+        assert_eq!(s1a.global_dns_name(), "service-name.amazonaws.com");
+
+        assert_eq!(s3.regional_dns_name(), "service-name.us-east-1.amazonaws.com");
+        assert_eq!(s3.global_dns_name(), "service-name.amazonaws.com");
     }
 
     #[test]
