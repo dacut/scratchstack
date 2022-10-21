@@ -363,7 +363,7 @@ impl SessionValue {
             Self::Integer(i) => format!("{}", i),
             Self::IpAddr(ip) => format!("{}", ip),
             Self::String(s) => s.clone(),
-            Self::Timestamp(t) => format!("{}", t),
+            Self::Timestamp(t) => format!("{}", t.format("%Y-%m-%dT%H:%M:%SZ")),
         }
     }
 }
@@ -431,7 +431,7 @@ impl Display for SessionValue {
             Self::Integer(i) => Display::fmt(i, f),
             Self::IpAddr(ip) => Display::fmt(ip, f),
             Self::String(s) => f.write_str(s),
-            Self::Timestamp(t) => Display::fmt(t, f),
+            Self::Timestamp(t) => write!(f, "{}", t.format("%Y-%m-%dT%H:%M:%SZ")),
         }
     }
 }
@@ -440,6 +440,7 @@ impl Display for SessionValue {
 mod tests {
     use {
         super::{SessionData, SessionValue},
+        chrono::{DateTime, FixedOffset, NaiveDate, Utc},
         std::{
             cmp::Ordering,
             collections::hash_map::{DefaultHasher, HashMap},
@@ -691,87 +692,160 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::manual_range_contains)]
     fn check_values() {
         let mut sd: SessionData = Default::default();
         sd.try_reserve(3).unwrap();
-        sd.insert("test1", SessionValue::Null);
-        sd.insert("TEst2", SessionValue::Bool(true));
-        sd.insert("tesT3", SessionValue::Integer(1));
+        sd.insert("test0", SessionValue::Null);
+        sd.insert("TEst1", SessionValue::from(true));
+        sd.insert("tesT2", SessionValue::from(1));
+        sd.insert("tESt3", SessionValue::from(Ipv4Addr::new(192, 0, 2, 1)));
+        sd.insert("tESt4", SessionValue::from(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1)));
+        sd.insert("tESt5", SessionValue::from(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 2))));
+        sd.insert("tESt6", SessionValue::from("Hello World"));
+        sd.insert(
+            "test7",
+            SessionValue::from(DateTime::<Utc>::from_utc(NaiveDate::from_ymd(2019, 1, 1).and_hms(0, 0, 0), Utc)),
+        );
+        sd.insert("test8", SessionValue::Binary(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]));
+        sd.insert("test9", SessionValue::from(false));
+        sd.insert("test10", SessionValue::from("Hello World2".to_string()));
+        sd.insert(
+            "test11",
+            SessionValue::from(DateTime::<FixedOffset>::from_local(
+                NaiveDate::from_ymd(2019, 1, 1).and_hms(0, 0, 0),
+                FixedOffset::west(8 * 3600),
+            )),
+        );
 
-        let mut test1_seen = false;
-        let mut test2_seen = false;
-        let mut test3_seen = false;
+        let mut test_seen = [false; 12];
         for value in sd.values_mut() {
             match value {
                 SessionValue::Null => {
-                    assert!(!test1_seen);
-                    test1_seen = true;
+                    assert!(!test_seen[0]);
+                    assert!(value.is_null());
+                    assert_eq!(value.as_variable_value(), "");
+                    test_seen[0] = true;
                     *value = SessionValue::Integer(100);
                 }
                 SessionValue::Bool(true) => {
-                    assert!(!test2_seen);
-                    test2_seen = true;
+                    assert!(!value.is_null());
+                    assert!(!test_seen[1]);
+                    assert_eq!(value.as_variable_value(), "true");
+                    test_seen[1] = true;
                     *value = SessionValue::Integer(101);
                 }
                 SessionValue::Integer(1) => {
-                    assert!(!test3_seen);
-                    test3_seen = true;
+                    assert!(!value.is_null());
+                    assert!(!test_seen[2]);
+                    assert_eq!(value.as_variable_value(), "1");
+                    test_seen[2] = true;
                     *value = SessionValue::Integer(102);
                 }
+                SessionValue::IpAddr(IpAddr::V4(v4)) if v4 == &Ipv4Addr::new(192, 0, 2, 1) => {
+                    assert!(!value.is_null());
+                    assert!(!test_seen[3]);
+                    assert_eq!(value.as_variable_value(), "192.0.2.1");
+                    test_seen[3] = true;
+                    *value = SessionValue::Integer(103);
+                }
+                SessionValue::IpAddr(IpAddr::V6(v6)) if v6 == &Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1) => {
+                    assert!(!value.is_null());
+                    assert!(!test_seen[4]);
+                    assert_eq!(value.as_variable_value(), "2001:db8::1");
+                    test_seen[4] = true;
+                    *value = SessionValue::Integer(104);
+                }
+                SessionValue::IpAddr(IpAddr::V4(v4)) if v4 == &Ipv4Addr::new(192, 0, 2, 2) => {
+                    assert!(!value.is_null());
+                    assert!(!test_seen[5]);
+                    assert_eq!(value.as_variable_value(), "192.0.2.2");
+                    test_seen[5] = true;
+                    *value = SessionValue::Integer(105);
+                }
+                SessionValue::String(s) if s == "Hello World" => {
+                    assert!(!value.is_null());
+                    assert!(!test_seen[6]);
+                    assert_eq!(value.as_variable_value(), "Hello World");
+                    test_seen[6] = true;
+                    *value = SessionValue::Integer(106);
+                }
+                SessionValue::Timestamp(dt)
+                    if dt == &DateTime::<Utc>::from_utc(NaiveDate::from_ymd(2019, 1, 1).and_hms(0, 0, 0), Utc) =>
+                {
+                    assert!(!value.is_null());
+                    assert!(!test_seen[7]);
+                    assert_eq!(value.as_variable_value(), "2019-01-01T00:00:00Z");
+                    assert_eq!(format!("{}", value), "2019-01-01T00:00:00Z");
+                    test_seen[7] = true;
+                    *value = SessionValue::Integer(107);
+                }
+                SessionValue::Binary(v) => {
+                    assert_eq!(v, &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+                    assert!(!value.is_null());
+                    assert!(!test_seen[8]);
+                    assert_eq!(value.as_variable_value(), "AAECAwQFBgcICQ==");
+                    assert_eq!(format!("{}", value), "AAECAwQFBgcICQ==");
+                    test_seen[8] = true;
+                    *value = SessionValue::Integer(108);
+                }
+                SessionValue::Bool(false) => {
+                    assert!(!value.is_null());
+                    assert!(!test_seen[9]);
+                    assert_eq!(value.as_variable_value(), "false");
+                    test_seen[9] = true;
+                    *value = SessionValue::Integer(109);
+                }
+                SessionValue::String(s) if s == "Hello World2" => {
+                    assert!(!value.is_null());
+                    assert!(!test_seen[10]);
+                    assert_eq!(value.as_variable_value(), "Hello World2");
+                    test_seen[10] = true;
+                    *value = SessionValue::Integer(110);
+                }
+                SessionValue::Timestamp(dt)
+                    if dt == &DateTime::<Utc>::from_utc(NaiveDate::from_ymd(2019, 1, 1).and_hms(8, 0, 0), Utc) =>
+                {
+                    assert!(!value.is_null());
+                    assert!(!test_seen[11]);
+                    assert_eq!(value.as_variable_value(), "2019-01-01T08:00:00Z");
+                    assert_eq!(format!("{}", value), "2019-01-01T08:00:00Z");
+                    test_seen[11] = true;
+                    *value = SessionValue::Integer(111);
+                }
                 _ => panic!("Unexpected value: {}", value),
             }
         }
-        assert!(test1_seen);
-        assert!(test2_seen);
-        assert!(test3_seen);
 
-        let mut test1_seen = false;
-        let mut test2_seen = false;
-        let mut test3_seen = false;
+        assert!(test_seen.iter().all(|&v| v));
+        test_seen.iter_mut().for_each(|v| *v = false);
+
+        let test_range = 100i64..(100i64 + test_seen.len() as i64);
+
         for value in sd.values() {
             match value {
-                SessionValue::Integer(100) => {
-                    assert!(!test1_seen);
-                    test1_seen = true
-                }
-                SessionValue::Integer(101) => {
-                    assert!(!test2_seen);
-                    test2_seen = true
-                }
-                SessionValue::Integer(102) => {
-                    assert!(!test3_seen);
-                    test3_seen = true
+                SessionValue::Integer(i) if test_range.contains(i) => {
+                    let i = (i - 100) as usize;
+                    assert!(!test_seen[i]);
+                    test_seen[i] = true;
                 }
                 _ => panic!("Unexpected value: {}", value),
             }
         }
-        assert!(test1_seen);
-        assert!(test2_seen);
-        assert!(test3_seen);
 
-        test1_seen = false;
-        test2_seen = false;
-        test3_seen = false;
+        assert!(test_seen.iter().all(|&v| v));
+        test_seen.iter_mut().for_each(|v| *v = false);
         for value in sd.into_values() {
             match value {
-                SessionValue::Integer(100) => {
-                    assert!(!test1_seen);
-                    test1_seen = true
-                }
-                SessionValue::Integer(101) => {
-                    assert!(!test2_seen);
-                    test2_seen = true
-                }
-                SessionValue::Integer(102) => {
-                    assert!(!test3_seen);
-                    test3_seen = true
+                SessionValue::Integer(i) if test_range.contains(&i) => {
+                    let i = (i - 100) as usize;
+                    assert!(!test_seen[i]);
+                    test_seen[i] = true;
                 }
                 _ => panic!("Unexpected value: {}", value),
             }
         }
-        assert!(test1_seen);
-        assert!(test2_seen);
-        assert!(test3_seen);
+        assert!(test_seen.iter().all(|&v| v));
     }
 
     #[test]
