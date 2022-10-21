@@ -12,7 +12,7 @@ use {
         NULL,
     },
     crate::{serutil::StringLikeList, AspenError, Context, PolicyVersion},
-    serde::{Deserialize, Serialize},
+    serde::{de, de::Deserializer, ser::Serializer, Deserialize, Serialize},
     std::{
         borrow::Borrow,
         collections::BTreeMap,
@@ -21,7 +21,7 @@ use {
     },
 };
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ConditionOp {
     Arn(ArnCmp, Variant),
     Binary(Variant),
@@ -32,6 +32,65 @@ pub enum ConditionOp {
     Numeric(NumericCmp, Variant),
     String(StringCmp, Variant),
 }
+
+pub const ArnEquals: ConditionOp = ConditionOp::Arn(ArnCmp::Equals, Variant::None);
+pub const ArnEqualsIfExists: ConditionOp = ConditionOp::Arn(ArnCmp::Equals, Variant::IfExists);
+pub const ArnNotEquals: ConditionOp = ConditionOp::Arn(ArnCmp::Equals, Variant::Negated);
+pub const ArnNotEqualsIfExists: ConditionOp = ConditionOp::Arn(ArnCmp::Equals, Variant::IfExistsNegated);
+pub const ArnLike: ConditionOp = ConditionOp::Arn(ArnCmp::Like, Variant::None);
+pub const ArnLikeIfExists: ConditionOp = ConditionOp::Arn(ArnCmp::Like, Variant::IfExists);
+pub const ArnNotLike: ConditionOp = ConditionOp::Arn(ArnCmp::Like, Variant::Negated);
+pub const ArnNotLikeIfExists: ConditionOp = ConditionOp::Arn(ArnCmp::Like, Variant::IfExistsNegated);
+pub const BinaryEquals: ConditionOp = ConditionOp::Binary(Variant::None);
+pub const BinaryEqualsIfExists: ConditionOp = ConditionOp::Binary(Variant::IfExists);
+pub const Bool: ConditionOp = ConditionOp::Bool(Variant::None);
+pub const BoolIfExists: ConditionOp = ConditionOp::Bool(Variant::IfExists);
+pub const DateEquals: ConditionOp = ConditionOp::Date(DateCmp::Equals, Variant::None);
+pub const DateEqualsIfExists: ConditionOp = ConditionOp::Date(DateCmp::Equals, Variant::IfExists);
+pub const DateNotEquals: ConditionOp = ConditionOp::Date(DateCmp::Equals, Variant::Negated);
+pub const DateNotEqualsIfExists: ConditionOp = ConditionOp::Date(DateCmp::Equals, Variant::IfExistsNegated);
+pub const DateLessThan: ConditionOp = ConditionOp::Date(DateCmp::LessThan, Variant::None);
+pub const DateLessThanIfExists: ConditionOp = ConditionOp::Date(DateCmp::LessThan, Variant::IfExists);
+pub const DateGreaterThanEquals: ConditionOp = ConditionOp::Date(DateCmp::LessThan, Variant::Negated);
+pub const DateGreaterThanEqualsIfExists: ConditionOp = ConditionOp::Date(DateCmp::LessThan, Variant::IfExistsNegated);
+pub const DateLessThanEquals: ConditionOp = ConditionOp::Date(DateCmp::LessThanEquals, Variant::None);
+pub const DateLessThanEqualsIfExists: ConditionOp = ConditionOp::Date(DateCmp::LessThanEquals, Variant::IfExists);
+pub const DateGreaterThan: ConditionOp = ConditionOp::Date(DateCmp::LessThanEquals, Variant::Negated);
+pub const DateGreaterThanIfExists: ConditionOp = ConditionOp::Date(DateCmp::LessThanEquals, Variant::IfExistsNegated);
+pub const IpAddress: ConditionOp = ConditionOp::IpAddress(Variant::None);
+pub const IpAddressIfExists: ConditionOp = ConditionOp::IpAddress(Variant::IfExists);
+pub const NotIpAddress: ConditionOp = ConditionOp::IpAddress(Variant::Negated);
+pub const NotIpAddressIfExists: ConditionOp = ConditionOp::IpAddress(Variant::IfExistsNegated);
+pub const Null: ConditionOp = ConditionOp::Null;
+pub const NumericEquals: ConditionOp = ConditionOp::Numeric(NumericCmp::Equals, Variant::None);
+pub const NumericEqualsIfExists: ConditionOp = ConditionOp::Numeric(NumericCmp::Equals, Variant::IfExists);
+pub const NumericNotEquals: ConditionOp = ConditionOp::Numeric(NumericCmp::Equals, Variant::Negated);
+pub const NumericNotEqualsIfExists: ConditionOp = ConditionOp::Numeric(NumericCmp::Equals, Variant::IfExistsNegated);
+pub const NumericLessThan: ConditionOp = ConditionOp::Numeric(NumericCmp::LessThan, Variant::None);
+pub const NumericLessThanIfExists: ConditionOp = ConditionOp::Numeric(NumericCmp::LessThan, Variant::IfExists);
+pub const NumericGreaterThanEquals: ConditionOp = ConditionOp::Numeric(NumericCmp::LessThan, Variant::Negated);
+pub const NumericGreaterThanEqualsIfExists: ConditionOp =
+    ConditionOp::Numeric(NumericCmp::LessThan, Variant::IfExistsNegated);
+pub const NumericLessThanEquals: ConditionOp = ConditionOp::Numeric(NumericCmp::LessThanEquals, Variant::None);
+pub const NumericLessThanEqualsIfExists: ConditionOp =
+    ConditionOp::Numeric(NumericCmp::LessThanEquals, Variant::IfExists);
+pub const NumericGreaterThan: ConditionOp = ConditionOp::Numeric(NumericCmp::LessThanEquals, Variant::Negated);
+pub const NumericGreaterThanIfExists: ConditionOp =
+    ConditionOp::Numeric(NumericCmp::LessThanEquals, Variant::IfExistsNegated);
+pub const StringEquals: ConditionOp = ConditionOp::String(StringCmp::Equals, Variant::None);
+pub const StringEqualsIfExists: ConditionOp = ConditionOp::String(StringCmp::Equals, Variant::IfExists);
+pub const StringNotEquals: ConditionOp = ConditionOp::String(StringCmp::Equals, Variant::Negated);
+pub const StringNotEqualsIfExists: ConditionOp = ConditionOp::String(StringCmp::Equals, Variant::IfExistsNegated);
+pub const StringEqualsIgnoreCase: ConditionOp = ConditionOp::String(StringCmp::EqualsIgnoreCase, Variant::None);
+pub const StringEqualsIgnoreCaseIfExists: ConditionOp =
+    ConditionOp::String(StringCmp::EqualsIgnoreCase, Variant::IfExists);
+pub const StringNotEqualsIgnoreCase: ConditionOp = ConditionOp::String(StringCmp::EqualsIgnoreCase, Variant::Negated);
+pub const StringNotEqualsIgnoreCaseIfExists: ConditionOp =
+    ConditionOp::String(StringCmp::EqualsIgnoreCase, Variant::IfExistsNegated);
+pub const StringLike: ConditionOp = ConditionOp::String(StringCmp::Like, Variant::None);
+pub const StringLikeIfExists: ConditionOp = ConditionOp::String(StringCmp::Like, Variant::IfExists);
+pub const StringNotLike: ConditionOp = ConditionOp::String(StringCmp::Like, Variant::Negated);
+pub const StringNotLikeIfExists: ConditionOp = ConditionOp::String(StringCmp::Like, Variant::IfExistsNegated);
 
 impl Borrow<str> for ConditionOp {
     fn borrow(&self) -> &str {
@@ -61,20 +120,14 @@ impl Display for ConditionOp {
 }
 
 impl<'de> Deserialize<'de> for ConditionOp {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let s = String::deserialize(deserializer)?;
-        ConditionOp::from_str(&s).map_err(serde::de::Error::custom)
+        ConditionOp::from_str(&s).map_err(de::Error::custom)
     }
 }
 
 impl Serialize for ConditionOp {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(&self.to_string())
     }
 }
@@ -114,61 +167,59 @@ impl FromStr for ConditionOp {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "ArnEquals" => Ok(Self::Arn(ArnCmp::Equals, Variant::None)),
-            "ArnEqualsIfExists" => Ok(Self::Arn(ArnCmp::Equals, Variant::IfExists)),
-            "ArnNotEquals" => Ok(Self::Arn(ArnCmp::Equals, Variant::Negated)),
-            "ArnNotEqualsIfExists" => Ok(Self::Arn(ArnCmp::Equals, Variant::IfExistsNegated)),
-            "ArnLike" => Ok(Self::Arn(ArnCmp::Like, Variant::None)),
-            "ArnLikeIfExists" => Ok(Self::Arn(ArnCmp::Like, Variant::IfExists)),
-            "ArnNotLike" => Ok(Self::Arn(ArnCmp::Like, Variant::Negated)),
-            "ArnNotLikeIfExists" => Ok(Self::Arn(ArnCmp::Like, Variant::IfExistsNegated)),
-            "BinaryEquals" => Ok(Self::Binary(Variant::None)),
-            "BinaryEqualsIfExists" => Ok(Self::Binary(Variant::IfExists)),
-            "Bool" => Ok(Self::Bool(Variant::None)),
-            "BoolIfExists" => Ok(Self::Bool(Variant::IfExists)),
-            "DateEquals" => Ok(Self::Date(DateCmp::Equals, Variant::None)),
-            "DateEqualsIfExists" => Ok(Self::Date(DateCmp::Equals, Variant::IfExists)),
-            "DateNotEquals" => Ok(Self::Date(DateCmp::Equals, Variant::Negated)),
-            "DateNotEqualsIfExists" => Ok(Self::Date(DateCmp::Equals, Variant::IfExistsNegated)),
-            "DateLessThan" => Ok(Self::Date(DateCmp::LessThan, Variant::None)),
-            "DateLessThanIfExists" => Ok(Self::Date(DateCmp::LessThan, Variant::IfExists)),
-            "DateGreaterThanEquals" => Ok(Self::Date(DateCmp::LessThan, Variant::Negated)),
-            "DateGreaterThanEqualsIfExists" => Ok(Self::Date(DateCmp::LessThan, Variant::IfExistsNegated)),
-            "DateLessThanEquals" => Ok(Self::Date(DateCmp::LessThanEquals, Variant::None)),
-            "DateLessThanEqualsIfExists" => Ok(Self::Date(DateCmp::LessThanEquals, Variant::IfExists)),
-            "DateGreaterThan" => Ok(Self::Date(DateCmp::LessThanEquals, Variant::Negated)),
-            "DateGreaterThanIfExists" => Ok(Self::Date(DateCmp::LessThanEquals, Variant::IfExistsNegated)),
-            "IpAddress" => Ok(Self::IpAddress(Variant::None)),
-            "IpAddressIfExists" => Ok(Self::IpAddress(Variant::IfExists)),
-            "NotIpAddress" => Ok(Self::IpAddress(Variant::Negated)),
-            "NotIpAddressIfExists" => Ok(Self::IpAddress(Variant::IfExistsNegated)),
-            "Null" => Ok(Self::Null),
-            "NumericEquals" => Ok(Self::Numeric(NumericCmp::Equals, Variant::None)),
-            "NumericEqualsIfExists" => Ok(Self::Numeric(NumericCmp::Equals, Variant::IfExists)),
-            "NumericNotEquals" => Ok(Self::Numeric(NumericCmp::Equals, Variant::Negated)),
-            "NumericNotEqualsIfExists" => Ok(Self::Numeric(NumericCmp::Equals, Variant::IfExistsNegated)),
-            "NumericLessThan" => Ok(Self::Numeric(NumericCmp::LessThan, Variant::None)),
-            "NumericLessThanIfExists" => Ok(Self::Numeric(NumericCmp::LessThan, Variant::IfExists)),
-            "NumericGreaterThanEquals" => Ok(Self::Numeric(NumericCmp::LessThan, Variant::Negated)),
-            "NumericGreaterThanEqualsIfExists" => Ok(Self::Numeric(NumericCmp::LessThan, Variant::IfExistsNegated)),
-            "NumericLessThanEquals" => Ok(Self::Numeric(NumericCmp::LessThanEquals, Variant::None)),
-            "NumericLessThanEqualsIfExists" => Ok(Self::Numeric(NumericCmp::LessThanEquals, Variant::IfExists)),
-            "NumericGreaterThan" => Ok(Self::Numeric(NumericCmp::LessThanEquals, Variant::Negated)),
-            "NumericGreaterThanIfExists" => Ok(Self::Numeric(NumericCmp::LessThanEquals, Variant::IfExistsNegated)),
-            "StringEquals" => Ok(Self::String(StringCmp::Equals, Variant::None)),
-            "StringEqualsIfExists" => Ok(Self::String(StringCmp::Equals, Variant::IfExists)),
-            "StringNotEquals" => Ok(Self::String(StringCmp::Equals, Variant::Negated)),
-            "StringNotEqualsIfExists" => Ok(Self::String(StringCmp::Equals, Variant::IfExistsNegated)),
-            "StringEqualsIgnoreCase" => Ok(Self::String(StringCmp::EqualsIgnoreCase, Variant::None)),
-            "StringEqualsIgnoreCaseIfExists" => Ok(Self::String(StringCmp::EqualsIgnoreCase, Variant::IfExists)),
-            "StringNotEqualsIgnoreCase" => Ok(Self::String(StringCmp::EqualsIgnoreCase, Variant::Negated)),
-            "StringNotEqualsIgnoreCaseIfExists" => {
-                Ok(Self::String(StringCmp::EqualsIgnoreCase, Variant::IfExistsNegated))
-            }
-            "StringLike" => Ok(Self::String(StringCmp::Like, Variant::None)),
-            "StringLikeIfExists" => Ok(Self::String(StringCmp::Like, Variant::IfExists)),
-            "StringNotLike" => Ok(Self::String(StringCmp::Like, Variant::Negated)),
-            "StringNotLikeIfExists" => Ok(Self::String(StringCmp::Like, Variant::IfExistsNegated)),
+            "ArnEquals" => Ok(ArnEquals),
+            "ArnEqualsIfExists" => Ok(ArnEqualsIfExists),
+            "ArnNotEquals" => Ok(ArnNotEquals),
+            "ArnNotEqualsIfExists" => Ok(ArnNotEqualsIfExists),
+            "ArnLike" => Ok(ArnLike),
+            "ArnLikeIfExists" => Ok(ArnLikeIfExists),
+            "ArnNotLike" => Ok(ArnNotLike),
+            "ArnNotLikeIfExists" => Ok(ArnNotLikeIfExists),
+            "BinaryEquals" => Ok(BinaryEquals),
+            "BinaryEqualsIfExists" => Ok(BinaryEqualsIfExists),
+            "Bool" => Ok(Bool),
+            "BoolIfExists" => Ok(BoolIfExists),
+            "DateEquals" => Ok(DateEquals),
+            "DateEqualsIfExists" => Ok(DateEqualsIfExists),
+            "DateNotEquals" => Ok(DateNotEquals),
+            "DateNotEqualsIfExists" => Ok(DateNotEqualsIfExists),
+            "DateLessThan" => Ok(DateLessThan),
+            "DateLessThanIfExists" => Ok(DateLessThanIfExists),
+            "DateGreaterThanEquals" => Ok(DateGreaterThanEquals),
+            "DateGreaterThanEqualsIfExists" => Ok(DateGreaterThanEqualsIfExists),
+            "DateLessThanEquals" => Ok(DateLessThanEquals),
+            "DateLessThanEqualsIfExists" => Ok(DateLessThanEqualsIfExists),
+            "DateGreaterThan" => Ok(DateGreaterThan),
+            "DateGreaterThanIfExists" => Ok(DateGreaterThanIfExists),
+            "IpAddress" => Ok(IpAddress),
+            "IpAddressIfExists" => Ok(IpAddressIfExists),
+            "NotIpAddress" => Ok(NotIpAddress),
+            "NotIpAddressIfExists" => Ok(NotIpAddressIfExists),
+            "Null" => Ok(Null),
+            "NumericEquals" => Ok(NumericEquals),
+            "NumericEqualsIfExists" => Ok(NumericEqualsIfExists),
+            "NumericNotEquals" => Ok(NumericNotEquals),
+            "NumericNotEqualsIfExists" => Ok(NumericNotEqualsIfExists),
+            "NumericLessThan" => Ok(NumericLessThan),
+            "NumericLessThanIfExists" => Ok(NumericLessThanIfExists),
+            "NumericGreaterThanEquals" => Ok(NumericGreaterThanEquals),
+            "NumericGreaterThanEqualsIfExists" => Ok(NumericGreaterThanEqualsIfExists),
+            "NumericLessThanEquals" => Ok(NumericLessThanEquals),
+            "NumericLessThanEqualsIfExists" => Ok(NumericLessThanEqualsIfExists),
+            "NumericGreaterThan" => Ok(NumericGreaterThan),
+            "NumericGreaterThanIfExists" => Ok(NumericGreaterThanIfExists),
+            "StringEquals" => Ok(StringEquals),
+            "StringEqualsIfExists" => Ok(StringEqualsIfExists),
+            "StringNotEquals" => Ok(StringNotEquals),
+            "StringNotEqualsIfExists" => Ok(StringNotEqualsIfExists),
+            "StringEqualsIgnoreCase" => Ok(StringEqualsIgnoreCase),
+            "StringEqualsIgnoreCaseIfExists" => Ok(StringEqualsIgnoreCaseIfExists),
+            "StringNotEqualsIgnoreCase" => Ok(StringNotEqualsIgnoreCase),
+            "StringNotEqualsIgnoreCaseIfExists" => Ok(StringNotEqualsIgnoreCaseIfExists),
+            "StringLike" => Ok(StringLike),
+            "StringLikeIfExists" => Ok(StringLikeIfExists),
+            "StringNotLike" => Ok(StringNotLike),
+            "StringNotLikeIfExists" => Ok(StringNotLikeIfExists),
             _ => Err(AspenError::InvalidConditionOperator(s.to_string())),
         }
     }
@@ -177,8 +228,11 @@ impl FromStr for ConditionOp {
 #[cfg(test)]
 mod tests {
     use {
-        crate::condition::{
-            arn::ArnCmp, date::DateCmp, numeric::NumericCmp, op::ConditionOp, string::StringCmp, variant::Variant,
+        crate::{
+            condition::{
+                arn::ArnCmp, date::DateCmp, numeric::NumericCmp, op::ConditionOp, string::StringCmp, variant::Variant,
+            },
+            condop,
         },
         std::{
             cmp::{Ordering, PartialOrd},
@@ -294,6 +348,15 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test_log::test]
+    fn test_deserialize_bad_type() {
+        let e = serde_json::from_str::<ConditionOp>("3").unwrap_err();
+        assert_eq!(e.to_string(), "invalid type: integer `3`, expected a string at line 1 column 1");
+
+        let c = serde_json::from_str::<ConditionOp>("\"ArnEquals\"").unwrap();
+        assert_eq!(c, condop::ArnEquals);
     }
 
     #[test_log::test]

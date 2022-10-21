@@ -4,11 +4,6 @@ use {
     regex::Regex,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::{PrincipalIdentity, PrincipalSource},
-    serde::{
-        de::{self, Deserializer, Unexpected, Visitor},
-        ser::Serializer,
-        Deserialize, Serialize,
-    },
     std::{
         fmt::{Display, Formatter, Result as FmtResult},
         str::FromStr,
@@ -40,7 +35,15 @@ impl AwsPrincipal {
             }
             Self::Arn(arn) => {
                 let identity_arn: Arn = identity.try_into().expect("AWS principal identity must have an ARN");
-                identity_arn == *arn
+                match arn.resource() {
+                    "root" => {
+                        arn.partition() == identity_arn.partition()
+                            && arn.service() == identity_arn.service()
+                            && arn.region() == identity_arn.region()
+                            && arn.account_id() == identity_arn.account_id()
+                    }
+                    _ => arn == &identity_arn,
+                }
             }
         }
     }
@@ -73,53 +76,12 @@ impl FromStr for AwsPrincipal {
     }
 }
 
-struct AwsPrincipalVisitor {}
-
-impl<'de> Visitor<'de> for AwsPrincipalVisitor {
-    type Value = AwsPrincipal;
-
-    fn expecting(&self, f: &mut Formatter) -> FmtResult {
-        write!(f, "AWS account ID or ARN pattern")
-    }
-
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        match AwsPrincipal::from_str(v) {
-            Ok(principal) => Ok(principal),
-            Err(_) => Err(E::invalid_value(Unexpected::Str(v), &self)),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for AwsPrincipal {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_str(AwsPrincipalVisitor {})
-    }
-}
-
-impl Serialize for AwsPrincipal {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            AwsPrincipal::Account(account_id) => serializer.serialize_str(account_id),
-            AwsPrincipal::Any => serializer.serialize_str("*"),
-            AwsPrincipal::Arn(arn_pattern) => serializer.serialize_str(arn_pattern.to_string().as_str()),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use {
         crate::AwsPrincipal,
         pretty_assertions::{assert_eq, assert_ne},
+        scratchstack_aws_principal::{CanonicalUser, PrincipalIdentity, Service, User},
     };
 
     #[test_log::test]
@@ -142,5 +104,26 @@ mod tests {
         assert_eq!(ap1a.clone(), ap1a);
         assert_eq!(ap2a.clone(), ap2a);
         assert_eq!(ap3a.clone(), ap3a);
+    }
+
+    #[test_log::test]
+    fn test_matches() {
+        assert!(AwsPrincipal::Any
+            .matches(&PrincipalIdentity::from(User::new("aws", "123456789012", "/", "testuser").unwrap())));
+        assert!(AwsPrincipal::Account("123456789012".to_string())
+            .matches(&PrincipalIdentity::from(User::new("aws", "123456789012", "/", "testuser").unwrap())));
+        assert!(!AwsPrincipal::Account("567890123456".to_string())
+            .matches(&PrincipalIdentity::from(User::new("aws", "123456789012", "/", "testuser").unwrap())));
+        assert!(
+            !AwsPrincipal::Any.matches(&PrincipalIdentity::from(Service::new("iam", None, "amazonaws.com").unwrap()))
+        );
+        assert!(!AwsPrincipal::Account("123456789012".to_string())
+            .matches(&PrincipalIdentity::from(Service::new("iam", None, "amazonaws.com").unwrap())));
+        assert!(!AwsPrincipal::Any.matches(&PrincipalIdentity::from(
+            CanonicalUser::new("772183b840c93fe103e45cd24ca8b8c94425a373465c6eb535b7c4b9593811e5").unwrap()
+        )));
+
+        assert!(AwsPrincipal::Arn("arn:aws:iam::123456789012:root".parse().unwrap())
+            .matches(&PrincipalIdentity::from(User::new("aws", "123456789012", "/", "testuser").unwrap())));
     }
 }

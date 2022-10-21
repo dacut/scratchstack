@@ -1,7 +1,10 @@
 mod aws;
 mod specified;
 
-pub use {aws::AwsPrincipal, specified::SpecifiedPrincipal};
+pub use {
+    aws::AwsPrincipal,
+    specified::{SpecifiedPrincipal, SpecifiedPrincipalBuilder, SpecifiedPrincipalBuilderError},
+};
 
 use {
     crate::display_json,
@@ -22,6 +25,19 @@ pub enum Principal {
 }
 
 impl Principal {
+    #[inline]
+    pub fn is_any(&self) -> bool {
+        matches!(self, Principal::Any)
+    }
+
+    #[inline]
+    pub fn specified(&self) -> Option<&SpecifiedPrincipal> {
+        match self {
+            Principal::Any => None,
+            Principal::Specified(sp) => Some(sp),
+        }
+    }
+
     pub fn matches(&self, actor: &PrincipalActor) -> bool {
         match self {
             Self::Any => true,
@@ -102,6 +118,12 @@ mod tests {
         pretty_assertions::assert_eq,
         std::str::FromStr,
     };
+
+    #[test_log::test]
+    fn test_any() {
+        assert!(Principal::Any.is_any());
+        assert!(Principal::Any.specified().is_none());
+    }
 
     #[test_log::test]
     fn test_formatting() {

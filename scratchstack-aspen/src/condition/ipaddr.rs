@@ -28,7 +28,7 @@ pub(super) fn ip_address_match(
 
             for el in allowed.iter() {
                 let el = match pv {
-                    PolicyVersion::None => el.clone(),
+                    PolicyVersion::None | PolicyVersion::V2008_10_17 => el.clone(),
                     PolicyVersion::V2012_10_17 => context.subst_vars_plain(el)?,
                 };
 

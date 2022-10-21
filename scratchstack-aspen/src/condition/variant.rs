@@ -39,9 +39,17 @@ impl From<u8> for Variant {
 
 #[cfg(test)]
 mod tests {
-    use {super::Variant, std::panic::catch_unwind};
+    use {super::Variant, pretty_assertions::assert_eq, std::panic::catch_unwind};
 
-    #[test]
+    #[test_log::test]
+    fn test_clone() {
+        assert_eq!(Variant::None.clone(), Variant::None);
+        assert_eq!(Variant::IfExists.clone(), Variant::IfExists);
+        assert_eq!(Variant::Negated.clone(), Variant::Negated);
+        assert_eq!(Variant::IfExistsNegated.clone(), Variant::IfExistsNegated);
+    }
+
+    #[test_log::test]
     fn test_variant_values() {
         assert_eq!(Variant::None, Variant::from(0));
         assert_eq!(Variant::IfExists, Variant::from(1));

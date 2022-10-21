@@ -1,10 +1,10 @@
 use {
     crate::{AspenError, PolicyVersion},
     derive_builder::Builder,
-    log::trace,
     regex::RegexBuilder,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::{Principal, SessionData},
+    std::fmt::{Display, Formatter, Result as FmtResult},
 };
 
 #[derive(Builder, Clone, Debug, Eq, PartialEq)]
@@ -12,7 +12,8 @@ pub struct Context {
     #[builder(setter(into))]
     action: String,
     actor: Principal,
-    resource: Arn,
+    #[builder(default)]
+    resources: Vec<Arn>,
     session_data: SessionData,
 
     #[builder(setter(into))]
@@ -35,8 +36,8 @@ impl Context {
     }
 
     #[inline]
-    pub fn resource(&self) -> &Arn {
-        &self.resource
+    pub fn resources(&self) -> &Vec<Arn> {
+        &self.resources
     }
 
     #[inline]
@@ -51,7 +52,7 @@ impl Context {
 
     pub fn matcher<T: AsRef<str>>(&self, s: T, pv: PolicyVersion) -> Result<RegexBuilder, AspenError> {
         match pv {
-            PolicyVersion::None => Ok(regex_from_glob(s.as_ref())),
+            PolicyVersion::None | PolicyVersion::V2008_10_17 => Ok(regex_from_glob(s.as_ref())),
             PolicyVersion::V2012_10_17 => self.subst_vars(s.as_ref()),
         }
     }
@@ -99,7 +100,6 @@ impl Context {
         }
 
         pattern.push('$');
-        trace!("subst_vars: {} -> {}", s, pattern);
         Ok(RegexBuilder::new(&pattern))
     }
 
@@ -159,7 +159,6 @@ pub(crate) fn regex_from_glob(s: &str) -> RegexBuilder {
         }
     }
     pattern.push('$');
-    trace!("regex_from_glob: {} -> {}", s, pattern);
     RegexBuilder::new(&pattern)
 }
 
@@ -169,4 +168,54 @@ pub enum Decision {
     Allow,
     Deny,
     DefaultDeny,
+}
+
+impl Display for Decision {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        write!(
+            f,
+            "{}",
+            match self {
+                Decision::Allow => "Allow",
+                Decision::Deny => "Deny",
+                Decision::DefaultDeny => "DefaultDeny",
+            }
+        )
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use {
+        crate::{Context, Decision},
+        scratchstack_aws_principal::{Principal, PrincipalIdentity, SessionData, User},
+    };
+
+    #[test_log::test]
+    fn test_context_derived() {
+        let actor =
+            Principal::from(vec![PrincipalIdentity::from(User::new("aws", "123456789012", "/", "user").unwrap())]);
+        let c1 = Context::builder()
+            .action("RunInstances")
+            .actor(actor)
+            .session_data(SessionData::default())
+            .service("ec2")
+            .build()
+            .unwrap();
+        assert_eq!(c1, c1.clone());
+
+        // Make sure we can debug print this.
+        let _ = format!("{:?}", c1);
+    }
+
+    #[test_log::test]
+    fn test_decision_debug_display() {
+        assert_eq!(format!("{:?}", Decision::Allow), "Allow");
+        assert_eq!(format!("{:?}", Decision::Deny), "Deny");
+        assert_eq!(format!("{:?}", Decision::DefaultDeny), "DefaultDeny");
+
+        assert_eq!(format!("{}", Decision::Allow), "Allow");
+        assert_eq!(format!("{}", Decision::Deny), "Deny");
+        assert_eq!(format!("{}", Decision::DefaultDeny), "DefaultDeny");
+    }
 }

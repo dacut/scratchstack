@@ -57,7 +57,7 @@ pub(super) fn numeric_match(
 
             for el in allowed.iter() {
                 let el = match pv {
-                    PolicyVersion::None => el.clone(),
+                    PolicyVersion::None | PolicyVersion::V2008_10_17 => el.clone(),
                     PolicyVersion::V2012_10_17 => context.subst_vars_plain(el)?,
                 };
 
@@ -87,7 +87,7 @@ pub(super) fn numeric_match(
 
             for el in allowed.iter() {
                 let el = match pv {
-                    PolicyVersion::None => el.clone(),
+                    PolicyVersion::None | PolicyVersion::V2008_10_17 => el.clone(),
                     PolicyVersion::V2012_10_17 => context.subst_vars_plain(el)?,
                 };
 
@@ -101,5 +101,17 @@ pub(super) fn numeric_match(
             Ok(false)
         }
         _ => Ok(false),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::NumericCmp, pretty_assertions::assert_eq};
+
+    #[test_log::test]
+    fn test_clone() {
+        assert_eq!(NumericCmp::Equals.clone(), NumericCmp::Equals);
+        assert_eq!(NumericCmp::LessThan.clone(), NumericCmp::LessThan);
+        assert_eq!(NumericCmp::LessThanEquals.clone(), NumericCmp::LessThanEquals);
     }
 }

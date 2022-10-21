@@ -13,40 +13,40 @@ use {
 
 #[derive(Builder, Clone, Debug, Eq, PartialEq, Serialize)]
 #[builder(build_fn(validate = "Self::validate"))]
+#[serde(deny_unknown_fields, rename_all = "PascalCase")]
 pub struct Statement {
     #[builder(setter(into, strip_option), default)]
-    #[serde(rename = "Sid", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     sid: Option<String>,
 
-    #[serde(rename = "Effect")]
     effect: Effect,
 
     #[builder(setter(into, strip_option), default)]
-    #[serde(rename = "Action", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     action: Option<ActionList>,
 
     #[builder(setter(into, strip_option), default)]
-    #[serde(rename = "NotAction", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     not_action: Option<ActionList>,
 
     #[builder(setter(into, strip_option), default)]
-    #[serde(rename = "Resource", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     resource: Option<ResourceList>,
 
     #[builder(setter(into, strip_option), default)]
-    #[serde(rename = "NotResource", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     not_resource: Option<ResourceList>,
 
     #[builder(setter(into, strip_option), default)]
-    #[serde(rename = "Principal", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     principal: Option<Principal>,
 
     #[builder(setter(into, strip_option), default)]
-    #[serde(rename = "NotPrincipal", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     not_principal: Option<Principal>,
 
     #[builder(setter(into, strip_option), default)]
-    #[serde(rename = "Condition", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     condition: Option<Condition>,
 }
 
@@ -132,28 +132,48 @@ impl Statement {
 
         // Does the resource match the context?
         if let Some(resources) = self.resource() {
-            let mut matched = false;
-            for resource in resources.iter() {
-                if resource.matches(context, pv)? {
-                    matched = true;
-                    break;
+            let candidates = context.resources();
+            if candidates.is_empty() {
+                // We need a resource statement that is a wildcard.
+                if !resources.iter().any(|r| r.is_any()) {
+                    return Ok(Decision::DefaultDeny);
                 }
-            }
+            } else {
+                for candidate in candidates {
+                    let mut candidate_matched = false;
 
-            if !matched {
-                return Ok(Decision::DefaultDeny);
+                    for resource in resources.iter() {
+                        if resource.matches(context, pv, candidate)? {
+                            candidate_matched = true;
+                            break;
+                        }
+                    }
+
+                    if !candidate_matched {
+                        return Ok(Decision::DefaultDeny);
+                    }
+                }
             }
         } else if let Some(resources) = self.not_resource() {
-            let mut matched = false;
-            for resource in resources.iter() {
-                if resource.matches(context, pv)? {
-                    matched = true;
-                    break;
+            let candidates = context.resources();
+            log::trace!("NotResource: candidates = {:?}", candidates);
+            if candidates.is_empty() {
+                // We cannot have a resource statement that is a wildcard.
+                if resources.iter().any(|r| r.is_any()) {
+                    return Ok(Decision::DefaultDeny);
                 }
-            }
+            } else {
+                for candidate in candidates {
+                    log::trace!("NotResource: candidate = {:?}", candidate);
+                    for resource in resources.iter() {
+                        if resource.matches(context, pv, candidate)? {
+                            log::trace!("NotResource: candidate {:?} matched resource {:?}", candidate, resource);
+                            return Ok(Decision::DefaultDeny);
+                        }
+                    }
+                }
 
-            if matched {
-                return Ok(Decision::DefaultDeny);
+                log::trace!("NotResource: no matches");
             }
         }
         // We're allowed to not have a resource if this is a resource-based policy.
@@ -164,7 +184,7 @@ impl Statement {
                 return Ok(Decision::DefaultDeny);
             }
         } else if let Some(principal) = self.not_principal() {
-            if !principal.matches(context.actor()) {
+            if principal.matches(context.actor()) {
                 return Ok(Decision::DefaultDeny);
             }
         }
@@ -356,12 +376,12 @@ pub type StatementList = MapList<Statement>;
 mod tests {
     use {
         crate::{
-            serutil::ListKind, Action, AwsPrincipal, Effect, Policy, PolicyVersion, Principal, Resource,
+            Action, AwsPrincipal, Context, Decision, Effect, Policy, PolicyVersion, Principal, Resource,
             SpecifiedPrincipal, Statement,
         },
         indoc::indoc,
         pretty_assertions::assert_eq,
-        scratchstack_arn::Arn,
+        scratchstack_aws_principal::{Principal as PrincipalActor, PrincipalIdentity, SessionData, User},
         std::str::FromStr,
     };
 
@@ -385,766 +405,6 @@ mod tests {
                 "Statement": []
             }"#}
         );
-    }
-
-    #[test_log::test]
-    fn test_typical_policy_import() {
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": [
-                {
-                    "Sid": "1",
-                    "Effect": "Allow",
-                    "Action": [
-                        "ec2:Get*",
-                        "ecs:*"
-                    ],
-                    "Resource": "*",
-                    "Principal": {
-                        "AWS": "123456789012"
-                    },
-                    "Condition": {
-                        "StringEquals": {
-                            "ec2:Region": [
-                                "us-west-2",
-                                "us-west-1",
-                                "us-east-2",
-                                "us-east-1"
-                            ]
-                        }
-                    }
-                },
-                {
-                    "Sid": "2",
-                    "Effect": "Deny",
-                    "Action": "*",
-                    "Resource": [
-                        "arn:aws:s3:::my-bucket",
-                        "arn:aws:s3:::my-bucket/*"
-                    ],
-                    "Principal": "*"
-                }
-            ]
-        }"# };
-        let policy = Policy::from_str(policy_str).unwrap();
-
-        assert_eq!(policy.version(), PolicyVersion::V2012_10_17);
-        assert_eq!(policy.id(), Some("PolicyId"));
-
-        assert_eq!(policy.statement().len(), 2);
-        let s = &policy.statement()[0];
-        assert_eq!(*s.effect(), Effect::Allow);
-        match &s.action() {
-            None => panic!("Expected a list of actions"),
-            Some(a_list) => {
-                assert_eq!(a_list.kind(), ListKind::List);
-                match &a_list[0] {
-                    Action::Specific {
-                        service,
-                        action,
-                        ..
-                    } => {
-                        assert_eq!(service, "ec2");
-                        assert_eq!(action, "Get*");
-                    }
-                    _ => {
-                        panic!("Expected a specific action");
-                    }
-                }
-                match &a_list[1] {
-                    Action::Specific {
-                        service,
-                        action,
-                        ..
-                    } => {
-                        assert_eq!(service, "ecs");
-                        assert_eq!(action, "*");
-                    }
-                    _ => {
-                        panic!("Expected a specific action");
-                    }
-                }
-            }
-        }
-        assert!(s.condition().is_some());
-        let c = s.condition().unwrap();
-        let se = c.get("StringEquals");
-        assert!(se.is_some());
-
-        let new_policy_str = policy.to_string();
-        assert_eq!(new_policy_str, policy_str);
-    }
-
-    #[test_log::test]
-    fn test_unknown_field() {
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Action": [
-                    "ec2:Get*",
-                    "ecs:*"
-                ],
-                "Instance": [
-                    "i-0123456789abcdef0",
-                ],
-                "Resource": "*",
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "unknown field `Instance`, expected one of `Sid`, `Effect`, `Action`, `NotAction`, `Resource`, `NotResource`, `Principal`, `NotPrincipal`, `Condition` at line 11 column 18");
-    }
-
-    #[test_log::test]
-    fn test_conflicting_blocks() {
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Action": [
-                    "ec2:Get*",
-                    "ecs:*"
-                ],
-                "NotAction": [
-                    "rds:*"
-                ],
-                "Resource": "*",
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "Action and NotAction cannot both be set at line 25 column 5");
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Action": [
-                    "ec2:Get*",
-                    "ecs:*"
-                ],
-                "Resource": "*",
-                "NotResource": "*",
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "Resource and NotResource cannot both be set at line 23 column 5");
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Action": [
-                    "ec2:Get*",
-                    "ecs:*"
-                ],
-                "Resource": "*",
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "NotPrincipal": {
-                    "CanonicalUser": "abcd"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "Principal and NotPrincipal cannot both be set at line 25 column 5");
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Action": [
-                    "ec2:Get*",
-                    "ecs:*"
-                ],
-                "Resource": "*",
-                "NotResource": [
-                    "arn:aws:s3:::my-bucket"
-                ],
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "Resource and NotResource cannot both be set at line 25 column 5");
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Sid": "2",
-                "Effect": "Allow",
-                "Action": [
-                    "ec2:Get*",
-                    "ecs:*"
-                ],
-                "Resource": "*",
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "duplicate field `Sid` at line 6 column 13");
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Effect": "Deny",
-                "Action": [
-                    "ec2:Get*",
-                    "ecs:*"
-                ],
-                "Resource": "*",
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "duplicate field `Effect` at line 7 column 16");
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Action": [
-                    "ec2:Get*",
-                    "ecs:*"
-                ],
-                "Action": [
-                    "rds:*"
-                ],
-                "Resource": "*",
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "duplicate field `Action` at line 11 column 16");
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "NotAction": [
-                    "ec2:Get*",
-                    "ecs:*"
-                ],
-                "NotAction": [
-                    "rds:*"
-                ],
-                "Resource": "*",
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "duplicate field `NotAction` at line 11 column 19");
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Action": [
-                    "ec2:Get*",
-                    "ecs:*"
-                ],
-                "Resource": "*",
-                "Resource": [
-                    "arn:aws:s3:::my-bucket"
-                ],
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "duplicate field `Resource` at line 12 column 18");
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Action": [
-                    "ec2:Get*",
-                    "ecs:*"
-                ],
-                "NotResource": "*",
-                "NotResource": [
-                    "arn:aws:s3:::my-bucket"
-                ],
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "duplicate field `NotResource` at line 12 column 21");
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Action": [
-                    "ec2:Get*",
-                    "ecs:*"
-                ],
-                "Resource": "*",
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "duplicate field `Principal` at line 15 column 19");
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Action": [
-                    "ec2:Get*",
-                    "ecs:*"
-                ],
-                "Resource": "*",
-                "NotPrincipal": {
-                    "AWS": "123456789012"
-                },
-                "NotPrincipal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "duplicate field `NotPrincipal` at line 15 column 22");
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Action": [
-                    "ec2:Get*",
-                    "ecs:*"
-                ],
-                "Resource": "*",
-                "NotPrincipal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                },
-                "Condition": {
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "duplicate field `Condition` at line 22 column 19");
-    }
-
-    #[test_log::test]
-    fn test_bad_field_types() {
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": "Deny"
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(
-            e.to_string(),
-            r#"invalid type: string "Deny", expected Statement or list of Statement at line 4 column 23"#
-        );
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                3: "Deny"
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), r#"key must be a string at line 5 column 9"#);
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": 1,
-                "Effect": "Allow",
-                "Action": [
-                    "ec2:Get*",
-                    "ecs:*"
-                ],
-                "Resource": "*",
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "invalid type: integer `1`, expected a borrowed string at line 5 column 16");
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": ["Allow"],
-                "Action": [
-                    "ec2:Get*",
-                    "ecs:*"
-                ],
-                "Resource": "*",
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "expected value at line 6 column 19");
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Action": {
-                    "ec2": "RunInstances"
-                },
-                "Resource": "*",
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "invalid type: map, expected Action or list of Action at line 8 column 12");
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "NotAction": {
-                    "ec2": "RunInstances"
-                },
-                "Resource": "*",
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "invalid type: map, expected Action or list of Action at line 8 column 12");
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Action": "ec2:RunInstances",
-                "Resource": {"ec2": "Instance"},
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "invalid type: map, expected Resource or list of Resource at line 8 column 21");
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Action": "ec2:RunInstances",
-                "NotResource": {"ec2": "Instance"},
-                "Principal": {
-                    "AWS": "123456789012"
-                },
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "invalid type: map, expected Resource or list of Resource at line 8 column 24");
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Action": "ec2:RunInstances",
-                "Resource": "*",
-                "Principal": "123456789012",
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(
-            e.to_string(),
-            r#"invalid value: string "123456789012", expected map of principal types to values or "*" at line 9 column 35"#
-        );
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Action": "ec2:RunInstances",
-                "Resource": "*",
-                "NotPrincipal": "123456789012",
-                "Condition": {
-                    "StringEquals": {
-                        "ec2:Region": [
-                            "us-west-2"
-                        ]
-                    }
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(
-            e.to_string(),
-            r#"invalid value: string "123456789012", expected map of principal types to values or "*" at line 9 column 38"#
-        );
-
-        let policy_str = indoc! { r#"
-        {
-            "Version": "2012-10-17",
-            "Id": "PolicyId",
-            "Statement": {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Action": "ec2:RunInstances",
-                "Resource": "*",
-                "Principal": {"AWS": "123456789012"},
-                "Condition": {
-                    "ec2:Region": [
-                        "us-west-2"
-                    ]
-                }
-            }
-        }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), r#"Invalid condition operator: ec2:Region at line 11 column 24"#);
     }
 
     #[test_log::test]
@@ -1230,69 +490,33 @@ mod tests {
     }
 
     #[test_log::test]
-    fn test_principals() {
-        let policy_str = indoc! { r#"
-            {
-                "Version": "2012-10-17",
-                "Statement": {
-                    "Effect": "Allow",
-                    "Action": "*",
-                    "Resource": "*",
-                    "Principal": {
-                        "AWS": "*"
-                    }
-                }
-            }"# };
-        let policy = serde_json::from_str::<Policy>(policy_str).unwrap();
-        let statement = policy.statement();
-        assert_eq!(statement.len(), 1);
-        assert_eq!(statement.to_vec().len(), 1);
-        let principal = statement[0].principal().unwrap();
-        if let Principal::Specified(specified) = principal {
-            let aws = specified.aws().unwrap();
-            assert_eq!(aws.len(), 1);
-            assert_eq!(aws[0], AwsPrincipal::Any);
-            assert_eq!(format!("{}", aws[0]), "*");
-            assert_eq!(aws.to_vec(), vec![&AwsPrincipal::Any]);
-        } else {
-            panic!("principal is not SpecifiedPrincipal");
-        }
+    fn test_context_without_resources() {
+        let mut sb = Statement::builder();
+        sb.effect(Effect::Allow).action(Action::Any).resource(Resource::Any);
 
-        assert_eq!(
-            format!("{}", statement[0]),
-            indoc! {r#"
-            {
-                "Effect": "Allow",
-                "Action": "*",
-                "Resource": "*",
-                "Principal": {
-                    "AWS": "*"
-                }
-            }"#}
-        );
+        let s = sb.build().unwrap();
+        let actor = PrincipalActor::from(vec![PrincipalIdentity::from(
+            User::new("aws", "123456789012", "/", "MyUser").unwrap(),
+        )]);
+        let sd = SessionData::new();
+        let context = Context::builder()
+            .action("DescribeInstances")
+            .actor(actor)
+            .service("ec2")
+            .session_data(sd)
+            .build()
+            .unwrap();
 
-        let policy_str = indoc! { r#"
-            {
-                "Version": "2012-10-17",
-                "Statement": {
-                    "Effect": "Allow",
-                    "Action": "*",
-                    "Resource": "*",
-                    "Principal": {
-                        "AWS": "arn:aws:iam::123456789012:root"
-                    }
-                }
-            }"# };
-        let policy = serde_json::from_str::<Policy>(policy_str).unwrap();
-        let principal = policy.statement()[0].principal().unwrap();
-        if let Principal::Specified(specified) = principal {
-            let aws = specified.aws().unwrap();
-            assert_eq!(aws.len(), 1);
-            assert_eq!(aws[0], AwsPrincipal::Arn(Arn::from_str("arn:aws:iam::123456789012:root").unwrap()));
-            assert_eq!(format!("{}", aws[0]), "arn:aws:iam::123456789012:root");
-        } else {
-            panic!("principal is not SpecifiedPrincipal");
-        }
+        assert_eq!(s.evaluate(&context, PolicyVersion::None).unwrap(), Decision::Allow);
+
+        sb.resource(Resource::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-01234567890abcdef").unwrap());
+        let s = sb.build().unwrap();
+        assert_eq!(s.evaluate(&context, PolicyVersion::None).unwrap(), Decision::DefaultDeny);
+
+        let mut sb = Statement::builder();
+        sb.effect(Effect::Allow).action(Action::Any).not_resource(Resource::Any);
+        let s = sb.build().unwrap();
+        assert_eq!(s.evaluate(&context, PolicyVersion::None).unwrap(), Decision::DefaultDeny);
     }
 
     #[test_log::test]
@@ -1309,7 +533,7 @@ mod tests {
                     }
                 }
             }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
+        let e = Policy::from_str(policy_str).unwrap_err();
         assert_eq!(e.to_string(), r#"Invalid action: ec2: at line 5 column 26"#);
     }
 
@@ -1327,7 +551,7 @@ mod tests {
                     }
                 }
             }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
+        let e = Policy::from_str(policy_str).unwrap_err();
         assert_eq!(e.to_string(), r#"Invalid principal: arn:aws: at line 8 column 31"#);
     }
 
@@ -1343,7 +567,7 @@ mod tests {
                     "Principal": "*"
                 }
             }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
+        let e = Policy::from_str(policy_str).unwrap_err();
         assert_eq!(
             e.to_string(),
             r#"invalid value: sequence, expected Resource or list of Resource at line 6 column 23"#
@@ -1359,7 +583,7 @@ mod tests {
                     "Principal": "*"
                 }
             }"# };
-        let e = serde_json::from_str::<Policy>(policy_str).unwrap_err();
+        let e = Policy::from_str(policy_str).unwrap_err();
         assert_eq!(e.to_string(), r#"Invalid resource: foo-bar-baz at line 6 column 35"#);
     }
 }

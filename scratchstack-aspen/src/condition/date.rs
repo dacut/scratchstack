@@ -80,7 +80,7 @@ fn date_match_datetime(
 
     for el in allowed.iter() {
         let el = match pv {
-            PolicyVersion::None => el.clone(),
+            PolicyVersion::None | PolicyVersion::V2008_10_17 => el.clone(),
             PolicyVersion::V2012_10_17 => context.subst_vars_plain(el)?,
         };
 
@@ -103,4 +103,16 @@ fn date_match_datetime(
     }
 
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::DateCmp, pretty_assertions::assert_eq};
+
+    #[test_log::test]
+    fn test_clone() {
+        assert_eq!(DateCmp::Equals.clone(), DateCmp::Equals);
+        assert_eq!(DateCmp::LessThan.clone(), DateCmp::LessThan);
+        assert_eq!(DateCmp::LessThanEquals.clone(), DateCmp::LessThanEquals);
+    }
 }

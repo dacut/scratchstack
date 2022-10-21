@@ -15,13 +15,15 @@ pub(crate) mod serutil;
 
 pub use {
     action::{Action, ActionList},
-    condition::{Condition, ConditionMap, ConditionOp},
+    condition::{op as condop, Condition, ConditionMap, ConditionOp},
     effect::Effect,
     error::AspenError,
-    eval::{Context, Decision},
-    policy::{Policy, PolicyVersion},
+    eval::{Context, ContextBuilder, Decision},
+    policy::{Policy, PolicyBuilder, PolicyBuilderError, PolicyVersion},
     policyset::{PolicySet, PolicySource},
-    principal::{AwsPrincipal, Principal, SpecifiedPrincipal},
-    resource::{Resource, ResourceList},
-    statement::{Statement, StatementList},
+    principal::{
+        AwsPrincipal, Principal, SpecifiedPrincipal, SpecifiedPrincipalBuilder, SpecifiedPrincipalBuilderError,
+    },
+    resource::{Resource, ResourceArn, ResourceList},
+    statement::{Statement, StatementBuilder, StatementBuilderError, StatementList},
 };

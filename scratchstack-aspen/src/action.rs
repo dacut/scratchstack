@@ -1,12 +1,6 @@
 use {
-    crate::{serutil::StringLikeList, AspenError},
+    crate::{eval::regex_from_glob, serutil::StringLikeList, AspenError},
     log::debug,
-    scratchstack_arn::GlobPattern,
-    serde::{
-        de::{self, Deserializer, Unexpected, Visitor},
-        ser::Serializer,
-        Deserialize, Serialize,
-    },
     std::{
         fmt::{Display, Formatter, Result as FmtResult},
         str::FromStr,
@@ -21,7 +15,6 @@ pub enum Action {
     Specific {
         service: String,
         action: String,
-        action_pattern: GlobPattern,
     },
 }
 
@@ -33,12 +26,10 @@ impl PartialEq for Action {
                 Self::Specific {
                     service,
                     action,
-                    ..
                 },
                 Self::Specific {
                     service: other_service,
                     action: other_action,
-                    ..
                 },
             ) => service == other_service && action == other_action,
             _ => false,
@@ -80,12 +71,9 @@ impl Action {
             }
         }
 
-        let action_pattern = GlobPattern::new(&action);
-
         Ok(Action::Specific {
             service,
             action,
-            action_pattern,
         })
     }
 
@@ -126,11 +114,10 @@ impl Action {
             Self::Any => true,
             Self::Specific {
                 service: self_service,
-                action_pattern,
-                ..
+                action: self_action,
             } => {
                 if self_service == service {
-                    action_pattern.matches(action)
+                    regex_from_glob(self_action).build().expect("Failed to build regex").is_match(action)
                 } else {
                     false
                 }
@@ -167,41 +154,6 @@ impl Display for Action {
                 action,
                 ..
             } => write!(f, "{}:{}", service, action),
-        }
-    }
-}
-
-struct ActionVisitor {}
-impl<'de> Visitor<'de> for ActionVisitor {
-    type Value = Action;
-
-    fn expecting(&self, f: &mut Formatter) -> FmtResult {
-        write!(f, "service:action or \"*\"")
-    }
-
-    fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
-        match Action::from_str(v) {
-            Ok(action) => Ok(action),
-            Err(_) => Err(E::invalid_value(Unexpected::Str(v), &self)),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for Action {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_str(ActionVisitor {})
-    }
-}
-
-impl Serialize for Action {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Self::Any => serializer.serialize_str("*"),
-            Self::Specific {
-                service,
-                action,
-                ..
-            } => serializer.serialize_str(&format!("{}:{}", service, action)),
         }
     }
 }
@@ -315,6 +267,8 @@ mod tests {
         assert_ne!(a3b, a4b);
         assert_ne!(a4a, a3b);
         assert_ne!(a4b, a3b);
+
+        assert_eq!(Action::Any, Action::Any);
     }
 
     #[test_log::test]

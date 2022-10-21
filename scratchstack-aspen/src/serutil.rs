@@ -26,7 +26,7 @@ fn simple_type_name<E>() -> &'static str {
     let tn = match tn.rfind('<') {
         None => tn,
         Some(i) => {
-            let sub = &tn[i + 1..tn.len() - 1];
+            let sub = &tn[i + 1..tn.len()];
             match sub.find('>') {
                 None => sub,
                 Some(j) => &sub[..j],
@@ -408,9 +408,10 @@ where
 #[cfg(test)]
 mod tests {
     use {
-        super::{MapList, StringLikeList},
+        super::{simple_type_name, ListKind, MapList},
+        crate::display_json,
         indoc::indoc,
-        serde::{Deserialize, Serialize},
+        serde::{ser::Serializer, Deserialize, Serialize},
         std::panic::catch_unwind,
     };
 
@@ -493,19 +494,41 @@ mod tests {
 
     #[derive(Clone, Debug)]
     struct SerBadUtf8 {}
-    const BAD_UTF8: [u8; 4] = [0x80, 0x80, 0x80, 0x80];
+    const BAD_UTF8: [u8; 3] = [0xc3, 0xc3, 0xc3];
 
-    impl ToString for SerBadUtf8 {
-        fn to_string(&self) -> String {
-            unsafe { String::from_utf8_unchecked(BAD_UTF8.to_vec()) }
+    impl Serialize for SerBadUtf8 {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            let s = unsafe { String::from_utf8_unchecked(BAD_UTF8.to_vec()) };
+            serializer.serialize_str(&s)
         }
     }
 
+    display_json!(SerBadUtf8);
+
     #[test_log::test]
     fn test_ser_fail() {
-        let el: StringLikeList<SerBadUtf8> = vec![SerBadUtf8 {}].into();
+        let el: MapList<SerBadUtf8> = vec![SerBadUtf8 {}].into();
         let e = catch_unwind(|| format!("{}", el)).unwrap_err();
         let e2 = e.downcast::<String>().unwrap();
         assert!((*e2).contains("a formatting trait implementation returned an error"));
+
+        let e = catch_unwind(|| format!("{}", el)).unwrap_err();
+        let e2 = e.downcast::<String>().unwrap();
+        assert!((*e2).contains("a formatting trait implementation returned an error"));
+    }
+
+    #[test_log::test]
+    fn test_simple_type_name() {
+        assert_eq!(simple_type_name::<u32>(), "u32");
+        assert_eq!(simple_type_name::<Option<u32>>(), "u32");
+    }
+
+    #[test_log::test]
+    fn test_list_kind() {
+        assert_eq!(ListKind::Single, ListKind::Single.clone());
+        assert_eq!(ListKind::List, ListKind::List.clone());
+        assert_ne!(ListKind::Single, ListKind::List);
+        assert_eq!(format!("{:?}", ListKind::Single), "Single");
+        assert_eq!(format!("{:?}", ListKind::List), "List");
     }
 }

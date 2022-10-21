@@ -92,3 +92,14 @@ pub(super) fn arn_match(
         _ => Ok(false),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use {super::ArnCmp, pretty_assertions::assert_eq};
+
+    #[test_log::test]
+    fn test_clone() {
+        assert_eq!(ArnCmp::Equals.clone(), ArnCmp::Equals);
+        assert_eq!(ArnCmp::Like.clone(), ArnCmp::Like);
+    }
+}

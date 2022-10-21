@@ -1,47 +1,36 @@
+mod arn;
+
 use {
-    crate::{eval::regex_from_glob, serutil::StringLikeList, AspenError, Context, PolicyVersion},
-    log::debug,
+    crate::{serutil::StringLikeList, AspenError, Context, PolicyVersion},
+    scratchstack_arn::Arn,
     std::{
         fmt::{Display, Formatter, Result as FmtResult},
         str::FromStr,
     },
 };
 
+pub use arn::ResourceArn;
+
 pub type ResourceList = StringLikeList<Resource>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Resource {
     Any,
-    Arn(String),
+    Arn(ResourceArn),
 }
 
 impl Resource {
-    pub fn matches(&self, context: &Context, pv: PolicyVersion) -> Result<bool, AspenError> {
+    #[inline]
+    pub fn is_any(&self) -> bool {
+        matches!(self, Self::Any)
+    }
+
+    pub fn matches(&self, context: &Context, pv: PolicyVersion, candidate: &Arn) -> Result<bool, AspenError> {
         match self {
             Self::Any => Ok(true),
-            Self::Arn(pattern) => arn_pattern_matches(pattern, context, pv),
+            Self::Arn(pattern) => pattern.matches(context, pv, candidate),
         }
     }
-}
-
-fn arn_pattern_matches(pattern: &str, context: &Context, pv: PolicyVersion) -> Result<bool, AspenError> {
-    let parts = pattern.splitn(6, ':').collect::<Vec<&str>>();
-    if parts.len() != 5 {
-        return Ok(false);
-    }
-
-    let partition = regex_from_glob(parts[1]).build().unwrap();
-    let service = regex_from_glob(parts[2]).build().unwrap();
-    let region = regex_from_glob(parts[3]).build().unwrap();
-    let account_id = regex_from_glob(parts[4]).build().unwrap();
-    let resource = context.matcher(parts[5], pv)?.build().unwrap();
-
-    let r = context.resource();
-    Ok(partition.is_match(r.partition())
-        && service.is_match(r.service())
-        && region.is_match(r.region())
-        && account_id.is_match(r.account_id())
-        && resource.is_match(r.resource()))
 }
 
 impl FromStr for Resource {
@@ -52,13 +41,8 @@ impl FromStr for Resource {
             return Ok(Self::Any);
         }
 
-        let parts = s.splitn(6, ':');
-        if parts.count() != 6 {
-            debug!("Failed to parse resource as ARN pattern: {}", s);
-            return Err(AspenError::InvalidResource(s.to_string()));
-        }
-
-        Ok(Self::Arn(s.to_string()))
+        let pattern = ResourceArn::from_str(s)?;
+        Ok(Self::Arn(pattern))
     }
 }
 
@@ -74,7 +58,7 @@ impl Display for Resource {
 #[cfg(test)]
 mod tests {
     use {
-        crate::{serutil::ListKind, Resource, ResourceList},
+        crate::{serutil::ListKind, Resource, ResourceArn, ResourceList},
         indoc::indoc,
         pretty_assertions::assert_eq,
         std::{panic::catch_unwind, str::FromStr},
@@ -91,7 +75,7 @@ mod tests {
 
     #[test_log::test]
     fn check_from() {
-        let ap = String::from("arn:*:ec*:us-*-2:123?56789012:instance/*");
+        let ap = ResourceArn::from_str("arn:*:ec*:us-*-2:123?56789012:instance/*").unwrap();
         let rl1: ResourceList = Resource::Arn(ap.clone()).into();
         let rl2: ResourceList = Resource::Arn(ap.clone()).into();
         let rl3: ResourceList = vec![Resource::Arn(ap.clone())].into();

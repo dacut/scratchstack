@@ -5,15 +5,18 @@ mod date;
 mod ipaddr;
 mod null;
 mod numeric;
-mod op;
-mod string;
+
+#[allow(non_upper_case_globals)]
+pub mod op;
+
 #[cfg(test)]
-mod tests;
+mod op_tests;
+mod string;
 mod variant;
 
 pub use op::ConditionOp;
 use {
-    crate::{serutil::StringLikeList, AspenError, Context, PolicyVersion},
+    crate::{from_str_json, serutil::StringLikeList, AspenError, Context, PolicyVersion},
     scratchstack_aws_principal::SessionValue,
     serde::{de::Deserializer, ser::Serializer, Deserialize, Serialize},
     std::{
@@ -35,6 +38,8 @@ pub type ConditionMap = BTreeMap<String, StringLikeList<String>>;
 pub struct Condition {
     map: BTreeMap<ConditionOp, ConditionMap>,
 }
+
+from_str_json!(Condition);
 
 impl<'de> Deserialize<'de> for Condition {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -304,3 +309,133 @@ impl IntoIterator for Condition {
 }
 
 const NULL: SessionValue = SessionValue::Null;
+
+#[cfg(test)]
+mod test {
+    use {
+        crate::{condop, serutil::StringLikeList, Condition, ConditionMap, ConditionOp},
+        pretty_assertions::assert_eq,
+    };
+
+    #[test_log::test]
+    fn test_map_ops() {
+        let mut c1 = Condition::default();
+        let mut c2 = Condition::new();
+
+        assert_eq!(c1, c2);
+
+        let mut cmap1 = ConditionMap::default();
+        cmap1.insert("a".to_string(), StringLikeList::from(vec!["A".to_string()]));
+        cmap1.insert("b".to_string(), StringLikeList::from(vec!["B".to_string()]));
+
+        let mut cmap2 = ConditionMap::default();
+        cmap2.insert("c".to_string(), StringLikeList::from(vec!["C".to_string()]));
+
+        let mut cmap3 = ConditionMap::default();
+        cmap3.insert("d".to_string(), StringLikeList::from(vec!["D".to_string()]));
+
+        c2.insert(condop::StringEquals, cmap1.clone());
+        c2.insert(condop::StringEqualsIgnoreCase, cmap3.clone());
+        assert_eq!(c1.len(), 0);
+        assert!(c1.is_empty());
+        assert_eq!(c2.len(), 2);
+        assert!(!c2.is_empty());
+
+        assert_eq!(c2[&condop::StringEquals], cmap1);
+
+        assert!(c2.contains_key(&condop::StringEquals));
+        assert!(!c1.contains_key(&condop::StringEquals));
+        assert_eq!(c1.get_key_value(&condop::StringEquals), None);
+        assert_eq!(c2.get_key_value(&condop::StringEquals), Some((&condop::StringEquals, &cmap1)));
+
+        // Make this look like cmap2.
+        let c2_map = c2.get_mut(&condop::StringEquals).unwrap();
+        c2_map.insert("c".to_string(), StringLikeList::from(vec!["C".to_string()]));
+        c2_map.remove("a");
+        c2_map.remove("b");
+        assert_eq!(c2_map, &cmap2);
+
+        c1.append(&mut c2);
+        assert_eq!(c1.len(), 2);
+        assert_eq!(c2.len(), 0);
+        assert!(!c1.is_empty());
+        assert!(c2.is_empty());
+        assert!(c1.contains_key(&condop::StringEquals));
+        assert_eq!(c1[&condop::StringEquals], cmap2);
+        c1.retain(|k, _| k == &condop::StringEquals);
+        assert_eq!(c1.keys().collect::<Vec<_>>(), vec![&condop::StringEquals]);
+        assert_eq!(c1.values().collect::<Vec<_>>(), vec![&cmap2]);
+
+        c1.clear();
+        assert_eq!(c1.len(), 0);
+        assert!(c1.is_empty());
+        assert!(!c1.contains_key(&condop::StringEquals));
+
+        let c1_array: [(ConditionOp, ConditionMap); 4] = [
+            (condop::DateEquals, cmap1.clone()),
+            (condop::NumericEquals, cmap1.clone()),
+            (condop::StringEquals, cmap2.clone()),
+            (condop::StringEqualsIgnoreCase, cmap3.clone()),
+        ];
+
+        let mut c1 = Condition::from(c1_array);
+        c1.entry(condop::NumericEquals).and_modify(|v| {
+            v.remove("a");
+            v.remove("b");
+            v.insert("c".to_string(), StringLikeList::from(vec!["C".to_string()]));
+        });
+        assert_eq!(c1[&condop::NumericEquals], cmap2);
+        assert!(c1.remove(&condop::Bool).is_none());
+        assert!(c1.remove_entry(&condop::Bool).is_none());
+        assert_eq!(c1.remove_entry(&condop::NumericEquals), Some((condop::NumericEquals, cmap2.clone())));
+        c1.insert(condop::NumericEquals, cmap1.clone());
+
+        c1.range_mut(condop::Bool..condop::NumericEquals).for_each(|(k, v)| {
+            assert_eq!(k, &condop::DateEquals);
+            assert_eq!(v, &cmap1);
+
+            // Make this look like cmap2
+            v.remove("a");
+            v.remove("b");
+            v.insert("c".to_string(), StringLikeList::from(vec!["C".to_string()]));
+        });
+
+        c1.range(condop::Bool..condop::NumericEquals).for_each(|(k, v)| {
+            assert_eq!(k, &condop::DateEquals);
+            assert_eq!(v, &cmap2);
+        });
+
+        let c2 = c1.split_off(&condop::StringEquals);
+        let c1_vec = (&mut c1).into_iter().collect::<Vec<_>>();
+        assert_eq!(c1_vec, vec![(&condop::DateEquals, &mut cmap2), (&condop::NumericEquals, &mut cmap1)]);
+        let c1_vec = (&c1).into_iter().collect::<Vec<_>>();
+        assert_eq!(c1_vec, vec![(&condop::DateEquals, &cmap2), (&condop::NumericEquals, &cmap1)]);
+        let c2 = c2.into_iter().collect::<Vec<_>>();
+        assert_eq!(c2, vec![(condop::StringEquals, cmap2.clone()), (condop::StringEqualsIgnoreCase, cmap3.clone())]);
+
+        assert_eq!(c1.clone().into_keys().collect::<Vec<_>>(), vec![condop::DateEquals, condop::NumericEquals]);
+        assert_eq!(c1.clone().into_values().collect::<Vec<_>>(), vec![cmap2.clone(), cmap1.clone()]);
+
+        c1.extend([(condop::StringEquals, cmap2.clone()), (condop::StringEqualsIgnoreCase, cmap3.clone())]);
+        c1.values_mut().for_each(|v| {
+            if v == &cmap3 {
+                // Make this look like cmap2.
+                v.remove("d");
+                v.insert("c".to_string(), StringLikeList::from(vec!["C".to_string()]));
+            }
+        });
+        assert_eq!(c1[&condop::StringEqualsIgnoreCase], cmap2);
+
+        c1.iter_mut().for_each(|(k, v)| {
+            if k == &condop::NumericEquals {
+                // Make this look like cmap3.
+                v.clear();
+                v.insert("d".to_string(), StringLikeList::from(vec!["D".to_string()]));
+            }
+        });
+        assert_eq!(c1[&condop::NumericEquals], cmap3);
+
+        let c2 = Condition::from_iter(c1.iter().map(|(k, v)| (*k, v.clone())));
+        assert_eq!(c1, c2);
+    }
+}
