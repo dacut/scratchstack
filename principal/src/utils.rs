@@ -7,17 +7,42 @@ use {
 /// See [the unique identifiers section of the IAM identifiers documentation](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_identifiers.html).
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum IamIdPrefix {
+    /// The prefix for static IAM access keys: `AKIA`.
     AccessKey,
+
+    /// The prefix for IAM bearer tokens: `ABIA`.
     BearerToken,
+
+    /// The prefix for IAM certificates: `ASCA`.
     Certificate,
+
+    /// The prefix for IAM context-specific credentials: `ACCA`.
     ContextSpecificCredential,
+
+    /// The prefix for IAM groups: `AGPA`.
     Group,
+
+    /// The prefix for IAM instance profiles: `AIPA`.
     InstanceProfile,
+
+    /// The prefix for IAM managed policies: `ANPA`.
     ManagedPolicy,
+
+    /// The prefix for IAM managed policy versions: `ANVA`.
+    ///
+    /// This does not appear to be used within IAM.
     ManagedPolicyVersion,
+
+    /// The prefix for IAM public keys: `APKA`.
     PublicKey,
+
+    /// The prefix for IAM roles: `AROA`.
     Role,
+
+    /// The prefix for IAM temporary access keys: `ASIA`.
     TemporaryAccessKey,
+
+    /// The prefix for IAM users: `AIDA`.
     User,
 }
 
@@ -73,13 +98,12 @@ impl IamIdPrefix {
 /// *   The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
 ///
 /// The `max_length` argument is specified as an argument to this function, but should be
-///
 /// [128 for instance profiles](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateInstanceProfile.html),
 /// [128 for IAM groups](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateGroup.html),
 /// [64 for IAM roles](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html), and
 /// [64 for IAM users](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateUser.html).
 ///
-/// If `name` meets these requirements, `Ok(())` is returned. Otherwise, Err(map_err(name.to_string())) is returned.
+/// If `name` meets these requirements, `Ok(())` is returned. Otherwise, `Err(map_err(name.to_string()))` is returned.
 pub fn validate_name<F: FnOnce(String) -> PrincipalError>(
     name: &str,
     max_length: usize,
@@ -112,7 +136,7 @@ pub fn validate_name<F: FnOnce(String) -> PrincipalError>(
 /// Verify that an instance profile id, group id, role id, or user id meets AWS requirements.
 ///
 /// AWS only stipulates the first four characters of the ID as a type identifier; however, all IDs follow a common
-/// convention of being 20 character base-32 strings. We enforce the prefix, length, and base-32 requirements here.
+/// convention of being 20+ character base-32 strings. We enforce the prefix, length, and base-32 requirements here.
 ///
 /// If `identifier` meets these requirements, Ok is returned. Otherwise, Err(map_err(id.to_string())) is returned.
 pub fn validate_identifier<F: FnOnce(String) -> PrincipalError>(
@@ -120,7 +144,7 @@ pub fn validate_identifier<F: FnOnce(String) -> PrincipalError>(
     prefix: &str,
     map_err: F,
 ) -> Result<(), PrincipalError> {
-    if !id.starts_with(prefix) || id.len() != 20 {
+    if !id.starts_with(prefix) || id.len() < 20 {
         Err(map_err(id.to_string()))
     } else {
         for c in id.as_bytes() {
@@ -166,6 +190,13 @@ pub fn validate_path(path: &str) -> Result<(), PrincipalError> {
     Ok(())
 }
 
+/// Verify that a DNS name meets Scratchstack requirements.
+///
+/// DNS names may have multiple components separated by a dot (`.`). Each component must be between 1 and 63 characters.
+/// The total length of the name must be less than the `max_length` argument.
+///
+/// Components may contain ASCII alphanumeric characters, hyphens (`-`), and underscores (`_`). A component may not
+/// begin or end with a hyphen, and may not contain two consecutive hyphens.
 pub fn validate_dns<F: FnOnce(String) -> PrincipalError>(
     name: &str,
     max_length: usize,
@@ -176,18 +207,30 @@ pub fn validate_dns<F: FnOnce(String) -> PrincipalError>(
         return Err(map_err(name.to_string()));
     }
 
-    let mut last = None;
+    let components = name_bytes.split(|c| *c == b'.');
 
-    for (i, c) in name_bytes.iter().enumerate() {
-        if *c == b'-' || *c == b'.' {
-            if i == 0 || i == name_bytes.len() - 1 || last == Some(b'-') || last == Some(b'.') {
-                return Err(map_err(name.to_string()));
-            }
-        } else if !c.is_ascii_alphanumeric() {
+    for component in components {
+        if component.is_empty() || component.len() > 63 {
             return Err(map_err(name.to_string()));
         }
 
-        last = Some(*c);
+        let mut last = b'-';
+
+        for c in component.iter() {
+            if *c == b'-' {
+                if last == b'-' {
+                    return Err(map_err(name.to_string()));
+                }
+            } else if !c.is_ascii_alphanumeric() && *c != b'_' {
+                return Err(map_err(name.to_string()));
+            }
+
+            last = *c;
+        }
+
+        if last == b'-' {
+            return Err(map_err(name.to_string()));
+        }
     }
 
     Ok(())
@@ -196,7 +239,7 @@ pub fn validate_dns<F: FnOnce(String) -> PrincipalError>(
 #[cfg(test)]
 mod test {
     use {
-        super::{validate_identifier, validate_name, IamIdPrefix},
+        super::{validate_dns, validate_identifier, validate_name, IamIdPrefix},
         crate::PrincipalError,
         std::{
             collections::hash_map::DefaultHasher,
@@ -237,8 +280,6 @@ mod test {
         assert_eq!(err.to_string(), r#"Invalid group id: "AIDA234567ABCDEFGHIJ""#);
         let err = validate_group_id("AGPA234567ABCDEFGHI!").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid group id: "AGPA234567ABCDEFGHI!""#);
-        let err = validate_group_id("AGPA234567ABCDEFGHIJK").unwrap_err();
-        assert_eq!(err.to_string(), r#"Invalid group id: "AGPA234567ABCDEFGHIJK""#);
         let err = validate_group_id("AGPA234567ABCDEFGHI").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid group id: "AGPA234567ABCDEFGHI""#);
 
@@ -247,8 +288,6 @@ mod test {
         assert_eq!(err.to_string(), r#"Invalid instance profile id: "AKIAKLMNOPQRSTUVWXYZ""#);
         let err = validate_instance_profile_id("AIPAKLMNOPQRSTUVWXY!").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid instance profile id: "AIPAKLMNOPQRSTUVWXY!""#);
-        let err = validate_instance_profile_id("AIPAKLMNOPQRSTUVWXYZA").unwrap_err();
-        assert_eq!(err.to_string(), r#"Invalid instance profile id: "AIPAKLMNOPQRSTUVWXYZA""#);
         let err = validate_instance_profile_id("AIPAKLMNOPQRSTUVWXY").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid instance profile id: "AIPAKLMNOPQRSTUVWXY""#);
 
@@ -257,8 +296,6 @@ mod test {
         assert_eq!(err.to_string(), r#"Invalid role id: "AKIAKLMNOPQRSTUVWXYZ""#);
         let err = validate_role_id("AROAKLMNOPQRSTUVWXY!").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid role id: "AROAKLMNOPQRSTUVWXY!""#);
-        let err = validate_role_id("AROAKLMNOPQRSTUVWXYZA").unwrap_err();
-        assert_eq!(err.to_string(), r#"Invalid role id: "AROAKLMNOPQRSTUVWXYZA""#);
         let err = validate_role_id("AROAKLMNOPQRSTUVWXY").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid role id: "AROAKLMNOPQRSTUVWXY""#);
 
@@ -267,8 +304,6 @@ mod test {
         assert_eq!(err.to_string(), r#"Invalid user id: "AKIAKLMNOPQRSTUVWXYZ""#);
         let err = validate_user_id("AIDAKLMNOPQRSTUVWXY!").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid user id: "AIDAKLMNOPQRSTUVWXY!""#);
-        let err = validate_user_id("AIDAKLMNOPQRSTUVWXYZA").unwrap_err();
-        assert_eq!(err.to_string(), r#"Invalid user id: "AIDAKLMNOPQRSTUVWXYZA""#);
         let err = validate_user_id("AIDAKLMNOPQRSTUVWXY").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid user id: "AIDAKLMNOPQRSTUVWXY""#);
     }
@@ -327,6 +362,19 @@ mod test {
         // Miscellaneous bits for AKIA/access key.
         assert_eq!(IamIdPrefix::AccessKey.as_ref(), "AKIA");
         assert_eq!(format!("{}", IamIdPrefix::AccessKey).as_str(), "AKIA");
+    }
+
+    #[test]
+    fn check_dns() {
+        validate_dns("exa_mple.com", 256, PrincipalError::InvalidService).unwrap();
+        let e = validate_dns("exa_mple.com.", 256, PrincipalError::InvalidService).unwrap_err();
+        assert_eq!(e.to_string(), r#"Invalid service name: "exa_mple.com.""#);
+        let e = validate_dns("example.com", 5, PrincipalError::InvalidService).unwrap_err();
+        assert_eq!(e.to_string(), r#"Invalid service name: "example.com""#);
+        validate_dns("exam-ple.com", 256, PrincipalError::InvalidService).unwrap();
+        validate_dns("exam--ple.com", 256, PrincipalError::InvalidService).unwrap_err();
+        validate_dns("-example.com", 256, PrincipalError::InvalidService).unwrap_err();
+        validate_dns("example-.com", 256, PrincipalError::InvalidService).unwrap_err();
     }
 }
 // end tests -- do not delete; needed for coverage.

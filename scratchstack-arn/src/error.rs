@@ -21,7 +21,7 @@ pub enum ArnError {
     /// Invalid resource. The argument contains the specified resource.
     InvalidResource(String),
 
-    /// Invalid scheme. The scheme must be `arn`.
+    /// Invalid scheme. The scheme must be `arn`. The argument contains the specified scheme.
     InvalidScheme(String),
 
     /// Invalid service. The argument contains the specified service.

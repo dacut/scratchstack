@@ -17,8 +17,7 @@ const PARTITION_START: usize = 4;
 /// An Amazon Resource Name (ARN) representing an exact resource.
 ///
 /// This is used to represent a known resource, such as an S3 bucket, EC2 instance, assumed role instance, etc. This is
-/// _not_ used to represent resource _statements_ in the IAM Aspen policy language, which may contain wildcards. For
-/// ARNs used to match resource statements, see [ArnPattern].
+/// _not_ used to represent resource _statements_ in the IAM Aspen policy language, which may contain wildcards.
 ///
 /// [Arn] objects are immutable.
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
@@ -40,14 +39,20 @@ impl Arn {
     ///     Non-AWS resources must conform to the naming rules specified in [validate_service].
     /// * `region` - The region the resource is in (optional). If the resource is regional (and may other regions
     ///     may have the resources with the same name), this is the region name. If the resource is global, this is
-    ///     empty.
+    ///     empty. This is usually a region name like `us-east-1` or `us-west-2`, but may be any string meeting the
+    ///     rules specified in [validate_region].
     /// * `account_id` - The account ID the resource belongs to (optional). This is the 12-digit account ID or the
     ///     string `aws` for certain AWS-owned resources. Some resources (such as S3 buckets and objects) do not need
     ///     the account ID (the bucket name is globally unique within a partition), so this may be empty.
     /// * `resource` - The resource name (required). This is the name of the resource. The formatting is
     ///     service-specific, but must be a valid UTF-8 string.
     ///
-    /// If any of the arguments are invalid, an [ArnError] is returned.
+    /// # Errors
+    ///
+    /// * If the partition is invalid, [ArnError::InvalidPartition] is returned.
+    /// * If the service is invalid, [ArnError::InvalidService] is returned.
+    /// * If the region is invalid, [ArnError::InvalidRegion] is returned.
+    /// * If the account ID is invalid, [ArnError::InvalidAccountId] is returned.
     pub fn new(
         partition: &str,
         service: &str,
@@ -64,19 +69,41 @@ impl Arn {
             validate_account_id(account_id)?
         }
 
+        // Safety: We have met the preconditions specified for new_unchecked above.
+        unsafe { Ok(Self::new_unchecked(partition, service, region, account_id, resource)) }
+    }
+
+    /// Create a new ARN from the specified components, bypassing any validation.
+    ///
+    /// # Safety
+    ///
+    /// The following constraints must be met:
+    ///
+    /// * `partition` - Must meet the rules specified in [validate_partition].
+    /// * `service` - Must meet the rules specified in [validate_service].
+    /// * `region` - Must be empty or meet the rules specified in [validate_region].
+    /// * `account_id` - Must be empty, a 12 ASCII digit account ID, or the string `aws`.
+    /// * `resource` - A valid UTF-8 string.
+    pub unsafe fn new_unchecked(
+        partition: &str,
+        service: &str,
+        region: &str,
+        account_id: &str,
+        resource: &str,
+    ) -> Self {
         let arn = format!("arn:{}:{}:{}:{}:{}", partition, service, region, account_id, resource);
         let service_start = PARTITION_START + partition.len() + 1;
         let region_start = service_start + service.len() + 1;
         let account_id_start = region_start + region.len() + 1;
         let resource_start = account_id_start + account_id.len() + 1;
 
-        Ok(Self {
+        Self {
             arn,
             service_start,
             region_start,
             account_id_start,
             resource_start,
-        })
+        }
     }
 
     /// Retrieve the partition the resource is in.
@@ -117,10 +144,21 @@ impl Display for Arn {
     }
 }
 
+/// Parse a string into an [Arn].
 impl FromStr for Arn {
+    /// [ArnError] is returned if the string is not a valid ARN.
     type Err = ArnError;
 
     /// Parse an ARN from a string.
+    ///
+    /// # Errors
+    ///
+    /// * If the ARN is not composed of 6 colon-separated components, [ArnError::InvalidArn] is returned.
+    /// * If the ARN does not start with `arn:`, [ArnError::InvalidArn] is returned.
+    /// * If the partition is invalid, [ArnError::InvalidPartition] is returned.
+    /// * If the service is invalid, [ArnError::InvalidService] is returned.
+    /// * If the region is invalid, [ArnError::InvalidRegion] is returned.
+    /// * If the account ID is invalid, [ArnError::InvalidAccountId] is returned.
     fn from_str(s: &str) -> Result<Self, ArnError> {
         let parts: Vec<&str> = s.splitn(6, ':').collect();
         if parts.len() != 6 {
@@ -135,13 +173,17 @@ impl FromStr for Arn {
     }
 }
 
+/// Orders ARNs by partition, service, region, account ID, and resource.
 impl PartialOrd for Arn {
+    /// Returns the relative ordering between this and another ARN.
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
+/// Orders ARNs by partition, service, region, account ID, and resource.
 impl Ord for Arn {
+    /// Returns the relative ordering between this and another ARN.
     fn cmp(&self, other: &Self) -> Ordering {
         match self.partition().cmp(other.partition()) {
             Ordering::Equal => match self.service().cmp(other.service()) {
