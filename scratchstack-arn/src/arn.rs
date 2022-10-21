@@ -5,6 +5,7 @@ use {
     },
     serde::{de, Deserialize, Serialize},
     std::{
+        cmp::Ordering,
         fmt::{Display, Formatter, Result as FmtResult},
         hash::Hash,
         str::FromStr,
@@ -20,7 +21,7 @@ const PARTITION_START: usize = 4;
 /// ARNs used to match resource statements, see [ArnPattern].
 ///
 /// [Arn] objects are immutable.
-#[derive(Debug, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
 pub struct Arn {
     arn: String,
     service_start: usize,
@@ -134,6 +135,30 @@ impl FromStr for Arn {
     }
 }
 
+impl PartialOrd for Arn {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Arn {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.partition().cmp(other.partition()) {
+            Ordering::Equal => match self.service().cmp(other.service()) {
+                Ordering::Equal => match self.region().cmp(other.region()) {
+                    Ordering::Equal => match self.account_id().cmp(other.account_id()) {
+                        Ordering::Equal => self.resource().cmp(other.resource()),
+                        x => x,
+                    },
+                    x => x,
+                },
+                x => x,
+            },
+            x => x,
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for Arn {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -230,6 +255,17 @@ mod test {
         assert_eq!(arn.region(), "us-east-1");
         assert_eq!(arn.account_id(), "123456789012");
         assert_eq!(arn.resource(), "instance/i-1234567890abcdef0");
+    }
+
+    #[test]
+    fn check_arn_empty() {
+        let arn1 = Arn::from_str("arn:aws:s3:::bucket").unwrap();
+        let arn2 = Arn::from_str("arn:aws:s3:us-east-1::bucket").unwrap();
+        let arn3 = Arn::from_str("arn:aws:s3:us-east-1:123456789012:bucket").unwrap();
+
+        assert!(arn1 < arn2);
+        assert!(arn2 < arn3);
+        assert!(arn1 < arn3);
     }
 
     #[test]
