@@ -1,7 +1,7 @@
 use {
     crate::{
         utils::{validate_account_id, validate_partition, validate_region, validate_service},
-        ArnError, GlobPattern,
+        ArnError,
     },
     serde::{de, Deserialize, Serialize},
     std::{
@@ -153,133 +153,15 @@ impl Serialize for Arn {
     }
 }
 
-/// An Amazon Resource Name (ARN) statement in an IAM Aspen policy.
-///
-/// This is used to match [Arn] objects from a resource statement in the IAM Aspen policy language. For example,
-/// an [ArnPattern] created from `arn:aws*:ec2:us-*-?:123456789012:instance/i-*` would match the following [Arn]
-/// objects:
-/// * `arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0`
-/// * `arn:aws-us-gov:ec2:us-west-2:123456789012:instance/i-1234567890abcdef0`
-///
-/// Patterns are similar to glob statements with a few differences:
-/// * The `*` character matches any number of characters, including none, within a single segment of the ARN.
-/// * The `?` character matches any single character within a single segment of the ARN.
-///
-/// [ArnPattern] objects are immutable.
-#[derive(Debug, Clone, Eq, Hash, PartialEq)]
-pub struct ArnPattern {
-    partition: GlobPattern,
-    service: GlobPattern,
-    region: GlobPattern,
-    account_id: GlobPattern,
-    resource: GlobPattern,
-}
-
-impl ArnPattern {
-    /// Create a new ARN pattern from the specified components.
-    ///
-    /// * `partition` - The partition the resource is in.
-    /// * `service` - The service the resource belongs to.
-    /// * `region` - The region the resource is in.
-    /// * `account_id` - The account ID the resource belongs to.
-    /// * `resource` - The resource name.
-    pub fn new(partition: &str, service: &str, region: &str, account_id: &str, resource: &str) -> Self {
-        let partition = GlobPattern::new(partition);
-        let service = GlobPattern::new(service);
-        let region = GlobPattern::new(region);
-        let account_id = GlobPattern::new(account_id);
-        let resource = GlobPattern::new(resource);
-
-        Self {
-            partition,
-            service,
-            region,
-            account_id,
-            resource,
-        }
-    }
-
-    /// Retreive the pattern for the partition.
-    #[inline]
-    pub fn partition(&self) -> &GlobPattern {
-        &self.partition
-    }
-
-    /// Retrieve the pattern for the service.
-    #[inline]
-    pub fn service(&self) -> &GlobPattern {
-        &self.service
-    }
-
-    /// Retrieve the pattern for the region.
-    #[inline]
-    pub fn region(&self) -> &GlobPattern {
-        &self.region
-    }
-
-    /// Retrieve the pattern for the account ID.
-    #[inline]
-    pub fn account_id(&self) -> &GlobPattern {
-        &self.account_id
-    }
-
-    /// Retrieve the pattern for the resource.
-    #[inline]
-    pub fn resource(&self) -> &GlobPattern {
-        &self.resource
-    }
-
-    /// Indicate whether the specified [Arn] matches this pattern.
-    pub fn matches(&self, arn: &Arn) -> bool {
-        // This is split out here for easier debugging breakpoints.
-        let partition = arn.partition();
-        let service = arn.service();
-        let region = arn.region();
-        let account_id = arn.account_id();
-        let resource = arn.resource();
-
-        self.partition.matches(partition)
-            && self.service.matches(service)
-            && self.region.matches(region)
-            && self.account_id.matches(account_id)
-            && self.resource.matches(resource)
-    }
-}
-
-impl FromStr for ArnPattern {
-    type Err = ArnError;
-
-    /// Create an [ArnPattern] from a string.
-    fn from_str(s: &str) -> Result<Self, ArnError> {
-        let parts: Vec<&str> = s.splitn(6, ':').collect();
-        if parts.len() != 6 {
-            return Err(ArnError::InvalidArn(s.to_string()));
-        }
-
-        if parts[0] != "arn" {
-            return Err(ArnError::InvalidScheme(parts[0].to_string()));
-        }
-
-        Ok(Self::new(parts[1], parts[2], parts[3], parts[4], parts[5]))
-    }
-}
-
-impl Display for ArnPattern {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "arn:{}:{}:{}:{}:{}", self.partition, self.service, self.region, self.account_id, self.resource)
-    }
-}
-
 #[cfg(test)]
 mod test {
     use {
-        super::{Arn, ArnPattern, GlobPattern},
+        super::Arn,
         crate::{
             utils::{validate_account_id, validate_region},
             ArnError,
         },
-        pretty_assertions::{assert_eq, assert_ne},
-        regex::Regex,
+        pretty_assertions::assert_eq,
         std::{
             collections::hash_map::DefaultHasher,
             hash::{Hash, Hasher},
@@ -494,93 +376,6 @@ mod test {
 
         let err = validate_account_id("").unwrap_err();
         assert_eq!(err, ArnError::InvalidAccountId("".to_string()));
-    }
-
-    #[test]
-    fn check_arn_pattern_matches() {
-        let arn1 = Arn::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0").unwrap();
-        let pat1a = ArnPattern::from_str("arn:aws:ec2:*:123456789012:instance/*").unwrap();
-        let pat1b = ArnPattern::from_str("arn:aws:ec2:us-*:123456789012:instance/*").unwrap();
-        let pat1c = ArnPattern::from_str("arn:aws:ec2:us-*-1:123456789012:instance/*").unwrap();
-
-        assert!(pat1a.matches(&arn1));
-        assert!(pat1b.matches(&arn1));
-        assert!(pat1c.matches(&arn1));
-
-        let arn2 = Arn::from_str("arn:aws:s3:::bucket/path/to/object").unwrap();
-        let pat2a = ArnPattern::from_str("arn:aws:s3:::bucket/path/to/object").unwrap();
-        let pat2b = ArnPattern::from_str("arn:aws:s3:::bucket/*").unwrap();
-        let pat2c = ArnPattern::from_str("arn:aws:s3:*:*:bucket/path/*").unwrap();
-        let pat2d = ArnPattern::from_str("arn:aws:s?:*:*:bucket/*/to/*").unwrap();
-
-        assert!(pat2a.matches(&arn2));
-        assert!(pat2b.matches(&arn2));
-        assert!(pat2c.matches(&arn2));
-        assert!(pat2d.matches(&arn2));
-        assert!(!pat1a.matches(&arn2));
-
-        assert_eq!(pat2a.to_string(), "arn:aws:s3:::bucket/path/to/object");
-        assert_eq!(pat2b.to_string(), "arn:aws:s3:::bucket/*");
-        assert_eq!(pat2c.to_string(), "arn:aws:s3:*:*:bucket/path/*");
-        assert_eq!(pat2d.to_string(), "arn:aws:s?:*:*:bucket/*/to/*");
-    }
-
-    #[test]
-    fn check_arn_pattern_derived() {
-        let pat1a = ArnPattern::from_str("arn:*:ec2:us-*-1:123456789012:instance/*").unwrap();
-        let pat1b = ArnPattern::from_str("arn:*:ec2:us-*-1:123456789012:instance/*").unwrap();
-        let pat1c = pat1a.clone();
-        let pat2 = ArnPattern::from_str("arn:aws:ec2:us-east-1:123456789012:instance/*").unwrap();
-        let pat3 = ArnPattern::from_str("arn:aws:ec*:us-*-1::*").unwrap();
-
-        assert_eq!(pat1a, pat1b);
-        assert_ne!(pat1a, pat2);
-        assert_eq!(pat1c, pat1b);
-
-        assert!(pat1a.service().eq(&GlobPattern::Exact(Box::new("ec2".to_string()))));
-
-        // Ensure we can derive a hash for the arn.
-        let mut h2 = DefaultHasher::new();
-        pat3.hash(&mut h2);
-
-        // Ensure we can debug print the arn.
-        _ = format!("{:?}", pat3);
-
-        // Ensure we can print the arn.
-        assert_eq!(pat3.to_string(), "arn:aws:ec*:us-*-1::*".to_string());
-
-        // FromStr for ArnSegmentPattern
-        GlobPattern::from_str("").unwrap();
-        GlobPattern::from_str("*").unwrap();
-        GlobPattern::from_str("us-east-1").unwrap();
-        GlobPattern::from_str("us*").unwrap();
-        GlobPattern::from_str("us-*-1").unwrap();
-    }
-
-    #[test]
-    fn check_arn_pattern_components() {
-        let pat = ArnPattern::from_str("arn:aws:ec*:us-*-1::*").unwrap();
-        assert_eq!(pat.partition(), &GlobPattern::Exact(Box::new("aws".to_string())));
-        assert_eq!(pat.service(), &GlobPattern::StartsWith(Box::new("ec".to_string())));
-        assert_eq!(pat.region(), &GlobPattern::Regex(Box::new(("us-*-1".to_string(), Regex::new("us-.*-1").unwrap()))));
-        assert_eq!(pat.account_id(), &GlobPattern::Empty);
-        assert_eq!(pat.resource(), &GlobPattern::Any);
-    }
-
-    #[test]
-    fn check_malformed_patterns() {
-        let wrong_parts =
-            vec!["arn", "arn:aw*", "arn:aw*:e?2", "arn:aw*:e?2:us-*-1", "arn:aw*:e?2:us-*-1:123456789012"];
-        for wrong_part in wrong_parts {
-            assert_eq!(
-                ArnPattern::from_str(wrong_part).unwrap_err().to_string(),
-                format!("Invalid ARN: {:#?}", wrong_part)
-            );
-        }
-
-        let err =
-            ArnPattern::from_str("https:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0").unwrap_err();
-        assert_eq!(err, ArnError::InvalidScheme("https".to_string()));
     }
 
     #[test]
