@@ -476,4 +476,3 @@ mod test {
         assert_eq!(arn_err.unwrap_err().to_string(), "invalid type: map, expected a string at line 1 column 0");
     }
 }
-// end tests -- do not delete; needed for coverage.

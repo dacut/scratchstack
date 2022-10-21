@@ -4,7 +4,9 @@ use {
     std::fmt::{Display, Formatter, Result as FmtResult},
 };
 
-/// Details about a service.
+/// Details about an AWS or AWS-like service.
+///
+/// Service structs are immutable.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Service {
     /// Name of the service.
@@ -26,7 +28,7 @@ impl Service {
     ///     [PrincipalError::InvalidService] error will be returned:
     ///     *   The name must contain between 1 and 32 characters.
     ///     *   The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
-    /// * `region`: The region the service is running in. If None, the service is global.
+    /// * `region`: The region the service is running in. If `None`, the service is global.
     /// * `dns_suffix`: The DNS suffix of the service. This is usually amazonaws.com.
     ///
     /// If all of the requirements are met, a [Service] object is returned.  Otherwise, a [PrincipalError] error is
@@ -50,21 +52,25 @@ impl Service {
         })
     }
 
+    /// The name of the service.
     #[inline]
     pub fn service_name(&self) -> &str {
         &self.service_name
     }
 
+    /// The region of the service. If the service is global, this will be `None`.
     #[inline]
     pub fn region(&self) -> Option<&str> {
         self.region.as_deref()
     }
 
+    /// The DNS suffix of the service.
     #[inline]
     pub fn dns_suffix(&self) -> &str {
         &self.dns_suffix
     }
 
+    /// The regional DNS name of the service. If the service is global, this will be the same as the global DNS name.
     pub fn regional_dns_name(&self) -> String {
         match &self.region {
             None => format!("{}.{}", self.service_name, self.dns_suffix),
@@ -72,6 +78,7 @@ impl Service {
         }
     }
 
+    /// The global DNS name of the service (omitting the regional component, if any).
     pub fn global_dns_name(&self) -> String {
         format!("{}.{}", self.service_name, self.dns_suffix)
     }

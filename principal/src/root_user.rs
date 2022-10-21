@@ -8,6 +8,8 @@ use {
 };
 
 /// Details about an AWS account root user.
+///
+/// RootUser structs are immutable.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RootUser {
     /// The partition this principal exists in.
@@ -40,11 +42,13 @@ impl RootUser {
         })
     }
 
+    /// The partition of the user.
     #[inline]
     pub fn partition(&self) -> &str {
         &self.partition
     }
 
+    /// The account id of the user.
     #[inline]
     pub fn account_id(&self) -> &str {
         &self.account_id

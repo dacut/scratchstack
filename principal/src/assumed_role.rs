@@ -7,7 +7,9 @@ use {
     std::fmt::{Display, Formatter, Result as FmtResult},
 };
 
-/// Details about an assumed role actor.
+/// Details about an AWS STS assumed role.
+///
+/// `AssumedRole` structs are immutable.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct AssumedRole {
     /// The partition this principal exists in.
@@ -62,21 +64,25 @@ impl AssumedRole {
         }
     }
 
+    /// The partition of the assumed role.
     #[inline]
     pub fn partition(&self) -> &str {
         &self.partition
     }
 
+    /// The account ID of the assumed role.
     #[inline]
     pub fn account_id(&self) -> &str {
         &self.account_id
     }
 
+    /// The name of the role being assumed.
     #[inline]
     pub fn role_name(&self) -> &str {
         &self.role_name
     }
 
+    /// The name of the session.
     #[inline]
     pub fn session_name(&self) -> &str {
         &self.session_name

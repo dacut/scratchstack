@@ -350,6 +350,7 @@ impl SessionValue {
         matches!(self, Self::Null)
     }
 
+    /// Returns the session value as a variable subtitution in an Aspen policy.
     pub fn as_variable_value(&self) -> String {
         match self {
             Self::Null => "".to_string(),

@@ -11,6 +11,8 @@ use {
 };
 
 /// Details about an AWS IAM user.
+///
+/// User structs are immutable.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct User {
     /// The partition this principal exists in.
@@ -62,21 +64,25 @@ impl User {
         })
     }
 
+    /// The partition of the user.
     #[inline]
     pub fn partition(&self) -> &str {
         &self.partition
     }
 
+    /// The account ID of the user.
     #[inline]
     pub fn account_id(&self) -> &str {
         &self.account_id
     }
 
+    /// The path of the user.
     #[inline]
     pub fn path(&self) -> &str {
         &self.path
     }
 
+    /// The name of the user.
     #[inline]
     pub fn user_name(&self) -> &str {
         &self.user_name

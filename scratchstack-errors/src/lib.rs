@@ -1,3 +1,8 @@
+#![warn(clippy::all)]
+#![deny(rustdoc::missing_crate_level_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
+#![deny(missing_docs)]
+
 //! The `ServiceError` trait used throughout Scratchstack libraries.
 
 use {http::status::StatusCode, std::error::Error};

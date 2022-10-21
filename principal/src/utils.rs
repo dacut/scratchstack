@@ -85,6 +85,7 @@ impl AsRef<str> for IamIdPrefix {
 }
 
 impl IamIdPrefix {
+    /// Returns the IAM ID prefix as a string.
     pub fn as_str(&self) -> &str {
         self.as_ref()
     }

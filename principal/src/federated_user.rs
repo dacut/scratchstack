@@ -7,7 +7,9 @@ use {
     std::fmt::{Display, Formatter, Result as FmtResult},
 };
 
-/// Details about a federated user.
+/// Details about an AWS IAM federated user.
+///
+/// FederatedUser structs are immutable.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct FederatedUser {
     /// The partition this principal exists in.
@@ -49,16 +51,19 @@ impl FederatedUser {
         }
     }
 
+    /// The partition of the user.
     #[inline]
     pub fn partition(&self) -> &str {
         &self.partition
     }
 
+    /// The account ID of the user.
     #[inline]
     pub fn account_id(&self) -> &str {
         &self.account_id
     }
 
+    /// The name of the user.
     #[inline]
     pub fn user_name(&self) -> &str {
         &self.user_name

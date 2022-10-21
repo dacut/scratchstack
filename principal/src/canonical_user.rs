@@ -3,8 +3,10 @@ use {
     std::fmt::{Display, Formatter, Result as FmtResult},
 };
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 /// Details about an S3 canonical user.
+///
+/// CanonicalUser structs are immutable.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CanonicalUser {
     /// The canonical user id.
     canonical_user_id: String,
@@ -35,6 +37,7 @@ impl CanonicalUser {
         })
     }
 
+    /// The canonical user id.
     #[inline]
     pub fn canonical_user_id(&self) -> &str {
         &self.canonical_user_id
