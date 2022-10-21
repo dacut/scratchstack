@@ -1,0 +1,6 @@
+#!/bin/bash -ex
+ROOT="$(dirname "$0")"
+cd "$ROOT"
+cargo publish -p scratchstack-arn && \
+cargo publish -p scratchstack-errors && \
+cargo publish -p scratchstack-aws-principal
