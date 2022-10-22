@@ -42,6 +42,8 @@ impl PartialEq for Action {
     }
 }
 
+impl Eq for Action {}
+
 impl Action {
     /// Create a new [Action::Specific] action.
     ///
