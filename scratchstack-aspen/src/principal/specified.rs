@@ -6,20 +6,27 @@ use {
     serde::{Deserialize, Serialize},
 };
 
+/// A non-wildcard principal statement in an Aspen policy.
+///
+/// SpecifiedPrincipal structs are immutable. To construct this programmatically, use [SpecifiedPrincipalBuilder].
 #[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SpecifiedPrincipal {
+    /// AWS principals specified in the statement.
     #[builder(setter(into, strip_option), default)]
     #[serde(rename = "AWS", skip_serializing_if = "Option::is_none")]
     aws: Option<StringLikeList<AwsPrincipal>>,
 
+    /// Canonical users specified in the statement.
     #[builder(setter(into, strip_option), default)]
     #[serde(rename = "CanonicalUser", skip_serializing_if = "Option::is_none")]
     canonical_user: Option<StringLikeList<String>>,
 
+    /// Federated users specified in the statement.
     #[builder(setter(into, strip_option), default)]
     #[serde(rename = "Federated", skip_serializing_if = "Option::is_none")]
     federated: Option<StringLikeList<String>>,
 
+    /// Services specified in the statement.
     #[builder(setter(into, strip_option), default)]
     #[serde(rename = "Service", skip_serializing_if = "Option::is_none")]
     service: Option<StringLikeList<String>>,
@@ -29,31 +36,37 @@ display_json!(SpecifiedPrincipal);
 from_str_json!(SpecifiedPrincipal);
 
 impl SpecifiedPrincipal {
+    /// Create a [SpecifiedPrincipalBuilder] to programmatically construct a [SpecifiedPrincipal].
     #[inline]
     pub fn builder() -> SpecifiedPrincipalBuilder {
         SpecifiedPrincipalBuilder::default()
     }
 
+    /// Returns the AWS principals specified in the statement.
     #[inline]
     pub fn aws(&self) -> Option<&StringLikeList<AwsPrincipal>> {
         self.aws.as_ref()
     }
 
+    /// Returns the canonical users specified in the statement.
     #[inline]
     pub fn canonical_user(&self) -> Option<&StringLikeList<String>> {
         self.canonical_user.as_ref()
     }
 
+    /// Returns the federated users specified in the statement.
     #[inline]
     pub fn federated(&self) -> Option<&StringLikeList<String>> {
         self.federated.as_ref()
     }
 
+    /// Returns the services specified in the statement.
     #[inline]
     pub fn service(&self) -> Option<&StringLikeList<String>> {
         self.service.as_ref()
     }
 
+    /// Indicates whether this specified principal matches an identity from the [PrincipalActor].
     pub fn matches(&self, actor: &PrincipalActor) -> bool {
         for identity in actor.iter() {
             let source = identity.source();

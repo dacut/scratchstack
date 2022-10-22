@@ -7,117 +7,145 @@ use {
     },
 };
 
+/// A list of actions. In JSON, this may be a string or an array of strings.
 pub type ActionList = StringLikeList<Action>;
 
+/// An action in an Aspen policy.
+///
+/// This can either be `Any` action (represented by the string `*`), or a service and an API pattern (`Specific`)
+/// in the form `service:api_pattern`. The API pattern may contain wildcard characters (`*` and `?`).
 #[derive(Clone, Debug)]
 pub enum Action {
+    /// Any action.
     Any,
-    Specific {
-        service: String,
-        action: String,
-    },
+
+    /// A specific action.
+    Specific(SpecificActionDetails),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SpecificActionDetails {
+    /// The service the action is for. This may not contain wildcards.
+    service: String,
+
+    /// The api pattern. This may contain wildcards.
+    api: String,
 }
 
 impl PartialEq for Action {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Any, Self::Any) => true,
-            (
-                Self::Specific {
-                    service,
-                    action,
-                },
-                Self::Specific {
-                    service: other_service,
-                    action: other_action,
-                },
-            ) => service == other_service && action == other_action,
+            (Self::Specific(my_details), Self::Specific(other_details)) => my_details == other_details,
             _ => false,
         }
     }
 }
 
 impl Action {
-    pub fn new<S: Into<String>, A: Into<String>>(service: S, action: A) -> Result<Self, AspenError> {
+    /// Create a new [Action::Specific] action.
+    ///
+    /// # Errors
+    ///
+    /// An [AspenError::InvalidAction] error is returned in any of the following cases:
+    /// * `service` or `api` is empty.
+    /// * `service` contains non-ASCII alphanumeric characters, hyphen (`-`), or underscore (`_`).
+    /// * `service` begins or ends with a hyphen or underscore.
+    /// * `api` contains non-ASCII alphanumeric characters, hyphen (`-`), underscore (`_`), asterisk (`*`), or
+    ///    question mark (`?`).
+    /// * `api` begins or ends with a hyphen or underscore.
+    pub fn new<S: Into<String>, A: Into<String>>(service: S, api: A) -> Result<Self, AspenError> {
         let service = service.into();
-        let action = action.into();
+        let api = api.into();
 
         if service.is_empty() {
-            debug!("Action '{service}:{action}' has an empty service.");
-            return Err(AspenError::InvalidAction(format!("{}:{}", service, action)));
+            debug!("Action '{service}:{api}' has an empty service.");
+            return Err(AspenError::InvalidAction(format!("{}:{}", service, api)));
         }
 
-        if action.is_empty() {
-            debug!("Action '{service}:{action}' has an empty service.");
-            return Err(AspenError::InvalidAction(format!("{}:{}", service, action)));
+        if api.is_empty() {
+            debug!("Action '{service}:{api}' has an empty API.");
+            return Err(AspenError::InvalidAction(format!("{}:{}", service, api)));
         }
 
-        if !service.is_ascii() || !action.is_ascii() {
-            debug!("Action '{service}:{action}' is not ASCII.");
-            return Err(AspenError::InvalidAction(format!("{}:{}", service, action)));
+        if !service.is_ascii() || !api.is_ascii() {
+            debug!("Action '{service}:{api}' is not ASCII.");
+            return Err(AspenError::InvalidAction(format!("{}:{}", service, api)));
         }
 
         for (i, c) in service.bytes().enumerate() {
             if !c.is_ascii_alphanumeric() && !(i > 0 && i < service.len() - 1 && (c == b'-' || c == b'_')) {
-                debug!("Action '{service}:{action}' has an invalid service.");
-                return Err(AspenError::InvalidAction(format!("{}:{}", service, action)));
+                debug!("Action '{service}:{api}' has an invalid service.");
+                return Err(AspenError::InvalidAction(format!("{}:{}", service, api)));
             }
         }
 
-        for (i, c) in action.bytes().enumerate() {
-            if !c.is_ascii_alphanumeric() && c != b'*' && !(i > 0 && i < action.len() - 1 && (c == b'-' || c == b'_')) {
-                debug!("Action '{service}:{action}' has an invalid action.");
-                return Err(AspenError::InvalidAction(format!("{}:{}", service, action)));
+        for (i, c) in api.bytes().enumerate() {
+            if !c.is_ascii_alphanumeric()
+                && c != b'*'
+                && c != b'?'
+                && !(i > 0 && i < api.len() - 1 && (c == b'-' || c == b'_'))
+            {
+                debug!("Action '{service}:{api}' has an invalid API.");
+                return Err(AspenError::InvalidAction(format!("{}:{}", service, api)));
             }
         }
 
-        Ok(Action::Specific {
+        Ok(Action::Specific(SpecificActionDetails {
             service,
-            action,
-        })
+            api,
+        }))
     }
 
+    /// Returns true if this action is [Action::Any].
     #[inline]
     pub fn is_any(&self) -> bool {
         matches!(self, Self::Any)
     }
 
+    /// If the action is [Action::Specific], returns the service and action.
     #[inline]
-    pub fn is_specific(&self) -> bool {
-        matches!(self, Self::Specific { .. })
+    pub fn specific(&self) -> Option<(&str, &str)> {
+        match self {
+            Self::Any => None,
+            Self::Specific(details) => Some((&details.service, &details.api)),
+        }
     }
 
+    /// Returns the service for this action or "*" if this action is [Action::Any].
     #[inline]
     pub fn service(&self) -> &str {
         match self {
             Self::Any => "*",
-            Self::Specific {
+            Self::Specific(SpecificActionDetails {
                 service,
                 ..
-            } => service,
+            }) => service,
         }
     }
 
+    /// Returns the API for this action or "*" if this action is [Action::Any].
     #[inline]
-    pub fn action(&self) -> &str {
+    pub fn api(&self) -> &str {
         match self {
             Self::Any => "*",
-            Self::Specific {
-                action,
+            Self::Specific(SpecificActionDetails {
+                api,
                 ..
-            } => action,
+            }) => api,
         }
     }
 
-    pub fn matches(&self, service: &str, action: &str) -> bool {
+    /// Indicates whether this action matches the given service and action.
+    pub fn matches(&self, service: &str, api: &str) -> bool {
         match self {
             Self::Any => true,
-            Self::Specific {
+            Self::Specific(SpecificActionDetails {
                 service: self_service,
-                action: self_action,
-            } => {
+                api: self_api,
+            }) => {
                 if self_service == service {
-                    regex_from_glob(self_action).build().expect("Failed to build regex").is_match(action)
+                    regex_from_glob(self_api, false).is_match(api)
                 } else {
                     false
                 }
@@ -139,9 +167,9 @@ impl FromStr for Action {
         }
 
         let service = parts[0];
-        let action = parts[1];
+        let api = parts[1];
 
-        Action::new(service, action)
+        Action::new(service, api)
     }
 }
 
@@ -149,12 +177,14 @@ impl Display for Action {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
             Self::Any => f.write_str("*"),
-            Self::Specific {
-                service,
-                action,
-                ..
-            } => write!(f, "{}:{}", service, action),
+            Self::Specific(details) => Display::fmt(details, f),
         }
+    }
+}
+
+impl Display for SpecificActionDetails {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        write!(f, "{}:{}", self.service, self.api)
     }
 }
 
@@ -355,12 +385,12 @@ mod tests {
         );
 
         assert_eq!(Action::from_str("e_c-2:De-scribe_Instances").unwrap().service(), "e_c-2");
-        assert_eq!(Action::from_str("e_c-2:De-scribe_Instances").unwrap().action(), "De-scribe_Instances");
-        assert!(Action::from_str("e_c-2:De-scribe_Instances").unwrap().is_specific());
+        assert_eq!(Action::from_str("e_c-2:De-scribe_Instances").unwrap().api(), "De-scribe_Instances");
+        assert!(Action::from_str("e_c-2:De-scribe_Instances").unwrap().specific().is_some());
         assert!(!Action::from_str("e_c-2:De-scribe_Instances").unwrap().is_any());
         assert_eq!(Action::from_str("*").unwrap().service(), "*");
-        assert_eq!(Action::from_str("*").unwrap().action(), "*");
+        assert_eq!(Action::from_str("*").unwrap().api(), "*");
         assert!(Action::from_str("*").unwrap().is_any());
-        assert!(!Action::from_str("*").unwrap().is_specific());
+        assert!(Action::from_str("*").unwrap().specific().is_none());
     }
 }

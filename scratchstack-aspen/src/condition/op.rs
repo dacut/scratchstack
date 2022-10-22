@@ -9,9 +9,9 @@ use {
         numeric::{numeric_match, NumericCmp},
         string::{string_match, StringCmp},
         variant::Variant,
-        NULL,
     },
     crate::{serutil::StringLikeList, AspenError, Context, PolicyVersion},
+    scratchstack_aws_principal::SessionValue,
     serde::{de, de::Deserializer, ser::Serializer, Deserialize, Serialize},
     std::{
         borrow::Borrow,
@@ -21,75 +21,196 @@ use {
     },
 };
 
+/// An operator for a condition clause.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ConditionOp {
+    /// Operators for ARNs.
     Arn(ArnCmp, Variant),
+
+    /// Operators for binary values. Variant here is only allowed to be [Variant::None] or [Variant::IfExists].
     Binary(Variant),
+
+    /// Operators on boolean values. Variant here is only allowed to be [Variant::None] or [Variant::IfExists].
     Bool(Variant),
+
+    /// Operators for date/time values.
     Date(DateCmp, Variant),
+
+    /// Operators on IP addresses and networks.
     IpAddress(Variant),
+
+    /// Operator on the presence/absence of a value.
     Null,
+
+    /// Operators on numeric values.
     Numeric(NumericCmp, Variant),
+
+    /// Operators on string vaules.
     String(StringCmp, Variant),
 }
 
+/// The `ArnEquals` operator.
 pub const ArnEquals: ConditionOp = ConditionOp::Arn(ArnCmp::Equals, Variant::None);
+
+/// The `ArnEqualsIfExists` operator.
 pub const ArnEqualsIfExists: ConditionOp = ConditionOp::Arn(ArnCmp::Equals, Variant::IfExists);
+
+/// The `ArnNotEquals` operator.
 pub const ArnNotEquals: ConditionOp = ConditionOp::Arn(ArnCmp::Equals, Variant::Negated);
+
+/// The `ArnNotEqualsIfExists` operator.
 pub const ArnNotEqualsIfExists: ConditionOp = ConditionOp::Arn(ArnCmp::Equals, Variant::IfExistsNegated);
+
+/// The `ArnLike` operator.
 pub const ArnLike: ConditionOp = ConditionOp::Arn(ArnCmp::Like, Variant::None);
+
+/// The `ArnLikeIfExists` operator.
 pub const ArnLikeIfExists: ConditionOp = ConditionOp::Arn(ArnCmp::Like, Variant::IfExists);
+
+/// The `ArnNotLike` operator.
 pub const ArnNotLike: ConditionOp = ConditionOp::Arn(ArnCmp::Like, Variant::Negated);
+
+/// The `ArnNotLikeIfExists` operator.
 pub const ArnNotLikeIfExists: ConditionOp = ConditionOp::Arn(ArnCmp::Like, Variant::IfExistsNegated);
+
+/// The `BinaryEquals` operator.
 pub const BinaryEquals: ConditionOp = ConditionOp::Binary(Variant::None);
+
+/// The `BinaryEqualsIfExists` operator.
 pub const BinaryEqualsIfExists: ConditionOp = ConditionOp::Binary(Variant::IfExists);
+
+/// The `BinaryNotEquals` operator.
 pub const Bool: ConditionOp = ConditionOp::Bool(Variant::None);
+
+/// The `BoolIfExists` operator.
 pub const BoolIfExists: ConditionOp = ConditionOp::Bool(Variant::IfExists);
+
+/// The `DateEquals` operator.
 pub const DateEquals: ConditionOp = ConditionOp::Date(DateCmp::Equals, Variant::None);
+
+/// The `DateEqualsIfExists` operator.
 pub const DateEqualsIfExists: ConditionOp = ConditionOp::Date(DateCmp::Equals, Variant::IfExists);
+
+/// The `DateNotEquals` operator.
 pub const DateNotEquals: ConditionOp = ConditionOp::Date(DateCmp::Equals, Variant::Negated);
+
+/// The `DateNotEqualsIfExists` operator.
 pub const DateNotEqualsIfExists: ConditionOp = ConditionOp::Date(DateCmp::Equals, Variant::IfExistsNegated);
+
+/// The `DateLessThan` operator.
 pub const DateLessThan: ConditionOp = ConditionOp::Date(DateCmp::LessThan, Variant::None);
+
+/// The `DateLessThanIfExists` operator.
 pub const DateLessThanIfExists: ConditionOp = ConditionOp::Date(DateCmp::LessThan, Variant::IfExists);
+
+/// The `DateGreaterThanEquals` operator.
 pub const DateGreaterThanEquals: ConditionOp = ConditionOp::Date(DateCmp::LessThan, Variant::Negated);
+
+/// The `DateGreaterThanEqualsIfExists` operator.
 pub const DateGreaterThanEqualsIfExists: ConditionOp = ConditionOp::Date(DateCmp::LessThan, Variant::IfExistsNegated);
+
+/// The `DateLessThanEquals` operator.
 pub const DateLessThanEquals: ConditionOp = ConditionOp::Date(DateCmp::LessThanEquals, Variant::None);
+
+/// The `DateLessThanEqualsIfExists` operator.
 pub const DateLessThanEqualsIfExists: ConditionOp = ConditionOp::Date(DateCmp::LessThanEquals, Variant::IfExists);
+
+/// The `DateGreaterThan` operator.
 pub const DateGreaterThan: ConditionOp = ConditionOp::Date(DateCmp::LessThanEquals, Variant::Negated);
+
+/// The `DateGreaterThanIfExists` operator.
 pub const DateGreaterThanIfExists: ConditionOp = ConditionOp::Date(DateCmp::LessThanEquals, Variant::IfExistsNegated);
+
+/// The `IpAddress` operator.
 pub const IpAddress: ConditionOp = ConditionOp::IpAddress(Variant::None);
+
+/// The `IpAddressIfExists` operator.
 pub const IpAddressIfExists: ConditionOp = ConditionOp::IpAddress(Variant::IfExists);
+
+/// The `NotIpAddress` operator.
 pub const NotIpAddress: ConditionOp = ConditionOp::IpAddress(Variant::Negated);
+
+/// The `NotIpAddressIfExists` operator.
 pub const NotIpAddressIfExists: ConditionOp = ConditionOp::IpAddress(Variant::IfExistsNegated);
+
+/// The `Null` operator.
 pub const Null: ConditionOp = ConditionOp::Null;
+
+/// The `NumericEquals` operator.
 pub const NumericEquals: ConditionOp = ConditionOp::Numeric(NumericCmp::Equals, Variant::None);
+
+/// The `NumericEqualsIfExists` operator.
 pub const NumericEqualsIfExists: ConditionOp = ConditionOp::Numeric(NumericCmp::Equals, Variant::IfExists);
+
+/// The `NumericNotEquals` operator.
 pub const NumericNotEquals: ConditionOp = ConditionOp::Numeric(NumericCmp::Equals, Variant::Negated);
+
+/// The `NumericNotEqualsIfExists` operator.
 pub const NumericNotEqualsIfExists: ConditionOp = ConditionOp::Numeric(NumericCmp::Equals, Variant::IfExistsNegated);
+
+/// The `NumericLessThan` operator.
 pub const NumericLessThan: ConditionOp = ConditionOp::Numeric(NumericCmp::LessThan, Variant::None);
+
+/// The `NumericLessThanIfExists` operator.
 pub const NumericLessThanIfExists: ConditionOp = ConditionOp::Numeric(NumericCmp::LessThan, Variant::IfExists);
+
+/// The `NumericGreaterThanEquals` operator.
 pub const NumericGreaterThanEquals: ConditionOp = ConditionOp::Numeric(NumericCmp::LessThan, Variant::Negated);
+
+/// The `NumericGreaterThanEqualsIfExists` operator.
 pub const NumericGreaterThanEqualsIfExists: ConditionOp =
     ConditionOp::Numeric(NumericCmp::LessThan, Variant::IfExistsNegated);
+
+/// The `NumericLessThanEquals` operator.
 pub const NumericLessThanEquals: ConditionOp = ConditionOp::Numeric(NumericCmp::LessThanEquals, Variant::None);
+
+/// The `NumericLessThanEqualsIfExists` operator.
 pub const NumericLessThanEqualsIfExists: ConditionOp =
     ConditionOp::Numeric(NumericCmp::LessThanEquals, Variant::IfExists);
+
+/// The `NumericGreaterThan` operator.
 pub const NumericGreaterThan: ConditionOp = ConditionOp::Numeric(NumericCmp::LessThanEquals, Variant::Negated);
+
+/// The `NumericGreaterThanIfExists` operator.
 pub const NumericGreaterThanIfExists: ConditionOp =
     ConditionOp::Numeric(NumericCmp::LessThanEquals, Variant::IfExistsNegated);
+
+/// The `StringEquals` operator.
 pub const StringEquals: ConditionOp = ConditionOp::String(StringCmp::Equals, Variant::None);
+
+/// The `StringEqualsIfExists` operator.
 pub const StringEqualsIfExists: ConditionOp = ConditionOp::String(StringCmp::Equals, Variant::IfExists);
+
+/// The `StringNotEquals` operator.
 pub const StringNotEquals: ConditionOp = ConditionOp::String(StringCmp::Equals, Variant::Negated);
+
+/// The `StringNotEqualsIfExists` operator.
 pub const StringNotEqualsIfExists: ConditionOp = ConditionOp::String(StringCmp::Equals, Variant::IfExistsNegated);
+
+/// The `StringEqualsIgnoreCase` operator.
 pub const StringEqualsIgnoreCase: ConditionOp = ConditionOp::String(StringCmp::EqualsIgnoreCase, Variant::None);
+
+/// The `StringEqualsIgnoreCaseIfExists` operator.
 pub const StringEqualsIgnoreCaseIfExists: ConditionOp =
     ConditionOp::String(StringCmp::EqualsIgnoreCase, Variant::IfExists);
+
+/// The `StringNotEqualsIgnoreCase` operator.
 pub const StringNotEqualsIgnoreCase: ConditionOp = ConditionOp::String(StringCmp::EqualsIgnoreCase, Variant::Negated);
+
+/// The `StringNotEqualsIgnoreCaseIfExists` operator.
 pub const StringNotEqualsIgnoreCaseIfExists: ConditionOp =
     ConditionOp::String(StringCmp::EqualsIgnoreCase, Variant::IfExistsNegated);
+
+/// The `StringLike` operator.
 pub const StringLike: ConditionOp = ConditionOp::String(StringCmp::Like, Variant::None);
+
+/// The `StringLikeIfExists` operator.
 pub const StringLikeIfExists: ConditionOp = ConditionOp::String(StringCmp::Like, Variant::IfExists);
+
+/// The `StringNotLike` operator.
 pub const StringNotLike: ConditionOp = ConditionOp::String(StringCmp::Like, Variant::Negated);
+
+/// The `StringNotLikeIfExists` operator.
 pub const StringNotLikeIfExists: ConditionOp = ConditionOp::String(StringCmp::Like, Variant::IfExistsNegated);
 
 impl Borrow<str> for ConditionOp {
@@ -132,7 +253,17 @@ impl Serialize for ConditionOp {
     }
 }
 
+const NULL: SessionValue = SessionValue::Null;
+
 impl ConditionOp {
+    /// Indicates whether this condition operator matches the request [Context].
+    ///
+    /// Any variables in the condition are resolved according to the specified [PolicyVersion].
+    ///
+    /// # Errors
+    ///
+    /// If a condition clause contains a malformed variable reference and [PolicyVersion::V2012_10_17] or later is
+    /// used, [AspenError::InvalidSubstitution] is returned.
     pub fn matches(
         &self,
         condition: &BTreeMap<String, StringLikeList<String>>,

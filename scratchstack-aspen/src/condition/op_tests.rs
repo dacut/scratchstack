@@ -18,7 +18,7 @@ fn make_context(session_data: &SessionData) -> Context {
     let principal: Principal =
         vec![PrincipalIdentity::from(Service::new("example", None, "amazonaws.com").unwrap())].into();
     Context::builder()
-        .action("service:action")
+        .api("action")
         .actor(principal)
         .resources(vec![Arn::new("aws", "s3", "", "", "example").unwrap()])
         .session_data(session_data.clone())

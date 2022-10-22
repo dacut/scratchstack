@@ -1,24 +1,36 @@
 /// The variant on an operation.
+///
+/// The offsets used in the representation are used to index into the operation names.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum Variant {
+    /// No variation on the basic operation.
     None = 0,
+
+    /// IfExists variant.
     IfExists = 1,
+
+    /// Negated: Equals => NotEquals, LessThan => GreaterThanEquals, etc.
     Negated = 2,
+
+    /// IfExists and Negated.
     IfExistsNegated = 3,
 }
 
 impl Variant {
+    /// Return the index into the operation names for this variant.
     #[inline]
     pub(super) fn as_usize(self) -> usize {
         self as usize
     }
 
+    /// Indicates if this is [Variant::IfExists] or [Variant::IfExistsNegated].
     #[inline]
     pub(super) fn if_exists(self) -> bool {
         matches!(self, Self::IfExists | Self::IfExistsNegated)
     }
 
+    /// Indicates if this is [Variant::Negated] or [Variant::IfExistsNegated].
     #[inline]
     pub(super) fn negated(self) -> bool {
         matches!(self, Self::Negated | Self::IfExistsNegated)

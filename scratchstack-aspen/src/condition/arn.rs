@@ -59,11 +59,11 @@ pub(super) fn arn_match(
                             continue;
                         }
 
-                        let partition = regex_from_glob(parts[1]).build().unwrap();
-                        let service = regex_from_glob(parts[2]).build().unwrap();
-                        let region = regex_from_glob(parts[3]).build().unwrap();
-                        let account_id = regex_from_glob(parts[4]).build().unwrap();
-                        let resource = context.matcher(parts[5], pv)?.build().unwrap();
+                        let partition = regex_from_glob(parts[1], false);
+                        let service = regex_from_glob(parts[2], false);
+                        let region = regex_from_glob(parts[3], false);
+                        let account_id = regex_from_glob(parts[4], false);
+                        let resource = context.matcher(parts[5], pv, false)?;
 
                         trace!(
                             "partition={} service={} region={} account_id={} resource={}",

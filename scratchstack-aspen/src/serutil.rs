@@ -92,9 +92,9 @@ macro_rules! from_str_json {
     };
 }
 
-/// The kind of list we're storing.
+/// The JSON representation of a list-like type.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ListKind {
+pub enum JsonRep {
     Single,
     List,
 }
@@ -106,20 +106,23 @@ macro_rules! define_list_like_type {
 
         pub struct $list_like_type<E> {
             elements: ::std::vec::Vec<E>,
-            kind: $crate::serutil::ListKind,
+            kind: $crate::serutil::JsonRep,
         }
 
         impl<E> $list_like_type<E> {
+            /// Returns the JSON representation of the list.
             #[inline]
-            pub fn kind(&self) -> $crate::serutil::ListKind {
+            pub fn kind(&self) -> $crate::serutil::JsonRep {
                 self.kind
             }
 
+            /// Returns the elements of the list as a slice.
             #[inline]
             pub fn as_slice(&self) -> &[E] {
                 self.elements.as_slice()
             }
 
+            /// Returns the elements of the list as a vector of references.
             pub fn to_vec(&self) -> Vec<&E> {
                 let mut result = ::std::vec::Vec::with_capacity(self.elements.len());
                 for element in self.elements.iter() {
@@ -128,11 +131,13 @@ macro_rules! define_list_like_type {
                 result
             }
 
+            /// Returns `true` if the list is empty.
             #[inline]
             pub fn is_empty(&self) -> bool {
                 self.elements.is_empty()
             }
 
+            /// Returns the number of elements in the list.
             #[inline]
             pub fn len(&self) -> usize {
                 self.elements.len()
@@ -157,8 +162,8 @@ macro_rules! define_list_like_type {
         {
             fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
                 match self.kind {
-                    $crate::serutil::ListKind::Single => (&self.elements[0] as &dyn ::std::fmt::Debug).fmt(f),
-                    $crate::serutil::ListKind::List => (&self.elements as &dyn ::std::fmt::Debug).fmt(f),
+                    $crate::serutil::JsonRep::Single => (&self.elements[0] as &dyn ::std::fmt::Debug).fmt(f),
+                    $crate::serutil::JsonRep::List => (&self.elements as &dyn ::std::fmt::Debug).fmt(f),
                 }
             }
         }
@@ -178,7 +183,7 @@ macro_rules! define_list_like_type {
             fn from(v: E) -> Self {
                 Self {
                     elements: vec![v],
-                    kind: $crate::serutil::ListKind::Single,
+                    kind: $crate::serutil::JsonRep::Single,
                 }
             }
         }
@@ -187,7 +192,7 @@ macro_rules! define_list_like_type {
             fn from(v: ::std::vec::Vec<E>) -> Self {
                 Self {
                     elements: v,
-                    kind: $crate::serutil::ListKind::List,
+                    kind: $crate::serutil::JsonRep::List,
                 }
             }
         }
@@ -231,7 +236,7 @@ impl<'de, E: Deserialize<'de>> Visitor<'de> for MapListVisitor<E> {
         let el = E::deserialize(MapAccessDeserializer::new(access))?;
         Ok(MapList {
             elements: vec![el],
-            kind: ListKind::Single,
+            kind: JsonRep::Single,
         })
     }
 
@@ -247,7 +252,7 @@ impl<'de, E: Deserialize<'de>> Visitor<'de> for MapListVisitor<E> {
 
         Ok(MapList {
             elements: result,
-            kind: ListKind::List,
+            kind: JsonRep::List,
         })
     }
 }
@@ -285,8 +290,8 @@ impl<'de, E: Deserialize<'de>> Deserialize<'de> for MapList<E> {
 impl<E: Serialize> Serialize for MapList<E> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self.kind {
-            ListKind::Single => self.elements[0].serialize(serializer),
-            ListKind::List => {
+            JsonRep::Single => self.elements[0].serialize(serializer),
+            JsonRep::List => {
                 let mut seq = serializer.serialize_seq(Some(self.elements.len()))?;
                 for e in &self.elements {
                     seq.serialize_element(e)?;
@@ -328,7 +333,7 @@ where
                 }
                 Ok(StringLikeList {
                     elements: result,
-                    kind: ListKind::List,
+                    kind: JsonRep::List,
                 })
             }
             Err(e) => {
@@ -342,7 +347,7 @@ where
         match T::from_str(v) {
             Ok(s) => Ok(StringLikeList {
                 elements: vec![s],
-                kind: ListKind::Single,
+                kind: JsonRep::Single,
             }),
             Err(e) => Err(de::Error::custom(e)),
         }
@@ -389,11 +394,11 @@ where
 {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self.kind {
-            ListKind::Single => {
+            JsonRep::Single => {
                 let s = self.elements[0].to_string();
                 s.serialize(serializer)
             }
-            ListKind::List => {
+            JsonRep::List => {
                 let mut seq = Vec::with_capacity(self.elements.len());
                 for e in &self.elements {
                     let s = e.to_string();
@@ -408,7 +413,7 @@ where
 #[cfg(test)]
 mod tests {
     use {
-        super::{simple_type_name, ListKind, MapList},
+        super::{simple_type_name, JsonRep, MapList},
         crate::display_json,
         indoc::indoc,
         serde::{ser::Serializer, Deserialize, Serialize},
@@ -525,10 +530,10 @@ mod tests {
 
     #[test_log::test]
     fn test_list_kind() {
-        assert_eq!(ListKind::Single, ListKind::Single.clone());
-        assert_eq!(ListKind::List, ListKind::List.clone());
-        assert_ne!(ListKind::Single, ListKind::List);
-        assert_eq!(format!("{:?}", ListKind::Single), "Single");
-        assert_eq!(format!("{:?}", ListKind::List), "List");
+        assert_eq!(JsonRep::Single, JsonRep::Single.clone());
+        assert_eq!(JsonRep::List, JsonRep::List.clone());
+        assert_ne!(JsonRep::Single, JsonRep::List);
+        assert_eq!(format!("{:?}", JsonRep::Single), "Single");
+        assert_eq!(format!("{:?}", JsonRep::List), "List");
     }
 }

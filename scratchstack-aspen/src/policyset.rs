@@ -3,46 +3,103 @@ use crate::{AspenError, Context, Decision, Policy};
 /// The source of a policy.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum PolicySource {
+    /// An inline policy directly attached to an IAM entity (user, role).
     EntityInline {
+        /// The ARN of the entity.
         entity_arn: String,
+
+        /// The IAM ID of the entity.
         entity_id: String,
+
+        /// The name of the policy.
         policy_name: String,
     },
+
+    /// A managed policy that is attached to an IAM entity (user, role).
     EntityAttachedPolicy {
+        /// The ARN of the of the policy.
         policy_arn: String,
+
+        /// The IAM ID of the policy.
         policy_id: String,
+
+        /// The version of the policy used.
         version: String,
     },
+
+    /// An inline policy directly attached to an IAM group that an IAM user ia a member of.
     GroupInline {
+        /// The ARN of the IAM group.
         group_arn: String,
+
+        /// The IAM ID of the group.
         group_id: String,
+
+        /// The name of the policy.
         policy_name: String,
     },
+
+    /// A managed policy that is attached to an IAM group that an IAM user is a member of.
     GroupAttachedPolicy {
+        /// The ARN of the of IAM group.
         group_arn: String,
+
+        /// The IAM ID of the group.
         group_id: String,
+
+        /// The ARN of the of the policy.
         policy_arn: String,
+
+        /// The IAM ID of the policy.
         policy_id: String,
+
+        /// The version of the policy used.
         version: String,
     },
+
+    /// A policy attached to a resource being accessed.
     Resource {
+        /// The ARN of the resource being accessed.
         resource_arn: String,
+
+        /// The name of the policy, if any.
         policy_name: Option<String>,
     },
+
+    /// A permissions boundary attached to an IAM entity (user, role).
     PermissionBoundary {
+        /// The ARN of the the policy used as a permissions boundary.
         policy_arn: String,
+
+        /// The IAM ID of the policy used as a permissions boundary.
         policy_id: String,
+
+        /// The version of the policy used.
         version: String,
     },
+
+    /// An service control policy attached to an account or organizational unit.
     OrgServiceControl {
+        /// The ARN of the the policy used as a service control policy.
         policy_arn: String,
+
+        /// The name of the policy used as a service control policy.
         policy_name: String,
+
+        /// The ARN of the account or organizational unit that the policy is attached to.
         applied_arn: String,
     },
+
+    /// A policy embedded in an assumed role session.
     Session,
 }
 
 impl PolicySource {
+    /// Indicates whether the policy is being used permissions boundary.
+    ///
+    /// Permissions boundaries are used to limit the permissions in effect. Allow effects in a permissions boundary
+    /// do not grant permissions, but must be combined with an allow effect in a non-permissions boundary policy to
+    /// be effective. Absence of an allow effect in a permissions boundary is the same as a deny effect.
     #[inline]
     pub fn is_boundary(&self) -> bool {
         matches!(
@@ -51,6 +108,7 @@ impl PolicySource {
         )
     }
 
+    /// Create a new [PolicySource::EntityInline] object.
     pub fn new_entity_inline<S1, S2, S3>(entity_arn: S1, entity_id: S2, policy_name: S3) -> Self
     where
         S1: Into<String>,
@@ -64,6 +122,7 @@ impl PolicySource {
         }
     }
 
+    /// Create a new [PolicySource::EntityAttachedPolicy] object.
     pub fn new_entity_attached_policy<S1, S2, S3>(policy_arn: S1, policy_id: S2, version: S3) -> Self
     where
         S1: Into<String>,
@@ -77,6 +136,7 @@ impl PolicySource {
         }
     }
 
+    /// Create a new [PolicySource::GroupInline] object.
     pub fn new_group_inline<S1, S2, S3>(group_arn: S1, group_id: S2, policy_name: S3) -> Self
     where
         S1: Into<String>,
@@ -90,6 +150,7 @@ impl PolicySource {
         }
     }
 
+    /// Create a new [PolicySource::GroupAttachedPolicy] object.
     pub fn new_group_attached_policy<S1, S2, S3, S4, S5>(
         group_arn: S1,
         group_id: S2,
@@ -113,6 +174,7 @@ impl PolicySource {
         }
     }
 
+    /// Create a new [PolicySource::Resource] object.
     pub fn new_resource<S1, S2>(resource_arn: S1, policy_name: Option<S2>) -> Self
     where
         S1: Into<String>,
@@ -124,6 +186,7 @@ impl PolicySource {
         }
     }
 
+    /// Create a new [PolicySource::PermissionBoundary] object.
     pub fn new_permission_boundary<S1, S2, S3>(policy_arn: S1, policy_id: S2, version: S3) -> Self
     where
         S1: Into<String>,
@@ -137,6 +200,7 @@ impl PolicySource {
         }
     }
 
+    /// Create a new [PolicySource::OrgServiceControl] object.
     pub fn new_org_service_control<S1, S2, S3>(policy_arn: S1, policy_name: S2, applied_arn: S3) -> Self
     where
         S1: Into<String>,
@@ -150,27 +214,45 @@ impl PolicySource {
         }
     }
 
+    /// Create a new [PolicySource::Session] object.
     pub fn new_session() -> Self {
         Self::Session
     }
 }
 
+/// A set of policies being evaluated to determine the permissions in effect.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PolicySet {
     policies: Vec<(PolicySource, Policy)>,
 }
 
 impl PolicySet {
+    /// Create a new, empty policy set.
     pub fn new() -> Self {
         Self {
             policies: vec![],
         }
     }
 
+    /// Add a policy to the set from the given source.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scratchstack_aspen::{Policy, PolicySet, PolicySource};
+    /// # use std::str::FromStr;
+    /// let policy = Policy::from_str(r#"{"Statement": {"Effect": "Allow", "Action": "*", "Resource": "*"}}"#).unwrap();
+    /// let source = PolicySource::new_entity_inline("arn:aws:iam::123456789012:user/username", "AIDAEXAMPLEUSERID00", "PolicyName");
+    /// let mut policy_set = PolicySet::new();
+    /// policy_set.add_policy(source, policy);
+    ///
+    /// assert_eq!(policy_set.policies().len(), 1);
+    /// ```
     pub fn add_policy(&mut self, source: PolicySource, policy: Policy) {
         self.policies.push((source, policy));
     }
 
+    /// Return the policies in the policy set.
     pub fn policies(&self) -> &Vec<(PolicySource, Policy)> {
         &self.policies
     }
@@ -182,6 +264,9 @@ impl PolicySet {
         self.evaluate_core(context, false)
     }
 
+    /// Evaluate all policies in the policy set. If one or more denials are found, return a Deny and the relevant
+    /// sources. Otherwise, if one or more approvals are found, return Allow and the relevant sources. Otherwise,
+    /// return a DefaultDeny with no sources.
     pub fn evaluate_all<'a, 'b>(
         &'a self,
         context: &'b Context,
@@ -518,7 +603,7 @@ mod tests {
         let mut sd = SessionData::new();
         sd.insert("aws:username", SessionValue::from("MyUser"));
         let mut context_builder = Context::builder();
-        context_builder.action("DescribeSecurityGroups").actor(actor).session_data(sd).service("ec2");
+        context_builder.api("DescribeSecurityGroups").actor(actor).session_data(sd).service("ec2");
         let context = context_builder.build().unwrap();
         let (decision, sources) = ps.evaluate_all(&context).unwrap();
         assert_eq!(decision, Decision::Allow);
@@ -526,7 +611,7 @@ mod tests {
         assert_eq!(sources[0], &group_attached_policy_source);
         assert_eq!(ps.evaluate(&context).unwrap().0, Decision::Allow);
 
-        context_builder.action("RunInstances");
+        context_builder.api("RunInstances");
         let context = context_builder.build().unwrap();
         let (decision, sources) = ps.evaluate_all(&context).unwrap();
         assert_eq!(decision, Decision::Deny);
@@ -535,7 +620,7 @@ mod tests {
         assert_eq!(ps.evaluate(&context).unwrap().0, Decision::Deny);
 
         context_builder
-            .action("DescribeTable")
+            .api("DescribeTable")
             .service("dynamodb")
             .resources(vec![Arn::from_str("arn:aws:dynamodb:us-west-2:123456789012:table/MyTable").unwrap()]);
         let context = context_builder.build().unwrap();
@@ -546,7 +631,7 @@ mod tests {
 
         context_builder
             .service("iam")
-            .action("CreateUser")
+            .api("CreateUser")
             .resources(vec![Arn::from_str("arn:aws:iam::123456789012:user/MyUser").unwrap()]);
         let context = context_builder.build().unwrap();
         let (decision, sources) = ps.evaluate_all(&context).unwrap();
@@ -557,7 +642,7 @@ mod tests {
 
         context_builder
             .service("s3")
-            .action("DeleteBucket")
+            .api("DeleteBucket")
             .resources(vec![Arn::from_str("arn:aws:s3:::notmybucket").unwrap()]);
         let context = context_builder.build().unwrap();
         let (decision, sources) = ps.evaluate_all(&context).unwrap();

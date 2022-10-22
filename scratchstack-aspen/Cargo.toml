@@ -21,8 +21,8 @@ ipnet = "^2.5"
 lazy_static = "^1.4.0"
 log = "^0.4"
 regex = "^1.6"
-scratchstack-arn = "^0.4"
-scratchstack-aws-principal = "^0.4"
+scratchstack-arn = "^0.4.7"
+scratchstack-aws-principal = "^0.4.7"
 serde_json = "^1.0"
 
 [dependencies.serde]

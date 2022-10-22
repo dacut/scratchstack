@@ -18,18 +18,26 @@ use {
     std::fmt::{Formatter, Result as FmtResult},
 };
 
+/// A principal statement in an Aspen policy.
+///
+/// Principal enums are immutable.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Principal {
+    /// Any principal (wildcard: `*`)
     Any,
+
+    /// A set of principals specified by a source and a list of identifiers for that source.
     Specified(SpecifiedPrincipal),
 }
 
 impl Principal {
+    /// Indicates whether this [Principal] is [Principal::Any].
     #[inline]
     pub fn is_any(&self) -> bool {
         matches!(self, Principal::Any)
     }
 
+    /// If this [Principal] is [Principal::Specified], returns the [SpecifiedPrincipal]. Otherwise returns `None`.
     #[inline]
     pub fn specified(&self) -> Option<&SpecifiedPrincipal> {
         match self {
@@ -38,6 +46,7 @@ impl Principal {
         }
     }
 
+    /// Indicates whether this [Principal] matches an identity from the [PrincipalActor].
     pub fn matches(&self, actor: &PrincipalActor) -> bool {
         match self {
             Self::Any => true,

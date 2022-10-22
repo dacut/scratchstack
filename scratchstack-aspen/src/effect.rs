@@ -3,9 +3,13 @@ use {
     std::fmt::{Display, Formatter, Result as FmtResult},
 };
 
+/// Effect of an Aspen statement.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum Effect {
+    /// Allow the action.
     Allow,
+
+    /// Deny the action.
     Deny,
 }
 

@@ -11,20 +11,52 @@ use {
 
 pub use arn::ResourceArn;
 
+/// A list of resources. In JSON, this may be a string or an array of strings.
 pub type ResourceList = StringLikeList<Resource>;
 
+/// A resource in an Aspen policy.
+///
+/// Resource enums are immutable.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Resource {
+    /// Any resource. This is specified by the wildcard character `*`.
     Any,
+
+    /// A resource specified by an ARN.
     Arn(ResourceArn),
 }
 
 impl Resource {
+    /// If this is [Resource::Any], returns true.
     #[inline]
     pub fn is_any(&self) -> bool {
         matches!(self, Self::Any)
     }
 
+    /// Indicates whether this [Resource] matches the candidate [Arn], given the request [Context] ad using variable
+    /// substitution rules according to the specified [PolicyVersion].
+    /// # Example
+    /// ```
+    /// # use scratchstack_aspen::{Context, PolicyVersion, Resource, ResourceArn};
+    /// # use scratchstack_arn::Arn;
+    /// # use scratchstack_aws_principal::{Principal, User, SessionData, SessionValue};
+    /// # use std::str::FromStr;
+    /// let actor = Principal::from(vec![User::from_str("arn:aws:iam::123456789012:user/exampleuser").unwrap().into()]);
+    /// let s3_object_arn = Arn::from_str("arn:aws:s3:::examplebucket/exampleuser/my-object").unwrap();
+    /// let resources = vec![s3_object_arn.clone()];
+    /// let session_data = SessionData::from([("aws:username", SessionValue::from("exampleuser"))]);
+    /// let context = Context::builder()
+    ///     .service("s3").api("GetObject").actor(actor).resources(resources)
+    ///     .session_data(session_data).build().unwrap();
+    /// let r1 = Resource::Arn(ResourceArn::new("aws", "s3", "", "", "examplebucket/${aws:username}/*"));
+    /// let r2 = Resource::Any;
+    /// assert!(r1.matches(&context, PolicyVersion::V2012_10_17, &s3_object_arn).unwrap());
+    /// assert!(r2.matches(&context, PolicyVersion::V2012_10_17, &s3_object_arn).unwrap());
+    ///
+    /// let bad_s3_object_arn = Arn::from_str("arn:aws:s3:::examplebucket/other-user/object").unwrap();
+    /// assert!(!r1.matches(&context, PolicyVersion::V2012_10_17, &bad_s3_object_arn).unwrap());
+    /// assert!(r2.matches(&context, PolicyVersion::V2012_10_17, &bad_s3_object_arn).unwrap());
+    /// ```
     pub fn matches(&self, context: &Context, pv: PolicyVersion, candidate: &Arn) -> Result<bool, AspenError> {
         match self {
             Self::Any => Ok(true),
@@ -58,7 +90,7 @@ impl Display for Resource {
 #[cfg(test)]
 mod tests {
     use {
-        crate::{serutil::ListKind, Resource, ResourceArn, ResourceList},
+        crate::{serutil::JsonRep, Resource, ResourceArn, ResourceList},
         indoc::indoc,
         pretty_assertions::assert_eq,
         std::{panic::catch_unwind, str::FromStr},
@@ -67,7 +99,7 @@ mod tests {
     #[test_log::test]
     fn deserialize_resource_list_star() {
         let resource_list: ResourceList = serde_json::from_str("\"*\"").unwrap();
-        assert_eq!(resource_list.kind(), ListKind::Single);
+        assert_eq!(resource_list.kind(), JsonRep::Single);
         let v = resource_list.to_vec();
         assert_eq!(v, vec![&Resource::Any]);
         assert!(!v.is_empty());

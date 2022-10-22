@@ -85,6 +85,28 @@ impl ResourceArn {
         &self.arn[self.resource_start..]
     }
 
+    /// Indicates whether this [ResourceArn] matches the candidate [Arn], given the request [Context] ad using variable
+    /// substitution rules according to the specified [PolicyVersion].
+    ///
+    /// # Example
+    /// ```
+    /// # use scratchstack_aspen::{Context, PolicyVersion, Resource, ResourceArn};
+    /// # use scratchstack_arn::Arn;
+    /// # use scratchstack_aws_principal::{Principal, User, SessionData, SessionValue};
+    /// # use std::str::FromStr;
+    /// let actor = Principal::from(vec![User::from_str("arn:aws:iam::123456789012:user/exampleuser").unwrap().into()]);
+    /// let s3_object_arn = Arn::from_str("arn:aws:s3:::examplebucket/exampleuser/my-object").unwrap();
+    /// let resources = vec![s3_object_arn.clone()];
+    /// let session_data = SessionData::from([("aws:username", SessionValue::from("exampleuser"))]);
+    /// let context = Context::builder()
+    ///     .service("s3").api("GetObject").actor(actor).resources(resources)
+    ///     .session_data(session_data).build().unwrap();
+    /// let resource_arn = ResourceArn::new("aws", "s3", "", "", "examplebucket/${aws:username}/*");
+    /// assert!(resource_arn.matches(&context, PolicyVersion::V2012_10_17, &s3_object_arn).unwrap());
+    ///
+    /// let bad_s3_object_arn = Arn::from_str("arn:aws:s3:::examplebucket/other-user/object").unwrap();
+    /// assert!(!resource_arn.matches(&context, PolicyVersion::V2012_10_17, &bad_s3_object_arn).unwrap());
+    /// ```
     pub fn matches(&self, context: &Context, pv: PolicyVersion, candidate: &Arn) -> Result<bool, AspenError> {
         let partition_pattern = self.partition_pattern();
         let service_pattern = self.service_pattern();
@@ -92,11 +114,11 @@ impl ResourceArn {
         let account_id_pattern = self.account_id_pattern();
         let resource_pattern = self.resource_pattern();
 
-        let partition = regex_from_glob(partition_pattern).build().expect("Failed to build partition regex");
-        let service = regex_from_glob(service_pattern).build().expect("Failed to build service regex");
-        let region = regex_from_glob(region_pattern).build().expect("Failed to build region regex");
-        let account_id = regex_from_glob(account_id_pattern).build().unwrap();
-        let resource = context.matcher(resource_pattern, pv)?.build().unwrap();
+        let partition = regex_from_glob(partition_pattern, false);
+        let service = regex_from_glob(service_pattern, false);
+        let region = regex_from_glob(region_pattern, false);
+        let account_id = regex_from_glob(account_id_pattern, false);
+        let resource = context.matcher(resource_pattern, pv, false)?;
 
         let partition_match = partition.is_match(candidate.partition());
         let service_match = service.is_match(candidate.service());

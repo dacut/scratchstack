@@ -3,13 +3,25 @@ use std::{
     fmt::{Display, Formatter, Result as FmtResult},
 };
 
+/// The error type used to convey Aspen errors.
 #[derive(Debug, Eq, PartialEq)]
 pub enum AspenError {
+    /// An invalid action was specified in a policy. The string is the invalid action.
     InvalidAction(String),
+
+    /// An invalid condition operator was specified in a condition clause. The string contains the invalid operator.
     InvalidConditionOperator(String),
+
+    /// An invalid policy version was specified in a policy. The string contains the invalid version.
     InvalidPolicyVersion(String),
+
+    /// An invalid principal was specified ina policy. The string contains the invalid principal.
     InvalidPrincipal(String),
+
+    /// An invalid resource was specified in a policy. The string contains the invalid resource.
     InvalidResource(String),
+
+    /// An invalid variable substitution was specified in a policy. The string contains the invalid variable.
     InvalidSubstitution(String),
 }
 

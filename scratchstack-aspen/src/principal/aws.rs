@@ -14,14 +14,23 @@ lazy_static! {
     static ref AWS_ACCOUNT_ID: Regex = Regex::new(r"^\d{12}$").unwrap();
 }
 
+/// An AWS account principal clause in an Aspen policy.
+///
+/// AwsPrincipal enums are immutable.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AwsPrincipal {
-    Account(String),
+    /// Any entity in any AWS account.
     Any,
+
+    /// Any entity in the specified AWS account.
+    Account(String),
+
+    /// The entity specified by the given ARN.
     Arn(Arn),
 }
 
 impl AwsPrincipal {
+    /// Indicate whether this [AwsPrincipal] matches the given [PrincipalIdentity].
     pub fn matches(&self, identity: &PrincipalIdentity) -> bool {
         if identity.source() != PrincipalSource::Aws {
             return false;

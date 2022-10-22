@@ -1,63 +1,105 @@
 use {
     crate::{AspenError, PolicyVersion},
     derive_builder::Builder,
-    regex::RegexBuilder,
+    regex::{Regex, RegexBuilder},
     scratchstack_arn::Arn,
     scratchstack_aws_principal::{Principal, SessionData},
     std::fmt::{Display, Formatter, Result as FmtResult},
 };
 
+/// The request context used when evaluating an Aspen policy.
+///
+/// Context structures are immutable.
 #[derive(Builder, Clone, Debug, Eq, PartialEq)]
 pub struct Context {
+    /// The API being invoked.
     #[builder(setter(into))]
-    action: String,
+    api: String,
+
+    /// The [Principal] actor making the request.
     actor: Principal,
+
+    /// The resources associated with the request.
     #[builder(default)]
     resources: Vec<Arn>,
+
+    /// The session data associated with the request.
     session_data: SessionData,
 
+    /// The service being invoked.
     #[builder(setter(into))]
     service: String,
 }
 
 impl Context {
+    /// Returns a new [ContextBuilder] for building a [Context].
     pub fn builder() -> ContextBuilder {
         ContextBuilder::default()
     }
 
+    /// Returns the API being invoked.
     #[inline]
-    pub fn action(&self) -> &str {
-        &self.action
+    pub fn api(&self) -> &str {
+        &self.api
     }
 
+    /// Returns the [Principal] actor making the request.
     #[inline]
     pub fn actor(&self) -> &Principal {
         &self.actor
     }
 
+    /// Returns the resources associated with the request.
     #[inline]
     pub fn resources(&self) -> &Vec<Arn> {
         &self.resources
     }
 
+    /// Returrns the session data associated with the request.
     #[inline]
     pub fn session_data(&self) -> &SessionData {
         &self.session_data
     }
 
+    /// Returns the service being invoked.
     #[inline]
     pub fn service(&self) -> &str {
         &self.service
     }
 
-    pub fn matcher<T: AsRef<str>>(&self, s: T, pv: PolicyVersion) -> Result<RegexBuilder, AspenError> {
+    /// Creates a [Regex] from the given string pattern and policy version.
+    ///
+    /// If `case_insensitive` is `true`, the returned [Regex] will be case insensitive.
+    ///
+    /// Wildcards are converted to their regular expression equivalents. If the policy version is
+    /// [PolicyVersion::V2012_10_17] or later, variables are substituted and regex-escaped as necessary. The special
+    /// variables `${*}`, `${$}`, and `${?}` are converted to literal `*`, `$`, and `?` characters, respectively, then
+    /// regex-escaped.
+    ///
+    /// # Errors
+    ///
+    /// If the string contains a malformed variable reference and [PolicyVersion::V2012_10_17] or later is used,
+    /// [AspenError::InvalidSubstitution] is returned.
+    pub fn matcher<T: AsRef<str>>(&self, s: T, pv: PolicyVersion, case_insensitive: bool) -> Result<Regex, AspenError> {
         match pv {
-            PolicyVersion::None | PolicyVersion::V2008_10_17 => Ok(regex_from_glob(s.as_ref())),
-            PolicyVersion::V2012_10_17 => self.subst_vars(s.as_ref()),
+            PolicyVersion::None | PolicyVersion::V2008_10_17 => Ok(regex_from_glob(s.as_ref(), case_insensitive)),
+            PolicyVersion::V2012_10_17 => self.subst_vars(s.as_ref(), case_insensitive),
         }
     }
 
-    pub fn subst_vars(&self, s: &str) -> Result<RegexBuilder, AspenError> {
+    /// Creates a [Regex] from the given string pattern.
+    ///
+    /// If `case_insensitive` is `true`, the returned [Regex] will be case insensitive.
+    ///
+    /// Wildcards are converted to their regular expression equivalents. Variables are substituted and regex-escaped
+    /// as necessary. The special variables `${*}`, `${$}`, and `${?}` are converted to literal `*`, `$`, and `?`
+    /// characters, respectively, then regex-escaped.
+    ///
+    /// # Errors
+    ///
+    /// If the string contains a malformed variable reference and [PolicyVersion::V2012_10_17] or later is used,
+    /// [AspenError::InvalidSubstitution] is returned.
+    fn subst_vars(&self, s: &str, case_insensitive: bool) -> Result<Regex, AspenError> {
         let mut i = s.chars();
         let mut pattern = String::with_capacity(s.len() + 2);
 
@@ -100,9 +142,18 @@ impl Context {
         }
 
         pattern.push('$');
-        Ok(RegexBuilder::new(&pattern))
+        Ok(RegexBuilder::new(&pattern)
+            .case_insensitive(case_insensitive)
+            .build()
+            .expect("regex builds should not fail"))
     }
 
+    /// Substitutes variables from the given string, returning the resulting string.
+    ///
+    /// # Errors
+    ///
+    /// If the string contains a malformed variable reference and [PolicyVersion::V2012_10_17] or later is used,
+    /// [AspenError::InvalidSubstitution] is returned.
     pub fn subst_vars_plain(&self, s: &str) -> Result<String, AspenError> {
         let mut i = s.chars();
         let mut result = String::new();
@@ -144,7 +195,12 @@ impl Context {
     }
 }
 
-pub(crate) fn regex_from_glob(s: &str) -> RegexBuilder {
+/// Creates a [Regex] from the given string pattern.
+///
+/// If `case_insensitive` is `true`, the returned [Regex] will be case insensitive.
+///
+/// Wildcards are converted to their regular expression equivalents. Variables are _not_ substituted here.
+pub(crate) fn regex_from_glob(s: &str, case_insensitive: bool) -> Regex {
     let mut pattern = String::with_capacity(2 + s.len());
     pattern.push('^');
 
@@ -159,14 +215,19 @@ pub(crate) fn regex_from_glob(s: &str) -> RegexBuilder {
         }
     }
     pattern.push('$');
-    RegexBuilder::new(&pattern)
+    RegexBuilder::new(&pattern).case_insensitive(case_insensitive).build().expect("regex builds should not fail")
 }
 
 /// The outcome of a policy evaluation.
 #[derive(Debug, Eq, PartialEq)]
 pub enum Decision {
+    /// Allow the request if no other statements or policies deny it.
     Allow,
+
+    /// Deny the request unconditionally.
     Deny,
+
+    /// Deny the request if no other statements or policies allow it.
     DefaultDeny,
 }
 
@@ -196,7 +257,7 @@ mod test {
         let actor =
             Principal::from(vec![PrincipalIdentity::from(User::new("aws", "123456789012", "/", "user").unwrap())]);
         let c1 = Context::builder()
-            .action("RunInstances")
+            .api("RunInstances")
             .actor(actor)
             .session_data(SessionData::default())
             .service("ec2")

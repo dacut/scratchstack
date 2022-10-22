@@ -13,20 +13,28 @@ use {
     },
 };
 
-/// Policy versions.
+/// Aspen policy versions as represented in an Aspen policy document.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum PolicyVersion {
+    /// No policy version specified. Equivalent to [PolicyVersion::V2008_10_17], but is not serialized in the policy
+    /// document.
     None,
+
+    /// Aspen policy version 2008-10-17. This is the default version. It does not support policy variables.
     V2008_10_17,
+
+    /// Aspen policy version 2012-10-17. This version supports policy variables.
     V2012_10_17,
 }
 
 impl PolicyVersion {
+    /// Indicates if no policy version was specified.
     #[inline]
     pub fn is_none(&self) -> bool {
         matches!(self, Self::None)
     }
 
+    /// Indicates if a policy version was specified.
     #[inline]
     pub fn is_some(&self) -> bool {
         !self.is_none()
@@ -81,6 +89,8 @@ impl Serialize for PolicyVersion {
 ///
 /// This does not directly derive Deserialize/Serialize to prevent serde from allowing this to be represented as an
 /// array.
+///
+/// Policy structures are immutable after creation.
 #[derive(Builder, Clone, Debug, Eq, PartialEq)]
 pub struct Policy {
     /// The version of the policy. Currently allowed values are `2008-10-17` and `2012-10-17`. Features such as
@@ -101,24 +111,48 @@ pub struct Policy {
 
 impl Policy {
     #[inline]
+    /// Returns a builder for a [Policy].
     pub fn builder() -> PolicyBuilder {
         PolicyBuilder::default()
     }
 
+    /// Returns the policy version.
     pub fn version(&self) -> PolicyVersion {
         self.version
     }
 
+    /// Returns the user-specified identifier for the policy, or None if no identifier was specified.
     #[inline]
     pub fn id(&self) -> Option<&str> {
         self.id.as_deref()
     }
 
+    /// Returns the policy statements associated with the policy.
     #[inline]
     pub fn statement(&self) -> &StatementList {
         &self.statement
     }
 
+    /// Evaluates the policy against the request [Context].
+    ///
+    /// Returns [Decision::Deny] if the policy denies the request, [Decision::Allow] if the policy allows the request,
+    /// or [Decision::DefaultDeny] if the policy does not explicitly allow or deny the request.
+    ///
+    /// # Example
+    /// ```
+    /// # use scratchstack_aspen::{Action, Context, Decision, Effect, Policy, Resource, Statement, StatementList};
+    /// # use scratchstack_aws_principal::{Principal, SessionData, User};
+    /// # use std::str::FromStr;
+    /// let action = Action::from_str("s3:ListBucket").unwrap();
+    /// let resource = Resource::from_str("arn:aws:s3:::examplebucket").unwrap();
+    /// let statement = Statement::builder().effect(Effect::Allow).action(action).resource(resource).build().unwrap();
+    /// let policy = Policy::builder().statement(statement).build().unwrap();
+    ///
+    /// let actor = Principal::from(vec![User::from_str("arn:aws:iam::123456789012:user/exampleuser").unwrap().into()]);
+    /// let context = Context::builder().service("s3").api("ListBucket").actor(actor)
+    ///     .session_data(SessionData::new()).build().unwrap();
+    /// policy.evaluate(&context);
+    /// ```
     pub fn evaluate(&self, context: &Context) -> Result<Decision, crate::AspenError> {
         for statement in self.statement.iter() {
             match statement.evaluate(context, self.version()) {
@@ -207,15 +241,13 @@ impl Serialize for Policy {
 mod tests {
     use {
         crate::{
-            serutil::ListKind, Action, AspenError, AwsPrincipal, Context, Decision, Effect, Policy, PolicyBuilderError,
+            serutil::JsonRep, Action, AspenError, AwsPrincipal, Context, Decision, Effect, Policy, PolicyBuilderError,
             PolicyVersion, Principal, Resource, SpecifiedPrincipal, Statement,
         },
         indoc::indoc,
         pretty_assertions::{assert_eq, assert_ne},
         scratchstack_arn::Arn,
-        scratchstack_aws_principal::{
-            Principal as PrincipalActor, PrincipalIdentity, Service, SessionData, SessionValue, User,
-        },
+        scratchstack_aws_principal::{Principal as PrincipalActor, Service, SessionData, SessionValue, User},
         std::{
             collections::hash_map::DefaultHasher,
             hash::{Hash, Hasher},
@@ -275,33 +307,9 @@ mod tests {
         match &s.action() {
             None => panic!("Expected a list of actions"),
             Some(a_list) => {
-                assert_eq!(a_list.kind(), ListKind::List);
-                match &a_list[0] {
-                    Action::Specific {
-                        service,
-                        action,
-                        ..
-                    } => {
-                        assert_eq!(service, "ec2");
-                        assert_eq!(action, "Get*");
-                    }
-                    _ => {
-                        panic!("Expected a specific action");
-                    }
-                }
-                match &a_list[1] {
-                    Action::Specific {
-                        service,
-                        action,
-                        ..
-                    } => {
-                        assert_eq!(service, "ecs");
-                        assert_eq!(action, "*");
-                    }
-                    _ => {
-                        panic!("Expected a specific action");
-                    }
-                }
+                assert_eq!(a_list.kind(), JsonRep::List);
+                assert_eq!(a_list[0].specific(), Some(("ec2", "Get*")));
+                assert_eq!(a_list[1].specific(), Some(("ecs", "*")));
             }
         }
         assert!(s.condition().is_some());
@@ -331,13 +339,11 @@ mod tests {
         }"# };
 
         let policy = Policy::from_str(policy_str).unwrap();
-        let actor = PrincipalActor::from(vec![PrincipalIdentity::from(
-            User::new("aws", "123456789012", "/", "MyUser").unwrap(),
-        )]);
+        let actor = PrincipalActor::from(User::new("aws", "123456789012", "/", "MyUser").unwrap());
         let mut sd = SessionData::new();
         sd.insert("aws:username", SessionValue::from("MyUser"));
         let context = Context::builder()
-            .action("DescribeSecurityGroups")
+            .api("DescribeSecurityGroups")
             .actor(actor)
             .session_data(sd)
             .service("ec2")
@@ -1173,13 +1179,11 @@ mod tests {
         }
     "#})
         .unwrap();
-        let actor = PrincipalActor::from(vec![PrincipalIdentity::from(
-            User::new("aws", "123456789012", "/", "MyUser").unwrap(),
-        )]);
+        let actor = PrincipalActor::from(User::new("aws", "123456789012", "/", "MyUser").unwrap());
         let mut sd = SessionData::new();
         sd.insert("aws:username", SessionValue::from("MyUser"));
         let context = Context::builder()
-            .action("DescribeSecurityGroups")
+            .api("DescribeSecurityGroups")
             .actor(actor)
             .session_data(sd)
             .service("ec2")
@@ -1205,12 +1209,10 @@ mod tests {
             ]
         }"# })
         .unwrap();
-        let actor = PrincipalActor::from(vec![PrincipalIdentity::from(
-            User::new("aws", "123456789012", "/", "MyUser").unwrap(),
-        )]);
+        let actor = PrincipalActor::from(User::new("aws", "123456789012", "/", "MyUser").unwrap());
         let sd = SessionData::new();
         let context = Context::builder()
-            .action("DescribeSecurityGroups")
+            .api("DescribeSecurityGroups")
             .actor(actor.clone())
             .service("ec2")
             .session_data(sd.clone())
@@ -1218,7 +1220,7 @@ mod tests {
             .unwrap();
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::DefaultDeny);
         let context =
-            Context::builder().action("RunInstances").actor(actor).service("ec2").session_data(sd).build().unwrap();
+            Context::builder().api("RunInstances").actor(actor).service("ec2").session_data(sd).build().unwrap();
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::Allow);
     }
 
@@ -1243,20 +1245,18 @@ mod tests {
         .unwrap();
 
         let matching_instance =
-            Arn::new("aws", "ec2", "us-east-1", "123456789012", "instance/i-0123456789abcdef0").unwrap();
+            Arn::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0").unwrap();
         let matching_eni =
-            Arn::new("aws", "ec2", "us-east-1", "123456789012", "network-interface/eni-0123456789abcdef0").unwrap();
+            Arn::from_str("arn:aws:ec2:us-east-1:123456789012:network-interface/eni-0123456789abcdef0").unwrap();
         let nonmatching_instance =
-            Arn::new("aws", "ec2", "us-east-1", "123456789012", "instance/i-0223456789abcdef0").unwrap();
+            Arn::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-0223456789abcdef0").unwrap();
         let nonmatching_eni =
-            Arn::new("aws", "ec2", "us-east-1", "123456789012", "network-interface/eni-0223456789abcdef0").unwrap();
+            Arn::from_str("arn:aws:ec2:us-east-1:123456789012:network-interface/eni-0223456789abcdef0").unwrap();
 
-        let actor = PrincipalActor::from(vec![PrincipalIdentity::from(
-            User::new("aws", "123456789012", "/", "MyUser").unwrap(),
-        )]);
+        let actor = PrincipalActor::from(User::from_str("arn:aws:iam::123456789012:user/MyUser").unwrap());
         let sd = SessionData::new();
         let mut context_builder = Context::builder();
-        context_builder.action("TerminateInstances").actor(actor).service("ec2").session_data(sd);
+        context_builder.api("TerminateInstances").actor(actor).service("ec2").session_data(sd);
 
         context_builder.resources(vec![matching_instance.clone(), matching_eni.clone()]);
         let context = context_builder.build().unwrap();
@@ -1295,9 +1295,9 @@ mod tests {
         .unwrap();
 
         let matching_instance =
-            Arn::new("aws", "ec2", "us-east-1", "123456789012", "instance/i-0123456789abcdef0").unwrap();
+            Arn::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0").unwrap();
         let matching_eni =
-            Arn::new("aws", "ec2", "us-east-1", "123456789012", "network-interface/eni-0123456789abcdef0").unwrap();
+            Arn::from_str("arn:aws:ec2:us-east-1:123456789012:network-interface/eni-0123456789abcdef0").unwrap();
         context_builder.resources(vec![matching_instance, matching_eni]);
         let context = context_builder.build().unwrap();
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::DefaultDeny);
@@ -1389,17 +1389,14 @@ mod tests {
             }"#}
         );
 
-        let actor = PrincipalActor::from(vec![PrincipalIdentity::from(
-            User::new("aws", "123456789012", "/", "MyUser").unwrap(),
-        )]);
-        let instance = Arn::new("aws", "ec2", "us-east-1", "123456789012", "instance/i-0123456789abcdef0").unwrap();
-        let eni =
-            Arn::new("aws", "ec2", "us-east-1", "123456789012", "network-interface/eni-0123456789abcdef0").unwrap();
+        let actor = PrincipalActor::from(User::from_str("arn:aws:iam::123456789012:user/MyUser").unwrap());
+        let instance = Arn::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0").unwrap();
+        let eni = Arn::from_str("arn:aws:ec2:us-east-1:123456789012:network-interface/eni-0123456789abcdef0").unwrap();
 
         let sd = SessionData::new();
         let mut context_builder = Context::builder();
         context_builder
-            .action("TerminateInstances")
+            .api("TerminateInstances")
             .actor(actor.clone())
             .service("ec2")
             .session_data(sd)
@@ -1428,9 +1425,7 @@ mod tests {
         assert_eq!(format!("{}", aws[0]), "arn:aws:iam::123456789012:root");
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::Allow);
 
-        context_builder.actor(PrincipalActor::from(vec![PrincipalIdentity::from(
-            Service::new("ec2", None, "amazonaws.com").unwrap(),
-        )]));
+        context_builder.actor(PrincipalActor::from(Service::new("ec2", None, "amazonaws.com").unwrap()));
         let context = context_builder.build().unwrap();
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::DefaultDeny);
 
@@ -1451,9 +1446,7 @@ mod tests {
         let context = context_builder.build().unwrap();
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::DefaultDeny);
 
-        context_builder.actor(PrincipalActor::from(vec![PrincipalIdentity::from(
-            Service::new("ec2", None, "amazonaws.com").unwrap(),
-        )]));
+        context_builder.actor(PrincipalActor::from(Service::new("ec2", None, "amazonaws.com").unwrap()));
         let context = context_builder.build().unwrap();
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::Allow);
 
@@ -1472,9 +1465,7 @@ mod tests {
         let context = context_builder.build().unwrap();
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::Allow);
 
-        context_builder.actor(PrincipalActor::from(vec![PrincipalIdentity::from(
-            Service::new("ec2", None, "amazonaws.com").unwrap(),
-        )]));
+        context_builder.actor(PrincipalActor::from(Service::new("ec2", None, "amazonaws.com").unwrap()));
         let context = context_builder.build().unwrap();
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::Allow);
     }

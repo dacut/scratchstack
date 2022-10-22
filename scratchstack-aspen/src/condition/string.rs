@@ -49,7 +49,7 @@ pub(super) fn string_match(
                 StringCmp::Like => {
                     // Convert each entry to a glob pattern.
                     for el in allowed.iter() {
-                        let el = context.matcher(el, pv)?.build().unwrap();
+                        let el = context.matcher(el, pv, false)?;
                         let is_match = el.is_match(value);
                         log::trace!("regex={:?} value={:?} is_match={:?}", el, value, is_match);
                         // If it is a match and we're not negated, or it is not a match and we are negated, return true.

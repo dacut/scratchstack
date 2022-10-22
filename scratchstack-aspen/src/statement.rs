@@ -11,101 +11,149 @@ use {
     std::fmt::{Formatter, Result as FmtResult},
 };
 
+/// An Aspen policy statement.
+///
+/// Statement structs are immutable after creation. They can be created using the [StatementBuilder].
 #[derive(Builder, Clone, Debug, Eq, PartialEq, Serialize)]
 #[builder(build_fn(validate = "Self::validate"))]
 #[serde(deny_unknown_fields, rename_all = "PascalCase")]
 pub struct Statement {
+    /// The user-provided statement id.
     #[builder(setter(into, strip_option), default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     sid: Option<String>,
 
+    /// The effect of the statement (allow or deny).
     effect: Effect,
 
+    /// The list of actions this statement applies to. Exactly one of `action` or `not_action` must be set.
     #[builder(setter(into, strip_option), default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     action: Option<ActionList>,
 
+    /// The list of actions this statement does not apply to. Exactly one of `action` or `not_action` must be set.
     #[builder(setter(into, strip_option), default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     not_action: Option<ActionList>,
 
+    /// The list of resources this statement applies to. This cannot be combined with `not_resource`.
     #[builder(setter(into, strip_option), default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     resource: Option<ResourceList>,
 
+    /// The list of resources this statement does not apply to. This cannot be combined with `resource`.
     #[builder(setter(into, strip_option), default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     not_resource: Option<ResourceList>,
 
+    /// The list of principals this statement applies to. This cannot be combined with `not_principal`.
     #[builder(setter(into, strip_option), default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     principal: Option<Principal>,
 
+    /// The list of principals this statement does not apply to. This cannot be combined with `principal`.
     #[builder(setter(into, strip_option), default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     not_principal: Option<Principal>,
 
+    /// Conditions that must be met for this statement to apply.
     #[builder(setter(into, strip_option), default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     condition: Option<Condition>,
 }
 
 impl Statement {
+    /// Create a new [StatementBuilder] for building a [Statement].
     pub fn builder() -> StatementBuilder {
         StatementBuilder::default()
     }
 
+    /// Returns the user-provided statement id if provided, else `None`.
     #[inline]
     pub fn sid(&self) -> Option<&str> {
         self.sid.as_deref()
     }
 
+    /// Returns the effect of the statement (allow or deny).
     #[inline]
     pub fn effect(&self) -> &Effect {
         &self.effect
     }
 
+    /// Returns the list of actions this statement applies to if provided, else `None`.
     #[inline]
     pub fn action(&self) -> Option<&ActionList> {
         self.action.as_ref()
     }
 
+    /// Returns the list of actions this statement does not apply to if provided, else `None`.
     #[inline]
     pub fn not_action(&self) -> Option<&ActionList> {
         self.not_action.as_ref()
     }
 
+    /// Returns the list of resources this statement applies to if provided, else `None`.
     #[inline]
     pub fn resource(&self) -> Option<&ResourceList> {
         self.resource.as_ref()
     }
 
+    /// Returns the list of resources this statement does not apply to if provided, else `None`.
     #[inline]
     pub fn not_resource(&self) -> Option<&ResourceList> {
         self.not_resource.as_ref()
     }
 
+    /// Returns the list of principals this statement applies to if provided, else `None`.
     #[inline]
     pub fn principal(&self) -> Option<&Principal> {
         self.principal.as_ref()
     }
 
+    /// Returns the list of principals this statement does not apply to if provided, else `None`.
     #[inline]
     pub fn not_principal(&self) -> Option<&Principal> {
         self.not_principal.as_ref()
     }
 
+    /// Returns the conditions that must be met for this statement to apply if provided, else `None`.
     #[inline]
     pub fn condition(&self) -> Option<&Condition> {
         self.condition.as_ref()
     }
 
+    /// Evaluate this statement against the specified request [Context], using the [PolicyVersion] to perform
+    /// variable substitution.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scratchstack_aspen::{Action, Context, Decision, Effect, PolicyVersion, Resource, Statement};
+    /// # use scratchstack_arn::Arn;
+    /// # use scratchstack_aws_principal::{Principal, User, SessionData, SessionValue};
+    /// # use std::str::FromStr;
+    /// let actor = Principal::from(vec![User::from_str("arn:aws:iam::123456789012:user/exampleuser").unwrap().into()]);
+    /// let s3_object_arn = Arn::from_str("arn:aws:s3:::examplebucket/exampleuser/my-object").unwrap();
+    /// let resources = vec![s3_object_arn.clone()];
+    /// let session_data = SessionData::from([("aws:username", SessionValue::from("exampleuser"))]);
+    /// let context = Context::builder()
+    ///     .service("s3").api("GetObject").actor(actor.clone()).resources(resources.clone())
+    ///     .session_data(session_data.clone()).build().unwrap();
+    /// let statement = Statement::builder().effect(Effect::Allow).action(vec![Action::new("s3", "Get*").unwrap()])
+    ///     .resource(Resource::Any).build().unwrap();
+    /// assert_eq!(statement.evaluate(&context, PolicyVersion::V2012_10_17).unwrap(), Decision::Allow);
+    ///
+    /// let context = Context::builder()
+    ///     .service("s3").api("PutObject").actor(actor).resources(resources)
+    ///     .session_data(session_data).build().unwrap();
+    /// assert_eq!(statement.evaluate(&context, PolicyVersion::V2012_10_17).unwrap(), Decision::DefaultDeny);
+    /// ```
     pub fn evaluate(&self, context: &Context, pv: PolicyVersion) -> Result<Decision, AspenError> {
         // Does the action match the context?
         if let Some(actions) = self.action() {
             let mut matched = false;
             for action in actions.iter() {
-                if action.matches(context.service(), context.action()) {
+                if action.matches(context.service(), context.api()) {
                     matched = true;
                     break;
                 }
@@ -117,7 +165,7 @@ impl Statement {
         } else if let Some(actions) = self.not_action() {
             let mut matched = false;
             for action in actions.iter() {
-                if action.matches(context.service(), context.action()) {
+                if action.matches(context.service(), context.api()) {
                     matched = true;
                     break;
                 }
@@ -370,6 +418,7 @@ impl StatementBuilder {
     }
 }
 
+/// A list of statements. In JSON, this may be an object or an array of objects.
 pub type StatementList = MapList<Statement>;
 
 #[cfg(test)]
@@ -499,13 +548,8 @@ mod tests {
             User::new("aws", "123456789012", "/", "MyUser").unwrap(),
         )]);
         let sd = SessionData::new();
-        let context = Context::builder()
-            .action("DescribeInstances")
-            .actor(actor)
-            .service("ec2")
-            .session_data(sd)
-            .build()
-            .unwrap();
+        let context =
+            Context::builder().api("DescribeInstances").actor(actor).service("ec2").session_data(sd).build().unwrap();
 
         assert_eq!(s.evaluate(&context, PolicyVersion::None).unwrap(), Decision::Allow);
 
