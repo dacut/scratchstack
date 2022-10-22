@@ -10,6 +10,7 @@ use {
     tokio_rustls::{server::TlsStream, Accept, TlsAcceptor},
 };
 
+/// A wrapper around a [TcpListener] and a [TlsAcceptor] that accepts TLS connections for Hyper.
 pub struct TlsIncoming {
     listener: TcpListener,
     acceptor: TlsAcceptor,
@@ -17,6 +18,7 @@ pub struct TlsIncoming {
 }
 
 impl TlsIncoming {
+    /// Create a new [TlsIncoming] from a [TcpListener] and a [TlsAcceptor].
     pub fn new(listener: TcpListener, acceptor: TlsAcceptor) -> TlsIncoming {
         TlsIncoming {
             listener,
@@ -30,11 +32,9 @@ impl HyperAccept for TlsIncoming {
     type Conn = TlsStream<TcpStream>;
     type Error = io::Error;
 
-    /// Attempts to poll `TcpStream` by polling inner `TcpListener` to accept
-    /// connection.
+    /// Attempts to poll `TcpStream` by polling inner `TcpListener` to accept a connection.
     ///
-    /// If `TcpListener` isn't ready yet, `Poll::Pending` is returned and
-    /// current task will be notified by a waker.
+    /// If `TcpListener` isn't ready yet, `Poll::Pending` is returned and current task will be notified by a waker.
     fn poll_accept(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<io::Result<TlsStream<TcpStream>>>> {
         if self.tls_stream_accept.is_none() {
             // Need to poll the TCP listener

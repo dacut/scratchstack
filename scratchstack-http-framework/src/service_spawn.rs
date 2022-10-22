@@ -16,6 +16,10 @@ use {
     tower::BoxError,
 };
 
+/// A Hyper service spawner that wraps a SigV4 signing key provider ([`GetSigningKeyRequest`] ->
+/// [`GetSigningKeyResponse`]), an HTTP request handler ([`Request<Body>`] -> [`Response<Body>`]) for handling
+/// requests that pass authentication, and an error mapper ([`ErrorMapper`]) for converting authentication errors into
+/// HTTP responses.
 #[derive(Builder, Clone, Debug)]
 pub struct SpawnService<G, S, E>
 where
@@ -25,30 +29,36 @@ where
     S::Future: Send,
     E: ErrorMapper,
 {
+    /// The region this service is operating in.
     #[builder(setter(into))]
     region: String,
 
+    /// The name of this service.
     #[builder(setter(into))]
     service: String,
 
+    /// The allowed HTTP request methods.
     #[builder(default)]
     allowed_request_methods: Vec<Method>,
 
+    /// The allowed HTTP content types.
     #[builder(default)]
     allowed_content_types: Vec<String>,
 
+    /// The HTTP headers that must be signed in the SigV4 signature.
     #[builder(default)]
     signed_header_requirements: SignedHeaderRequirements,
 
-    #[builder(setter(into))]
+    /// The signing key provider.
     get_signing_key: G,
 
-    #[builder(setter(into))]
+    /// The service implementation.
     implementation: S,
 
-    #[builder(setter(into))]
+    /// The mapper for converting authentication errors into HTTP responses.
     error_mapper: E,
 
+    /// Options for the signature verification process.
     #[builder(default)]
     signature_options: SignatureOptions,
 }
@@ -61,6 +71,8 @@ where
     S::Future: Send,
     E: ErrorMapper,
 {
+    /// Create a new [SpawnServiceBuilder] for constructing a [SpawnService].
+    #[inline]
     pub fn builder() -> SpawnServiceBuilder<G, S, E> {
         SpawnServiceBuilder::default()
     }

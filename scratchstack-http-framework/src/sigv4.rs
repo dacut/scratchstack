@@ -5,7 +5,7 @@ use {
     derive_builder::Builder,
     http::method::Method,
     hyper::{body::Body, Request, Response},
-    log::{trace, info},
+    log::{info, trace},
     scratchstack_aws_signature::{
         canonical::get_content_type_and_charset, sigv4_validate_request, GetSigningKeyRequest, GetSigningKeyResponse,
         SignatureError, SignatureOptions, SignedHeaderRequirements,
@@ -33,25 +33,36 @@ where
     S::Future: Send,
     E: ErrorMapper,
 {
+    /// The region this service is operating in.
     #[builder(setter(into))]
     region: String,
 
+    /// The name of this service.
     #[builder(setter(into))]
     service: String,
 
+    /// The allowed HTTP request methods.
     #[builder(default)]
     allowed_request_methods: Vec<Method>,
 
+    /// The allowed HTTP content types.
     #[builder(default)]
     allowed_content_types: Vec<String>,
 
+    /// The HTTP headers that must be signed in the SigV4 signature.
     #[builder(default)]
     signed_header_requirements: SignedHeaderRequirements,
 
+    /// The signing key provider.
     get_signing_key: G,
+
+    /// The service implementation.
     implementation: S,
+
+    /// The mapper for converting authentication errors into HTTP responses.
     error_mapper: E,
 
+    /// Options for the signature verification process.
     #[builder(default)]
     signature_options: SignatureOptions,
 }
@@ -64,50 +75,61 @@ where
     S::Future: Send,
     E: ErrorMapper,
 {
+    /// Create a new [AwsSigV4VerifierServiceBuilder] for constructing a [AwsSigV4VerifierService].
+    #[inline]
     pub fn builder() -> AwsSigV4VerifierServiceBuilder<G, S, E> {
         AwsSigV4VerifierServiceBuilder::default()
     }
 
+    /// Retreive the region this service is operating in.
     #[inline]
     pub fn region(&self) -> &str {
         &self.region
     }
 
+    /// Retreive the name of this service.
     #[inline]
     pub fn service(&self) -> &str {
         &self.service
     }
 
+    /// Retreive the allowed HTTP request methods.
     #[inline]
     pub fn allowed_request_methods(&self) -> &Vec<Method> {
         &self.allowed_request_methods
     }
 
+    /// Retreive the allowed HTTP content types.
     #[inline]
     pub fn allowed_content_types(&self) -> &Vec<String> {
         &self.allowed_content_types
     }
 
+    /// Retreive the HTTP headers that must be signed in the SigV4 signature.
     #[inline]
     pub fn signed_header_requirements(&self) -> &SignedHeaderRequirements {
         &self.signed_header_requirements
     }
 
+    /// Retreive the signing key provider.
     #[inline]
     pub fn get_signing_key(&self) -> &G {
         &self.get_signing_key
     }
 
+    /// Retreive the service implementation.
     #[inline]
     pub fn implementation(&self) -> &S {
         &self.implementation
     }
 
+    /// Retreive the mapper for converting authentication errors into HTTP responses.
     #[inline]
     pub fn error_mapper(&self) -> &E {
         &self.error_mapper
     }
 
+    /// Retreive the options for the signature verification process.
     #[inline]
     pub fn signature_options(&self) -> &SignatureOptions {
         &self.signature_options
@@ -246,10 +268,10 @@ where
             .await;
 
             match result {
-                Ok((mut parts, body, principal, session_data)) => {
+                Ok((mut parts, body, response)) => {
                     let body = Body::from(body);
-                    parts.extensions.insert(principal);
-                    parts.extensions.insert(session_data);
+                    parts.extensions.insert(response.principal().clone());
+                    parts.extensions.insert(response.session_data().clone());
                     let req = Request::from_parts(parts, body);
                     implementation.oneshot(req).await.map_err(Into::into)
                 }
@@ -259,17 +281,24 @@ where
     }
 }
 
+/// A trait for mapping authentication errors to HTTP responses.
+///
+/// Ideally, this would be a Tower service (`Request=BoxError`, `Response=Response<Body>`), but the Rust compiler
+/// currently [has issues with this](https://twitter.com/kangadac/status/1575739314667139075).
 #[async_trait]
 pub trait ErrorMapper: Clone + Send + 'static {
+    /// Attempt to map the error to an HTTP response.
     async fn map_error(self, error: BoxError, request_id: Option<RequestId>) -> Result<Response<Body>, BoxError>;
 }
 
+/// An implementation of [ErrorMapper] that returns an XML body.
 #[derive(Clone)]
 pub struct XmlErrorMapper {
     namespace: String,
 }
 
 impl XmlErrorMapper {
+    /// Create a new [XmlErrorMapper] using the specified XML namespace as the response root element namespace.
     pub fn new(namespace: &str) -> Self {
         XmlErrorMapper {
             namespace: namespace.to_string(),
@@ -365,7 +394,7 @@ mod tests {
         rusoto_core::{DispatchSignedRequest, HttpClient, Region},
         rusoto_credential::AwsCredentials,
         rusoto_signature::SignedRequest,
-        scratchstack_aws_principal::{Principal, SessionData, User},
+        scratchstack_aws_principal::{Principal, User},
         scratchstack_aws_signature::{
             service_for_signing_key_fn, GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, SignatureError,
         },
@@ -408,43 +437,42 @@ mod tests {
             SocketAddr::V4(sa) => sa.port(),
         };
         info!("Server listening on port {}", port);
-        let mut connector = HttpConnector::new_with_resolver(GaiResolver::new());
-        connector.set_connect_timeout(Some(Duration::from_millis(10)));
-        let client = HttpClient::<HttpConnector<GaiResolver>>::from_connector(connector);
-        match server
-            .with_graceful_shutdown(async {
-                let region = Region::Custom {
-                    name: "local".to_owned(),
-                    endpoint: format!("http://[::1]:{}", port),
-                };
-                let mut sr = SignedRequest::new("GET", "service", &region, "/");
-
-                sr.sign(&AwsCredentials::new(TEST_ACCESS_KEY, TEST_SECRET_KEY, None, None));
-                match client.dispatch(sr, Some(Duration::from_millis(100))).await {
-                    Ok(r) => {
-                        eprintln!("Response from server: {:?}", r.status);
-
-                        let mut body = r.body;
-                        while let Some(b_result) = body.next().await {
-                            match b_result {
-                                Ok(bytes) => eprint!("{:?}", bytes),
-                                Err(e) => {
-                                    eprintln!("Error while ready body: {:?}", e);
-                                    break;
-                                }
-                            }
-                        }
-                        eprintln!();
-                        assert_eq!(r.status, StatusCode::OK);
-                    }
-                    Err(e) => panic!("Error from server: {:?}", e),
-                };
-            })
-            .await
-        {
+        match server.with_graceful_shutdown(test_fn_wrapper_client(port)).await {
             Ok(()) => println!("Server shutdown normally"),
             Err(e) => panic!("Server shutdown with error {:?}", e),
         }
+    }
+
+    async fn test_fn_wrapper_client(port: u16) {
+        let mut connector = HttpConnector::new_with_resolver(GaiResolver::new());
+        connector.set_connect_timeout(Some(Duration::from_millis(10)));
+        let client = HttpClient::<HttpConnector<GaiResolver>>::from_connector(connector);
+        let region = Region::Custom {
+            name: "local".to_owned(),
+            endpoint: format!("http://[::1]:{}", port),
+        };
+        let mut sr = SignedRequest::new("GET", "service", &region, "/");
+
+        sr.sign(&AwsCredentials::new(TEST_ACCESS_KEY, TEST_SECRET_KEY, None, None));
+        match client.dispatch(sr, Some(Duration::from_millis(100))).await {
+            Ok(r) => {
+                eprintln!("Response from server: {:?}", r.status);
+
+                let mut body = r.body;
+                while let Some(b_result) = body.next().await {
+                    match b_result {
+                        Ok(bytes) => eprint!("{:?}", bytes),
+                        Err(e) => {
+                            eprintln!("Error while ready body: {:?}", e);
+                            break;
+                        }
+                    }
+                }
+                eprintln!();
+                assert_eq!(r.status, StatusCode::OK);
+            }
+            Err(e) => panic!("Error from server: {:?}", e),
+        };
     }
 
     #[test_log::test(tokio::test)]
@@ -541,8 +569,7 @@ mod tests {
                         assert_eq!(r.status, 403);
                         let body_str = String::from_utf8(body).unwrap();
                         // Remove the RequestId from the body.
-                        let body_str = Regex::new("<RequestId>[-0-9a-f]+</RequestId>").unwrap().replace_all(&body_str, "");
-                        
+                        let body_str = Regex::new("<RequestId>[-0-9a-f]+</RequestId>").unwrap().replace_all(&body_str, "");                        
                         assert_eq!(&body_str, r#"<ErrorResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><Error><Type>Sender</Type><Code>SignatureDoesNotMatch</Code><Message>The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.</Message></Error></ErrorResponse>"#);
                     }
                     Err(e) => panic!("Error from server: {:?}", e),
@@ -589,16 +616,13 @@ mod tests {
     }
 
     async fn get_creds_fn(request: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, BoxError> {
-        if request.access_key == TEST_ACCESS_KEY {
+        if request.access_key() == TEST_ACCESS_KEY {
             let k_secret = KSecretKey::from_str(TEST_SECRET_KEY);
-            let k_signing =
-                k_secret.to_ksigning(request.request_date, request.region.as_str(), request.service.as_str());
+            let k_signing = k_secret.to_ksigning(request.request_date(), request.region(), request.service());
             let principal = Principal::from(vec![User::new("aws", "123456789012", "/", "test").unwrap().into()]);
-            Ok(GetSigningKeyResponse {
-                principal,
-                session_data: SessionData::default(),
-                signing_key: k_signing,
-            })
+            let response =
+                GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build().unwrap();
+            Ok(response)
         } else {
             Err(Box::new(SignatureError::InvalidClientTokenId(
                 "The AWS access key provided does not exist in our records".to_string(),
@@ -640,8 +664,8 @@ mod tests {
 
     impl GetDummyCreds {
         async fn get_signing_key(req: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, BoxError> {
-            if let Some(ref token) = req.session_token {
-                match token.as_str() {
+            if let Some(token) = req.session_token() {
+                match token {
                     "invalid" => {
                         return Err(Box::new(SignatureError::InvalidClientTokenId(
                             "The security token included in the request is invalid".to_string(),
@@ -656,15 +680,13 @@ mod tests {
                 }
             }
 
-            if req.access_key == TEST_ACCESS_KEY {
+            if req.access_key() == TEST_ACCESS_KEY {
                 let k_secret = KSecretKey::from_str(TEST_SECRET_KEY);
-                let signing_key = k_secret.to_ksigning(req.request_date, req.region.as_str(), req.service.as_str());
+                let signing_key = k_secret.to_ksigning(req.request_date(), req.region(), req.service());
                 let principal = Principal::from(vec![User::new("aws", "123456789012", "/", "test").unwrap().into()]);
-                Ok(GetSigningKeyResponse {
-                    principal,
-                    session_data: SessionData::default(),
-                    signing_key,
-                })
+                let response =
+                    GetSigningKeyResponse::builder().principal(principal).signing_key(signing_key).build().unwrap();
+                Ok(response)
             } else {
                 Err(SignatureError::InvalidClientTokenId(
                     "The AWS access key provided does not exist in our records".to_string(),

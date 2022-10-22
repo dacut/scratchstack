@@ -21,6 +21,9 @@ use {
 
 const MSG_ACCESS_KEY_PROVIDED_DOES_NOT_EXIST: &str = "The AWS access key provided does not exist in our records.";
 
+/// A service that provides a signing key for a given access key ID.
+///
+/// This requires a database connection pool to be passed in.
 pub struct GetSigningKeyFromDatabase {
     pool: Arc<Pool<Any>>,
     partition: String,
@@ -40,6 +43,7 @@ impl Clone for GetSigningKeyFromDatabase {
 }
 
 impl GetSigningKeyFromDatabase {
+    /// Create a new [GetSigningKeyFromDatabase] service.
     pub fn new(pool: Arc<Pool<Any>>, partition: &str, region: &str, service: &str) -> Self {
         Self {
             pool,
@@ -69,8 +73,10 @@ impl Service<GetSigningKeyRequest> for GetSigningKeyFromDatabase {
         let partition = self.partition.clone();
 
         Box::pin(async move {
+            let access_key = req.access_key();
+
             // Access keys are 20 characters (at least) in length.
-            if req.access_key.len() < 20 {
+            if access_key.len() < 20 {
                 return Err(
                     SignatureError::InvalidClientTokenId(MSG_ACCESS_KEY_PROVIDED_DOES_NOT_EXIST.to_string()).into()
                 );
@@ -79,7 +85,7 @@ impl Service<GetSigningKeyRequest> for GetSigningKeyFromDatabase {
             let mut db = pool.begin().await?;
 
             // The prefix tells us what kind of key it is.
-            let access_prefix = &req.access_key[..4];
+            let access_prefix = &access_key[..4];
             match access_prefix {
                 "AKIA" => {
                     let mut binder = Binder::new(db.kind());
@@ -99,7 +105,7 @@ impl Service<GetSigningKeyRequest> for GetSigningKeyFromDatabase {
                         String,
                         String,
                         String,
-                    ) = match query_as(&sql).bind(&req.access_key).fetch_one(&mut db).await {
+                    ) = match query_as(&sql).bind(req.access_key()).fetch_one(&mut db).await {
                         Ok(row) => row,
                         Err(e) => {
                             return Err(match e {
@@ -126,17 +132,19 @@ impl Service<GetSigningKeyRequest> for GetSigningKeyFromDatabase {
                     // FIXME: add aws:PrincipalOrgID
                     // FIXME: add aws:PrincipalOrgPath
                     // FIXME: add aws:PrincipalTag
-                    session_data.insert("aws:RequestedRegion", SessionValue::String(req.region.to_string()));
+                    session_data.insert("aws:RequestedRegion", SessionValue::String(req.region().to_string()));
                     session_data.insert("aws:ViaAWSService", SessionValue::Bool(false));
 
                     let secret_key = KSecretKey::from_str(&secret_key_str);
-                    let signing_key = secret_key.to_ksigning(req.request_date, &req.region, &req.service);
+                    let signing_key = secret_key.to_ksigning(req.request_date(), req.region(), req.service());
+                    let response = GetSigningKeyResponse::builder()
+                        .principal(principal)
+                        .session_data(session_data)
+                        .signing_key(signing_key)
+                        .build()
+                        .unwrap();
 
-                    Ok(GetSigningKeyResponse {
-                        principal,
-                        session_data,
-                        signing_key,
-                    })
+                    Ok(response)
                 }
 
                 _ => {
@@ -147,6 +155,10 @@ impl Service<GetSigningKeyRequest> for GetSigningKeyFromDatabase {
     }
 }
 
+/// Utility structure for binding SQL parameters to a query according to the database type.
+///
+/// For PostgresSQL, this uses the `$1` syntax. For MySQL, this uses the `@p1` syntax. For all other databases,
+/// this uses the `?` syntax.
 pub struct Binder {
     pub(crate) kind: AnyKind,
     pub(crate) next_id: usize,
