@@ -33,6 +33,17 @@ impl Service {
     ///
     /// If all of the requirements are met, a [Service] object is returned.  Otherwise, a [PrincipalError] error is
     /// returned.
+    ///
+    /// # Example
+    /// ```
+    /// # use scratchstack_aws_principal::Service;
+    /// let service = Service::new("s3", Some("us-east-1".to_string()), "amazonaws.com").unwrap();
+    /// assert_eq!(service.service_name(), "s3");
+    /// assert_eq!(service.region(), Some("us-east-1"));
+    /// assert_eq!(service.dns_suffix(), "amazonaws.com");
+    /// assert_eq!(service.regional_dns_name(), "s3.us-east-1.amazonaws.com");
+    /// assert_eq!(service.global_dns_name(), "s3.amazonaws.com");
+    /// ```
     pub fn new(service_name: &str, region: Option<String>, dns_suffix: &str) -> Result<Self, PrincipalError> {
         validate_dns(service_name, 32, PrincipalError::InvalidService)?;
         validate_dns(dns_suffix, 128, PrincipalError::InvalidService)?;
@@ -46,7 +57,7 @@ impl Service {
         };
 
         Ok(Self {
-            service_name: service_name.into(),
+            service_name: service_name.to_string(),
             region,
             dns_suffix: dns_suffix.into(),
         })

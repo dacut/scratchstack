@@ -4,7 +4,10 @@ use {
         utils::{validate_account_id, validate_partition},
         Arn,
     },
-    std::fmt::{Display, Formatter, Result as FmtResult},
+    std::{
+        fmt::{Display, Formatter, Result as FmtResult},
+        str::FromStr,
+    },
 };
 
 /// Details about an AWS STS assumed role.
@@ -46,6 +49,17 @@ impl AssumedRole {
     ///
     /// If all of the requirements are met, an [AssumedRole] object is returned. Otherwise,
     /// a [PrincipalError] error is returned.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scratchstack_aws_principal::AssumedRole;
+    /// let assumed_role = AssumedRole::new("aws", "123456789012", "role-name", "session-name").unwrap();
+    /// assert_eq!(assumed_role.partition(), "aws");
+    /// assert_eq!(assumed_role.account_id(), "123456789012");
+    /// assert_eq!(assumed_role.role_name(), "role-name");
+    /// assert_eq!(assumed_role.session_name(), "session-name");
+    /// ```
     pub fn new(partition: &str, account_id: &str, role_name: &str, session_name: &str) -> Result<Self, PrincipalError> {
         validate_partition(partition)?;
         validate_account_id(account_id)?;
@@ -89,6 +103,25 @@ impl AssumedRole {
     }
 }
 
+impl FromStr for AssumedRole {
+    type Err = PrincipalError;
+
+    /// Parse an ARN, returning an [AssumedRole] if the ARN is a valid assumed role ARN.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scratchstack_aws_principal::AssumedRole;
+    /// # use std::str::FromStr;
+    /// let result = AssumedRole::from_str("arn:aws:sts::123456789012:assumed-role/role-name/session-name");
+    /// assert!(result.is_ok());
+    /// ```
+    fn from_str(arn: &str) -> Result<Self, PrincipalError> {
+        let parsed_arn = Arn::from_str(arn)?;
+        Self::try_from(&parsed_arn)
+    }
+}
+
 impl From<&AssumedRole> for Arn {
     fn from(role: &AssumedRole) -> Arn {
         Arn::new(
@@ -112,6 +145,45 @@ impl Display for AssumedRole {
     }
 }
 
+impl TryFrom<&Arn> for AssumedRole {
+    type Error = PrincipalError;
+
+    /// If an [Arn] represents a valid assumed role, convert it to an [AssumedRole]; otherwise, return a
+    /// [PrincipalError] indicating what is wrong with the ARN.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scratchstack_arn::Arn;
+    /// # use scratchstack_aws_principal::AssumedRole;
+    /// # use std::str::FromStr;
+    /// let arn = Arn::from_str("arn:aws:sts::123456789012:assumed-role/role-name/session-name").unwrap();
+    /// let assumed_role = AssumedRole::try_from(&arn).unwrap();
+    /// assert_eq!(assumed_role.role_name(), "role-name");
+    /// assert_eq!(assumed_role.session_name(), "session-name");
+    /// ```
+    fn try_from(arn: &Arn) -> Result<Self, Self::Error> {
+        let service = arn.service();
+        let region = arn.region();
+        let resource = arn.resource();
+
+        if service != "sts" {
+            return Err(PrincipalError::InvalidService(service.to_string()));
+        }
+
+        if !region.is_empty() {
+            return Err(PrincipalError::InvalidRegion(region.to_string()));
+        }
+
+        let resource_parts: Vec<&str> = resource.split('/').collect();
+        if resource_parts.len() != 3 || resource_parts[0] != "assumed-role" {
+            return Err(PrincipalError::InvalidResource(resource.to_string()));
+        }
+
+        Self::new(arn.partition(), arn.account_id(), resource_parts[1], resource_parts[2])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -121,6 +193,7 @@ mod tests {
         std::{
             collections::hash_map::DefaultHasher,
             hash::{Hash, Hasher},
+            str::FromStr,
         },
     };
 
@@ -257,6 +330,8 @@ mod tests {
 
         let err = AssumedRole::new("-aws", "123456789012", "role-name", "session-name").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid partition: "-aws""#);
+        let err = AssumedRole::from_str("arn:-aws:sts::123456789012:assumed-role/role-name/session-name").unwrap_err();
+        assert_eq!(err.to_string(), r#"Invalid partition: "-aws""#);
 
         let err = AssumedRole::new("aws-", "123456789012", "role-name", "session-name").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid partition: "aws-""#);
@@ -290,6 +365,12 @@ mod tests {
             err.to_string(),
             r#"Invalid role name: "role-name-with-65-characters=====================================""#
         );
+        let err = AssumedRole::from_str("arn:aws:sts::123456789012:assumed-role/role-name-with-65-characters=====================================/session-name")
+        .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            r#"Invalid role name: "role-name-with-65-characters=====================================""#
+        );
 
         let err = AssumedRole::new("aws", "123456789012", "role+name", "session-name").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid role name: "role+name""#);
@@ -315,6 +396,13 @@ mod tests {
 
         let err = AssumedRole::new("aws", "123456789012", "role-name", "session+name").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid session name: "session+name""#);
+
+        let err =
+            AssumedRole::from_str("arn:aws:iam::123456789012:assumed-role/role/role-name/session-name").unwrap_err();
+        assert_eq!(err.to_string(), r#"Invalid service name: "iam""#);
+
+        let err = AssumedRole::from_str("arn:aws:sts::123456789012:user/role/role-name/session-name").unwrap_err();
+        assert_eq!(err.to_string(), r#"Invalid resource: "user/role/role-name/session-name""#);
     }
 }
 // end tests -- do not delete; needed for coverage.

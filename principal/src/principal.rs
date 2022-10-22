@@ -7,6 +7,7 @@ use {
         hash::Hash,
         iter::IntoIterator,
         ops::Deref,
+        str::FromStr,
     },
 };
 
@@ -154,6 +155,42 @@ impl From<&Vec<PrincipalIdentity>> for Principal {
     }
 }
 
+impl From<AssumedRole> for Principal {
+    fn from(role: AssumedRole) -> Self {
+        Self::new(vec![PrincipalIdentity::AssumedRole(role)])
+    }
+}
+
+impl From<CanonicalUser> for Principal {
+    fn from(user: CanonicalUser) -> Self {
+        Self::new(vec![PrincipalIdentity::CanonicalUser(user)])
+    }
+}
+
+impl From<FederatedUser> for Principal {
+    fn from(user: FederatedUser) -> Self {
+        Self::new(vec![PrincipalIdentity::FederatedUser(user)])
+    }
+}
+
+impl From<RootUser> for Principal {
+    fn from(user: RootUser) -> Self {
+        Self::new(vec![PrincipalIdentity::RootUser(user)])
+    }
+}
+
+impl From<Service> for Principal {
+    fn from(service: Service) -> Self {
+        Self::new(vec![PrincipalIdentity::Service(service)])
+    }
+}
+
+impl From<User> for Principal {
+    fn from(user: User) -> Self {
+        Self::new(vec![PrincipalIdentity::User(user)])
+    }
+}
+
 impl<'a> IntoIterator for &'a Principal {
     type Item = &'a PrincipalIdentity;
     type IntoIter = std::slice::Iter<'a, PrincipalIdentity>;
@@ -173,6 +210,17 @@ impl IntoIterator for Principal {
 }
 
 /// A principal identity that is the source of an action in an AWS (or AWS-like) service.
+///
+/// `From` conversions are provided for each specific type of identity.
+///
+/// # Examples
+///
+/// ```
+/// # use scratchstack_aws_principal::{PrincipalIdentity, User};
+/// # use std::str::FromStr;
+/// let pi: PrincipalIdentity = User::from_str("arn:aws:iam::123456789012:user/username").unwrap().into();
+/// assert_eq!(pi.as_user().unwrap().user_name(), "username");
+/// ```
 #[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PrincipalIdentity {
     /// Details for an assumed role.
@@ -211,7 +259,6 @@ impl PrincipalIdentity {
     /// ```
     /// # use scratchstack_aws_principal::{PrincipalIdentity, User};
     /// # use scratchstack_arn::Arn;
-    ///
     /// let ident = PrincipalIdentity::User(User::new("aws", "123456789012", "/", "username").unwrap());
     /// if ident.has_arn() {
     ///     let arn: Arn = ident.try_into().unwrap();
@@ -220,11 +267,93 @@ impl PrincipalIdentity {
     pub fn has_arn(&self) -> bool {
         !matches!(self, Self::CanonicalUser(_) | Self::Service(_))
     }
+
+    /// If the principal identity is an assumed role, return it. Otherwise, return `None`.
+    #[inline]
+    pub fn as_assumed_role(&self) -> Option<&AssumedRole> {
+        match self {
+            Self::AssumedRole(role) => Some(role),
+            _ => None,
+        }
+    }
+
+    /// If the principal identity is a canonical user, return it. Otherwise, return `None`.
+    #[inline]
+    pub fn as_canonical_user(&self) -> Option<&CanonicalUser> {
+        match self {
+            Self::CanonicalUser(user) => Some(user),
+            _ => None,
+        }
+    }
+
+    /// If the principal identity is a federated user, return it. Otherwise, return `None`.
+    #[inline]
+    pub fn as_federated_user(&self) -> Option<&FederatedUser> {
+        match self {
+            Self::FederatedUser(user) => Some(user),
+            _ => None,
+        }
+    }
+
+    /// If the principal identity is a root user, return it. Otherwise, return `None`.
+    #[inline]
+    pub fn as_root_user(&self) -> Option<&RootUser> {
+        match self {
+            Self::RootUser(user) => Some(user),
+            _ => None,
+        }
+    }
+
+    /// If the principal identity is a service, return it. Otherwise, return `None`.
+    #[inline]
+    pub fn as_service(&self) -> Option<&Service> {
+        match self {
+            Self::Service(service) => Some(service),
+            _ => None,
+        }
+    }
+
+    /// If the principal identity is a user, return it. Otherwise, return `None`.
+    #[inline]
+    pub fn as_user(&self) -> Option<&User> {
+        match self {
+            Self::User(user) => Some(user),
+            _ => None,
+        }
+    }
+
+    /// Parse an ARN, possibly returning a principal identity. This is mainly a convenience function for unit tests.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scratchstack_aws_principal::PrincipalIdentity;
+    /// let pi = PrincipalIdentity::parse_arn("arn:aws:iam::123456789012:user/username").unwrap();
+    /// assert!(pi.as_user().is_some());
+    /// ```
+    pub fn parse_arn(arn: &str) -> Result<Self, PrincipalError> {
+        let parsed_arn = Arn::from_str(arn)?;
+        let service = parsed_arn.service();
+        let resource = parsed_arn.resource();
+
+        match service {
+            "sts" if resource.starts_with("assumed-role/") => {
+                return Ok(AssumedRole::try_from(&parsed_arn)?.into());
+            }
+            "iam" => {
+                if resource.starts_with("user/") {
+                    return Ok(User::try_from(&parsed_arn)?.into());
+                }
+            }
+            _ => {}
+        }
+
+        Err(PrincipalError::InvalidArn(arn.to_string()))
+    }
 }
 
 /// Wrap an [AssumedRole] in a [PrincipalIdentity].
 impl From<AssumedRole> for PrincipalIdentity {
-    /// Wrap an [AssumedRole] in a [PrincipalIdentity].
     fn from(assumed_role: AssumedRole) -> Self {
         PrincipalIdentity::AssumedRole(assumed_role)
     }
@@ -232,7 +361,6 @@ impl From<AssumedRole> for PrincipalIdentity {
 
 /// Wrap a [CanonicalUser] in a [PrincipalIdentity].
 impl From<CanonicalUser> for PrincipalIdentity {
-    /// Wrap a [CanonicalUser] in a [PrincipalIdentity].
     fn from(canonical_user: CanonicalUser) -> Self {
         PrincipalIdentity::CanonicalUser(canonical_user)
     }
@@ -240,7 +368,6 @@ impl From<CanonicalUser> for PrincipalIdentity {
 
 /// Wrap a [FederatedUser] in a [PrincipalIdentity].
 impl From<FederatedUser> for PrincipalIdentity {
-    /// Wrap a [FederatedUser] in a [PrincipalIdentity].
     fn from(federated_user: FederatedUser) -> Self {
         PrincipalIdentity::FederatedUser(federated_user)
     }
@@ -248,7 +375,6 @@ impl From<FederatedUser> for PrincipalIdentity {
 
 /// Wrap a [RootUser] in a [PrincipalIdentity].
 impl From<RootUser> for PrincipalIdentity {
-    /// Wrap a [RootUser] in a [PrincipalIdentity].
     fn from(root_user: RootUser) -> Self {
         PrincipalIdentity::RootUser(root_user)
     }
@@ -256,7 +382,6 @@ impl From<RootUser> for PrincipalIdentity {
 
 /// Wrap a [Service] in a [PrincipalIdentity].
 impl From<Service> for PrincipalIdentity {
-    /// Wrap a [Service] in a [PrincipalIdentity].
     fn from(service: Service) -> Self {
         PrincipalIdentity::Service(service)
     }
@@ -264,7 +389,6 @@ impl From<Service> for PrincipalIdentity {
 
 /// Wrap a [User] in a [PrincipalIdentity].
 impl From<User> for PrincipalIdentity {
-    /// Wrap a [User] in a [PrincipalIdentity].
     fn from(user: User) -> Self {
         PrincipalIdentity::User(user)
     }
@@ -340,6 +464,7 @@ mod test {
             collections::hash_map::DefaultHasher,
             hash::{Hash, Hasher},
             io::Write,
+            str::FromStr,
         },
     };
 
@@ -775,5 +900,94 @@ mod test {
             write!(buf.as_mut_slice(), "{}", p).unwrap_err();
         }
     }
+
+    #[test]
+    fn test_conversions() {
+        let p = Principal::from(
+            AssumedRole::from_str("arn:aws:sts::123456789012:assumed-role/role-name/session-name").unwrap(),
+        );
+        assert_eq!(p.len(), 1);
+        assert!(p[0].as_assumed_role().is_some());
+        assert!(p[0].as_canonical_user().is_none());
+        assert!(p[0].as_federated_user().is_none());
+        assert!(p[0].as_root_user().is_none());
+        assert!(p[0].as_service().is_none());
+        assert!(p[0].as_user().is_none());
+
+        let p = Principal::from(
+            CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d").unwrap(),
+        );
+        assert_eq!(p.len(), 1);
+        assert!(p[0].as_assumed_role().is_none());
+        assert!(p[0].as_canonical_user().is_some());
+        assert!(p[0].as_federated_user().is_none());
+        assert!(p[0].as_root_user().is_none());
+        assert!(p[0].as_service().is_none());
+        assert!(p[0].as_user().is_none());
+
+        let p = Principal::from(FederatedUser::new("aws", "123456789012", "dacut@kanga.org").unwrap());
+        assert_eq!(p.len(), 1);
+        assert!(p[0].as_assumed_role().is_none());
+        assert!(p[0].as_canonical_user().is_none());
+        assert!(p[0].as_federated_user().is_some());
+        assert!(p[0].as_root_user().is_none());
+        assert!(p[0].as_service().is_none());
+        assert!(p[0].as_user().is_none());
+
+        let p = Principal::from(RootUser::new("aws", "123456789012").unwrap());
+        assert_eq!(p.len(), 1);
+        assert!(p[0].as_assumed_role().is_none());
+        assert!(p[0].as_canonical_user().is_none());
+        assert!(p[0].as_federated_user().is_none());
+        assert!(p[0].as_root_user().is_some());
+        assert!(p[0].as_service().is_none());
+        assert!(p[0].as_user().is_none());
+
+        let p = Principal::from(Service::new("ec2", Some("us-west-2".to_string()), "amazonaws.com").unwrap());
+        assert_eq!(p.len(), 1);
+        assert!(p[0].as_assumed_role().is_none());
+        assert!(p[0].as_canonical_user().is_none());
+        assert!(p[0].as_federated_user().is_none());
+        assert!(p[0].as_root_user().is_none());
+        assert!(p[0].as_service().is_some());
+        assert!(p[0].as_user().is_none());
+
+        let p = Principal::from(User::from_str("arn:aws:iam::123456789012:user/user-name").unwrap());
+        assert_eq!(p.len(), 1);
+        assert!(p[0].as_assumed_role().is_none());
+        assert!(p[0].as_canonical_user().is_none());
+        assert!(p[0].as_federated_user().is_none());
+        assert!(p[0].as_root_user().is_none());
+        assert!(p[0].as_service().is_none());
+        assert!(p[0].as_user().is_some());
+
+        let p = Principal::from(vec![
+            PrincipalIdentity::parse_arn("arn:aws:sts::123456789012:assumed-role/role-name/session-name").unwrap(),
+            PrincipalIdentity::parse_arn("arn:aws:iam::123456789012:user/user-name").unwrap(),
+        ]);
+        assert_eq!(p.len(), 2);
+    }
+
+    #[test]
+    fn test_invalid_arns() {
+        let e =
+            PrincipalIdentity::parse_arn("arn:-aws:sts::123456789012:assumed-role/role-name/session-name").unwrap_err();
+        assert_eq!(e.to_string(), r#"Invalid partition: "-aws""#);
+
+        let e = PrincipalIdentity::parse_arn("arn:aws:sts:us-west-1:123456789012:assumed-role/role-name/session-name")
+            .unwrap_err();
+        assert_eq!(e.to_string(), r#"Invalid region: "us-west-1""#);
+
+        let e = PrincipalIdentity::parse_arn("arn:aws:sts::123456789012:role/role-name/session-name").unwrap_err();
+        assert_eq!(e.to_string(), r#"Invalid ARN: "arn:aws:sts::123456789012:role/role-name/session-name""#);
+
+        let e = PrincipalIdentity::parse_arn("arn:aws:iam:us-west-1:123456789012:user/path/user-name").unwrap_err();
+        assert_eq!(e.to_string(), r#"Invalid region: "us-west-1""#);
+
+        let e = PrincipalIdentity::parse_arn("arn:aws:iam::123456789012:role/role-name/session-name").unwrap_err();
+        assert_eq!(e.to_string(), r#"Invalid ARN: "arn:aws:iam::123456789012:role/role-name/session-name""#);
+
+        let e = PrincipalIdentity::parse_arn("arn:aws:s3::123456789012:role/role-name").unwrap_err();
+        assert_eq!(e.to_string(), r#"Invalid ARN: "arn:aws:s3::123456789012:role/role-name""#);
+    }
 }
-// end tests -- do not delete; needed for coverage.

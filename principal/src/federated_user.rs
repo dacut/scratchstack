@@ -35,6 +35,16 @@ impl FederatedUser {
     ///
     /// If all of the requirements are met, a [FederatedUser] object is returned. Otherwise, a [PrincipalError] error
     /// is returned.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scratchstack_aws_principal::FederatedUser;
+    /// let federated_user = FederatedUser::new("aws", "123456789012", "user@example.com").unwrap();
+    /// assert_eq!(federated_user.partition(), "aws");
+    /// assert_eq!(federated_user.account_id(), "123456789012");
+    /// assert_eq!(federated_user.user_name(), "user@example.com");
+    /// ```
     pub fn new(partition: &str, account_id: &str, user_name: &str) -> Result<Self, PrincipalError> {
         validate_partition(partition)?;
         validate_account_id(account_id)?;

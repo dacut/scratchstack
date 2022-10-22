@@ -7,7 +7,10 @@ use {
         utils::{validate_account_id, validate_partition},
         Arn,
     },
-    std::fmt::{Display, Formatter, Result as FmtResult},
+    std::{
+        fmt::{Display, Formatter, Result as FmtResult},
+        str::FromStr,
+    },
 };
 
 /// Details about an AWS IAM user.
@@ -95,6 +98,70 @@ impl From<&User> for Arn {
     }
 }
 
+impl FromStr for User {
+    type Err = PrincipalError;
+
+    /// Parse an ARN, returning a [User] if the ARN is a valid user ARN.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scratchstack_aws_principal::User;
+    /// # use std::str::FromStr;
+    ///
+    /// let result = User::from_str("arn:aws:iam::123456789012:user/username");
+    /// assert!(result.is_ok());
+    /// ```
+    fn from_str(arn: &str) -> Result<Self, PrincipalError> {
+        let parsed_arn = Arn::from_str(arn)?;
+        Self::try_from(&parsed_arn)
+    }
+}
+
+impl TryFrom<&Arn> for User {
+    type Error = PrincipalError;
+
+    /// If an [Arn] represents a valid IAM user, convert it to a [User]; otherwise, return a
+    /// [PrincipalError] indicating what is wrong with the ARN.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scratchstack_arn::Arn;
+    /// # use scratchstack_aws_principal::User;
+    /// # use std::str::FromStr;
+    ///
+    /// let arn = Arn::from_str("arn:aws:iam::123456789012:user/path/user-name").unwrap();
+    /// let user = User::try_from(&arn).unwrap();
+    /// assert_eq!(user.path(), "/path/");
+    /// assert_eq!(user.user_name(), "user-name");
+    /// ```
+    fn try_from(arn: &Arn) -> Result<Self, Self::Error> {
+        let service = arn.service();
+        let region = arn.region();
+        let resource = arn.resource();
+
+        if service != "iam" {
+            return Err(PrincipalError::InvalidService(service.to_string()));
+        }
+
+        if !region.is_empty() {
+            return Err(PrincipalError::InvalidRegion(region.to_string()));
+        }
+
+        if !resource.starts_with("user/") {
+            return Err(PrincipalError::InvalidResource(resource.to_string()));
+        }
+
+        let path_and_username = &resource[4..];
+        let last_slash = path_and_username.rfind('/').unwrap(); // Safe because we know the string starts with "/".
+        let path = &path_and_username[..=last_slash];
+        let user_name = &path_and_username[last_slash + 1..];
+
+        Self::new(arn.partition(), arn.account_id(), path, user_name)
+    }
+}
+
 impl Display for User {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(f, "arn:{}:iam::{}:user{}{}", self.partition, self.account_id, self.path, self.user_name)
@@ -110,6 +177,7 @@ mod tests {
         std::{
             collections::hash_map::DefaultHasher,
             hash::{Hash, Hasher},
+            str::FromStr,
         },
     };
 
@@ -224,6 +292,8 @@ mod tests {
     fn check_invalid_users() {
         let err = User::new("", "123456789012", "/", "user-name").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid partition: """#);
+        let err = User::from_str("arn::iam::123456789012:user/user-name").unwrap_err();
+        assert_eq!(err.to_string(), r#"Invalid partition: """#);
 
         let err = User::new("aws", "", "/", "user-name").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid account id: """#);
@@ -253,6 +323,15 @@ mod tests {
 
         let err = User::new("aws", "123456789012", "/path test/", "user-name").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid path: "/path test/""#);
+
+        let err = User::from_str("arn:aws:sts::123456789012:user/user-name").unwrap_err();
+        assert_eq!(err.to_string(), r#"Invalid service name: "sts""#);
+
+        let err = User::from_str("arn:aws:iam:us-east-1:123456789012:user/user-name").unwrap_err();
+        assert_eq!(err.to_string(), r#"Invalid region: "us-east-1""#);
+
+        let err = User::from_str("arn:aws:iam::123456789012:role/user-name").unwrap_err();
+        assert_eq!(err.to_string(), r#"Invalid resource: "role/user-name""#);
     }
 }
 // end tests -- do not delete; needed for coverage.

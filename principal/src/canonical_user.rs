@@ -21,6 +21,14 @@ impl CanonicalUser {
     ///
     /// If all of the requirements are met, a [CanonicalUser] object is returned.  Otherwise, a [PrincipalError]
     /// error is returned.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scratchstack_aws_principal::CanonicalUser;
+    /// let canonical_user = CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d").unwrap();
+    /// assert_eq!(canonical_user.canonical_user_id(), "9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d");
+    /// ```
     pub fn new(canonical_user_id: &str) -> Result<Self, PrincipalError> {
         if canonical_user_id.len() != 64 {
             return Err(PrincipalError::InvalidCanonicalUserId(canonical_user_id.to_string()));
