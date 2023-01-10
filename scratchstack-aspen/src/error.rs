@@ -28,12 +28,12 @@ pub enum AspenError {
 impl Display for AspenError {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
-            Self::InvalidAction(action) => write!(f, "Invalid action: {}", action),
-            Self::InvalidConditionOperator(operator) => write!(f, "Invalid condition operator: {}", operator),
-            Self::InvalidPolicyVersion(version) => write!(f, "Invalid policy version: {}", version),
-            Self::InvalidPrincipal(principal) => write!(f, "Invalid principal: {}", principal),
-            Self::InvalidResource(resource) => write!(f, "Invalid resource: {}", resource),
-            Self::InvalidSubstitution(element) => write!(f, "Invalid variable substitution: {}", element),
+            Self::InvalidAction(action) => write!(f, "Invalid action: {action}"),
+            Self::InvalidConditionOperator(operator) => write!(f, "Invalid condition operator: {operator}"),
+            Self::InvalidPolicyVersion(version) => write!(f, "Invalid policy version: {version}"),
+            Self::InvalidPrincipal(principal) => write!(f, "Invalid principal: {principal}"),
+            Self::InvalidResource(resource) => write!(f, "Invalid resource: {resource}"),
+            Self::InvalidSubstitution(element) => write!(f, "Invalid variable substitution: {element}"),
         }
     }
 }

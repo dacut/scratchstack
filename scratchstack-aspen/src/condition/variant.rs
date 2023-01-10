@@ -44,7 +44,7 @@ impl From<u8> for Variant {
             1 => Self::IfExists,
             2 => Self::Negated,
             3 => Self::IfExistsNegated,
-            _ => panic!("Invalid variant value: {}", value),
+            _ => panic!("Invalid variant value: {value}"),
         }
     }
 }

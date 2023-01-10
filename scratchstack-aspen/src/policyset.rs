@@ -260,23 +260,20 @@ impl PolicySet {
     /// Evaluate the policy set. If a denial is found, return a Deny and the source immediately. Otherwise, if one or
     /// more approvals are found, return Allow and the relevant sources. Otherwise, return a DefaultDeny with no
     /// sources.
-    pub fn evaluate<'a, 'b>(&'a self, context: &'b Context) -> Result<(Decision, Vec<&'a PolicySource>), AspenError> {
+    pub fn evaluate<'a>(&'a self, context: &'_ Context) -> Result<(Decision, Vec<&'a PolicySource>), AspenError> {
         self.evaluate_core(context, false)
     }
 
     /// Evaluate all policies in the policy set. If one or more denials are found, return a Deny and the relevant
     /// sources. Otherwise, if one or more approvals are found, return Allow and the relevant sources. Otherwise,
     /// return a DefaultDeny with no sources.
-    pub fn evaluate_all<'a, 'b>(
-        &'a self,
-        context: &'b Context,
-    ) -> Result<(Decision, Vec<&'a PolicySource>), AspenError> {
+    pub fn evaluate_all<'a>(&'a self, context: &'_ Context) -> Result<(Decision, Vec<&'a PolicySource>), AspenError> {
         self.evaluate_core(context, true)
     }
 
-    fn evaluate_core<'a, 'b>(
+    fn evaluate_core<'a>(
         &'a self,
-        context: &'b Context,
+        context: &'_ Context,
         eval_all: bool,
     ) -> Result<(Decision, Vec<&'a PolicySource>), AspenError> {
         let mut allowed_sources = Vec::with_capacity(self.policies.len());
@@ -663,6 +660,6 @@ mod tests {
 
         assert_eq!(ps, ps2);
         assert_eq!(ps.clone(), ps);
-        assert_eq!(format!("{:?}", ps), format!("{:?}", ps2));
+        assert_eq!(format!("{ps:?}"), format!("{ps2:?}"));
     }
 }

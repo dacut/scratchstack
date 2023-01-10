@@ -229,7 +229,7 @@ impl<'de, E: Deserialize<'de>> Visitor<'de> for MapListVisitor<E> {
 
     fn expecting(&self, f: &mut Formatter) -> FmtResult {
         let tn = simple_type_name::<E>();
-        write!(f, "{} or list of {}", tn, tn)
+        write!(f, "{tn} or list of {tn}")
     }
 
     fn visit_map<A: MapAccess<'de>>(self, access: A) -> Result<Self::Value, A::Error> {
@@ -317,7 +317,7 @@ where
 
     fn expecting(&self, f: &mut Formatter) -> FmtResult {
         let tn = simple_type_name::<T>();
-        write!(f, "{} or list of {}", tn, tn)
+        write!(f, "{tn} or list of {tn}")
     }
 
     fn visit_seq<A: SeqAccess<'de>>(self, access: A) -> Result<Self::Value, A::Error> {
@@ -425,6 +425,7 @@ mod tests {
         pub value: u32,
     }
 
+    #[allow(clippy::redundant_clone)]
     #[test_log::test]
     fn test_basic_ops() {
         let map1 = SimpleMap {
@@ -459,14 +460,14 @@ mod tests {
         assert_eq!(el1a.clone(), el1a);
 
         assert_eq!(
-            format!("{}", el1a),
+            format!("{el1a}"),
             indoc! { r#"
             {
                 "value": 42
             }"#}
         );
         assert_eq!(
-            format!("{}", el1b),
+            format!("{el1b}"),
             indoc! { r#"
             [
                 {
@@ -475,7 +476,7 @@ mod tests {
             ]"#}
         );
         assert_eq!(
-            format!("{}", el2a),
+            format!("{el2a}"),
             indoc! { r#"
             [
                 {
@@ -513,11 +514,11 @@ mod tests {
     #[test_log::test]
     fn test_ser_fail() {
         let el: MapList<SerBadUtf8> = vec![SerBadUtf8 {}].into();
-        let e = catch_unwind(|| format!("{}", el)).unwrap_err();
+        let e = catch_unwind(|| format!("{el}")).unwrap_err();
         let e2 = e.downcast::<String>().unwrap();
         assert!((*e2).contains("a formatting trait implementation returned an error"));
 
-        let e = catch_unwind(|| format!("{}", el)).unwrap_err();
+        let e = catch_unwind(|| format!("{el}")).unwrap_err();
         let e2 = e.downcast::<String>().unwrap();
         assert!((*e2).contains("a formatting trait implementation returned an error"));
     }

@@ -93,6 +93,7 @@ mod tests {
         scratchstack_aws_principal::{CanonicalUser, PrincipalIdentity, Service, User},
     };
 
+    #[allow(clippy::redundant_clone)]
     #[test_log::test]
     fn test_derived() {
         // Just need to verify clone works as expected.

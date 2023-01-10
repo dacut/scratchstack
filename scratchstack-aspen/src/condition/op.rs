@@ -444,7 +444,7 @@ mod tests {
         ];
 
         for (cop, debug) in &cops {
-            assert_eq!(&format!("{:?}", cop), debug);
+            assert_eq!(&format!("{cop:?}"), debug);
         }
 
         for i in 0..cops.len() {
@@ -550,7 +550,7 @@ mod tests {
 
         for item in items {
             let op = ConditionOp::from_str(item).unwrap();
-            assert_eq!(format!("{}", op), item);
+            assert_eq!(format!("{op}"), item);
             assert_eq!(&op, item);
         }
     }

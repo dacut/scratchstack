@@ -62,23 +62,23 @@ impl Action {
 
         if service.is_empty() {
             debug!("Action '{service}:{api}' has an empty service.");
-            return Err(AspenError::InvalidAction(format!("{}:{}", service, api)));
+            return Err(AspenError::InvalidAction(format!("{service}:{api}")));
         }
 
         if api.is_empty() {
             debug!("Action '{service}:{api}' has an empty API.");
-            return Err(AspenError::InvalidAction(format!("{}:{}", service, api)));
+            return Err(AspenError::InvalidAction(format!("{service}:{api}")));
         }
 
         if !service.is_ascii() || !api.is_ascii() {
             debug!("Action '{service}:{api}' is not ASCII.");
-            return Err(AspenError::InvalidAction(format!("{}:{}", service, api)));
+            return Err(AspenError::InvalidAction(format!("{service}:{api}")));
         }
 
         for (i, c) in service.bytes().enumerate() {
             if !c.is_ascii_alphanumeric() && !(i > 0 && i < service.len() - 1 && (c == b'-' || c == b'_')) {
                 debug!("Action '{service}:{api}' has an invalid service.");
-                return Err(AspenError::InvalidAction(format!("{}:{}", service, api)));
+                return Err(AspenError::InvalidAction(format!("{service}:{api}")));
             }
         }
 
@@ -89,7 +89,7 @@ impl Action {
                 && !(i > 0 && i < api.len() - 1 && (c == b'-' || c == b'_'))
             {
                 debug!("Action '{service}:{api}' has an invalid API.");
-                return Err(AspenError::InvalidAction(format!("{}:{}", service, api)));
+                return Err(AspenError::InvalidAction(format!("{service}:{api}")));
             }
         }
 
@@ -316,15 +316,15 @@ mod tests {
         assert_eq!(a1a[0], a1b[0]);
 
         assert_eq!(
-            format!("{}", a1a),
+            format!("{a1a}"),
             indoc! {r#"
             [
                 "s1:a1"
             ]"#}
         );
-        assert_eq!(format!("{}", a1b), r#""s1:a1""#);
+        assert_eq!(format!("{a1b}"), r#""s1:a1""#);
         assert_eq!(
-            format!("{}", a2a),
+            format!("{a2a}"),
             indoc! {r#"
             [
                 "*"

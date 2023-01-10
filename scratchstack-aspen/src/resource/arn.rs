@@ -40,7 +40,7 @@ impl ResourceArn {
     /// * `account_id` - The account ID the resource belongs to.
     /// * `resource` - The resource name.
     pub fn new(partition: &str, service: &str, region: &str, account_id: &str, resource: &str) -> Self {
-        let arn = format!("arn:{}:{}:{}:{}:{}", partition, service, region, account_id, resource);
+        let arn = format!("arn:{partition}:{service}:{region}:{account_id}:{resource}");
         let service_start = PARTITION_START + partition.len() + 1;
         let region_start = service_start + service.len() + 1;
         let account_id_start = region_start + region.len() + 1;
@@ -197,7 +197,7 @@ mod tests {
         pat3.hash(&mut h2);
 
         // Ensure we can debug print the arn.
-        _ = format!("{:?}", pat3);
+        _ = format!("{pat3:?}");
 
         // Ensure we can print the arn.
         assert_eq!(pat3.to_string(), "arn:aws:ec*:us-*-1::*".to_string());
@@ -220,7 +220,7 @@ mod tests {
         for wrong_part in wrong_parts {
             assert_eq!(
                 ResourceArn::from_str(wrong_part).unwrap_err().to_string(),
-                format!("Invalid resource: {}", wrong_part)
+                format!("Invalid resource: {wrong_part}")
             );
         }
 

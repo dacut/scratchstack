@@ -266,7 +266,7 @@ mod test {
         assert_eq!(c1, c1.clone());
 
         // Make sure we can debug print this.
-        let _ = format!("{:?}", c1);
+        let _ = format!("{c1:?}");
     }
 
     #[test_log::test]

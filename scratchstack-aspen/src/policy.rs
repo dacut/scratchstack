@@ -649,8 +649,8 @@ mod tests {
     fn test_builder() {
         let e = Policy::builder().clone().build().unwrap_err();
         assert_eq!(e.to_string(), "`statement` must be initialized");
-        assert_eq!(format!("{}", e), "`statement` must be initialized");
-        assert_eq!(format!("{:?}", e), r#"UninitializedField("statement")"#);
+        assert_eq!(format!("{e}"), "`statement` must be initialized");
+        assert_eq!(format!("{e:?}"), r#"UninitializedField("statement")"#);
         assert_eq!(format!("{}", PolicyBuilderError::from("Oops".to_string())), "Oops");
 
         let s = Statement::builder()
@@ -670,8 +670,8 @@ mod tests {
         assert_eq!(p1a, p1a.clone());
         assert_ne!(p1a, p2);
 
-        let _ = format!("{:?}", p1a);
-        let json = format!("{}", p2);
+        let _ = format!("{p1a:?}");
+        let json = format!("{p2}");
 
         assert_eq!(
             json,
@@ -707,8 +707,8 @@ mod tests {
         assert_eq!(p1a, p1a.clone());
         assert_ne!(p1a, p2);
 
-        let _ = format!("{:?}", p1a);
-        let json = format!("{}", p2);
+        let _ = format!("{p1a:?}");
+        let json = format!("{p2}");
 
         assert_eq!(
             json,

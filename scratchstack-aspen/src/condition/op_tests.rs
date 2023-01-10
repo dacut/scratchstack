@@ -98,7 +98,7 @@ fn test_arn_equals() {
     session_data.insert("hello", SessionValue::from("this:is:also:not:a:valid:arn"));
     assert!(!session_matches(&cmap, &session_data));
 
-    let _ = format!("{:?}", cmap);
+    let _ = format!("{cmap:?}");
 }
 
 #[test_log::test]

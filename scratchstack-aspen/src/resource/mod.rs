@@ -144,9 +144,9 @@ mod tests {
         .unwrap_err();
         assert_eq!(*e.downcast::<String>().unwrap(), "index out of bounds: the len is 1 but the index is 1");
 
-        assert_eq!(format!("{}", rl1), r#""arn:*:ec*:us-*-2:123?56789012:instance/*""#);
+        assert_eq!(format!("{rl1}"), r#""arn:*:ec*:us-*-2:123?56789012:instance/*""#);
         assert_eq!(
-            format!("{}", rl3),
+            format!("{rl3}"),
             indoc! { r#"
             [
                 "arn:*:ec*:us-*-2:123?56789012:instance/*"

@@ -143,9 +143,9 @@ mod tests {
         let p1 = Principal::Any;
         let p2 = Principal::Specified(SpecifiedPrincipal::builder().aws(aws_principal).build().unwrap());
 
-        assert_eq!(format!("{}", p1), r#""*""#);
+        assert_eq!(format!("{p1}"), r#""*""#);
         assert_eq!(
-            format!("{}", p2),
+            format!("{p2}"),
             indoc! { r#"
             {
                 "AWS": [
