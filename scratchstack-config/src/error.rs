@@ -26,12 +26,12 @@ pub enum ConfigError {
 impl Display for ConfigError {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match &self {
-            Self::DeserError(e) => write!(f, "Deserialization error: {}", e),
-            Self::IO(e) => write!(f, "I/O error: {}", e),
-            Self::InvalidConfig(msg) => write!(f, "Invalid config: {}", msg),
-            Self::InvalidTlsConfig(e) => write!(f, "Invalid TLS configuration: {}", e),
-            Self::InvalidDatabaseConfig(e) => write!(f, "Invalid database configuration: {}", e),
-            Self::InvalidAddress(e) => write!(f, "Invalid address: {}", e),
+            Self::DeserError(e) => write!(f, "Deserialization error: {e}"),
+            Self::IO(e) => write!(f, "I/O error: {e}"),
+            Self::InvalidConfig(msg) => write!(f, "Invalid config: {msg}"),
+            Self::InvalidTlsConfig(e) => write!(f, "Invalid TLS configuration: {e}"),
+            Self::InvalidDatabaseConfig(e) => write!(f, "Invalid database configuration: {e}"),
+            Self::InvalidAddress(e) => write!(f, "Invalid address: {e}"),
             Self::InvalidPartition => write!(f, "Invalid partition"),
             Self::InvalidPort => write!(f, "Invalid port"),
             Self::InvalidRegion => write!(f, "Invalid region"),
@@ -95,7 +95,7 @@ pub enum DatabaseConfigErrorKind {
 impl Display for DatabaseConfigErrorKind {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match &self {
-            Self::InvalidPasswordFileEncoding(s, ref e) => write!(f, "Invalid password file encoding: {}: {}", s, e),
+            Self::InvalidPasswordFileEncoding(s, ref e) => write!(f, "Invalid password file encoding: {s}: {e}"),
             Self::MissingPassword => {
                 write!(
                     f,
@@ -118,10 +118,10 @@ impl Display for TlsConfigErrorKind {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match &self {
             TlsConfigErrorKind::InvalidBase64Encoding(e) => {
-                write!(f, "Invalid base64 encoding: {}", e)
+                write!(f, "Invalid base64 encoding: {e}")
             }
             TlsConfigErrorKind::TlsSetupFailed(e) => {
-                write!(f, "Invalid TLS configuration: {}", e)
+                write!(f, "Invalid TLS configuration: {e}")
             }
             TlsConfigErrorKind::InvalidCertificate => {
                 write!(f, "Invalid certificate")
