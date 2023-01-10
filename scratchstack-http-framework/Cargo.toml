@@ -15,7 +15,6 @@ gsk_direct = [ "scratchstack-arn", "sqlx" ]
 [dependencies]
 async-trait = "^0.1"
 bytes = "^1.2"
-chrono = { version = "^0.4", default-features = false, features = [ "std" ] }
 derive_builder = "^0.11"
 futures = "^0.3"
 http = "^0.2"
@@ -23,10 +22,15 @@ http-body = "^0.4"
 log = "^0.4"
 rustls = "^0.20"
 scratchstack-aws-principal = "^0.4"
-scratchstack-aws-signature = "^0.11.1-preview.2"
+scratchstack-aws-signature = "^0.11.1-preview.4"
 scratchstack-errors = "^0.4"
 tokio-rustls = "^0.23"
 tower = "^0.4"
+
+[dependencies.chrono]
+version = "^0.4"
+default-features = false
+features = [ "clock", "std" ]
 
 [dependencies.hyper]
 version = "~0.14.20"
