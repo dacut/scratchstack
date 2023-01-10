@@ -28,7 +28,7 @@ const DEFAULT_CONFIG_FILENAME: &str = "scratchstack.cfg";
 
 #[allow(unused_must_use)]
 fn print_usage(stream: &mut dyn Write, program: &str, opts: Options) {
-    let brief = format!("Usage: {} [options]", program);
+    let brief = format!("Usage: {program} [options]");
     write!(stream, "{}", opts.usage(&brief));
 }
 

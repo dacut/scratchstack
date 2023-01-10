@@ -119,7 +119,7 @@ impl Service<Request<Body>> for StsService {
                 _ => {
                     let error = model::Error::builder()
                         .code("InvalidAction")
-                        .message(format!("Could not find operation {} for version {}", action, version))
+                        .message(format!("Could not find operation {action} for version {version}"))
                         .r#type("Sender")
                         .build()?;
 
