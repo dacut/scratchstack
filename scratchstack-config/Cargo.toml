@@ -3,10 +3,10 @@ name = "scratchstack-config"
 version = "0.1.1"
 edition = "2021"
 description = "Scratchstack configuration schema and logic"
-homepage = "https://github.com/dacut/scratchstack"
-repository = "https://github.com/dacut/scratchstack"
+homepage = "https://github.com/dacut/scratchstack-config"
+repository = "https://github.com/dacut/scratchstack-config"
 license = "MIT"
-readme = "../../README.md"
+readme = "README.md"
 
 [dependencies]
 base64 = "^0.13"
