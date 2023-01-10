@@ -81,6 +81,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::redundant_clone)]
     fn check_derived() {
         let cu1a = CanonicalUser::new("0000000000000000000000000000000000000000000000000000000000000000").unwrap();
         let cu1b = CanonicalUser::new("0000000000000000000000000000000000000000000000000000000000000000").unwrap();
@@ -116,7 +117,7 @@ mod tests {
         assert_eq!(cu1a.clone().min(cu2), cu1a);
 
         // Ensure we can debug a canonical user.
-        let _ = format!("{:?}", cu1a);
+        let _ = format!("{cu1a:?}");
     }
 
     #[test]

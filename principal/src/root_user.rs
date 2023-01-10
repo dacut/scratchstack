@@ -116,7 +116,7 @@ mod tests {
         assert!(r2.clone().max(r1a.clone()) == r2);
 
         // Make sure we can debug a root user.
-        let _ = format!("{:?}", r1a);
+        let _ = format!("{r1a:?}");
     }
 
     #[test]

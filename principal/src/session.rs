@@ -361,8 +361,8 @@ impl SessionValue {
                 "false"
             }
             .to_string(),
-            Self::Integer(i) => format!("{}", i),
-            Self::IpAddr(ip) => format!("{}", ip),
+            Self::Integer(i) => format!("{i}"),
+            Self::IpAddr(ip) => format!("{ip}"),
             Self::String(s) => s.clone(),
             Self::Timestamp(t) => format!("{}", t.format("%Y-%m-%dT%H:%M:%SZ")),
         }
@@ -501,7 +501,7 @@ mod tests {
 
         // Ensure we can debug print session values.
         for ref value in values.iter() {
-            let _ = format!("{:?}", value);
+            let _ = format!("{value:?}");
         }
 
         // Ensure the display matches
@@ -588,7 +588,7 @@ mod tests {
         assert!(sd1.capacity() >= 50);
 
         // Ensure we can debug print session data.
-        let _ = format!("{:?}", sd1);
+        let _ = format!("{sd1:?}");
     }
 
     #[test]
@@ -660,7 +660,7 @@ mod tests {
                     assert!(!test3_seen);
                     test3_seen = true;
                 }
-                _ => panic!("Unexpected key: {}", key),
+                _ => panic!("Unexpected key: {key}"),
             }
         }
         assert!(test1_seen);
@@ -684,7 +684,7 @@ mod tests {
                     assert!(!test3_seen);
                     test3_seen = true;
                 }
-                _ => panic!("Unexpected key: {}", key),
+                _ => panic!("Unexpected key: {key}"),
             }
         }
         assert!(test1_seen);
@@ -706,7 +706,10 @@ mod tests {
         sd.insert("tESt6", SessionValue::from("Hello World"));
         sd.insert(
             "test7",
-            SessionValue::from(DateTime::<Utc>::from_utc(NaiveDate::from_ymd(2019, 1, 1).and_hms(0, 0, 0), Utc)),
+            SessionValue::from(DateTime::<Utc>::from_utc(
+                NaiveDate::from_ymd_opt(2019, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap(),
+                Utc,
+            )),
         );
         sd.insert("test8", SessionValue::Binary(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]));
         sd.insert("test9", SessionValue::from(false));
@@ -714,8 +717,8 @@ mod tests {
         sd.insert(
             "test11",
             SessionValue::from(DateTime::<FixedOffset>::from_local(
-                NaiveDate::from_ymd(2019, 1, 1).and_hms(0, 0, 0),
-                FixedOffset::west(8 * 3600),
+                NaiveDate::from_ymd_opt(2019, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap(),
+                FixedOffset::west_opt(8 * 3600).unwrap(),
             )),
         );
 
@@ -772,12 +775,16 @@ mod tests {
                     *value = SessionValue::Integer(106);
                 }
                 SessionValue::Timestamp(dt)
-                    if dt == &DateTime::<Utc>::from_utc(NaiveDate::from_ymd(2019, 1, 1).and_hms(0, 0, 0), Utc) =>
+                    if dt
+                        == &DateTime::<Utc>::from_utc(
+                            NaiveDate::from_ymd_opt(2019, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap(),
+                            Utc,
+                        ) =>
                 {
                     assert!(!value.is_null());
                     assert!(!test_seen[7]);
                     assert_eq!(value.as_variable_value(), "2019-01-01T00:00:00Z");
-                    assert_eq!(format!("{}", value), "2019-01-01T00:00:00Z");
+                    assert_eq!(format!("{value}"), "2019-01-01T00:00:00Z");
                     test_seen[7] = true;
                     *value = SessionValue::Integer(107);
                 }
@@ -786,7 +793,7 @@ mod tests {
                     assert!(!value.is_null());
                     assert!(!test_seen[8]);
                     assert_eq!(value.as_variable_value(), "AAECAwQFBgcICQ==");
-                    assert_eq!(format!("{}", value), "AAECAwQFBgcICQ==");
+                    assert_eq!(format!("{value}"), "AAECAwQFBgcICQ==");
                     test_seen[8] = true;
                     *value = SessionValue::Integer(108);
                 }
@@ -805,16 +812,20 @@ mod tests {
                     *value = SessionValue::Integer(110);
                 }
                 SessionValue::Timestamp(dt)
-                    if dt == &DateTime::<Utc>::from_utc(NaiveDate::from_ymd(2019, 1, 1).and_hms(8, 0, 0), Utc) =>
+                    if dt
+                        == &DateTime::<Utc>::from_utc(
+                            NaiveDate::from_ymd_opt(2019, 1, 1).unwrap().and_hms_opt(8, 0, 0).unwrap(),
+                            Utc,
+                        ) =>
                 {
                     assert!(!value.is_null());
                     assert!(!test_seen[11]);
                     assert_eq!(value.as_variable_value(), "2019-01-01T08:00:00Z");
-                    assert_eq!(format!("{}", value), "2019-01-01T08:00:00Z");
+                    assert_eq!(format!("{value}"), "2019-01-01T08:00:00Z");
                     test_seen[11] = true;
                     *value = SessionValue::Integer(111);
                 }
-                _ => panic!("Unexpected value: {}", value),
+                _ => panic!("Unexpected value: {value}"),
             }
         }
 
@@ -830,7 +841,7 @@ mod tests {
                     assert!(!test_seen[i]);
                     test_seen[i] = true;
                 }
-                _ => panic!("Unexpected value: {}", value),
+                _ => panic!("Unexpected value: {value}"),
             }
         }
 
@@ -843,7 +854,7 @@ mod tests {
                     assert!(!test_seen[i]);
                     test_seen[i] = true;
                 }
-                _ => panic!("Unexpected value: {}", value),
+                _ => panic!("Unexpected value: {value}"),
             }
         }
         assert!(test_seen.iter().all(|&v| v));
@@ -880,7 +891,7 @@ mod tests {
                     *value = SessionValue::Integer(102);
                     test3_seen = true;
                 }
-                _ => panic!("Unexpected value: {}", value),
+                _ => panic!("Unexpected value: {value}"),
             }
         }
         assert!(test1_seen);
@@ -907,7 +918,7 @@ mod tests {
                     assert!(!test3_seen);
                     test3_seen = true;
                 }
-                _ => panic!("Unexpected key: {}", key),
+                _ => panic!("Unexpected key: {key}"),
             }
         }
         assert!(test1_seen);
@@ -936,7 +947,7 @@ mod tests {
                     assert!(!test3_seen);
                     test3_seen = true;
                 }
-                _ => panic!("Unexpected key: {}", key),
+                _ => panic!("Unexpected key: {key}"),
             }
         }
         assert!(test1_seen);
@@ -963,7 +974,7 @@ mod tests {
                     assert!(!test3_seen);
                     test3_seen = true;
                 }
-                _ => panic!("Unexpected key: {}", key),
+                _ => panic!("Unexpected key: {key}"),
             }
         }
         assert!(test1_seen);
@@ -987,7 +998,7 @@ mod tests {
                     assert!(!test2_seen);
                     test2_seen = true;
                 }
-                _ => panic!("Unexpected key: {}", key),
+                _ => panic!("Unexpected key: {key}"),
             }
         }
         assert!(test1_seen);

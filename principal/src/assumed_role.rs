@@ -219,6 +219,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::redundant_clone)]
     fn check_derived() {
         let r1a = AssumedRole::new("aws", "123456789012", "role1", "session1").unwrap();
         let r1b = AssumedRole::new("aws", "123456789012", "role1", "session1").unwrap();
@@ -262,7 +263,7 @@ mod tests {
         assert_eq!(r1a.to_string(), "arn:aws:sts::123456789012:assumed-role/role1/session1");
 
         // Ensure we can debug print an assumed role.
-        let _ = format!("{:?}", r1a);
+        let _ = format!("{r1a:?}");
     }
 
     #[test]
@@ -316,7 +317,7 @@ mod tests {
         .unwrap();
 
         // Make sure we can debug the assumed role.
-        let _ = format!("{:?}", r1a);
+        let _ = format!("{r1a:?}");
     }
 
     #[test]

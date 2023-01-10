@@ -91,7 +91,7 @@ impl Arn {
         account_id: &str,
         resource: &str,
     ) -> Self {
-        let arn = format!("arn:{}:{}:{}:{}:{}", partition, service, region, account_id, resource);
+        let arn = format!("arn:{partition}:{service}:{region}:{account_id}:{resource}");
         let service_start = PARTITION_START + partition.len() + 1;
         let region_start = service_start + service.len() + 1;
         let account_id_start = region_start + region.len() + 1;
@@ -284,7 +284,7 @@ mod test {
         arn2.hash(&mut h2);
 
         // Ensure we can debug print the arn.
-        _ = format!("{:?}", arn1a);
+        _ = format!("{arn1a:?}");
 
         assert_eq!(arn1a.to_string(), "arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0".to_string());
     }

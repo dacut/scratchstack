@@ -146,7 +146,7 @@ mod tests {
 
         assert_eq!(s1a, s1b);
         assert_ne!(s1a, s2);
-        assert_eq!(s1a.clone(), s1a);
+        assert_eq!(s1a, s1a);
         assert_ne!(s1a, s3);
         assert_ne!(s2, s3);
         assert_ne!(s3, s4);
@@ -192,7 +192,7 @@ mod tests {
         assert_eq!(s6.to_string(), "s4.us-east-1.amazonaws.net");
 
         // Ensure we can debug print a service.
-        let _ = format!("{:?}", s1a);
+        let _ = format!("{s1a:?}");
     }
 
     #[test]

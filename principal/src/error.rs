@@ -76,39 +76,39 @@ impl Display for PrincipalError {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
             Self::CannotConvertToArn => f.write_str("Cannot convert entity to ARN"),
-            Self::InvalidArn(arn) => write!(f, "Invalid ARN: {:#?}", arn),
-            Self::InvalidAccountId(account_id) => write!(f, "Invalid account id: {:#?}", account_id),
+            Self::InvalidArn(arn) => write!(f, "Invalid ARN: {arn:#?}"),
+            Self::InvalidAccountId(account_id) => write!(f, "Invalid account id: {account_id:#?}"),
             Self::InvalidCanonicalUserId(canonical_user_id) => {
-                write!(f, "Invalid canonical user id: {:#?}", canonical_user_id)
+                write!(f, "Invalid canonical user id: {canonical_user_id:#?}")
             }
             Self::InvalidFederatedUserName(user_name) => {
-                write!(f, "Invalid federated user name: {:#?}", user_name)
+                write!(f, "Invalid federated user name: {user_name:#?}")
             }
             Self::InvalidGroupName(group_name) => {
-                write!(f, "Invalid group name: {:#?}", group_name)
+                write!(f, "Invalid group name: {group_name:#?}")
             }
-            Self::InvalidGroupId(group_id) => write!(f, "Invalid group id: {:#?}", group_id),
+            Self::InvalidGroupId(group_id) => write!(f, "Invalid group id: {group_id:#?}"),
             Self::InvalidInstanceProfileName(instance_profile_name) => {
-                write!(f, "Invalid instance profile name: {:#?}", instance_profile_name)
+                write!(f, "Invalid instance profile name: {instance_profile_name:#?}")
             }
             Self::InvalidInstanceProfileId(instance_profile_id) => {
-                write!(f, "Invalid instance profile id: {:#?}", instance_profile_id)
+                write!(f, "Invalid instance profile id: {instance_profile_id:#?}")
             }
-            Self::InvalidPartition(partition) => write!(f, "Invalid partition: {:#?}", partition),
-            Self::InvalidPath(path) => write!(f, "Invalid path: {:#?}", path),
-            Self::InvalidRegion(region) => write!(f, "Invalid region: {:#?}", region),
-            Self::InvalidResource(resource) => write!(f, "Invalid resource: {:#?}", resource),
-            Self::InvalidRoleName(role_name) => write!(f, "Invalid role name: {:#?}", role_name),
-            Self::InvalidRoleId(role_id) => write!(f, "Invalid role id: {:#?}", role_id),
-            Self::InvalidScheme(scheme) => write!(f, "Invalid scheme: {:#?}", scheme),
+            Self::InvalidPartition(partition) => write!(f, "Invalid partition: {partition:#?}"),
+            Self::InvalidPath(path) => write!(f, "Invalid path: {path:#?}"),
+            Self::InvalidRegion(region) => write!(f, "Invalid region: {region:#?}"),
+            Self::InvalidResource(resource) => write!(f, "Invalid resource: {resource:#?}"),
+            Self::InvalidRoleName(role_name) => write!(f, "Invalid role name: {role_name:#?}"),
+            Self::InvalidRoleId(role_id) => write!(f, "Invalid role id: {role_id:#?}"),
+            Self::InvalidScheme(scheme) => write!(f, "Invalid scheme: {scheme:#?}"),
             Self::InvalidService(service_name) => {
-                write!(f, "Invalid service name: {:#?}", service_name)
+                write!(f, "Invalid service name: {service_name:#?}")
             }
             Self::InvalidSessionName(session_name) => {
-                write!(f, "Invalid session name: {:#?}", session_name)
+                write!(f, "Invalid session name: {session_name:#?}")
             }
-            Self::InvalidUserName(user_name) => write!(f, "Invalid user name: {:#?}", user_name),
-            Self::InvalidUserId(user_id) => write!(f, "Invalid user id: {:#?}", user_id),
+            Self::InvalidUserName(user_name) => write!(f, "Invalid user name: {user_name:#?}"),
+            Self::InvalidUserId(user_id) => write!(f, "Invalid user id: {user_id:#?}"),
         }
     }
 }
@@ -147,7 +147,7 @@ mod tests {
         assert_eq!(principal_err.to_string(), arn_err_string);
 
         // Ensure we can debug print the principal error.
-        let _ = format!("{:?}", principal_err);
+        let _ = format!("{principal_err:?}");
     }
 
     #[test]

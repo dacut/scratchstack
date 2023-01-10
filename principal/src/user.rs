@@ -247,7 +247,7 @@ mod tests {
         assert_eq!(u3.to_string(), "arn:aws:iam::123456789012:user/path/user2");
 
         // Ensure we can debug print a user.
-        let _ = format!("{:?}", u1a);
+        let _ = format!("{u1a:?}");
     }
 
     #[test]
@@ -285,7 +285,7 @@ mod tests {
         User::new("aws", "123456789012", "/", "user-name").unwrap();
 
         // Make sure we can debug a user.
-        let _ = format!("{:?}", u3);
+        let _ = format!("{u3:?}");
     }
 
     #[test]

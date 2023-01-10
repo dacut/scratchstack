@@ -507,7 +507,7 @@ mod test {
         assert_eq!(s1a.min(s2), s1a);
 
         // Ensure we can debug print a source.
-        let _ = format!("{:?}", s1a);
+        let _ = format!("{s1a:?}");
     }
 
     #[test]
@@ -585,7 +585,7 @@ mod test {
         assert!(p1a.has_arn());
 
         // Make sure we can debug the assumed role
-        let _ = format!("{:?}", p1a);
+        let _ = format!("{p1a:?}");
 
         let arn: Arn = (&p1a).try_into().unwrap();
         assert_eq!(arn.partition(), "aws");
@@ -621,7 +621,7 @@ mod test {
         assert!(!p1a.has_arn());
 
         // Make sure we can debug the canonical user
-        let _ = format!("{:?}", p1a);
+        let _ = format!("{p1a:?}");
 
         let err = TryInto::<Arn>::try_into(&p1a).unwrap_err();
         assert_eq!(err, PrincipalError::CannotConvertToArn);
@@ -651,7 +651,7 @@ mod test {
         assert!(p1a.has_arn());
 
         // Make sure we can debug the federated user
-        let _ = format!("{:?}", p1a);
+        let _ = format!("{p1a:?}");
 
         let arn: Arn = (&p1a).try_into().unwrap();
         assert_eq!(arn.partition(), "aws");
@@ -687,7 +687,7 @@ mod test {
         assert!(p1a.has_arn());
 
         // Make sure we can debug the root user
-        let _ = format!("{:?}", p1a);
+        let _ = format!("{p1a:?}");
 
         let arn: Arn = (&p1a).try_into().unwrap();
         assert_eq!(arn.partition(), "aws");
@@ -723,7 +723,7 @@ mod test {
         assert!(!p1a.has_arn());
 
         // Make sure we can debug the root user
-        let _ = format!("{:?}", p1a);
+        let _ = format!("{p1a:?}");
 
         let err = TryInto::<Arn>::try_into(&p1a).unwrap_err();
         assert_eq!(err, PrincipalError::CannotConvertToArn);
@@ -751,7 +751,7 @@ mod test {
         assert!(p1a.has_arn());
 
         // Make sure we can debug the root user
-        let _ = format!("{:?}", p1a);
+        let _ = format!("{p1a:?}");
 
         let arn: Arn = (&p1a).try_into().unwrap();
         assert_eq!(arn.partition(), "aws");
@@ -830,12 +830,12 @@ mod test {
 
         assert_eq!(p1a.as_slice(), p1b.as_slice());
 
-        let p1adebug = format!("{:?}", p1a);
-        let p1bdebug = format!("{:?}", p1b);
+        let p1adebug = format!("{p1a:?}");
+        let p1bdebug = format!("{p1b:?}");
         assert_eq!(p1adebug, p1bdebug);
 
-        let p1adisplay = format!("{}", p1a);
-        let p1bdisplay = format!("{}", p1b);
+        let p1adisplay = format!("{p1a}");
+        let p1bdisplay = format!("{p1b}");
         assert_eq!(p1adisplay, p1bdisplay);
 
         let mut p1a_emptied = p1a.clone();
@@ -897,7 +897,7 @@ mod test {
             let mut p: Principal = Default::default();
             p.add(u1.clone().into());
             p.add(u2.clone().into());
-            write!(buf.as_mut_slice(), "{}", p).unwrap_err();
+            write!(buf.as_mut_slice(), "{p}").unwrap_err();
         }
     }
 

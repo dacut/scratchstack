@@ -33,13 +33,13 @@ impl Error for ArnError {}
 impl Display for ArnError {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
-            Self::InvalidAccountId(account_id) => write!(f, "Invalid account id: {:#?}", account_id),
-            Self::InvalidArn(arn) => write!(f, "Invalid ARN: {:#?}", arn),
-            Self::InvalidPartition(partition) => write!(f, "Invalid partition: {:#?}", partition),
-            Self::InvalidRegion(region) => write!(f, "Invalid region: {:#?}", region),
-            Self::InvalidResource(resource) => write!(f, "Invalid resource: {:#?}", resource),
-            Self::InvalidScheme(scheme) => write!(f, "Invalid scheme: {:#?}", scheme),
-            Self::InvalidService(service) => write!(f, "Invalid service name: {:#?}", service),
+            Self::InvalidAccountId(account_id) => write!(f, "Invalid account id: {account_id:#?}"),
+            Self::InvalidArn(arn) => write!(f, "Invalid ARN: {arn:#?}"),
+            Self::InvalidPartition(partition) => write!(f, "Invalid partition: {partition:#?}"),
+            Self::InvalidRegion(region) => write!(f, "Invalid region: {region:#?}"),
+            Self::InvalidResource(resource) => write!(f, "Invalid resource: {resource:#?}"),
+            Self::InvalidScheme(scheme) => write!(f, "Invalid scheme: {scheme:#?}"),
+            Self::InvalidService(service) => write!(f, "Invalid service name: {service:#?}"),
         }
     }
 }

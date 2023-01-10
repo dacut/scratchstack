@@ -124,6 +124,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::redundant_clone)]
     fn check_derived() {
         let u1a = FederatedUser::new("aws", "123456789012", "test-user1").unwrap();
         let u1b = FederatedUser::new("aws", "123456789012", "test-user1").unwrap();
@@ -164,7 +165,7 @@ mod tests {
         assert_eq!(u1a.to_string(), "arn:aws:sts::123456789012:federated-user/test-user1");
 
         // Ensure we can debug print the federated user.
-        let _ = format!("{:?}", u1a);
+        let _ = format!("{u1a:?}");
     }
 
     #[test]
