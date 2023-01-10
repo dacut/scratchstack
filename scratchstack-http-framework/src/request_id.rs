@@ -76,7 +76,7 @@ impl RequestId {
     /// Returns the timestamp embedded in this request id.
     #[inline]
     pub fn datetime(&self) -> DateTime<Utc> {
-        Utc.timestamp(self.unix_timestamp() as i64, 0)
+        Utc.timestamp_opt(self.unix_timestamp() as i64, 0).unwrap()
     }
 
     /// Returns this request id as a UUID.
