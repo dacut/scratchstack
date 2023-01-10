@@ -10,7 +10,7 @@ readme = "../../README.md"
 
 [dependencies]
 base64 = "^0.13"
-chrono = "^0.4"
+chrono = { version = "^0.4", default-features = false, features = [ "std" ] }
 futures = "^0.3"
 humantime = "^2.1"
 humantime-serde = "^1.1"
