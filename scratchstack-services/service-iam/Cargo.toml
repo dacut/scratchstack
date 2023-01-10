@@ -10,7 +10,6 @@ license = "MIT"
 readme = "../README.md"
 
 [dependencies]
-chrono = "^0.4"
 env_logger = "^0.9"
 futures = "^0.3"
 getopts = "^0.2"
@@ -19,9 +18,14 @@ http-body = "^0.4"
 hyper = { version = "~0.14.20", features = [ "http1", "http2", "runtime", "server", "tcp" ] }
 log = "^0.4"
 rustls = "^0.20"
-scratchstack-aws-signature = "^0.11.1-preview.0"
+scratchstack-aws-signature = "^0.11.1-preview.2"
 tokio-rustls = "^0.23"
 tower = "^0.4"
+
+[dependencies.chrono]
+version = "^0.4"
+default-features = false
+features = [ "std" ]
 
 [dependencies.scratchstack-config]
 git = "https://github.com/dacut/scratchstack-config"
