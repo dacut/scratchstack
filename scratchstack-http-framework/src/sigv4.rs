@@ -427,7 +427,7 @@ mod tests {
                 .build()
                 .unwrap();
             // Make sure we can debug print the verifier service.
-            let _ = format!("{:?}", verifier_svc);
+            let _ = format!("{verifier_svc:?}");
             Ok::<_, Infallible>(verifier_svc)
         });
         let server = Server::bind(&SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 0, 0, 0))).serve(make_svc);
@@ -439,7 +439,7 @@ mod tests {
         info!("Server listening on port {}", port);
         match server.with_graceful_shutdown(test_fn_wrapper_client(port)).await {
             Ok(()) => println!("Server shutdown normally"),
-            Err(e) => panic!("Server shutdown with error {:?}", e),
+            Err(e) => panic!("Server shutdown with error {e:?}"),
         }
     }
 
@@ -449,7 +449,7 @@ mod tests {
         let client = HttpClient::<HttpConnector<GaiResolver>>::from_connector(connector);
         let region = Region::Custom {
             name: "local".to_owned(),
-            endpoint: format!("http://[::1]:{}", port),
+            endpoint: format!("http://[::1]:{port}"),
         };
         let mut sr = SignedRequest::new("GET", "service", &region, "/");
 
@@ -461,9 +461,9 @@ mod tests {
                 let mut body = r.body;
                 while let Some(b_result) = body.next().await {
                     match b_result {
-                        Ok(bytes) => eprint!("{:?}", bytes),
+                        Ok(bytes) => eprint!("{bytes:?}"),
                         Err(e) => {
-                            eprintln!("Error while ready body: {:?}", e);
+                            eprintln!("Error while ready body: {e}");
                             break;
                         }
                     }
@@ -471,7 +471,7 @@ mod tests {
                 eprintln!();
                 assert_eq!(r.status, StatusCode::OK);
             }
-            Err(e) => panic!("Error from server: {:?}", e),
+            Err(e) => panic!("Error from server: {e}"),
         };
     }
 
@@ -484,7 +484,7 @@ mod tests {
             SocketAddr::V6(sa) => sa.port(),
             SocketAddr::V4(sa) => sa.port(),
         };
-        info!("Server listening on port {}", port);
+        info!("Server listening on port {port}");
         let mut connector = HttpConnector::new_with_resolver(GaiResolver::new());
         connector.set_connect_timeout(Some(Duration::from_millis(10)));
         let client = HttpClient::<HttpConnector<GaiResolver>>::from_connector(connector);
@@ -493,7 +493,7 @@ mod tests {
             .with_graceful_shutdown(async {
                 let region = Region::Custom {
                     name: "local".to_owned(),
-                    endpoint: format!("http://[::1]:{}", port),
+                    endpoint: format!("http://[::1]:{port}"),
                 };
                 let mut sr = SignedRequest::new("GET", "service", &region, "/");
                 sr.sign(&AwsCredentials::new(TEST_ACCESS_KEY, TEST_SECRET_KEY, None, None));
@@ -504,9 +504,9 @@ mod tests {
                         let mut body = r.body;
                         while let Some(b_result) = body.next().await {
                             match b_result {
-                                Ok(bytes) => eprint!("{:?}", bytes),
+                                Ok(bytes) => eprint!("{bytes:?}"),
                                 Err(e) => {
-                                    eprintln!("Error while ready body: {:?}", e);
+                                    eprintln!("Error while ready body: {e}");
                                     break;
                                 }
                             }
@@ -514,13 +514,13 @@ mod tests {
                         eprintln!();
                         status = r.status;
                     }
-                    Err(e) => panic!("Error from server: {:?}", e),
+                    Err(e) => panic!("Error from server: {e}"),
                 };
             })
             .await
         {
             Ok(()) => println!("Server shutdown normally"),
-            Err(e) => panic!("Server shutdown with error {:?}", e),
+            Err(e) => panic!("Server shutdown with error {e}"),
         }
 
         assert_eq!(status, StatusCode::OK);
@@ -535,7 +535,7 @@ mod tests {
             SocketAddr::V6(sa) => sa.port(),
             SocketAddr::V4(sa) => sa.port(),
         };
-        info!("Server listening on port {}", port);
+        info!("Server listening on port {port}");
         let mut connector = HttpConnector::new_with_resolver(GaiResolver::new());
         connector.set_connect_timeout(Some(Duration::from_millis(100)));
         let client = HttpClient::<HttpConnector<GaiResolver>>::from_connector(connector);
@@ -543,7 +543,7 @@ mod tests {
             .with_graceful_shutdown(async {
                 let region = Region::Custom {
                     name: "local".to_owned(),
-                    endpoint: format!("http://[::1]:{}", port),
+                    endpoint: format!("http://[::1]:{port}"),
                 };
                 let mut sr = SignedRequest::new("GET", "service", &region, "/");
                 sr.sign(&AwsCredentials::new(TEST_ACCESS_KEY, "WRONGKEY", None, None));
@@ -556,11 +556,11 @@ mod tests {
                         while let Some(b_result) = body_stream.next().await {
                             match b_result {
                                 Ok(bytes) => {
-                                    eprint!("{:?}", bytes);
+                                    eprint!("{bytes:?}");
                                     body.extend_from_slice(&bytes);
                                 },
                                 Err(e) => {
-                                    eprintln!("Error while ready body: {:?}", e);
+                                    eprintln!("Error while ready body: {e}");
                                     break;
                                 }
                             }
@@ -572,13 +572,13 @@ mod tests {
                         let body_str = Regex::new("<RequestId>[-0-9a-f]+</RequestId>").unwrap().replace_all(&body_str, "");                        
                         assert_eq!(&body_str, r#"<ErrorResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><Error><Type>Sender</Type><Code>SignatureDoesNotMatch</Code><Message>The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.</Message></Error></ErrorResponse>"#);
                     }
-                    Err(e) => panic!("Error from server: {:?}", e),
+                    Err(e) => panic!("Error from server: {e}"),
                 };
             })
             .await
         {
             Ok(()) => println!("Server shutdown normally"),
-            Err(e) => panic!("Server shutdown with error {:?}", e),
+            Err(e) => panic!("Server shutdown with error {e}"),
         }
     }
 
@@ -599,19 +599,19 @@ mod tests {
             .with_graceful_shutdown(async {
                 let region = Region::Custom {
                     name: "local".to_owned(),
-                    endpoint: format!("http://[::1]:{}", port),
+                    endpoint: format!("http://[::1]:{port}"),
                 };
                 let mut sr = SignedRequest::new("GET", "service", &region, "/");
                 sr.sign(&AwsCredentials::new(TEST_ACCESS_KEY, TEST_SECRET_KEY, None, None));
                 match client.dispatch(sr, Some(Duration::from_millis(100))).await {
                     Ok(r) => panic!("Expected an error, got {}", r.status),
-                    Err(e) => eprintln!("Got expected server error: {:?}", e),
+                    Err(e) => eprintln!("Got expected server error: {e}"),
                 };
             })
             .await
         {
             Ok(()) => println!("Server shutdown normally"),
-            Err(e) => panic!("Server shutdown with error {:?}", e),
+            Err(e) => panic!("Server shutdown with error {e}"),
         }
     }
 
@@ -727,14 +727,14 @@ mod tests {
                 let principal = parts.extensions.get::<Principal>();
 
                 let (status, body) = match principal {
-                    Some(principal) => (StatusCode::OK, format!("Hello {:?}", principal)),
+                    Some(principal) => (StatusCode::OK, format!("Hello {principal:?}")),
                     None => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
                 };
 
                 match Response::builder().status(status).header("Content-Type", "text/plain").body(Body::from(body)) {
                     Ok(r) => Ok(r),
                     Err(e) => {
-                        eprintln!("Response builder: error: {:?}", e);
+                        eprintln!("Response builder: error: {e}");
                         Err(e.into())
                     }
                 }
