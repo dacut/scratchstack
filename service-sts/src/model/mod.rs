@@ -52,7 +52,7 @@ impl GetCallerIdentityResult {
     }
 }
 
-#[derive(Builder, Clone, Debug, Serialize, Deserialize)]
+#[derive(Builder, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ResponseMetadata {
     #[builder(setter(into, strip_option), default = "None")]
     #[serde(rename = "$unflatten=RequestId", skip_serializing_if = "Option::is_none")]
@@ -63,14 +63,6 @@ impl ResponseMetadata {
     #[allow(dead_code)]
     pub fn builder() -> ResponseMetadataBuilder {
         ResponseMetadataBuilder::default()
-    }
-}
-
-impl Default for ResponseMetadata {
-    fn default() -> Self {
-        Self {
-            request_id: None::<RequestId>,
-        }
     }
 }
 
