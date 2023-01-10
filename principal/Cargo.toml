@@ -10,6 +10,6 @@ repository.workspace = true
 version.workspace = true
 
 [dependencies]
-chrono = "^0.4"
+chrono = { version = "^0.4", default-features = false, features = [ "std" ] }
 base64 = "^0.13"
 scratchstack-arn = { version = "0.4.7", path = "../arn" }
