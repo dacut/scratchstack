@@ -15,7 +15,6 @@ name = "scratchstack_aspen"
 
 [dependencies]
 base64 = "^0.13"
-chrono = "^0.4"
 derive_builder = "^0.11"
 ipnet = "^2.5"
 lazy_static = "^1.4.0"
@@ -24,6 +23,11 @@ regex = "^1.6"
 scratchstack-arn = "^0.4.7"
 scratchstack-aws-principal = "^0.4.7"
 serde_json = "^1.0"
+
+[dependencies.chrono]
+version = "^0.4"
+default-features = false
+features = [ "std" ]
 
 [dependencies.serde]
 version = "^1.0"
