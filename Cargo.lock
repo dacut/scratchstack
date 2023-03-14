@@ -925,9 +925,9 @@ checksum = "348108ab3fba42ec82ff6e9564fc4ca0247bdccdc68dd8af9764bbc79c3c8ffb"
 
 [[package]]
 name = "libsqlite3-sys"
-version = "0.24.2"
+version = "0.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "898745e570c7d0453cc1fbc4a701eb6c662ed54e8fec8b7d14be137ebeeb9d14"
+checksum = "29f835d03d717946d28b1d1ed632eb6f0e24a299388ee623d0c23118d3e8a7fa"
 dependencies = [
  "cc",
  "pkg-config",
@@ -1433,7 +1433,7 @@ dependencies = [
 [[package]]
 name = "scratchstack-config"
 version = "0.1.1"
-source = "git+https://github.com/dacut/scratchstack-config?branch=main#1e0cbf5fe69ebe73293cf0598470aa45ac42e586"
+source = "git+https://github.com/dacut/scratchstack-config?branch=main#82e66b47810bdcdec59f25aec07751627f02bea6"
 dependencies = [
  "base64 0.13.1",
  "chrono",
@@ -1461,6 +1461,7 @@ dependencies = [
 [[package]]
 name = "scratchstack-http-framework"
 version = "0.1.2"
+source = "git+https://github.com/dacut/scratchstack-http-framework?branch=main#fb156e0a620aa838d79e04ffd19355eedbd709ed"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1668,8 +1669,7 @@ dependencies = [
 [[package]]
 name = "sqlx"
 version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9249290c05928352f71c077cc44a464d880c63f26f7534728cca008e135c0428"
+source = "git+https://github.com/dacut/sqlx.git?branch=0.6.2-sqlite-fix#e6038260e9c967741891e6c839539aa851d1d48f"
 dependencies = [
  "sqlx-core",
  "sqlx-macros",
@@ -1678,8 +1678,7 @@ dependencies = [
 [[package]]
 name = "sqlx-core"
 version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dcbc16ddba161afc99e14d1713a453747a2b07fc097d2009f4c300ec99286105"
+source = "git+https://github.com/dacut/sqlx.git?branch=0.6.2-sqlite-fix#e6038260e9c967741891e6c839539aa851d1d48f"
 dependencies = [
  "ahash",
  "atoi",
@@ -1742,8 +1741,7 @@ dependencies = [
 [[package]]
 name = "sqlx-macros"
 version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b850fa514dc11f2ee85be9d055c512aa866746adfacd1cb42d867d68e6a5b0d9"
+source = "git+https://github.com/dacut/sqlx.git?branch=0.6.2-sqlite-fix#e6038260e9c967741891e6c839539aa851d1d48f"
 dependencies = [
  "dotenvy",
  "either",
@@ -1761,8 +1759,7 @@ dependencies = [
 [[package]]
 name = "sqlx-rt"
 version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24c5b2d25fa654cc5f841750b8e1cdedbe21189bf9a9382ee90bfa9dd3562396"
+source = "git+https://github.com/dacut/sqlx.git?branch=0.6.2-sqlite-fix#e6038260e9c967741891e6c839539aa851d1d48f"
 dependencies = [
  "once_cell",
  "tokio",
