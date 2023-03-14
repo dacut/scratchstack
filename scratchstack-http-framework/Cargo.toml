@@ -53,8 +53,10 @@ version = "^1"
 features = [ "derive" ]
 
 [dependencies.sqlx]
-version = "^0.6"
-features = [ "all-databases", "chrono", "runtime-tokio-rustls" ]
+# Forking 0.6.2 to fix a libsqlite3 vulnerability until 0.7 is released
+git = "https://github.com/dacut/sqlx.git"
+branch = "0.6.2-sqlite-fix"
+features = ["all-databases", "chrono", "macros", "migrate", "runtime-tokio-rustls"]
 optional = true
 
 [dependencies.tokio]
