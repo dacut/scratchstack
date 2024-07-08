@@ -24,6 +24,7 @@ jobs:
         toolchain: nightly
         override: true
         profile: default
+        components: "clippy,rustfmt"
     - name: Install coverage-run dependencies
       run: |
         sudo apt-get install -y llvm
