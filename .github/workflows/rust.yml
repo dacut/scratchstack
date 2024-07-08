@@ -22,13 +22,20 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: nightly
-        override: true
-        profile: default
         components: "clippy,rustfmt"
+    - name: Install LLVM 18
+      run: |
+        echo 'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main' | sudo tee -a /etc/apt/sources.list
+        echo 'deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main' | sudo tee -a /etc/apt/sources.list
+        sudo apt-get install -y gnupg2
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+        sudo apt-get update -y
+        sudo apt-get install -y llvm-18
+        sudo ln -s /usr/lib/llvm-18/bin/* /usr/bin
     - name: Install coverage-run dependencies
       run: |
-        sudo apt-get install -y llvm
-        pip3 install --user toml
+        python3 -m venv venv
+        VIRTUAL_ENV="$PWD/venv" PATH="$PWD/venv/bin:$PATH" $PWD/venv/bin/pip3 install toml
         cargo install rustfilt
     - name: Run Clippy check.
       run: |
@@ -36,7 +43,7 @@ jobs:
     - name: Run formatting check.
       run: cargo fmt --check
     - name: Build and test with coverage data
-      run: ./coverage-run.py --no-open --no-html
+      run: VIRTUAL_ENV="$PWD/venv" PATH="$PWD/venv/bin:$PATH" $PWD/venv/bin/python3 ./coverage-run.py --no-open --no-html
     - name: Combine coverage reports
       run: cat scratchstack-arn.lcov scratchstack-aws-principal.lcov > scratchstack-core.lcov
     - name: Upload coverage report to Coveralls
