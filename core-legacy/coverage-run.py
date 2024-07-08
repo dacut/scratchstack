@@ -132,13 +132,17 @@ class Crate:
         self.run(args)
 
     def merge_profile_data(self):
+        print(f"Merging profile data into {self.profdata_filename} from:")
         args = ["llvm-profdata", "merge", "-sparse"]
         for dirname, _, filenames in walk(self.target_dir):
             for filename in filenames:
                 if filename.endswith(".profraw"):
-                    args.append(path_join(dirname, filename))
+                    path = path_join(dirname, filename)
+                    print(f"    {path}")
+                    args.append(path)
         args.append("-o")
         args.append(self.profdata_filename)
+
         self.run(args)
 
     def generate_lcov(self):
