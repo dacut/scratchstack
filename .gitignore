@@ -10,6 +10,7 @@ Cargo.lock
 
 # Visual Studio Code settings
 .vscode
+*.code-workspace
 
 # Ignore coverage data
 *.profdata

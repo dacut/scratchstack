@@ -4,6 +4,7 @@ members = [
     "errors",
     "principal",
 ]
+resolver = "2"
 
 [workspace.package]
 authors = ["David Cuthbert <dacut@kanga.org"]

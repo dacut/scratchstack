@@ -1,4 +1,5 @@
 use {
+    base64::{engine::general_purpose::STANDARD as BASE64_ENGINE, Engine},
     chrono::{DateTime, FixedOffset, Utc},
     std::{
         collections::{
@@ -354,7 +355,7 @@ impl SessionValue {
     pub fn as_variable_value(&self) -> String {
         match self {
             Self::Null => "".to_string(),
-            Self::Binary(value) => base64::encode(value),
+            Self::Binary(value) => BASE64_ENGINE.encode(value),
             Self::Bool(b) => if *b {
                 "true"
             } else {
@@ -427,7 +428,7 @@ impl Display for SessionValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Self::Null => f.write_str("null"),
-            Self::Binary(value) => f.write_str(&base64::encode(value)),
+            Self::Binary(value) => f.write_str(&BASE64_ENGINE.encode(value)),
             Self::Bool(b) => Display::fmt(b, f),
             Self::Integer(i) => Display::fmt(i, f),
             Self::IpAddr(ip) => Display::fmt(ip, f),
@@ -468,7 +469,7 @@ mod tests {
             SessionValue::String("test1".to_string()),
             SessionValue::String("test2".to_string()),
         ];
-        let display = vec!["null", "false", "true", "-1", "0", "1", "127.0.0.1", "::1", "test1", "test2"];
+        let display = ["null", "false", "true", "-1", "0", "1", "127.0.0.1", "::1", "test1", "test2"];
         assert_eq!(sv1a, sv1b);
         assert_ne!(sv1a, sv2);
         assert_eq!(sv1a, sv1a.clone());
@@ -599,7 +600,7 @@ mod tests {
         assert_eq!(sd.len(), 1);
         assert_eq!(sd["test"], SessionValue::String("Hello World".to_string()));
 
-        let to_add = vec![("Test2", SessionValue::Integer(100)), ("Test3", SessionValue::Bool(true))];
+        let to_add = [("Test2", SessionValue::Integer(100)), ("Test3", SessionValue::Bool(true))];
 
         sd.extend(to_add.iter().map(|r| (r.0, &r.1)));
         assert_eq!(sd.len(), 3);

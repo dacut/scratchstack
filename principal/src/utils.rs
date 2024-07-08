@@ -311,7 +311,7 @@ mod test {
 
     #[test]
     fn check_id_prefix_derived() {
-        let prefixes = vec![
+        let prefixes = [
             IamIdPrefix::AccessKey,
             IamIdPrefix::BearerToken,
             IamIdPrefix::Certificate,
