@@ -17,9 +17,9 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Install Rust nightly
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: nightly
         override: true
@@ -30,10 +30,8 @@ jobs:
         pip3 install --user toml
         cargo install rustfilt
     - name: Run Clippy check.
-      uses: actions-rs/clippy-check@v1
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        args: --all-features
+      run: |
+        cargo clippy -- -Dwarnings
     - name: Run formatting check.
       run: cargo fmt --check
     - name: Build and test with coverage data
