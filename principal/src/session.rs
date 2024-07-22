@@ -442,7 +442,7 @@ impl Display for SessionValue {
 mod tests {
     use {
         super::{SessionData, SessionValue},
-        chrono::{DateTime, FixedOffset, NaiveDate, Utc},
+        chrono::{DateTime, FixedOffset, NaiveDate, TimeZone, Utc},
         std::{
             cmp::Ordering,
             collections::hash_map::{DefaultHasher, HashMap},
@@ -707,20 +707,24 @@ mod tests {
         sd.insert("tESt6", SessionValue::from("Hello World"));
         sd.insert(
             "test7",
-            SessionValue::from(DateTime::<Utc>::from_utc(
-                NaiveDate::from_ymd_opt(2019, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap(),
-                Utc,
-            )),
+            SessionValue::from(
+                Utc.from_local_datetime(&NaiveDate::from_ymd_opt(2019, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap())
+                    .single()
+                    .unwrap(),
+            ),
         );
         sd.insert("test8", SessionValue::Binary(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]));
         sd.insert("test9", SessionValue::from(false));
         sd.insert("test10", SessionValue::from("Hello World2".to_string()));
         sd.insert(
             "test11",
-            SessionValue::from(DateTime::<FixedOffset>::from_local(
-                NaiveDate::from_ymd_opt(2019, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap(),
-                FixedOffset::west_opt(8 * 3600).unwrap(),
-            )),
+            SessionValue::from(
+                FixedOffset::west_opt(8 * 3600)
+                    .unwrap()
+                    .from_local_datetime(&NaiveDate::from_ymd_opt(2019, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap())
+                    .single()
+                    .unwrap(),
+            ),
         );
 
         let mut test_seen = [false; 12];
@@ -777,7 +781,7 @@ mod tests {
                 }
                 SessionValue::Timestamp(dt)
                     if dt
-                        == &DateTime::<Utc>::from_utc(
+                        == &DateTime::<Utc>::from_naive_utc_and_offset(
                             NaiveDate::from_ymd_opt(2019, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap(),
                             Utc,
                         ) =>
@@ -814,7 +818,7 @@ mod tests {
                 }
                 SessionValue::Timestamp(dt)
                     if dt
-                        == &DateTime::<Utc>::from_utc(
+                        == &DateTime::<Utc>::from_naive_utc_and_offset(
                             NaiveDate::from_ymd_opt(2019, 1, 1).unwrap().and_hms_opt(8, 0, 0).unwrap(),
                             Utc,
                         ) =>
