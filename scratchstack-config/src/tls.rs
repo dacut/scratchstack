@@ -1,6 +1,8 @@
 use {
     crate::error::{ConfigError, TlsConfigErrorKind},
-    rustls::{Certificate, PrivateKey, ServerConfig},
+    rustls::ServerConfig,
+    rustls_pemfile::{certs, rsa_private_keys},
+    rustls_pki_types::{CertificateDer, PrivateKeyDer},
     serde::Deserialize,
     std::{
         fmt::Debug,
@@ -18,7 +20,7 @@ pub struct TlsConfig {
 impl TlsConfig {
     /// Resolve files referenced in the TLS configuration to actual certificates and keys.
     pub fn to_server_config(&self) -> Result<ServerConfig, ConfigError> {
-        let builder = ServerConfig::builder().with_safe_defaults().with_no_client_auth();
+        let builder = ServerConfig::builder().with_no_client_auth();
 
         let cert_file = File::open(&self.certificate_chain_file)?;
         let mut reader = BufReader::new(cert_file);
@@ -41,74 +43,22 @@ impl TlsConfig {
     }
 }
 
-/// Extract and decode all PEM sections from `rd`, which begin with `start_mark`
-/// and end with `end_mark`.  Apply the functor `f` to each decoded buffer,
-/// and return a Vec of `f`'s return values.
-///
-/// Originally from rustls::pemfile::extract, modified to return errors.
-fn extract_cert_or_key<A>(
-    rd: &mut dyn BufRead,
-    start_mark: &str,
-    end_mark: &str,
-    f: &dyn Fn(Vec<u8>) -> A,
-) -> Result<Vec<A>, ConfigError> {
-    let mut ders = Vec::new();
-    let mut b64buf = String::new();
-    let mut take_base64 = false;
-
-    let mut raw_line = Vec::<u8>::new();
-    loop {
-        raw_line.clear();
-        let len = rd.read_until(b'\n', &mut raw_line)?;
-
-        if len == 0 {
-            return Ok(ders);
-        }
-
-        let line = String::from_utf8_lossy(&raw_line);
-
-        if line.starts_with(start_mark) {
-            take_base64 = true;
-            continue;
-        }
-
-        if line.starts_with(end_mark) {
-            take_base64 = false;
-            let der = base64::decode(&b64buf)
-                .map_err(|e| ConfigError::InvalidTlsConfig(TlsConfigErrorKind::InvalidBase64Encoding(e)))?;
-            ders.push(f(der));
-            b64buf = String::new();
-            continue;
-        }
-
-        if take_base64 {
-            b64buf.push_str(line.trim());
-        }
+/// Extract all the certificates from `r` and return a [`Vec<CertificateDers>`][rustls_pki_types::CertificateDer]
+/// containing the der-format contents.
+fn read_certs(r: &mut dyn BufRead) -> Result<Vec<CertificateDer<'static>>, ConfigError> {
+    let mut result = Vec::with_capacity(2);
+    for maybe_cert in certs(r) {
+        result.push(maybe_cert?);
     }
+    Ok(result)
 }
 
-/// Extract all the certificates from rd, and return a vec of `rustls::Certificate`s
+/// Extract all RSA private keys from `r` and return a `Vec<PrivateKeyDer>`[rustls_pki_types::PrivateKeyDer]
 /// containing the der-format contents.
-///
-/// Originally from rustls::pemfile::certs, modified to return errors.
-fn read_certs(rd: &mut dyn BufRead) -> Result<Vec<Certificate>, ConfigError> {
-    extract_cert_or_key(
-        rd,
-        "-----BEGIN CERTIFICATE-----",
-        "-----END CERTIFICATE-----",
-        &Certificate,
-    )
-}
-
-/// Extract all RSA private keys from rd, and return a vec of `rustls::PrivateKey`s
-/// containing the der-format contents.
-///
-/// Originally from rustls::pemfile::rsa_private_keys, modified to return errors.
-fn read_rsa_private_keys(rd: &mut dyn BufRead) -> Result<Vec<PrivateKey>, ConfigError> {
-    extract_cert_or_key(
-        rd,
-        "-----BEGIN RSA PRIVATE KEY-----",
-        "-----END RSA PRIVATE KEY-----",
-        &PrivateKey,
-    )
+fn read_rsa_private_keys(r: &mut dyn BufRead) -> Result<Vec<PrivateKeyDer<'static>>, ConfigError> {
+    let mut result = Vec::with_capacity(1);
+    for maybe_key in rsa_private_keys(r) {
+        result.push(maybe_key?.into());
+    }
+    Ok(result)
 }

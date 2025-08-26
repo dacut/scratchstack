@@ -9,7 +9,7 @@ use {
         fmt::{Debug, Formatter, Result as FmtResult},
         net::{IpAddr, Ipv6Addr, SocketAddr},
     },
-    tokio_rustls::rustls::ServerConfig as TlsServerConfig,
+    rustls::ServerConfig as TlsServerConfig,
 };
 
 pub use self::{
