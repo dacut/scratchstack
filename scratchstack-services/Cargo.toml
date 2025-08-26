@@ -3,10 +3,11 @@ members = [
     "service-iam",
     "service-sts",
 ]
+resolver = "2"
 
 [workspace.package]
 authors = ["David Cuthbert <dacut@kanga.org>"]
-edition = "2021"
+edition = "2024"
 homepage = "https://github.com/dacut/scratchstack"
 license = "MIT"
 readme = "README.md"
