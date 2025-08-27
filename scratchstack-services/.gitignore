@@ -14,6 +14,7 @@
 .vscode/
 .project
 .settings/
+*.code-workspace
 
 # Local environment testing
 .env
