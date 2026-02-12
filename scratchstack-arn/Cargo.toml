@@ -16,8 +16,6 @@ doctest = false
 doc = true
 
 [dependencies]
-regex = "^1.10"
-regex-syntax = "^0.8"
 serde = "^1"
 
 [dev-dependencies]
