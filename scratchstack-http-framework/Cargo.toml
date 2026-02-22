@@ -1,0 +1,78 @@
+[package]
+name = "scratchstack-http-framework"
+version = "0.1.2"
+authors = ["David Cuthbert <dacut@kanga.org>"]
+edition = "2021"
+description = "HTTP framework for Scratchstack services"
+homepage = "https://github.com/dacut/scratchstack"
+repository = "https://github.com/dacut/scratchstack"
+license = "MIT"
+readme = "README.md"
+
+[features]
+gsk_direct = [ "scratchstack-arn", "sqlx" ]
+
+[dependencies]
+async-trait = "^0.1"
+bytes = "^1.2"
+derive_builder = "^0.11"
+futures = "^0.3"
+http = "^0.2"
+http-body = "^0.4"
+log = "^0.4"
+rustls = "^0.20"
+scratchstack-aws-principal = "^0.4"
+scratchstack-aws-signature = "^0.11.1-preview.4"
+scratchstack-errors = "^0.4"
+tokio-rustls = "^0.23"
+tower = "^0.4"
+
+[dependencies.chrono]
+version = "^0.4"
+default-features = false
+features = [ "clock", "std" ]
+
+[dependencies.hyper]
+version = "~0.14.20"
+features = [ "http1", "http2", "runtime", "server", "tcp" ]
+
+[dependencies.quick-xml]
+version = "^0.25"
+features = [ "serialize" ]
+
+[dependencies.rand]
+version = "^0.8"
+features = [ "std", "std_rng" ]
+
+[dependencies.scratchstack-arn]
+version = "^0.4"
+optional = true
+
+[dependencies.serde]
+version = "^1"
+features = [ "derive" ]
+
+[dependencies.sqlx]
+# Forking 0.6.2 to fix a libsqlite3 vulnerability until 0.7 is released
+git = "https://github.com/dacut/sqlx.git"
+branch = "0.6.2-sqlite-fix"
+features = ["all-databases", "chrono", "macros", "migrate", "runtime-tokio-rustls"]
+optional = true
+
+[dependencies.tokio]
+version = "^1.21"
+features = [ "macros", "rt" ]
+
+[dependencies.uuid]
+version = "^1.2"
+features = [ "serde" ]
+
+[dev-dependencies]
+env_logger = "^0.9"
+hyper = { version = "^0.14", features = [ "client", "server", "stream", "tcp", "http1", "http2" ] }
+pretty_assertions = "^1.3"
+regex = "^1.6"
+rusoto_core = "^0.48"
+rusoto_credential = "^0.48"
+rusoto_signature = "^0.48"
+test-log = "^0.2"
