@@ -40,8 +40,8 @@ pub type ConditionMap = BTreeMap<String, StringLikeList<String>>;
 
 /// Representation of an Aspen condition clause in a statement.
 ///
-/// This is (logically and physically) a two-level map. The first level (this structure) maps [ConditionOp] operators
-/// to a [ConditionMap]. The second level, the [ConditionMap] itself, maps condition variable names to a list of
+/// This is (logically and physically) a two-level map. The first level (this structure) maps [`ConditionOp`] operators
+/// to a [`ConditionMap`]. The second level, the [`ConditionMap`] itself, maps condition variable names to a list of
 /// allowed values.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Condition {
@@ -241,7 +241,7 @@ impl Condition {
     }
 
     #[inline]
-    /// Inserts a key-value pair into the Condition clause.
+    /// Inserts a key-value pair into the [`Condition`] clause.
     ///
     /// If the clause did not have this operator present, `None` is returned.
     ///
@@ -266,7 +266,7 @@ impl Condition {
         self.map.insert(key, value)
     }
 
-    /// Creates a consuming iterator visiting all the [ConditionOp] operators, in sorted order.
+    /// Creates a consuming iterator visiting all the [`ConditionOp`] operators, in sorted order.
     /// The map cannot be used after calling this.
     ///
     /// # Examples
@@ -288,7 +288,7 @@ impl Condition {
         self.map.into_keys()
     }
 
-    /// Creates a consuming iterator visiting all the values, in order by the [ConditionOp] operator.
+    /// Creates a consuming iterator visiting all the values, in order by the [`ConditionOp`] operator.
     /// The map cannot be used after calling this.
     ///
     /// # Examples
@@ -310,7 +310,7 @@ impl Condition {
         self.map.into_values()
     }
 
-    /// Returns `true` if the condition clause contains no elements.
+    /// Returns `true` if the [`Condition`] clause contains no elements.
     ///
     /// # Examples
     ///
@@ -330,8 +330,8 @@ impl Condition {
         self.map.is_empty()
     }
 
-    /// Gets an iterator over the `(&ConditionOp, &ConditionMap)` entries of the condition clause, sorted by
-    /// [ConditionOp] operator.
+    /// Gets an iterator over the `(&ConditionOp, &ConditionMap)` entries of the [`Condition`] clause, sorted by
+    /// [`ConditionOp`] operator.
     ///
     /// # Examples
     ///
@@ -358,7 +358,7 @@ impl Condition {
     }
 
     /// Gets an mutable iterator over the `(&ConditionOp, &mut ConditionMap)` entries of the condition clause, sorted
-    /// by [ConditionOp] operator.
+    /// by [`ConditionOp`] operator.
     ///
     /// # Examples
     ///
@@ -522,7 +522,7 @@ impl Condition {
         self.map.range_mut(range)
     }
 
-    /// Removes a [ConditionOp] operator from the condition clause, returning the [ConditionMap] corresponding to the
+    /// Removes a [`ConditionOp`] operator from the condition clause, returning the [`ConditionMap`] corresponding to the
     /// operator if the operator was previously in the clause.
     ///
     /// # Examples
@@ -549,7 +549,7 @@ impl Condition {
         self.map.remove(key)
     }
 
-    /// Removes a [ConditionOp] operator from the condition clause, returning the stored operator and [ConditionMap]
+    /// Removes a [`ConditionOp`] operator from the condition clause, returning the stored operator and [`ConditionMap`]
     /// if the operator was previously in the clause.
     ///
     /// # Examples
@@ -567,7 +567,6 @@ impl Condition {
     /// assert_eq!(condition.remove_entry(&condop::Bool), Some((condop::Bool, cmap)));
     /// assert_eq!(condition.remove(&condop::Bool), None);
     /// ```
-
     #[inline]
     pub fn remove_entry<Q>(&mut self, key: &Q) -> Option<(ConditionOp, ConditionMap)>
     where
@@ -580,7 +579,7 @@ impl Condition {
     /// Retains only the elements specified by the predicate.
     ///
     /// In other words, remove all pairs `(cond_op, cond_map)` for which `f(&cond_op, &mut cond_map)` returns `false`.
-    /// The elements are visited in ascending [ConditionOp] order.
+    /// The elements are visited in ascending [`ConditionOp`] order.
     ///
     /// # Examples
     ///
@@ -608,8 +607,8 @@ impl Condition {
         self.map.retain(f)
     }
 
-    /// Splits the collection into two at the given [ConditionOp] operator. Returns everything on and after the given
-    /// [ConditionOp].
+    /// Splits the collection into two at the given [`ConditionOp`] operator. Returns everything on and after the given
+    /// [`ConditionOp`].
     ///
     /// # Examples
     ///
@@ -632,7 +631,6 @@ impl Condition {
     /// assert_eq!(a.into_keys().collect::<Vec<_>>(), vec![condop::ArnLike, condop::Bool]);
     /// assert_eq!(b.into_keys().collect::<Vec<_>>(), vec![condop::DateEquals, condop::NumericEquals, condop::StringEquals]);
     /// ```
-
     #[inline]
     pub fn split_off<Q>(&mut self, key: &Q) -> Condition
     where
@@ -644,7 +642,7 @@ impl Condition {
         }
     }
 
-    /// Gets an iterator over the [ConditionMap] values of the map, in order by [ConditionOp] key.
+    /// Gets an iterator over the [`ConditionMap`] values of the map, in order by [`ConditionOp`] key.
     ///
     /// # Examples
     ///
@@ -670,7 +668,7 @@ impl Condition {
         self.map.values()
     }
 
-    /// Gets an iterator over the mutable [ConditionMap] values of the map, in order by [ConditionOp] key.
+    /// Gets an iterator over the mutable [`ConditionMap`] values of the map, in order by [`ConditionOp`] key.
     ///
     /// # Examples
     ///
@@ -699,12 +697,12 @@ impl Condition {
         self.map.values_mut()
     }
 
-    /// Indicates whether this condition clause matches the request [Context]. This condition is interpreted using the
-    /// specified [PolicyVersion].
+    /// Indicates whether this condition clause matches the request [`Context`]. This condition is interpreted using the
+    /// specified [`PolicyVersion`].
     ///
     /// # Errors
     ///
-    /// If a condition clause contains a malformed variable, [AspenError::InvalidSubstitution] is returned.
+    /// If a condition clause contains a malformed variable, [`AspenError::InvalidSubstitution`] is returned.
     pub fn matches(&self, context: &Context, pv: PolicyVersion) -> Result<bool, AspenError> {
         for (op, map) in self.iter() {
             if !op.matches(map, context, pv)? {

@@ -227,14 +227,14 @@ impl Statement {
         // We're allowed to not have a resource if this is a resource-based policy.
 
         // Does the principal match the context?
-        if let Some(principal) = self.principal() {
-            if !principal.matches(context.actor()) {
-                return Ok(Decision::DefaultDeny);
-            }
-        } else if let Some(principal) = self.not_principal() {
-            if principal.matches(context.actor()) {
-                return Ok(Decision::DefaultDeny);
-            }
+        if let Some(principal) = self.principal()
+            && !principal.matches(context.actor())
+        {
+            return Ok(Decision::DefaultDeny);
+        } else if let Some(principal) = self.not_principal()
+            && principal.matches(context.actor())
+        {
+            return Ok(Decision::DefaultDeny);
         }
         // We're allowed to not have a principal if this is a principal-based policy.
 
@@ -379,7 +379,7 @@ impl<'de> Visitor<'de> for StatementVisitor {
 
         builder.build().map_err(|e| match e {
             StatementBuilderError::ValidationError(s) => {
-                let msg2 = s.replace('.', ";").trim_end_matches(|c| c == ';').to_string();
+                let msg2 = s.replace('.', ";").trim_end_matches(';').to_string();
                 serde::de::Error::custom(StatementBuilderError::ValidationError(msg2))
             }
             _ => serde::de::Error::custom(e),

@@ -66,7 +66,7 @@ impl SpecifiedPrincipal {
         self.service.as_ref()
     }
 
-    /// Indicates whether this specified principal matches an identity from the [PrincipalActor].
+    /// Indicates whether this specified principal matches an identity from the [`PrincipalActor`].
     pub fn matches(&self, actor: &PrincipalActor) -> bool {
         for identity in actor.iter() {
             let source = identity.source();
@@ -81,36 +81,36 @@ impl SpecifiedPrincipal {
                     }
                 }
                 PrincipalSource::CanonicalUser => {
-                    if let PrincipalIdentity::CanonicalUser(identity) = identity {
-                        if let Some(canonical_users) = self.canonical_user() {
-                            for canonical_user in canonical_users.iter() {
-                                if canonical_user == identity.canonical_user_id() {
-                                    return true;
-                                }
+                    if let PrincipalIdentity::CanonicalUser(identity) = identity
+                        && let Some(canonical_users) = self.canonical_user()
+                    {
+                        for canonical_user in canonical_users.iter() {
+                            if canonical_user == identity.canonical_user_id() {
+                                return true;
                             }
                         }
                     }
                 }
                 PrincipalSource::Federated => {
-                    if let PrincipalIdentity::FederatedUser(identity) = identity {
-                        if let Some(federated) = self.federated() {
-                            for federated in federated.iter() {
-                                if federated == identity.user_name() {
-                                    return true;
-                                }
+                    if let PrincipalIdentity::FederatedUser(identity) = identity
+                        && let Some(federated) = self.federated()
+                    {
+                        for federated in federated.iter() {
+                            if federated == identity.user_name() {
+                                return true;
                             }
                         }
                     }
                 }
                 PrincipalSource::Service => {
-                    if let PrincipalIdentity::Service(identity) = identity {
-                        if let Some(services) = self.service() {
-                            for service in services.iter() {
-                                if service == identity.global_dns_name().as_str()
-                                    || service == identity.regional_dns_name().as_str()
-                                {
-                                    return true;
-                                }
+                    if let PrincipalIdentity::Service(identity) = identity
+                        && let Some(services) = self.service()
+                    {
+                        for service in services.iter() {
+                            if service == identity.global_dns_name().as_str()
+                                || service == identity.regional_dns_name().as_str()
+                            {
+                                return true;
                             }
                         }
                     }

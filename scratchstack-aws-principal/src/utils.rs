@@ -3,7 +3,7 @@ use {
     std::fmt::{Display, Formatter, Result as FmtResult},
 };
 
-/// IamIdPrefix represents the four character prefix used to identify IAM resources.
+/// `IamIdPrefix` represents the four character prefix used to identify IAM resources.
 /// See [the unique identifiers section of the IAM identifiers documentation](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_identifiers.html).
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum IamIdPrefix {

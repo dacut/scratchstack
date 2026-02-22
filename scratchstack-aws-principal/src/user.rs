@@ -32,26 +32,26 @@ pub struct User {
 }
 
 impl User {
-    /// Create a [User] object.
+    /// Create a [`User`] object.
     ///
     /// # Arguments
     ///
     /// * `account_id`: The 12 digit account id. This must be composed of 12 ASCII digits or a
-    ///     [PrincipalError::InvalidAccountId] error will be returned.
+    ///   [`PrincipalError::InvalidAccountId`] error will be returned.
     /// * `path`: The IAM path the group is under. This must meet the following requirements or a
-    ///     [PrincipalError::InvalidPath] error will be returned:
-    ///     *   The path must contain between 1 and 512 characters.
-    ///     *   The path must start and end with `/`.
-    ///     *   All characters in the path must be in the ASCII range 0x21 (`!`) through 0x7E (`~`). The AWS documentation
-    ///         erroneously indicates that 0x7F (DEL) is acceptable; however, the IAM APIs reject this character.
+    ///   [`PrincipalError::InvalidPath`] error will be returned:
+    ///   * The path must contain between 1 and 512 characters.
+    ///   * The path must start and end with `/`.
+    ///   * All characters in the path must be in the ASCII range 0x21 (`!`) through 0x7E (`~`). The AWS documentation
+    ///     erroneously indicates that 0x7F (DEL) is acceptable; however, the IAM APIs reject this character.
     /// * `user_name`: The name of the user. This must meet the following requirements or a
-    ///     [PrincipalError::InvalidUserName] error will be returned:
-    ///     *   The name must contain between 1 and 64 characters.
-    ///     *   The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
+    ///   [`PrincipalError::InvalidUserName`] error will be returned:
+    ///   * The name must contain between 1 and 64 characters.
+    ///   * The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
     ///
     /// # Return value
     ///
-    /// If all of the requirements are met, a [User] object is returned. Otherwise, a [PrincipalError] error
+    /// If all of the requirements are met, a [`User`] object is returned. Otherwise, a [`PrincipalError`] error
     /// is returned.
     pub fn new(partition: &str, account_id: &str, path: &str, user_name: &str) -> Result<Self, PrincipalError> {
         validate_partition(partition)?;
@@ -101,7 +101,7 @@ impl From<&User> for Arn {
 impl FromStr for User {
     type Err = PrincipalError;
 
-    /// Parse an ARN, returning a [User] if the ARN is a valid user ARN.
+    /// Parse an ARN, returning a [`User`] if the ARN is a valid user ARN.
     ///
     /// # Example
     ///
@@ -121,8 +121,8 @@ impl FromStr for User {
 impl TryFrom<&Arn> for User {
     type Error = PrincipalError;
 
-    /// If an [Arn] represents a valid IAM user, convert it to a [User]; otherwise, return a
-    /// [PrincipalError] indicating what is wrong with the ARN.
+    /// If an [`Arn`] represents a valid IAM user, convert it to a [`User`]; otherwise, return a
+    /// [`PrincipalError`] indicating what is wrong with the ARN.
     ///
     /// # Example
     ///

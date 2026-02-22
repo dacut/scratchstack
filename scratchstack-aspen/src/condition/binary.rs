@@ -19,11 +19,11 @@ pub(super) fn binary_match(
         SessionValue::Null => Ok(variant.if_exists()),
         SessionValue::Binary(value) => {
             for el in allowed.iter() {
-                if let Ok(el) = STANDARD.decode(el) {
-                    // Note: negated is not a valid variant here, so no need to check for !=.
-                    if el == *value {
-                        return Ok(true);
-                    }
+                // Note: negated is not a valid variant here, so no need to check for !=.
+                if let Ok(el) = STANDARD.decode(el)
+                    && el == *value
+                {
+                    return Ok(true);
                 }
             }
 
@@ -31,10 +31,10 @@ pub(super) fn binary_match(
         }
         SessionValue::String(value) => {
             for el in allowed.iter() {
-                if let Ok(el) = STANDARD.decode(el) {
-                    if el == value.as_bytes() {
-                        return Ok(true);
-                    }
+                if let Ok(el) = STANDARD.decode(el)
+                    && el == value.as_bytes()
+                {
+                    return Ok(true);
                 }
             }
 

@@ -33,19 +33,19 @@ impl Arn {
     /// Create a new ARN from the specified components.
     ///
     /// * `partition` - The partition the resource is in (required). This is usually `aws`, `aws-cn`, or `aws-us-gov`
-    ///     for actual AWS resources, but may be any string meeting the rules specified in [validate_partition] for
-    ///     non-AWS resources.
+    ///   for actual AWS resources, but may be any string meeting the rules specified in [validate_partition] for
+    ///   non-AWS resources.
     /// * `service` - The service the resource belongs to (required). This is a service name like `ec2` or `s3`.
-    ///     Non-AWS resources must conform to the naming rules specified in [validate_service].
+    ///   Non-AWS resources must conform to the naming rules specified in [validate_service].
     /// * `region` - The region the resource is in (optional). If the resource is regional (and may other regions
-    ///     may have the resources with the same name), this is the region name. If the resource is global, this is
-    ///     empty. This is usually a region name like `us-east-1` or `us-west-2`, but may be any string meeting the
-    ///     rules specified in [validate_region].
+    ///   may have the resources with the same name), this is the region name. If the resource is global, this is
+    ///   empty. This is usually a region name like `us-east-1` or `us-west-2`, but may be any string meeting the
+    ///   rules specified in [validate_region].
     /// * `account_id` - The account ID the resource belongs to (optional). This is the 12-digit account ID or the
-    ///     string `aws` for certain AWS-owned resources. Some resources (such as S3 buckets and objects) do not need
-    ///     the account ID (the bucket name is globally unique within a partition), so this may be empty.
+    ///   string `aws` for certain AWS-owned resources. Some resources (such as S3 buckets and objects) do not need
+    ///   the account ID (the bucket name is globally unique within a partition), so this may be empty.
     /// * `resource` - The resource name (required). This is the name of the resource. The formatting is
-    ///     service-specific, but must be a valid UTF-8 string.
+    ///   service-specific, but must be a valid UTF-8 string.
     ///
     /// # Errors
     ///

@@ -20,18 +20,18 @@ pub struct Service {
 }
 
 impl Service {
-    /// Create a [Service] object representing an AWS(-ish) service.
+    /// Create a [`Service`] object representing an AWS(-ish) service.
     ///
     /// # Arguments
     ///
     /// * `service_name`: The name of the service. This must meet the following requirements or a
-    ///     [PrincipalError::InvalidService] error will be returned:
-    ///     *   The name must contain between 1 and 32 characters.
-    ///     *   The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
+    ///   [`PrincipalError::InvalidService`] error will be returned:
+    ///   * The name must contain between 1 and 32 characters.
+    ///   * The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
     /// * `region`: The region the service is running in. If `None`, the service is global.
     /// * `dns_suffix`: The DNS suffix of the service. This is usually amazonaws.com.
     ///
-    /// If all of the requirements are met, a [Service] object is returned.  Otherwise, a [PrincipalError] error is
+    /// If all of the requirements are met, a [`Service`] object is returned.  Otherwise, a [`PrincipalError`] error is
     /// returned.
     ///
     /// # Example

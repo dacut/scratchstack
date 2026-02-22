@@ -77,7 +77,7 @@ impl<'de> Visitor<'de> for PrincipalVisitor {
         if v == "*" {
             Ok(Principal::Any)
         } else {
-            return Err(E::invalid_value(Unexpected::Str(v), &self));
+            Err(E::invalid_value(Unexpected::Str(v), &self))
         }
     }
 

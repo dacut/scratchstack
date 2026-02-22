@@ -95,10 +95,10 @@ fn date_match_datetime(
             }
         };
 
-        if let Some(parsed) = parsed {
-            if fn_op(value, parsed) {
-                return Ok(true);
-            }
+        if let Some(parsed) = parsed
+            && fn_op(value, parsed)
+        {
+            return Ok(true);
         }
     }
 

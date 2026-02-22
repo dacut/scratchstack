@@ -15,10 +15,10 @@ use {
     },
 };
 
-/// Associated data about a principal. This is a map of ASCII case-insensitive strings to [SessionValue] values.
+/// Associated data about a principal. This is a map of ASCII case-insensitive strings to [`SessionValue`] values.
 ///
-/// This wraps the standard Rust [HashMap] type, providing the case-insensitive key lookup and setting values to
-/// the [SessionValue] type.
+/// This wraps the standard Rust [`HashMap`] type, providing the case-insensitive key lookup and setting values to
+/// the [`SessionValue`] type.
 #[derive(Clone, Debug)]
 pub struct SessionData {
     /// The variables associated with the session with the keys lower-cased.
@@ -45,7 +45,7 @@ impl SessionData {
 
     /// Returns the number of elements the map can hold without reallocating.
     ///
-    /// This number is a lower bound; the [SessionData] might be able to hold more, but is guaranteed to be able to
+    /// This number is a lower bound; the [`SessionData`] might be able to hold more, but is guaranteed to be able to
     /// hold at least this many.
     pub fn capacity(&self) -> usize {
         self.variables.capacity()

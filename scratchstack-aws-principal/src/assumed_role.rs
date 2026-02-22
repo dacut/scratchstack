@@ -35,20 +35,20 @@ impl AssumedRole {
     ///
     /// * `partition`: The partition this principal exists in.
     /// * `account_id`: The 12 digit account id. This must be composed of 12 ASCII digits or a
-    ///     [PrincipalError::InvalidAccountId] error will be returned.
+    ///   [`PrincipalError::InvalidAccountId`] error will be returned.
     /// * `role_name`: The name of the role being assumed. This must meet the following requirements or a
-    ///     [PrincipalError::InvalidRoleName] error will be returned:
-    ///     *   The name must contain between 1 and 64 characters.
-    ///     *   The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
+    ///   [`PrincipalError::InvalidRoleName`] error will be returned:
+    ///   * The name must contain between 1 and 64 characters.
+    ///   * The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
     /// * `session_name`: A name to assign to the session. This must meet the following requirements or a
-    ///     [PrincipalError::InvalidSessionName] error will be returned:
-    ///     *   The session name must contain between 2 and 64 characters.
-    ///     *   The session name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
+    ///   [`PrincipalError::InvalidSessionName`] error will be returned:
+    ///   * The session name must contain between 2 and 64 characters.
+    ///   * The session name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
     ///
     /// # Return value
     ///
-    /// If all of the requirements are met, an [AssumedRole] object is returned. Otherwise,
-    /// a [PrincipalError] error is returned.
+    /// If all of the requirements are met, an [`AssumedRole`] object is returned. Otherwise,
+    /// a [`PrincipalError`] error is returned.
     ///
     /// # Example
     ///
@@ -106,7 +106,7 @@ impl AssumedRole {
 impl FromStr for AssumedRole {
     type Err = PrincipalError;
 
-    /// Parse an ARN, returning an [AssumedRole] if the ARN is a valid assumed role ARN.
+    /// Parse an ARN, returning an [`AssumedRole`] if the ARN is a valid assumed role ARN.
     ///
     /// # Example
     ///
@@ -148,8 +148,8 @@ impl Display for AssumedRole {
 impl TryFrom<&Arn> for AssumedRole {
     type Error = PrincipalError;
 
-    /// If an [Arn] represents a valid assumed role, convert it to an [AssumedRole]; otherwise, return a
-    /// [PrincipalError] indicating what is wrong with the ARN.
+    /// If an [`Arn`] represents a valid assumed role, convert it to an [`AssumedRole`]; otherwise, return a
+    /// [`PrincipalError`] indicating what is wrong with the ARN.
     ///
     /// # Example
     ///

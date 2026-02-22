@@ -114,51 +114,51 @@ impl CanonicalRequest {
 
         if options.url_encode_form {
             // Treat requests with application/x-www-form-urlencoded bodies as if they were passed into the query string.
-            if let Some(content_type) = content_type {
-                if content_type.content_type == APPLICATION_X_WWW_FORM_URLENCODED {
-                    trace!("Body is application/x-www-form-urlencoded; converting to query parameters");
+            if let Some(content_type) = content_type
+                && content_type.content_type == APPLICATION_X_WWW_FORM_URLENCODED
+            {
+                trace!("Body is application/x-www-form-urlencoded; converting to query parameters");
 
-                    let encoding = match &content_type.charset {
-                        Some(charset) => match encoding_from_whatwg_label(charset.as_str()) {
-                            Some(encoding) => encoding,
-                            None => {
-                                return Err(SignatureError::InvalidBodyEncoding(format!(
-                                    "application/x-www-form-urlencoded body uses unsupported charset '{}'",
-                                    charset
-                                )));
-                            }
-                        },
+                let encoding = match &content_type.charset {
+                    Some(charset) => match encoding_from_whatwg_label(charset.as_str()) {
+                        Some(encoding) => encoding,
                         None => {
-                            trace!("Falling back to UTF-8 for application/x-www-form-urlencoded body");
-                            UTF_8
-                        }
-                    };
-
-                    let body_query = match encoding.decode(&body, DecoderTrap::Strict) {
-                        Ok(body) => body,
-                        Err(_) => {
                             return Err(SignatureError::InvalidBodyEncoding(format!(
-                                "Invalid body data encountered parsing application/x-www-form-urlencoded with charset '{}'",
-                                encoding.whatwg_name().unwrap_or(encoding.name())
+                                "application/x-www-form-urlencoded body uses unsupported charset '{}'",
+                                charset
                             )));
                         }
-                    };
-
-                    query_parameters.extend(query_string_to_normalized_map(body_query.as_str())?);
-                    // Rebuild the parts URI with the new query string.
-                    let qs = canonicalize_query_to_string(&query_parameters);
-                    trace!("Rebuilding URI with new query string: {}", qs);
-
-                    let mut pq = canonical_path.clone();
-                    if !qs.is_empty() {
-                        pq.push('?');
-                        pq.push_str(&qs);
+                    },
+                    None => {
+                        trace!("Falling back to UTF-8 for application/x-www-form-urlencoded body");
+                        UTF_8
                     }
+                };
 
-                    parts.uri =
-                        Uri::builder().path_and_query(pq).build().expect("failed to rebuild URI with new query string");
-                    body = Bytes::from("");
+                let body_query = match encoding.decode(&body, DecoderTrap::Strict) {
+                    Ok(body) => body,
+                    Err(_) => {
+                        return Err(SignatureError::InvalidBodyEncoding(format!(
+                            "Invalid body data encountered parsing application/x-www-form-urlencoded with charset '{}'",
+                            encoding.whatwg_name().unwrap_or(encoding.name())
+                        )));
+                    }
+                };
+
+                query_parameters.extend(query_string_to_normalized_map(body_query.as_str())?);
+                // Rebuild the parts URI with the new query string.
+                let qs = canonicalize_query_to_string(&query_parameters);
+                trace!("Rebuilding URI with new query string: {}", qs);
+
+                let mut pq = canonical_path.clone();
+                if !qs.is_empty() {
+                    pq.push('?');
+                    pq.push_str(&qs);
                 }
+
+                parts.uri =
+                    Uri::builder().path_and_query(pq).build().expect("failed to rebuild URI with new query string");
+                body = Bytes::from("");
             }
         }
 
@@ -963,13 +963,13 @@ fn get_content_type_and_charset(headers: &HeaderMap<HeaderValue>) -> Option<Cont
         let mut opt_parts = opt_trim.splitn(2, |c| *c == b'=');
 
         let opt_name = opt_parts.next().unwrap();
-        if latin1_to_string(opt_name).to_lowercase() == CHARSET {
-            if let Some(opt_value) = opt_parts.next() {
-                return Some(ContentTypeCharset {
-                    content_type,
-                    charset: Some(latin1_to_string(opt_value)),
-                });
-            }
+        if latin1_to_string(opt_name).to_lowercase() == CHARSET
+            && let Some(opt_value) = opt_parts.next()
+        {
+            return Some(ContentTypeCharset {
+                content_type,
+                charset: Some(latin1_to_string(opt_value)),
+            });
         }
     }
 

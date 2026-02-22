@@ -16,8 +16,8 @@
 //! For example, IAM users have a
 //! [universally unique ID](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_identifiers.html#identifiers-unique-ids).
 //! If the `/Sales/Bob` user is deleted and re-created, these two users will have the same ARN but different unique IDs
-//! that can be referenced via the `aws:userid` condition key. These details are carried in [SessionData] structures
-//! apart from the [Principal] itself.
+//! that can be referenced via the `aws:userid` condition key. These details are carried in [`SessionData`] structures
+//! apart from the [`Principal`] itself.
 
 mod assumed_role;
 mod canonical_user;

@@ -5,7 +5,7 @@ use {
 
 /// Details about an S3 canonical user.
 ///
-/// CanonicalUser structs are immutable.
+/// `CanonicalUser` structs are immutable.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CanonicalUser {
     /// The canonical user id.
@@ -13,13 +13,13 @@ pub struct CanonicalUser {
 }
 
 impl CanonicalUser {
-    /// Create a [CanonicalUser] object.
+    /// Create a [`CanonicalUser`] object.
     ///
     /// # Arguments
     ///
     /// * `canonical_user_id`: The canonical user id. This must be a 64 character hex string in lower-case form.
     ///
-    /// If all of the requirements are met, a [CanonicalUser] object is returned.  Otherwise, a [PrincipalError]
+    /// If all of the requirements are met, a [`CanonicalUser`] object is returned.  Otherwise, a [`PrincipalError`]
     /// error is returned.
     ///
     /// # Example

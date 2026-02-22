@@ -13,10 +13,11 @@ use {
 };
 
 /// Aspen policy versions as represented in an Aspen policy document.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub enum PolicyVersion {
     /// No policy version specified. Equivalent to [PolicyVersion::V2008_10_17], but is not serialized in the policy
     /// document.
+    #[default]
     None,
 
     /// Aspen policy version 2008-10-17. This is the default version. It does not support policy variables.
@@ -37,12 +38,6 @@ impl PolicyVersion {
     #[inline]
     pub fn is_some(&self) -> bool {
         !self.is_none()
-    }
-}
-
-impl Default for PolicyVersion {
-    fn default() -> Self {
-        Self::None
     }
 }
 

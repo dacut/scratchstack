@@ -54,7 +54,7 @@ impl Action {
     /// * `service` contains non-ASCII alphanumeric characters, hyphen (`-`), or underscore (`_`).
     /// * `service` begins or ends with a hyphen or underscore.
     /// * `api` contains non-ASCII alphanumeric characters, hyphen (`-`), underscore (`_`), asterisk (`*`), or
-    ///    question mark (`?`).
+    ///   question mark (`?`).
     /// * `api` begins or ends with a hyphen or underscore.
     pub fn new<S: Into<String>, A: Into<String>>(service: S, api: A) -> Result<Self, AspenError> {
         let service = service.into();

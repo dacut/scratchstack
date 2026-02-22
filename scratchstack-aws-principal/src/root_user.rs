@@ -20,18 +20,18 @@ pub struct RootUser {
 }
 
 impl RootUser {
-    /// Create a [RootUser] object, refering to an actor with root credentials for the specified
+    /// Create a [`RootUser`] object, refering to an actor with root credentials for the specified
     /// AWS account.
     ///
     /// # Arguments
     ///
     /// * `partition` - The partition this principal exists in.
     /// * `account_id`: The 12 digit account id. This must be composed of 12 ASCII digits or a
-    ///     [PrincipalError::InvalidAccountId] error will be returned.
+    ///   [`PrincipalError::InvalidAccountId`] error will be returned.
     ///
     /// # Return value
     ///
-    /// If the requirement is met, a [RootUser] object is returned. Otherwise, a  [PrincipalError] error is returned.
+    /// If the requirement is met, a [`RootUser`] object is returned. Otherwise, a [`PrincipalError`] error is returned.
     pub fn new(partition: &str, account_id: &str) -> Result<Self, PrincipalError> {
         validate_partition(partition)?;
         validate_account_id(account_id)?;

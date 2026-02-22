@@ -41,7 +41,7 @@ impl Display for PrincipalSource {
 /// A principal that is the source of an action in an AWS (or AWS-like) service.
 ///
 /// This principal may have multiple aspects to its identity: for example, an assumed role may have an associated
-/// service and S3 canonical user. Thus, the principal is represented as a set of [PrincipalIdentity] values.
+/// service and S3 canonical user. Thus, the principal is represented as a set of [`PrincipalIdentity`] values.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Principal {
     /// A sorted vector of identities.
@@ -254,16 +254,6 @@ impl PrincipalIdentity {
     }
 
     /// Indicates whether this principal has an associated ARN.
-    ///
-    /// To obtain the ARN, use code similar to the following:
-    /// ```
-    /// # use scratchstack_aws_principal::{PrincipalIdentity, User};
-    /// # use scratchstack_arn::Arn;
-    /// let ident = PrincipalIdentity::User(User::new("aws", "123456789012", "/", "username").unwrap());
-    /// if ident.has_arn() {
-    ///     let arn: Arn = ident.try_into().unwrap();
-    /// }
-    /// ```
     pub fn has_arn(&self) -> bool {
         !matches!(self, Self::CanonicalUser(_) | Self::Service(_))
     }

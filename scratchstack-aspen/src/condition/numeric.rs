@@ -61,10 +61,10 @@ pub(super) fn numeric_match(
                     PolicyVersion::V2012_10_17 => context.subst_vars_plain(el)?,
                 };
 
-                if let Ok(parsed) = i64::from_str(&el) {
-                    if fn_op(*value, parsed) {
-                        return Ok(true);
-                    }
+                if let Ok(parsed) = i64::from_str(&el)
+                    && fn_op(*value, parsed)
+                {
+                    return Ok(true);
                 }
             }
 
@@ -91,10 +91,10 @@ pub(super) fn numeric_match(
                     PolicyVersion::V2012_10_17 => context.subst_vars_plain(el)?,
                 };
 
-                if let Ok(parsed) = i64::from_str(&el) {
-                    if fn_op(value, parsed) {
-                        return Ok(true);
-                    }
+                if let Ok(parsed) = i64::from_str(&el)
+                    && fn_op(value, parsed)
+                {
+                    return Ok(true);
                 }
             }
 

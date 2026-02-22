@@ -9,7 +9,7 @@ use {
 
 /// Details about an AWS IAM federated user.
 ///
-/// FederatedUser structs are immutable.
+/// `FederatedUser` structs are immutable.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct FederatedUser {
     /// The partition this principal exists in.
@@ -23,17 +23,17 @@ pub struct FederatedUser {
 }
 
 impl FederatedUser {
-    /// Create a [FederatedUser] object.
+    /// Create a [`FederatedUser`] object.
     ///
     /// * `partition`: The partition this principal exists in.
     /// * `account_id`: The 12 digit account id. This must be composed of 12 ASCII digits or a
-    ///     [PrincipalError::InvalidAccountId] error will be returned.
+    ///   [`PrincipalError::InvalidAccountId`] error will be returned.
     /// * `user_name`: The name of the federated user. This must meet the following requirements or a
-    ///     [PrincipalError::InvalidFederatedUserName] error will be returned:
-    ///     *   The name must contain between 2 and 32 characters.
-    ///     *   The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
+    ///   [`PrincipalError::InvalidFederatedUserName`] error will be returned:
+    ///   * The name must contain between 2 and 32 characters.
+    ///   * The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
     ///
-    /// If all of the requirements are met, a [FederatedUser] object is returned. Otherwise, a [PrincipalError] error
+    /// If all of the requirements are met, a [`FederatedUser`] object is returned. Otherwise, a [`PrincipalError`] error
     /// is returned.
     ///
     /// # Example
