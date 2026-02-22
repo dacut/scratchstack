@@ -1,0 +1,40 @@
+-- Delete the IAM schema and tables.
+DELETE FROM limitstore.account_limit WHERE limit_id IN (
+    SELECT limit_id FROM limitstore.limit_definition WHERE service_name='iam' AND limit_name='CreateAccountApiAccess'
+);
+DELETE FROM limitstore.limit_definition WHERE service_name='iam' AND limit_name='CreateAccountApiAccess';
+DROP TABLE IF EXISTS iam.iam_role_token_key;
+DROP TABLE IF EXISTS iam.iam_role_inline_policy;
+DROP TABLE IF EXISTS iam.iam_role_attached_policy;
+DROP TRIGGER IF EXISTS trig_delete_iam_role ON iam.iam_role;
+DROP FUNCTION IF EXISTS iam.on_delete_iam_role;
+DROP TABLE IF EXISTS iam.deleted_iam_role;
+DROP TABLE IF EXISTS iam.iam_role;
+DROP TABLE IF EXISTS iam.iam_group_member;
+DROP TABLE IF EXISTS iam.iam_group_inline_policy;
+DROP TABLE IF EXISTS iam.iam_group_attached_policy;
+DROP TRIGGER IF EXISTS trig_delete_iam_group ON iam.iam_group;
+DROP FUNCTION IF EXISTS iam.on_delete_iam_group;
+DROP TABLE IF EXISTS iam.deleted_iam_group;
+DROP TABLE IF EXISTS iam.iam_group;
+DROP TABLE IF EXISTS iam.iam_user_service_specific_credential;
+DROP TABLE IF EXISTS iam.iam_user_ssh_public_key;
+DROP TABLE IF EXISTS iam.iam_user_credential;
+DROP TABLE IF EXISTS iam.iam_user_password_history;
+DROP TABLE IF EXISTS iam.iam_user_login_profile;
+DROP TABLE IF EXISTS iam.iam_user_inline_policy;
+DROP TABLE IF EXISTS iam.iam_user_attached_policy;
+DROP TRIGGER IF EXISTS trig_delete_iam_user ON iam.iam_user;
+DROP FUNCTION IF EXISTS iam.on_delete_iam_user;
+DROP TABLE IF EXISTS iam.deleted_iam_user;
+DROP TABLE IF EXISTS iam.iam_user;
+DROP TRIGGER IF EXISTS trig_delete_managed_policy_version ON iam.managed_policy_version;
+DROP FUNCTION IF EXISTS iam.on_delete_managed_policy_version;
+DROP TABLE IF EXISTS iam.deleted_managed_policy_version;
+DROP TABLE IF EXISTS iam.managed_policy_version;
+DROP TRIGGER IF EXISTS trig_delete_managed_policy ON iam.managed_policy;
+DROP FUNCTION IF EXISTS iam.on_delete_managed_policy;
+DROP TABLE IF EXISTS iam.deleted_managed_policy;
+DROP TABLE IF EXISTS iam.managed_policy;
+DROP TABLE IF EXISTS iam.account;
+DROP SCHEMA iam;
