@@ -1,0 +1,44 @@
+[package]
+name = "scratchstack-aws-signature"
+version = "0.11.3"
+authors = ["David Cuthbert <dacut@kanga.org>"]
+description = "AWS SigV4 signature verification"
+keywords = ["AWS", "Amazon"]
+homepage = "https://github.com/dacut/scratchstack-aws-signature"
+repository = "https://github.com/dacut/scratchstack-aws-signature"
+license = "MIT"
+edition = "2021"
+exclude = ["tests/*"]
+readme = "README.md"
+
+[lib]
+name = "scratchstack_aws_signature"
+
+[features]
+default = []
+unstable = []
+
+[dependencies]
+bytes = "^1.10.1"
+chrono = { version = "^0.4.41", default-features = false, features = [] }
+derive_builder = "^0.20.2"
+encoding = "^0.2.33"
+hex = "^0.4.3"
+hmac = "^0.12.1"
+http = "^1.3.1"
+lazy_static = "^1.5.0"
+log = "^0.4.27"
+qualifier_attr = "0.2.2"
+regex = "^1.11.2"
+sha2 = "^0.10.9"
+scratchstack-aws-principal = "^0.4.9"
+scratchstack-errors = "^0.4.9"
+subtle = "^2.6.1"
+tokio = { version = "^1.49", optional = true, features = [ "io-util" ] }
+tower = { version = "^0.5.2", features = [ "util" ] }
+
+[dev-dependencies]
+env_logger = "^0.11.8"
+tokio = { version = "^1.47.1", features = [ "macros", "rt" ] }
+tokio-test = "^0.4"
+test-log = "0.2"
