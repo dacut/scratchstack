@@ -1,0 +1,21 @@
+[workspace]
+members = [
+    "scratchstack-arn",
+    "scratchstack-aspen",
+    "scratchstack-aws-signature",
+    "scratchstack-config",
+    "scratchstack-errors",
+    "scratchstack-http-framework",
+]
+resolver = "2"
+
+[workspace.package]
+authors = [
+    "David Cuthbert <dacut@kanga.org>",
+]
+edition = "2024"
+homepage = "https://github.com/dacut/scratchstack"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/dacut/scratchstack.git"
+version = "0.12.0"
