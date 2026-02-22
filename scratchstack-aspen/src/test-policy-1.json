@@ -1,0 +1,58 @@
+{
+  "Version": "2012-10-17",
+  "Id": "MyPolicy",
+  "Statement": [
+    {
+      "Sid": "Stmt1",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::examplebucket",
+      "Principal": {
+        "AWS": "*"
+      }
+    },
+    {
+      "Sid": "Stmt2",
+      "Effect": "Deny",
+      "NotAction": [
+        "ec2:*",
+        "s3:*",
+        "rds:*"
+      ],
+      "Resource": [
+        "arn:aws:ec2:*:*:instance/*",
+        "arn:aws:s3:*:*:bucket/*",
+        "arn:aws:rds:*:*:db/*"
+      ],
+      "Principal": {
+        "AWS": [
+          "arn:aws:iam::123456789012:root",
+          "arn:aws:iam::123456789012:user/*"
+        ],
+        "CanonicalUser": [
+          "d04207a7d9311e77f5837e0e4f4b025322bf2f626f0872c85be8c6bb1290c88b",
+          "2cdb0173470eb5b200f82c8e1b51a88562924cda12e2ccce60d7f00e1567ee7c"
+        ],
+        "Federated": [
+          "dacut@kanga.org"
+        ],
+        "Service": [
+          "ec2.amazonaws.com",
+          "edgelambda.amazonaws.com",
+          "lambda.amazonaws.com"
+        ]
+      },
+      "Condition": {
+        "DateGreaterThan": {
+          "aws:CurrentTime": "2012-10-17T00:00:00Z"
+        },
+        "StringEqualsIfExists": {
+          "aws:userid": [
+            "dacut",
+            "dacut2"
+          ]
+        }
+      }
+    }
+  ]
+}

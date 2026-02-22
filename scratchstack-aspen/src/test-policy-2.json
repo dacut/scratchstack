@@ -1,0 +1,207 @@
+{
+    "Version": "2012-10-17",
+    "Id": "MyPolicy",
+    "Statement": [
+      {
+        "Sid": "Stmt1",
+        "Effect": "Allow",
+        "Action": "s3:ListBucket",
+        "Resource": "arn:aws:s3:::examplebucket",
+        "Principal": {
+          "AWS": "*"
+        }
+      },
+      {
+        "Sid": "Stmt2",
+        "Effect": "Deny",
+        "Action": [
+          "ec2:*",
+          "s3:*",
+          "rds:*"
+        ],
+        "NotResource": [
+          "arn:aws:ec2:*:*:instance/*",
+          "arn:aws:s3:*:*:bucket/*",
+          "arn:aws:rds:*:*:db/*"
+        ],
+        "NotPrincipal": {
+          "AWS": [
+            "arn:aws:iam::123456789012:root",
+            "arn:aws:iam::123456789012:user/*"
+          ],
+          "CanonicalUser": [
+            "2cdb0173470eb5b200f82c8e1b51a88562924cda12e2ccce60d7f00e1567ee7c"
+          ],
+          "Federated": [
+            "dacut@kanga.org"
+          ],
+          "Service": [
+            "ec2.amazonaws.com",
+            "edgelambda.amazonaws.com",
+            "lambda.amazonaws.com"
+          ]
+        },
+        "Condition": {
+          "ArnEquals": {
+            "aws:SourceArn": "arn:aws:s3:::examplebucket"
+          },
+          "ArnEqualsIfExists": {
+            "aws:TargetArn": "arn:aws:s3:::examplebucket"
+          },
+          "ArnLike": {
+            "aws:SourceArn": "arn:aws:s3:::exa*ebucket"
+          },
+          "ArnLikeIfExists": {
+            "aws:TargetArn": "arn:aws:s3:::exa*ebucket"
+          },
+          "ArnNotEquals": {
+            "aws:SourceArn": "arn:aws:s3:::examplebucket"
+          },
+          "ArnNotEqualsIfExists": {
+            "aws:TargetArn": "arn:aws:s3:::examplebucket"
+          },
+          "ArnNotLike": {
+            "aws:SourceArn": "arn:aws:s3:::exa*ebucket"
+          },
+          "ArnNotLikeIfExists": {
+            "aws:TargetArn": "arn:aws:s3:::exa*ebucket"
+          },
+          "BinaryEquals": {
+            "header": "QmluYXJ5VmFsdWVJbkJhc2U2NA=="
+          },
+          "BinaryEqualsIfExists": {
+            "header": "QmluYXJ5VmFsdWVJbkJhc2U2NA=="
+          },
+          "Bool": {
+            "aws:SecureTransport": "true"
+          },
+          "BoolIfExists": {
+            "aws:SecureTransport": "true"
+          },
+          "DateEquals": {
+            "aws:CurrentTime": "2016-12-31T23:59:59Z"
+          },
+          "DateEqualsIfExists": {
+            "aws:CurrentTime": "2016-12-31T23:59:59Z"
+          },
+          "DateGreaterThan": {
+            "aws:CurrentTime": "2012-10-17T00:00:00Z"
+          },
+          "DateGreaterThanEquals": {
+            "aws:CurrentTime": "2012-10-17T00:00:00Z"
+          },
+          "DateGreaterThanEqualsIfExists": {
+            "aws:CurrentTime": "2012-10-17T00:00:00Z"
+          },
+          "DateGreaterThanIfExists": {
+            "aws:CurrentTime": "2012-10-17T00:00:00Z"
+          },
+          "DateLessThan": {
+            "aws:CurrentTime": "2012-10-17T00:00:00Z"
+          },
+          "DateLessThanEquals": {
+            "aws:CurrentTime": "2012-10-17T00:00:00Z"
+          },
+          "DateLessThanEqualsIfExists": {
+            "aws:CurrentTime": "2012-10-17T00:00:00Z"
+          },
+          "DateLessThanIfExists": {
+            "aws:CurrentTime": "2012-10-17T00:00:00Z"
+          },
+          "DateNotEquals": {
+            "aws:CurrentTime": "2012-10-17T00:00:00Z"
+          },
+          "DateNotEqualsIfExists": {
+            "aws:CurrentTime": "2012-10-17T00:00:00Z"
+          },
+          "IpAddress": {
+            "aws:SourceIp": "::/0"
+          },
+          "IpAddressIfExists": {
+            "aws:SourceIp": "::/0"
+          },
+          "NotIpAddress": {
+            "aws:SourceIp": "0.0.0.0/0"
+          },
+          "NotIpAddressIfExists": {
+            "aws:SourceIp": "0.0.0.0/0"
+          },
+          "Null": {
+            "aws:MultiFactorAuthAge": "true"
+          },
+          "NumericEquals": {
+            "aws:MultiFactorAuthAge": "3600"
+          },
+          "NumericEqualsIfExists": {
+            "aws:MultiFactorAuthAge": "3600"
+          },
+          "NumericGreaterThan": {
+            "aws:MultiFactorAuthAge": "3600"
+          },
+          "NumericGreaterThanEquals": {
+            "aws:MultiFactorAuthAge": "3600"
+          },
+          "NumericGreaterThanEqualsIfExists": {
+            "aws:MultiFactorAuthAge": "3600"
+          },
+          "NumericGreaterThanIfExists": {
+            "aws:MultiFactorAuthAge": "3600"
+          },
+          "NumericLessThan": {
+            "aws:MultiFactorAuthAge": "3600"
+          },
+          "NumericLessThanEquals": {
+            "aws:MultiFactorAuthAge": "3600"
+          },
+          "NumericLessThanEqualsIfExists": {
+            "aws:MultiFactorAuthAge": "3600"
+          },
+          "NumericLessThanIfExists": {
+            "aws:MultiFactorAuthAge": "3600"
+          },
+          "NumericNotEquals": {
+            "aws:MultiFactorAuthAge": "3600"
+          },
+          "NumericNotEqualsIfExists": {
+            "aws:MultiFactorAuthAge": "3600"
+          },
+          "StringEquals": {
+            "aws:PrincipalTag/foo": "bar"
+          },
+          "StringEqualsIfExists": {
+            "aws:PrincipalTag/foo": "bar"
+          },
+          "StringEqualsIgnoreCase": {
+            "aws:PrincipalTag/foo": "bar"
+          },
+          "StringEqualsIgnoreCaseIfExists": {
+            "aws:PrincipalTag/foo": "bar"
+          },
+          "StringLike": {
+            "aws:PrincipalTag/foo": "bar*"
+          },
+          "StringLikeIfExists": {
+            "aws:PrincipalTag/foo": "bar*"
+          },
+          "StringNotEquals": {
+            "aws:PrincipalTag/foo": "bar"
+          },
+          "StringNotEqualsIfExists": {
+            "aws:PrincipalTag/foo": "bar"
+          },
+          "StringNotEqualsIgnoreCase": {
+            "aws:PrincipalTag/foo": "bar"
+          },
+          "StringNotEqualsIgnoreCaseIfExists": {
+            "aws:PrincipalTag/foo": "bar"
+          },
+          "StringNotLike": {
+            "aws:PrincipalTag/foo": "bar*"
+          },
+          "StringNotLikeIfExists": {
+            "aws:PrincipalTag/foo": "bar*"
+          }
+        }
+      }
+    ]
+  }
