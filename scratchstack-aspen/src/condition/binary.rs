@@ -1,6 +1,7 @@
 use {
     super::variant::Variant,
-    crate::{serutil::StringLikeList, AspenError, Context, PolicyVersion},
+    crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
+    base64::{Engine, engine::general_purpose::STANDARD},
     scratchstack_aws_principal::SessionValue,
 };
 
@@ -18,7 +19,7 @@ pub(super) fn binary_match(
         SessionValue::Null => Ok(variant.if_exists()),
         SessionValue::Binary(value) => {
             for el in allowed.iter() {
-                if let Ok(el) = base64::decode(el) {
+                if let Ok(el) = STANDARD.decode(el) {
                     // Note: negated is not a valid variant here, so no need to check for !=.
                     if el == *value {
                         return Ok(true);
@@ -30,7 +31,7 @@ pub(super) fn binary_match(
         }
         SessionValue::String(value) => {
             for el in allowed.iter() {
-                if let Ok(el) = base64::decode(el) {
+                if let Ok(el) = STANDARD.decode(el) {
                     if el == value.as_bytes() {
                         return Ok(true);
                     }

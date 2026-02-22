@@ -1,7 +1,7 @@
 use {
     super::variant::Variant,
-    crate::{serutil::StringLikeList, AspenError, Context, PolicyVersion},
-    chrono::{DateTime, NaiveDateTime, Utc},
+    crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
+    chrono::{DateTime, Utc},
     scratchstack_aws_principal::SessionValue,
     std::str::FromStr,
 };
@@ -85,10 +85,10 @@ fn date_match_datetime(
         };
 
         let parsed = match DateTime::parse_from_rfc3339(&el) {
-            Ok(allowed) => Some(DateTime::from_utc(allowed.naive_utc(), Utc)),
+            Ok(allowed) => Some(DateTime::from_naive_utc_and_offset(allowed.naive_utc(), Utc)),
             Err(_) => {
                 if let Ok(unix_seconds) = i64::from_str(&el) {
-                    NaiveDateTime::from_timestamp_opt(unix_seconds, 0).map(|ndt| DateTime::from_utc(ndt, Utc))
+                    DateTime::from_timestamp(unix_seconds, 0)
                 } else {
                     None
                 }

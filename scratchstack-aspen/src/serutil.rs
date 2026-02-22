@@ -1,19 +1,18 @@
 use {
     log::{debug, error},
     serde::{
+        Deserialize, Serialize,
         de::{
-            self,
+            self, Deserializer, MapAccess, SeqAccess, Unexpected, Visitor,
             value::{MapAccessDeserializer, SeqAccessDeserializer},
-            Deserializer, MapAccess, SeqAccess, Unexpected, Visitor,
         },
         ser::{SerializeSeq, Serializer},
-        Deserialize, Serialize,
     },
     std::{
         any::type_name,
         fmt::{Debug, Display, Error as FmtError, Formatter, Result as FmtResult},
         marker::PhantomData,
-        str::{from_utf8, FromStr},
+        str::{FromStr, from_utf8},
     },
 };
 
@@ -413,10 +412,9 @@ where
 #[cfg(test)]
 mod tests {
     use {
-        super::{simple_type_name, JsonRep, MapList},
-        crate::display_json,
+        super::{JsonRep, MapList, simple_type_name},
         indoc::indoc,
-        serde::{ser::Serializer, Deserialize, Serialize},
+        serde::{Deserialize, Serialize, ser::Serializer},
         std::panic::catch_unwind,
     };
 
