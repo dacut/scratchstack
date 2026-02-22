@@ -1,0 +1,25 @@
+[package]
+name = "scratchstack-arn-fuzz"
+version = "0.0.0"
+authors = ["Automatically generated"]
+publish = false
+edition = "2018"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.scratchstack-arn]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "arn_from_str"
+path = "fuzz_targets/arn_from_str.rs"
+test = false
+doc = false

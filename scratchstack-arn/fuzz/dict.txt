@@ -1,0 +1,4 @@
+kw1="arn:"
+kw2="us-east-1"
+kw3="arn:aws:iam:us-east-1:123456789012:role/role-name"
+kw4="us-east-1-lax-1"

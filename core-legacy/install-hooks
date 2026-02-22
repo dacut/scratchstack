@@ -1,0 +1,10 @@
+#!/bin/bash
+ROOT="$(dirname "$0")"
+
+for hook in "$ROOT/git-hooks"/*; do
+    hookbase="$(basename "$hook")"
+    rm -f "$ROOT/.git/hooks/$hookbase"
+    ln -s -f ../../git-hooks/$hookbase "$ROOT/.git/hooks/$hookbase"
+    chmod +x "$ROOT/.git/hooks/$hookbase"
+    echo "Installed $hookbase"
+done

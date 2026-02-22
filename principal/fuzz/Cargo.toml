@@ -1,0 +1,26 @@
+[package]
+name = "scratchstack-aws-principal-fuzz"
+version = "0.0.0"
+authors = ["Automatically generated"]
+publish = false
+edition = "2018"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+arbitrary = { version = "^1.1", features = ["derive"] }
+libfuzzer-sys = { version = "^0.4" }
+
+[dependencies.scratchstack-aws-principal]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "principal"
+path = "fuzz_targets/principal.rs"
+test = false
+doc = false
