@@ -9,14 +9,14 @@
 
 use {
     crate::{
+        SignatureError, SignatureOptions,
         auth::{SigV4Authenticator, SigV4AuthenticatorBuilder},
         chronoutil::ParseISO8601,
         constants::*,
         crypto::{sha256, sha256_hex},
-        SignatureError, SignatureOptions,
     },
     bytes::Bytes,
-    chrono::{offset::FixedOffset, DateTime, Utc},
+    chrono::{DateTime, Utc, offset::FixedOffset},
     encoding::{all::UTF_8, label::encoding_from_whatwg_label, types::DecoderTrap},
     http::{
         header::{HeaderMap, HeaderValue},
@@ -125,7 +125,7 @@ impl CanonicalRequest {
                                 return Err(SignatureError::InvalidBodyEncoding(format!(
                                     "application/x-www-form-urlencoded body uses unsupported charset '{}'",
                                     charset
-                                )))
+                                )));
                             }
                         },
                         None => {
@@ -138,9 +138,9 @@ impl CanonicalRequest {
                         Ok(body) => body,
                         Err(_) => {
                             return Err(SignatureError::InvalidBodyEncoding(format!(
-                            "Invalid body data encountered parsing application/x-www-form-urlencoded with charset '{}'",
-                            encoding.whatwg_name().unwrap_or(encoding.name())
-                        )))
+                                "Invalid body data encountered parsing application/x-www-form-urlencoded with charset '{}'",
+                                encoding.whatwg_name().unwrap_or(encoding.name())
+                            )));
                         }
                     };
 
@@ -395,7 +395,7 @@ impl CanonicalRequest {
             (None, Some(sig_algs)) => self.get_auth_parameters_from_query_parameters(&sig_algs[0])?,
             (Some(_), Some(_)) => return Err(SignatureError::SignatureDoesNotMatch(None)),
             (None, None) => {
-                return Err(SignatureError::MissingAuthenticationToken(MSG_REQUEST_MISSING_AUTH_TOKEN.to_string()))
+                return Err(SignatureError::MissingAuthenticationToken(MSG_REQUEST_MISSING_AUTH_TOKEN.to_string()));
             }
         };
 
@@ -1289,12 +1289,12 @@ mod tests {
     use {
         super::{debug_headers, u8_to_upper_hex},
         crate::{
+            NO_ADDITIONAL_SIGNED_HEADERS, SignatureError, SignatureOptions,
             canonical::{
-                canonicalize_query_to_string, canonicalize_uri_path, normalize_uri_path_component,
-                query_string_to_normalized_map, unescape_uri_encoding, CanonicalRequest,
+                CanonicalRequest, canonicalize_query_to_string, canonicalize_uri_path, normalize_uri_path_component,
+                query_string_to_normalized_map, unescape_uri_encoding,
             },
             constants::*,
-            SignatureError, SignatureOptions, NO_ADDITIONAL_SIGNED_HEADERS,
         },
         bytes::Bytes,
         http::{
@@ -1846,7 +1846,10 @@ mod tests {
             CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap();
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::IncompleteSignature(msg) = e {
-            assert_eq!(msg.as_str(), "'SignedHeadersdate;host' not a valid key=value pair (missing equal-sign) in Authorization header: 'AWS4-HMAC-SHA256 Credential=1234, SignedHeadersdate;host'");
+            assert_eq!(
+                msg.as_str(),
+                "'SignedHeadersdate;host' not a valid key=value pair (missing equal-sign) in Authorization header: 'AWS4-HMAC-SHA256 Credential=1234, SignedHeadersdate;host'"
+            );
         } else {
             panic!("Unexpected error: {:?}", e);
         }

@@ -1,8 +1,8 @@
 use {
     crate::PrincipalError,
     scratchstack_arn::{
-        utils::{validate_account_id, validate_partition},
         Arn,
+        utils::{validate_account_id, validate_partition},
     },
     std::fmt::{Display, Formatter, Result as FmtResult},
 };

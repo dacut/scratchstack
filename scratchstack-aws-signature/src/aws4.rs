@@ -1,7 +1,7 @@
 use {
     crate::{
+        GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, NO_ADDITIONAL_SIGNED_HEADERS, SignatureOptions,
         canonical::CanonicalRequest, constants::*, service_for_signing_key_fn, sigv4_validate_request,
-        GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, SignatureOptions, NO_ADDITIONAL_SIGNED_HEADERS,
     },
     bytes::{Bytes, BytesMut},
     chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc},
@@ -19,7 +19,7 @@ use {
         fs::File,
         io::{BufRead, BufReader, Read, Seek},
         path::PathBuf,
-        str::{from_utf8, FromStr},
+        str::{FromStr, from_utf8},
     },
     tower::BoxError,
 };

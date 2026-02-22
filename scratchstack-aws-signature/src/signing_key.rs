@@ -1,5 +1,5 @@
 use {
-    crate::{constants::*, crypto::hmac_sha256, KeyLengthError},
+    crate::{KeyLengthError, constants::*, crypto::hmac_sha256},
     chrono::NaiveDate,
     derive_builder::Builder,
     scratchstack_aws_principal::{Principal, SessionData},
@@ -8,7 +8,7 @@ use {
         future::Future,
         str::FromStr,
     },
-    tower::{service_fn, util::ServiceFn, BoxError},
+    tower::{BoxError, service_fn, util::ServiceFn},
 };
 
 /// A raw AWS secret key (`kSecret`).
@@ -389,7 +389,7 @@ where
 #[cfg(test)]
 mod tests {
     use {
-        crate::{constants::*, GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey},
+        crate::{GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, constants::*},
         chrono::NaiveDate,
         scratchstack_aws_principal::{AssumedRole, Principal},
         std::str::FromStr,

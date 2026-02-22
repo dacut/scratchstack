@@ -20,15 +20,15 @@ mod variant;
 pub use {op::ConditionOp, variant::Variant};
 
 use {
-    crate::{from_str_json, serutil::StringLikeList, AspenError, Context, PolicyVersion},
-    serde::{de::Deserializer, ser::Serializer, Deserialize, Serialize},
+    crate::{AspenError, Context, PolicyVersion, from_str_json, serutil::StringLikeList},
+    serde::{Deserialize, Serialize, de::Deserializer, ser::Serializer},
     std::{
         borrow::Borrow,
         collections::{
+            BTreeMap,
             btree_map::{
                 Entry, IntoIter, IntoKeys, IntoValues, Iter, IterMut, Keys, Range, RangeMut, Values, ValuesMut,
             },
-            BTreeMap,
         },
         iter::{Extend, FromIterator, IntoIterator},
         ops::{Index, RangeBounds},
@@ -793,7 +793,7 @@ impl IntoIterator for Condition {
 #[cfg(test)]
 mod test {
     use {
-        crate::{condop, serutil::StringLikeList, Condition, ConditionMap, ConditionOp},
+        crate::{Condition, ConditionMap, ConditionOp, condop, serutil::StringLikeList},
         pretty_assertions::assert_eq,
     };
 

@@ -118,22 +118,32 @@ mod tests {
 
     #[test_log::test]
     fn test_matches() {
-        assert!(AwsPrincipal::Any
-            .matches(&PrincipalIdentity::from(User::new("aws", "123456789012", "/", "testuser").unwrap())));
-        assert!(AwsPrincipal::Account("123456789012".to_string())
-            .matches(&PrincipalIdentity::from(User::new("aws", "123456789012", "/", "testuser").unwrap())));
-        assert!(!AwsPrincipal::Account("567890123456".to_string())
-            .matches(&PrincipalIdentity::from(User::new("aws", "123456789012", "/", "testuser").unwrap())));
+        assert!(
+            AwsPrincipal::Any
+                .matches(&PrincipalIdentity::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
+        );
+        assert!(
+            AwsPrincipal::Account("123456789012".to_string())
+                .matches(&PrincipalIdentity::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
+        );
+        assert!(
+            !AwsPrincipal::Account("567890123456".to_string())
+                .matches(&PrincipalIdentity::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
+        );
         assert!(
             !AwsPrincipal::Any.matches(&PrincipalIdentity::from(Service::new("iam", None, "amazonaws.com").unwrap()))
         );
-        assert!(!AwsPrincipal::Account("123456789012".to_string())
-            .matches(&PrincipalIdentity::from(Service::new("iam", None, "amazonaws.com").unwrap())));
+        assert!(
+            !AwsPrincipal::Account("123456789012".to_string())
+                .matches(&PrincipalIdentity::from(Service::new("iam", None, "amazonaws.com").unwrap()))
+        );
         assert!(!AwsPrincipal::Any.matches(&PrincipalIdentity::from(
             CanonicalUser::new("772183b840c93fe103e45cd24ca8b8c94425a373465c6eb535b7c4b9593811e5").unwrap()
         )));
 
-        assert!(AwsPrincipal::Arn("arn:aws:iam::123456789012:root".parse().unwrap())
-            .matches(&PrincipalIdentity::from(User::new("aws", "123456789012", "/", "testuser").unwrap())));
+        assert!(
+            AwsPrincipal::Arn("arn:aws:iam::123456789012:root".parse().unwrap())
+                .matches(&PrincipalIdentity::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
+        );
     }
 }

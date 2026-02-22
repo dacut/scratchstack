@@ -1,5 +1,5 @@
 use {
-    crate::{serutil::StringLikeList, AspenError, Context, PolicyVersion},
+    crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
     scratchstack_aws_principal::SessionValue,
 };
 

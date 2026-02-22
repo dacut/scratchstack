@@ -1,10 +1,10 @@
 use {
-    base64::{engine::general_purpose::STANDARD as BASE64_ENGINE, Engine},
+    base64::{Engine, engine::general_purpose::STANDARD as BASE64_ENGINE},
     chrono::{DateTime, FixedOffset, Utc},
     std::{
         collections::{
-            hash_map::{Drain, Entry, IntoIter, IntoKeys, IntoValues, Iter, IterMut, Keys, Values, ValuesMut},
             HashMap, TryReserveError,
+            hash_map::{Drain, Entry, IntoIter, IntoKeys, IntoValues, Iter, IterMut, Keys, Values, ValuesMut},
         },
         fmt::{Display, Formatter, Result as FmtResult},
         hash::Hash,

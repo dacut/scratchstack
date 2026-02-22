@@ -21,7 +21,7 @@ pub(crate) mod serutil;
 
 pub use {
     action::{Action, ActionList},
-    condition::{op as condop, Condition, ConditionMap, ConditionOp, Variant as ConditionVariant},
+    condition::{Condition, ConditionMap, ConditionOp, Variant as ConditionVariant, op as condop},
     effect::Effect,
     error::AspenError,
     eval::{Context, ContextBuilder, Decision},

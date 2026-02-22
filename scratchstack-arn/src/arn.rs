@@ -1,9 +1,9 @@
 use {
     crate::{
-        utils::{validate_account_id, validate_partition, validate_region, validate_service},
         ArnError,
+        utils::{validate_account_id, validate_partition, validate_region, validate_service},
     },
-    serde::{de, Deserialize, Serialize},
+    serde::{Deserialize, Serialize, de},
     std::{
         cmp::Ordering,
         fmt::{Display, Formatter, Result as FmtResult},
@@ -225,8 +225,8 @@ mod test {
     use {
         super::Arn,
         crate::{
-            utils::{validate_account_id, validate_region},
             ArnError,
+            utils::{validate_account_id, validate_region},
         },
         pretty_assertions::assert_eq,
         std::{

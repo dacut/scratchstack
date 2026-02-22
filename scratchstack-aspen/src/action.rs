@@ -1,5 +1,5 @@
 use {
-    crate::{eval::regex_from_glob, serutil::StringLikeList, AspenError},
+    crate::{AspenError, eval::regex_from_glob, serutil::StringLikeList},
     log::debug,
     std::{
         fmt::{Display, Formatter, Result as FmtResult},

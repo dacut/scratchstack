@@ -1,8 +1,8 @@
 use {
     crate::{
+        GetSigningKeyRequest, GetSigningKeyResponse, KSigningKey, SignatureError, SignedHeaderRequirements,
         auth::SigV4AuthenticatorResponse, body::IntoRequestBytes, canonical::CanonicalRequest, constants::*,
-        crypto::hmac_sha256, GetSigningKeyRequest, GetSigningKeyResponse, KSigningKey, SignatureError,
-        SignedHeaderRequirements,
+        crypto::hmac_sha256,
     },
     bytes::Bytes,
     chrono::{DateTime, Duration, Utc},
@@ -286,9 +286,9 @@ impl StreamingSignatureState {
 mod tests {
     use {
         crate::{
-            auth::SigV4AuthenticatorResponse, constants::*, service_for_signing_key_fn, sigv4_validate_request,
-            sigv4_validate_streaming_headers, GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, SignatureError,
-            SignatureOptions, SignedHeaderRequirements, VecSignedHeaderRequirements, NO_ADDITIONAL_SIGNED_HEADERS,
+            GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, NO_ADDITIONAL_SIGNED_HEADERS, SignatureError,
+            SignatureOptions, SignedHeaderRequirements, VecSignedHeaderRequirements, auth::SigV4AuthenticatorResponse,
+            constants::*, service_for_signing_key_fn, sigv4_validate_request, sigv4_validate_streaming_headers,
         },
         bytes::Bytes,
         chrono::{DateTime, Duration, NaiveDate, Utc},
@@ -559,19 +559,34 @@ mod tests {
                         assert_eq!(e.to_string().as_str(), "Unsupported AWS 'algorithm': 'AWS5-HMAC-SHA256'.")
                     }
                     (3, SignatureError::IncompleteSignature(_)) => {
-                        assert_eq!(e.to_string().as_str(), "'FooBar' not a valid key=value pair (missing equal-sign) in Authorization header: 'AWS4-HMAC-SHA256 FooBar, BazBurp'")
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "'FooBar' not a valid key=value pair (missing equal-sign) in Authorization header: 'AWS4-HMAC-SHA256 FooBar, BazBurp'"
+                        )
                     }
                     (4, SignatureError::IncompleteSignature(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Authorization header requires 'Credential' parameter. Authorization header requires 'Signature' parameter. Authorization header requires 'SignedHeaders' parameter. Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256")
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Authorization header requires 'Credential' parameter. Authorization header requires 'Signature' parameter. Authorization header requires 'SignedHeaders' parameter. Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256"
+                        )
                     }
                     (5, SignatureError::IncompleteSignature(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Authorization header requires 'Signature' parameter. Authorization header requires 'SignedHeaders' parameter. Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256")
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Authorization header requires 'Signature' parameter. Authorization header requires 'SignedHeaders' parameter. Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256"
+                        )
                     }
                     (6, SignatureError::IncompleteSignature(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Authorization header requires 'SignedHeaders' parameter. Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256")
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Authorization header requires 'SignedHeaders' parameter. Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256"
+                        )
                     }
                     (7, SignatureError::IncompleteSignature(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256")
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256"
+                        )
                     }
                     (8, SignatureError::SignatureDoesNotMatch(_)) => {
                         assert_eq!(
@@ -595,25 +610,46 @@ mod tests {
                         )
                     }
                     (12, SignatureError::IncompleteSignature(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Date must be in ISO-8601 'basic format'. Got '2015/08/30T12/36/00Z'. See http://en.wikipedia.org/wiki/ISO_8601")
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Date must be in ISO-8601 'basic format'. Got '2015/08/30T12/36/00Z'. See http://en.wikipedia.org/wiki/ISO_8601"
+                        )
                     }
                     (13, SignatureError::SignatureDoesNotMatch(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Signature expired: 20150830T122059Z is now earlier than 20150830T122100Z (20150830T123600Z - 15 min.)")
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Signature expired: 20150830T122059Z is now earlier than 20150830T122100Z (20150830T123600Z - 15 min.)"
+                        )
                     }
                     (14, SignatureError::SignatureDoesNotMatch(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Signature not yet current: 20150830T125101Z is still later than 20150830T125100Z (20150830T123600Z + 15 min.)")
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Signature not yet current: 20150830T125101Z is still later than 20150830T125100Z (20150830T123600Z + 15 min.)"
+                        )
                     }
                     (15, SignatureError::IncompleteSignature(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Credential must have exactly 5 slash-delimited elements, e.g. keyid/date/region/service/term, got 'AKIDEXAMPLE'")
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Credential must have exactly 5 slash-delimited elements, e.g. keyid/date/region/service/term, got 'AKIDEXAMPLE'"
+                        )
                     }
                     (16, SignatureError::SignatureDoesNotMatch(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Credential should be scoped to a valid region, not 'wrong-region'. Credential should be scoped to correct service: 'service'. Credential should be scoped with a valid terminator: 'aws4_request', not 'aws5_request'. Date in Credential scope does not match YYYYMMDD from ISO-8601 version of date from HTTP: 'foobar' != '20150830', from '20150830T122100Z'.")
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Credential should be scoped to a valid region, not 'wrong-region'. Credential should be scoped to correct service: 'service'. Credential should be scoped with a valid terminator: 'aws4_request', not 'aws5_request'. Date in Credential scope does not match YYYYMMDD from ISO-8601 version of date from HTTP: 'foobar' != '20150830', from '20150830T122100Z'."
+                        )
                     }
                     (17, SignatureError::SignatureDoesNotMatch(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Credential should be scoped to a valid region, not 'wrong-region'. Credential should be scoped to correct service: 'service'. Credential should be scoped with a valid terminator: 'aws4_request', not 'aws5_request'.")
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Credential should be scoped to a valid region, not 'wrong-region'. Credential should be scoped to correct service: 'service'. Credential should be scoped with a valid terminator: 'aws4_request', not 'aws5_request'."
+                        )
                     }
                     (18, SignatureError::SignatureDoesNotMatch(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Credential should be scoped to correct service: 'service'. Credential should be scoped with a valid terminator: 'aws4_request', not 'aws5_request'.")
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Credential should be scoped to correct service: 'service'. Credential should be scoped with a valid terminator: 'aws4_request', not 'aws5_request'."
+                        )
                     }
                     (19, SignatureError::SignatureDoesNotMatch(_)) => {
                         assert_eq!(
@@ -622,7 +658,10 @@ mod tests {
                         )
                     }
                     (20, SignatureError::SignatureDoesNotMatch(_)) => {
-                        assert_eq!(e.to_string().as_str(), "The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.")
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details."
+                        )
                     }
                     _ => panic!("Incorrect error returned on run {}: {:?}", i, e),
                 }
@@ -728,27 +767,42 @@ mod tests {
                         assert_eq!(e.http_status(), 400);
                     }
                     (3, SignatureError::IncompleteSignature(_)) => {
-                        assert_eq!(e.to_string().as_str(), "'FooBar' not a valid key=value pair (missing equal-sign) in Authorization header: 'AWS4-HMAC-SHA256 FooBar, BazBurp'");
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "'FooBar' not a valid key=value pair (missing equal-sign) in Authorization header: 'AWS4-HMAC-SHA256 FooBar, BazBurp'"
+                        );
                         assert_eq!(e.error_code(), "IncompleteSignature");
                         assert_eq!(e.http_status(), 400);
                     }
                     (4, SignatureError::IncompleteSignature(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Authorization header requires 'Credential' parameter. Authorization header requires 'Signature' parameter. Authorization header requires 'SignedHeaders' parameter. Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256");
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Authorization header requires 'Credential' parameter. Authorization header requires 'Signature' parameter. Authorization header requires 'SignedHeaders' parameter. Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256"
+                        );
                         assert_eq!(e.error_code(), "IncompleteSignature");
                         assert_eq!(e.http_status(), 400);
                     }
                     (5, SignatureError::IncompleteSignature(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Authorization header requires 'Signature' parameter. Authorization header requires 'SignedHeaders' parameter. Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256");
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Authorization header requires 'Signature' parameter. Authorization header requires 'SignedHeaders' parameter. Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256"
+                        );
                         assert_eq!(e.error_code(), "IncompleteSignature");
                         assert_eq!(e.http_status(), 400);
                     }
                     (6, SignatureError::IncompleteSignature(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Authorization header requires 'SignedHeaders' parameter. Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256");
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Authorization header requires 'SignedHeaders' parameter. Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256"
+                        );
                         assert_eq!(e.error_code(), "IncompleteSignature");
                         assert_eq!(e.http_status(), 400);
                     }
                     (7, SignatureError::IncompleteSignature(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256");
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256"
+                        );
                         assert_eq!(e.error_code(), "IncompleteSignature");
                         assert_eq!(e.http_status(), 400);
                     }
@@ -782,37 +836,58 @@ mod tests {
                         assert_eq!(e.http_status(), 403);
                     }
                     (12, SignatureError::IncompleteSignature(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Date must be in ISO-8601 'basic format'. Got '2015/08/30T12/36/00Z'. See http://en.wikipedia.org/wiki/ISO_8601");
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Date must be in ISO-8601 'basic format'. Got '2015/08/30T12/36/00Z'. See http://en.wikipedia.org/wiki/ISO_8601"
+                        );
                         assert_eq!(e.error_code(), "IncompleteSignature");
                         assert_eq!(e.http_status(), 400);
                     }
                     (13, SignatureError::SignatureDoesNotMatch(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Signature expired: 20150830T122059Z is now earlier than 20150830T122100Z (20150830T123600Z - 15 min.)");
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Signature expired: 20150830T122059Z is now earlier than 20150830T122100Z (20150830T123600Z - 15 min.)"
+                        );
                         assert_eq!(e.error_code(), "SignatureDoesNotMatch");
                         assert_eq!(e.http_status(), 403);
                     }
                     (14, SignatureError::SignatureDoesNotMatch(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Signature not yet current: 20150830T125101Z is still later than 20150830T125100Z (20150830T123600Z + 15 min.)");
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Signature not yet current: 20150830T125101Z is still later than 20150830T125100Z (20150830T123600Z + 15 min.)"
+                        );
                         assert_eq!(e.error_code(), "SignatureDoesNotMatch");
                         assert_eq!(e.http_status(), 403);
                     }
                     (15, SignatureError::IncompleteSignature(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Credential must have exactly 5 slash-delimited elements, e.g. keyid/date/region/service/term, got 'AKIDEXAMPLE'");
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Credential must have exactly 5 slash-delimited elements, e.g. keyid/date/region/service/term, got 'AKIDEXAMPLE'"
+                        );
                         assert_eq!(e.error_code(), "IncompleteSignature");
                         assert_eq!(e.http_status(), 400);
                     }
                     (16, SignatureError::SignatureDoesNotMatch(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Credential should be scoped to a valid region, not 'wrong-region'. Credential should be scoped to correct service: 'service'. Credential should be scoped with a valid terminator: 'aws4_request', not 'aws5_request'. Date in Credential scope does not match YYYYMMDD from ISO-8601 version of date from HTTP: 'foobar' != '20150830', from '20150830T122100Z'.");
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Credential should be scoped to a valid region, not 'wrong-region'. Credential should be scoped to correct service: 'service'. Credential should be scoped with a valid terminator: 'aws4_request', not 'aws5_request'. Date in Credential scope does not match YYYYMMDD from ISO-8601 version of date from HTTP: 'foobar' != '20150830', from '20150830T122100Z'."
+                        );
                         assert_eq!(e.error_code(), "SignatureDoesNotMatch");
                         assert_eq!(e.http_status(), 403);
                     }
                     (17, SignatureError::SignatureDoesNotMatch(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Credential should be scoped to a valid region, not 'wrong-region'. Credential should be scoped to correct service: 'service'. Credential should be scoped with a valid terminator: 'aws4_request', not 'aws5_request'.");
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Credential should be scoped to a valid region, not 'wrong-region'. Credential should be scoped to correct service: 'service'. Credential should be scoped with a valid terminator: 'aws4_request', not 'aws5_request'."
+                        );
                         assert_eq!(e.error_code(), "SignatureDoesNotMatch");
                         assert_eq!(e.http_status(), 403);
                     }
                     (18, SignatureError::SignatureDoesNotMatch(_)) => {
-                        assert_eq!(e.to_string().as_str(), "Credential should be scoped to correct service: 'service'. Credential should be scoped with a valid terminator: 'aws4_request', not 'aws5_request'.");
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "Credential should be scoped to correct service: 'service'. Credential should be scoped with a valid terminator: 'aws4_request', not 'aws5_request'."
+                        );
                         assert_eq!(e.error_code(), "SignatureDoesNotMatch");
                         assert_eq!(e.http_status(), 403);
                     }
@@ -825,7 +900,10 @@ mod tests {
                         assert_eq!(e.http_status(), 403);
                     }
                     (20, SignatureError::SignatureDoesNotMatch(_)) => {
-                        assert_eq!(e.to_string().as_str(), "The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.");
+                        assert_eq!(
+                            e.to_string().as_str(),
+                            "The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details."
+                        );
                         assert_eq!(e.error_code(), "SignatureDoesNotMatch");
                         assert_eq!(e.http_status(), 403);
                     }
@@ -873,17 +951,19 @@ mod tests {
             .body(())
             .unwrap();
 
-        assert!(sigv4_validate_request(
-            req,
-            "us-east-1",
-            "service",
-            &mut get_signing_key_svc,
-            *TEST_TIMESTAMP,
-            &NO_ADDITIONAL_SIGNED_HEADERS,
-            SignatureOptions::default()
-        )
-        .await
-        .is_ok());
+        assert!(
+            sigv4_validate_request(
+                req,
+                "us-east-1",
+                "service",
+                &mut get_signing_key_svc,
+                *TEST_TIMESTAMP,
+                &NO_ADDITIONAL_SIGNED_HEADERS,
+                SignatureOptions::default()
+            )
+            .await
+            .is_ok()
+        );
 
         // S3 request.
         let req = Request::builder()
@@ -895,17 +975,19 @@ mod tests {
             .body(())
             .unwrap();
 
-        assert!(sigv4_validate_request(
-            req,
-            "us-east-1",
-            "service",
-            &mut get_signing_key_svc,
-            *TEST_TIMESTAMP,
-            &NO_ADDITIONAL_SIGNED_HEADERS,
-            SignatureOptions::S3,
-        )
-        .await
-        .is_ok());
+        assert!(
+            sigv4_validate_request(
+                req,
+                "us-east-1",
+                "service",
+                &mut get_signing_key_svc,
+                *TEST_TIMESTAMP,
+                &NO_ADDITIONAL_SIGNED_HEADERS,
+                SignatureOptions::S3,
+            )
+            .await
+            .is_ok()
+        );
     }
 
     #[test_log::test(tokio::test)]
@@ -997,16 +1079,18 @@ mod tests {
             .body(Bytes::from("The body of pre-signed URL request should be ignored as it is unsigned".as_bytes()))
             .unwrap();
 
-        assert!(sigv4_validate_request(
-            req,
-            "eu-central-1",
-            "s3",
-            &mut get_signing_key_svc,
-            *TEST_TIMESTAMP,
-            &NO_ADDITIONAL_SIGNED_HEADERS,
-            SignatureOptions::S3,
-        )
-        .await
-        .is_ok());
+        assert!(
+            sigv4_validate_request(
+                req,
+                "eu-central-1",
+                "s3",
+                &mut get_signing_key_svc,
+                *TEST_TIMESTAMP,
+                &NO_ADDITIONAL_SIGNED_HEADERS,
+                SignatureOptions::S3,
+            )
+            .await
+            .is_ok()
+        );
     }
 }

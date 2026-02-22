@@ -4,17 +4,17 @@ mod sts;
 use {
     super::TlsConfig,
     crate::error::ConfigError,
+    rustls::ServerConfig as TlsServerConfig,
     serde::Deserialize,
     std::{
         fmt::{Debug, Formatter, Result as FmtResult},
         net::{IpAddr, Ipv6Addr, SocketAddr},
     },
-    rustls::ServerConfig as TlsServerConfig,
 };
 
 pub use self::{
     iam::{Iam, ResolvedIam},
-    sts::{Sts, ResolvedSts},
+    sts::{ResolvedSts, Sts},
 };
 
 /// Configuration for all services.

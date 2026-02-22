@@ -1,7 +1,7 @@
 mod arn;
 
 use {
-    crate::{serutil::StringLikeList, AspenError, Context, PolicyVersion},
+    crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
     scratchstack_arn::Arn,
     std::{
         fmt::{Display, Formatter, Result as FmtResult},
@@ -90,7 +90,7 @@ impl Display for Resource {
 #[cfg(test)]
 mod tests {
     use {
-        crate::{serutil::JsonRep, Resource, ResourceArn, ResourceList},
+        crate::{Resource, ResourceArn, ResourceList, serutil::JsonRep},
         indoc::indoc,
         pretty_assertions::assert_eq,
         std::{panic::catch_unwind, str::FromStr},

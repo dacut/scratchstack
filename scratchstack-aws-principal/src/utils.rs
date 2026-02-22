@@ -240,7 +240,7 @@ pub fn validate_dns<F: FnOnce(String) -> PrincipalError>(
 #[cfg(test)]
 mod test {
     use {
-        super::{validate_dns, validate_identifier, validate_name, IamIdPrefix},
+        super::{IamIdPrefix, validate_dns, validate_identifier, validate_name},
         crate::PrincipalError,
         std::{
             collections::hash_map::DefaultHasher,

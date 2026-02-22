@@ -11,9 +11,9 @@ use {
     log::debug,
     scratchstack_aws_principal::Principal as PrincipalActor,
     serde::{
-        de::{self, value::MapAccessDeserializer, Deserializer, MapAccess, Unexpected, Visitor},
-        ser::Serializer,
         Deserialize, Serialize,
+        de::{self, Deserializer, MapAccess, Unexpected, Visitor, value::MapAccessDeserializer},
+        ser::Serializer,
     },
     std::fmt::{Formatter, Result as FmtResult},
 };

@@ -1,6 +1,6 @@
 use {
     super::variant::Variant,
-    crate::{eval::regex_from_glob, serutil::StringLikeList, AspenError, Context, PolicyVersion},
+    crate::{AspenError, Context, PolicyVersion, eval::regex_from_glob, serutil::StringLikeList},
     log::trace,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::SessionValue,
@@ -67,11 +67,7 @@ pub(super) fn arn_match(
 
                         trace!(
                             "partition={} service={} region={} account_id={} resource={}",
-                            partition,
-                            service,
-                            region,
-                            account_id,
-                            resource
+                            partition, service, region, account_id, resource
                         );
                         trace!("value={}", value);
 

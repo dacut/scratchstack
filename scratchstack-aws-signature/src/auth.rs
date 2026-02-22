@@ -10,7 +10,7 @@
 
 use {
     crate::{
-        constants::*, crypto::hmac_sha256, GetSigningKeyRequest, GetSigningKeyResponse, KSigningKey, SignatureError,
+        GetSigningKeyRequest, GetSigningKeyResponse, KSigningKey, SignatureError, constants::*, crypto::hmac_sha256,
     },
     chrono::{DateTime, Duration, Utc},
     derive_builder::Builder,
@@ -172,8 +172,7 @@ impl SigV4Authenticator {
         if cscope_service != service {
             trace!(
                 "prevalidate: credential service '{}' does not match expected service '{}'",
-                cscope_service,
-                service
+                cscope_service, service
             );
             cscope_errors.push(format!("Credential should be scoped to correct service: '{}'.", service));
         }
@@ -181,8 +180,7 @@ impl SigV4Authenticator {
         if cscope_term != AWS4_REQUEST {
             trace!(
                 "prevalidate: credential terminator '{}' does not match expected terminator '{}'",
-                cscope_term,
-                AWS4_REQUEST
+                cscope_term, AWS4_REQUEST
             );
             cscope_errors.push(format!(
                 "Credential should be scoped with a valid terminator: 'aws4_request', not '{}'.",
@@ -194,8 +192,7 @@ impl SigV4Authenticator {
         if cscope_date != expected_cscope_date {
             trace!(
                 "prevalidate: credential date '{}' does not match expected date '{}'",
-                cscope_date,
-                expected_cscope_date
+                cscope_date, expected_cscope_date
             );
             cscope_errors.push(format!("Date in Credential scope does not match YYYYMMDD from ISO-8601 version of date from HTTP: '{}' != '{}', from '{}'.", cscope_date, expected_cscope_date, req_ts.format(ISO8601_COMPACT_FORMAT)));
         }
@@ -419,9 +416,10 @@ mod tests {
     use {
         super::duration_to_string,
         crate::{
+            GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, SignatureError,
             auth::{SigV4Authenticator, SigV4AuthenticatorBuilder, SigV4AuthenticatorResponse},
             constants::*,
-            service_for_signing_key_fn, GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, SignatureError,
+            service_for_signing_key_fn,
         },
         chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, NaiveTime, Utc},
         log::LevelFilter,
@@ -494,7 +492,7 @@ mod tests {
                 "invalid" => {
                     return Err(Box::new(SignatureError::InvalidClientTokenId(
                         "The security token included in the request is invalid".to_string(),
-                    )))
+                    )));
                 }
                 "io-error" => {
                     let e = File::open("/00Hi1i6V4qad5nF/6KPlcyW4H9miTOD02meLgTaV09O2UToMPTE9j6sNmHZ/08EzM4qOs8bYOINWJ9RheQVadpgixRTh0VjcwpVPoo1Rh4gNAJhS4cj/this-path/does//not/exist").unwrap_err();
@@ -503,7 +501,7 @@ mod tests {
                 "expired" => {
                     return Err(Box::new(SignatureError::ExpiredToken(
                         "The security token included in the request is expired".to_string(),
-                    )))
+                    )));
                 }
                 _ => (),
             }
@@ -788,7 +786,10 @@ mod tests {
             .unwrap_err();
 
         if let SignatureError::SignatureDoesNotMatch(_) = e {
-            assert_eq!(e.to_string(), "The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.");
+            assert_eq!(
+                e.to_string(),
+                "The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details."
+            );
             assert_eq!(e.error_code(), "SignatureDoesNotMatch");
             assert_eq!(e.http_status(), 403);
         } else {

@@ -1,5 +1,5 @@
 use {
-    crate::{utils::validate_dns, PrincipalError},
+    crate::{PrincipalError, utils::validate_dns},
     scratchstack_arn::utils::validate_region,
     std::fmt::{Display, Formatter, Result as FmtResult},
 };

@@ -5,6 +5,9 @@ pub mod service;
 mod tls;
 
 pub use self::{
-    config::Config, database::{DatabaseConfig, ResolvedDatabaseConfig}, error::ConfigError,
-    service::{ServiceConfig}, tls::TlsConfig,
+    config::Config,
+    database::{DatabaseConfig, ResolvedDatabaseConfig},
+    error::ConfigError,
+    service::ServiceConfig,
+    tls::TlsConfig,
 };

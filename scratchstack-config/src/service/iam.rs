@@ -1,6 +1,6 @@
 use {
     super::{BaseServiceConfig, ResolvedBaseServiceConfig},
-    crate::{error::ConfigError, DatabaseConfig, ResolvedDatabaseConfig},
+    crate::{DatabaseConfig, ResolvedDatabaseConfig, error::ConfigError},
     serde::Deserialize,
     std::fmt::Debug,
 };
