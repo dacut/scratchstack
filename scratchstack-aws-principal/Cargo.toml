@@ -1,15 +1,16 @@
 [package]
 name = "scratchstack-aws-principal"
 description = "Principal types for AWS/AWS-like services"
+keywords = ["AWS", "IAM", "Aspen"]
+
 authors.workspace = true
 edition.workspace = true
 homepage.workspace = true
-keywords = ["AWS", "IAM", "Aspen"]
 license.workspace = true
 repository.workspace = true
 version.workspace = true
 
 [dependencies]
-chrono = { version = "^0.4", default-features = false, features = [ "std" ] }
-base64 = "^0.22"
-scratchstack-arn = { version = "0.4.9", path = "../arn" }
+base64.workspace = true
+chrono.workspace = true
+scratchstack-arn.path = "../scratchstack-arn"

@@ -1,23 +1,24 @@
 [package]
 name = "scratchstack-config"
-version = "0.1.2"
-edition = "2024"
 description = "Scratchstack configuration schema and logic"
-homepage = "https://github.com/dacut/scratchstack-config"
-repository = "https://github.com/dacut/scratchstack-config"
-license = "MIT"
-readme = "README.md"
+
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+version.workspace = true
 
 [dependencies]
-chrono = { version = "^0.4.41", default-features = false, features = ["std"] }
-futures = "^0.3.31"
-humantime = "^2.2.0"
-humantime-serde = "^1.1.1"
-log = "^0.4.27"
-rustls = "^0.22"
-rustls-pemfile = "^2.2.0"
-rustls-pki-types = "^1.12.0"
-serde = { version = "^1.0", features = ["derive"] }
-sqlx = { version = "^0.8.6", features = ["all-databases", "chrono", "macros", "migrate", "runtime-tokio-rustls"] }
-toml = "^0.9.5"
-tower = "^0.5.2"
+chrono.workspace = true
+futures.workspace = true
+humantime.workspace = true
+humantime-serde.workspace = true
+log.workspace = true
+rustls.workspace = true
+rustls-pemfile.workspace = true
+rustls-pki-types.workspace = true
+serde = { workspace = true, features = [ "derive" ] }
+sqlx = { workspace = true, features = [ "all-databases", "chrono", "macros", "migrate", "runtime-tokio-rustls" ] }
+toml.workspace = true
+tower.workspace = true
