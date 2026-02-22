@@ -53,9 +53,7 @@ impl Principal {
     pub fn new(mut identities: Vec<PrincipalIdentity>) -> Self {
         identities.sort_unstable();
         identities.dedup();
-        Self {
-            identities,
-        }
+        Self { identities }
     }
 
     /// Create an empty principal with the specified capacity.
@@ -397,14 +395,20 @@ impl From<User> for PrincipalIdentity {
 impl Debug for PrincipalIdentity {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
-            PrincipalIdentity::AssumedRole(assumed_role) => f.debug_tuple("AssumedRole").field(assumed_role).finish(),
-            PrincipalIdentity::CanonicalUser(canonical_user) => {
-                f.debug_tuple("CanonicalUser").field(canonical_user).finish()
+            PrincipalIdentity::AssumedRole(assumed_role) => {
+                f.debug_tuple("AssumedRole").field(assumed_role).finish()
             }
-            PrincipalIdentity::FederatedUser(federated_user) => {
-                f.debug_tuple("FederatedUser").field(federated_user).finish()
+            PrincipalIdentity::CanonicalUser(canonical_user) => f
+                .debug_tuple("CanonicalUser")
+                .field(canonical_user)
+                .finish(),
+            PrincipalIdentity::FederatedUser(federated_user) => f
+                .debug_tuple("FederatedUser")
+                .field(federated_user)
+                .finish(),
+            PrincipalIdentity::RootUser(root_user) => {
+                f.debug_tuple("RootUser").field(root_user).finish()
             }
-            PrincipalIdentity::RootUser(root_user) => f.debug_tuple("RootUser").field(root_user).finish(),
             PrincipalIdentity::Service(service) => f.debug_tuple("Service").field(service).finish(),
             PrincipalIdentity::User(user) => f.debug_tuple("User").field(user).finish(),
         }
@@ -414,12 +418,12 @@ impl Debug for PrincipalIdentity {
 impl Display for PrincipalIdentity {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
-            Self::AssumedRole(ref inner) => Display::fmt(inner, f),
-            Self::CanonicalUser(ref inner) => Display::fmt(inner, f),
-            Self::FederatedUser(ref inner) => Display::fmt(inner, f),
-            Self::RootUser(ref inner) => Display::fmt(inner, f),
-            Self::Service(ref inner) => Display::fmt(inner, f),
-            Self::User(ref inner) => Display::fmt(inner, f),
+            Self::AssumedRole(inner) => Display::fmt(inner, f),
+            Self::CanonicalUser(inner) => Display::fmt(inner, f),
+            Self::FederatedUser(inner) => Display::fmt(inner, f),
+            Self::RootUser(inner) => Display::fmt(inner, f),
+            Self::Service(inner) => Display::fmt(inner, f),
+            Self::User(inner) => Display::fmt(inner, f),
         }
     }
 }
@@ -428,12 +432,12 @@ impl TryFrom<&PrincipalIdentity> for Arn {
     type Error = PrincipalError;
     fn try_from(p: &PrincipalIdentity) -> Result<Arn, Self::Error> {
         match p {
-            PrincipalIdentity::AssumedRole(ref d) => Ok(d.into()),
+            PrincipalIdentity::AssumedRole(d) => Ok(d.into()),
             PrincipalIdentity::CanonicalUser(_) => Err(PrincipalError::CannotConvertToArn),
-            PrincipalIdentity::FederatedUser(ref d) => Ok(d.into()),
-            PrincipalIdentity::RootUser(ref d) => Ok(d.into()),
+            PrincipalIdentity::FederatedUser(d) => Ok(d.into()),
+            PrincipalIdentity::RootUser(d) => Ok(d.into()),
             PrincipalIdentity::Service(_) => Err(PrincipalError::CannotConvertToArn),
-            PrincipalIdentity::User(ref d) => Ok(d.into()),
+            PrincipalIdentity::User(d) => Ok(d.into()),
         }
     }
 }
@@ -456,8 +460,8 @@ impl TryFrom<PrincipalIdentity> for Arn {
 mod test {
     use {
         crate::{
-            AssumedRole, CanonicalUser, FederatedUser, Principal, PrincipalError, PrincipalIdentity, PrincipalSource,
-            RootUser, Service, User,
+            AssumedRole, CanonicalUser, FederatedUser, Principal, PrincipalError,
+            PrincipalIdentity, PrincipalSource, RootUser, Service, User,
         },
         scratchstack_arn::Arn,
         std::{
@@ -512,14 +516,21 @@ mod test {
 
     #[test]
     fn check_hash_ord() {
-        let p1 = PrincipalIdentity::from(AssumedRole::new("aws", "123456789012", "Role_name", "session_name").unwrap());
-        let p2 = PrincipalIdentity::from(
-            CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d").unwrap(),
+        let p1 = PrincipalIdentity::from(
+            AssumedRole::new("aws", "123456789012", "Role_name", "session_name").unwrap(),
         );
-        let p3 = PrincipalIdentity::from(FederatedUser::new("aws", "123456789012", "user@domain").unwrap());
+        let p2 = PrincipalIdentity::from(
+            CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d")
+                .unwrap(),
+        );
+        let p3 = PrincipalIdentity::from(
+            FederatedUser::new("aws", "123456789012", "user@domain").unwrap(),
+        );
         let p4 = PrincipalIdentity::from(RootUser::new("aws", "123456789012").unwrap());
-        let p5 = PrincipalIdentity::from(Service::new("service-name", None, "amazonaws.com").unwrap());
-        let p6 = PrincipalIdentity::from(User::new("aws", "123456789012", "/", "user-name").unwrap());
+        let p5 =
+            PrincipalIdentity::from(Service::new("service-name", None, "amazonaws.com").unwrap());
+        let p6 =
+            PrincipalIdentity::from(User::new("aws", "123456789012", "/", "user-name").unwrap());
 
         let mut h1 = DefaultHasher::new();
         let mut h2 = DefaultHasher::new();
@@ -569,8 +580,13 @@ mod test {
 
         let r1b = AssumedRole::new("aws", "123456789012", "Role_name", "session_name").unwrap();
 
-        let r2 =
-            AssumedRole::new("aws2", "123456789012", "Role@Foo=bar,baz_=world-1234", "Session@1234,_=-,.OK").unwrap();
+        let r2 = AssumedRole::new(
+            "aws2",
+            "123456789012",
+            "Role@Foo=bar,baz_=world-1234",
+            "Session@1234,_=-,.OK",
+        )
+        .unwrap();
 
         let p1a = PrincipalIdentity::from(r1a);
         let p1b = PrincipalIdentity::from(r1b);
@@ -580,7 +596,10 @@ mod test {
         assert_ne!(p1a, p2);
         assert_eq!(p1a, p1a.clone());
 
-        assert_eq!(p1a.to_string(), "arn:aws:sts::123456789012:assumed-role/Role_name/session_name");
+        assert_eq!(
+            p1a.to_string(),
+            "arn:aws:sts::123456789012:assumed-role/Role_name/session_name"
+        );
         assert_eq!(p1a.source(), PrincipalSource::Aws);
         assert!(p1a.has_arn());
 
@@ -604,9 +623,15 @@ mod test {
 
     #[test]
     fn check_canonical_user() {
-        let cu1a = CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d").unwrap();
-        let cu1b = CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d").unwrap();
-        let cu2 = CanonicalUser::new("772183b840c93fe103e45cd24ca8b8c94425a373465c6eb535b7c4b9593811e5").unwrap();
+        let cu1a =
+            CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d")
+                .unwrap();
+        let cu1b =
+            CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d")
+                .unwrap();
+        let cu2 =
+            CanonicalUser::new("772183b840c93fe103e45cd24ca8b8c94425a373465c6eb535b7c4b9593811e5")
+                .unwrap();
 
         let p1a = PrincipalIdentity::from(cu1a);
         let p1b = PrincipalIdentity::from(cu1b);
@@ -616,7 +641,10 @@ mod test {
         assert_ne!(p1a, p2);
         assert_eq!(p1a, p1a.clone());
 
-        assert_eq!(p1a.to_string(), "9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d");
+        assert_eq!(
+            p1a.to_string(),
+            "9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d"
+        );
         assert_eq!(p1a.source(), PrincipalSource::CanonicalUser);
         assert!(!p1a.has_arn());
 
@@ -636,7 +664,12 @@ mod test {
     fn check_federated_user() {
         let f1a = FederatedUser::new("aws", "123456789012", "user@domain").unwrap();
         let f1b = FederatedUser::new("aws", "123456789012", "user@domain").unwrap();
-        let f2 = FederatedUser::new("partition-with-32-characters1234", "123456789012", "user@domain").unwrap();
+        let f2 = FederatedUser::new(
+            "partition-with-32-characters1234",
+            "123456789012",
+            "user@domain",
+        )
+        .unwrap();
 
         let p1a = PrincipalIdentity::from(f1a);
         let p1b = PrincipalIdentity::from(f1b);
@@ -646,7 +679,10 @@ mod test {
         assert_ne!(p1a, p2);
         assert_eq!(p1a, p1a.clone());
 
-        assert_eq!(p1a.to_string(), "arn:aws:sts::123456789012:federated-user/user@domain");
+        assert_eq!(
+            p1a.to_string(),
+            "arn:aws:sts::123456789012:federated-user/user@domain"
+        );
         assert_eq!(p1a.source(), PrincipalSource::Federated);
         assert!(p1a.has_arn());
 
@@ -772,8 +808,12 @@ mod test {
     fn check_principal_basics() {
         let ar1a = AssumedRole::new("aws", "123456789012", "Role_name", "session_name").unwrap();
         let ar1b = AssumedRole::new("aws", "123456789012", "Role_name", "session_name").unwrap();
-        let cu1a = CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d").unwrap();
-        let cu1b = CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d").unwrap();
+        let cu1a =
+            CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d")
+                .unwrap();
+        let cu1b =
+            CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d")
+                .unwrap();
         let f1a = FederatedUser::new("aws", "123456789012", "user@domain").unwrap();
         let f1b = FederatedUser::new("aws", "123456789012", "user@domain").unwrap();
         let r1a = RootUser::new("aws", "123456789012").unwrap();
@@ -904,7 +944,8 @@ mod test {
     #[test]
     fn test_conversions() {
         let p = Principal::from(
-            AssumedRole::from_str("arn:aws:sts::123456789012:assumed-role/role-name/session-name").unwrap(),
+            AssumedRole::from_str("arn:aws:sts::123456789012:assumed-role/role-name/session-name")
+                .unwrap(),
         );
         assert_eq!(p.len(), 1);
         assert!(p[0].as_assumed_role().is_some());
@@ -915,7 +956,8 @@ mod test {
         assert!(p[0].as_user().is_none());
 
         let p = Principal::from(
-            CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d").unwrap(),
+            CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d")
+                .unwrap(),
         );
         assert_eq!(p.len(), 1);
         assert!(p[0].as_assumed_role().is_none());
@@ -925,7 +967,8 @@ mod test {
         assert!(p[0].as_service().is_none());
         assert!(p[0].as_user().is_none());
 
-        let p = Principal::from(FederatedUser::new("aws", "123456789012", "dacut@kanga.org").unwrap());
+        let p =
+            Principal::from(FederatedUser::new("aws", "123456789012", "dacut@kanga.org").unwrap());
         assert_eq!(p.len(), 1);
         assert!(p[0].as_assumed_role().is_none());
         assert!(p[0].as_canonical_user().is_none());
@@ -943,7 +986,9 @@ mod test {
         assert!(p[0].as_service().is_none());
         assert!(p[0].as_user().is_none());
 
-        let p = Principal::from(Service::new("ec2", Some("us-west-2".to_string()), "amazonaws.com").unwrap());
+        let p = Principal::from(
+            Service::new("ec2", Some("us-west-2".to_string()), "amazonaws.com").unwrap(),
+        );
         assert_eq!(p.len(), 1);
         assert!(p[0].as_assumed_role().is_none());
         assert!(p[0].as_canonical_user().is_none());
@@ -952,7 +997,8 @@ mod test {
         assert!(p[0].as_service().is_some());
         assert!(p[0].as_user().is_none());
 
-        let p = Principal::from(User::from_str("arn:aws:iam::123456789012:user/user-name").unwrap());
+        let p =
+            Principal::from(User::from_str("arn:aws:iam::123456789012:user/user-name").unwrap());
         assert_eq!(p.len(), 1);
         assert!(p[0].as_assumed_role().is_none());
         assert!(p[0].as_canonical_user().is_none());
@@ -962,7 +1008,10 @@ mod test {
         assert!(p[0].as_user().is_some());
 
         let p = Principal::from(vec![
-            PrincipalIdentity::parse_arn("arn:aws:sts::123456789012:assumed-role/role-name/session-name").unwrap(),
+            PrincipalIdentity::parse_arn(
+                "arn:aws:sts::123456789012:assumed-role/role-name/session-name",
+            )
+            .unwrap(),
             PrincipalIdentity::parse_arn("arn:aws:iam::123456789012:user/user-name").unwrap(),
         ]);
         assert_eq!(p.len(), 2);
@@ -970,24 +1019,44 @@ mod test {
 
     #[test]
     fn test_invalid_arns() {
-        let e =
-            PrincipalIdentity::parse_arn("arn:-aws:sts::123456789012:assumed-role/role-name/session-name").unwrap_err();
+        let e = PrincipalIdentity::parse_arn(
+            "arn:-aws:sts::123456789012:assumed-role/role-name/session-name",
+        )
+        .unwrap_err();
         assert_eq!(e.to_string(), r#"Invalid partition: "-aws""#);
 
-        let e = PrincipalIdentity::parse_arn("arn:aws:sts:us-west-1:123456789012:assumed-role/role-name/session-name")
-            .unwrap_err();
+        let e = PrincipalIdentity::parse_arn(
+            "arn:aws:sts:us-west-1:123456789012:assumed-role/role-name/session-name",
+        )
+        .unwrap_err();
         assert_eq!(e.to_string(), r#"Invalid region: "us-west-1""#);
 
-        let e = PrincipalIdentity::parse_arn("arn:aws:sts::123456789012:role/role-name/session-name").unwrap_err();
-        assert_eq!(e.to_string(), r#"Invalid ARN: "arn:aws:sts::123456789012:role/role-name/session-name""#);
+        let e =
+            PrincipalIdentity::parse_arn("arn:aws:sts::123456789012:role/role-name/session-name")
+                .unwrap_err();
+        assert_eq!(
+            e.to_string(),
+            r#"Invalid ARN: "arn:aws:sts::123456789012:role/role-name/session-name""#
+        );
 
-        let e = PrincipalIdentity::parse_arn("arn:aws:iam:us-west-1:123456789012:user/path/user-name").unwrap_err();
+        let e =
+            PrincipalIdentity::parse_arn("arn:aws:iam:us-west-1:123456789012:user/path/user-name")
+                .unwrap_err();
         assert_eq!(e.to_string(), r#"Invalid region: "us-west-1""#);
 
-        let e = PrincipalIdentity::parse_arn("arn:aws:iam::123456789012:role/role-name/session-name").unwrap_err();
-        assert_eq!(e.to_string(), r#"Invalid ARN: "arn:aws:iam::123456789012:role/role-name/session-name""#);
+        let e =
+            PrincipalIdentity::parse_arn("arn:aws:iam::123456789012:role/role-name/session-name")
+                .unwrap_err();
+        assert_eq!(
+            e.to_string(),
+            r#"Invalid ARN: "arn:aws:iam::123456789012:role/role-name/session-name""#
+        );
 
-        let e = PrincipalIdentity::parse_arn("arn:aws:s3::123456789012:role/role-name").unwrap_err();
-        assert_eq!(e.to_string(), r#"Invalid ARN: "arn:aws:s3::123456789012:role/role-name""#);
+        let e =
+            PrincipalIdentity::parse_arn("arn:aws:s3::123456789012:role/role-name").unwrap_err();
+        assert_eq!(
+            e.to_string(),
+            r#"Invalid ARN: "arn:aws:s3::123456789012:role/role-name""#
+        );
     }
 }

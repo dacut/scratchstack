@@ -1,11 +1,10 @@
 use {
-    crate::{display_json, from_str_json, AspenError, Context, Decision, StatementList},
+    crate::{AspenError, Context, Decision, StatementList, display_json, from_str_json},
     derive_builder::Builder,
     serde::{
-        de,
-        de::{Deserializer, MapAccess, Visitor},
-        ser::{SerializeMap, Serializer},
         Deserialize, Serialize,
+        de::{self, Deserializer, MapAccess, Visitor},
+        ser::{SerializeMap, Serializer},
     },
     std::{
         fmt::{Display, Formatter, Result as FmtResult},
@@ -241,8 +240,8 @@ impl Serialize for Policy {
 mod tests {
     use {
         crate::{
-            serutil::JsonRep, Action, AspenError, AwsPrincipal, Context, Decision, Effect, Policy, PolicyBuilderError,
-            PolicyVersion, Principal, Resource, SpecifiedPrincipal, Statement,
+            Action, AspenError, AwsPrincipal, Context, Decision, Effect, Policy, PolicyBuilderError, PolicyVersion,
+            Principal, Resource, SpecifiedPrincipal, Statement, serutil::JsonRep,
         },
         indoc::indoc,
         pretty_assertions::{assert_eq, assert_ne},
@@ -1498,7 +1497,7 @@ mod tests {
         assert_eq!(*resources[2], Resource::from_str("arn:aws:rds:*:*:db/*").unwrap());
 
         let principals = statements[1].principal().unwrap();
-        if let Principal::Specified(ref specified) = principals {
+        if let Principal::Specified(specified) = principals {
             let aws = specified.aws().unwrap().to_vec();
             assert_eq!(aws.len(), 2);
             assert_eq!(*aws[0], AwsPrincipal::from_str("arn:aws:iam::123456789012:root").unwrap());
@@ -1558,7 +1557,10 @@ mod tests {
             }
         }"# };
         let e = Policy::from_str(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "unknown field `Instance`, expected one of `Sid`, `Effect`, `Action`, `NotAction`, `Resource`, `NotResource`, `Principal`, `NotPrincipal`, `Condition` at line 11 column 18");
+        assert_eq!(
+            e.to_string(),
+            "unknown field `Instance`, expected one of `Sid`, `Effect`, `Action`, `NotAction`, `Resource`, `NotResource`, `Principal`, `NotPrincipal`, `Condition` at line 11 column 18"
+        );
 
         let policy_str = indoc! { r#"
         {

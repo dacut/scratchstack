@@ -127,8 +127,8 @@ impl Display for SignatureError {
         match self {
             Self::DuplicateHeaderAndQueryParameter(msg) => f.write_str(msg),
             Self::ExpiredToken(msg) => f.write_str(msg),
-            Self::IO(ref e) => Display::fmt(e, f),
-            Self::InternalServiceError(ref e) => Display::fmt(e, f),
+            Self::IO(e) => Display::fmt(e, f),
+            Self::InternalServiceError(e) => Display::fmt(e, f),
             Self::InvalidBodyEncoding(msg) => f.write_str(msg),
             Self::InvalidClientTokenId(msg) => f.write_str(msg),
             Self::InvalidContentType(msg) => f.write_str(msg),
@@ -153,7 +153,7 @@ impl Display for SignatureError {
 impl Error for SignatureError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::IO(ref e) => Some(e),
+            Self::IO(e) => Some(e),
             _ => None,
         }
     }
