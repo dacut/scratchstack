@@ -12,5 +12,5 @@ version.workspace = true
 
 [dependencies]
 base64.workspace = true
-chrono.workspace = true
+chrono = { workspace = true, features = [ "alloc" ] }
 scratchstack-arn.path = "../scratchstack-arn"

@@ -327,18 +327,10 @@ impl PrincipalIdentity {
         let resource = parsed_arn.resource();
 
         match service {
-            "sts" if resource.starts_with("assumed-role/") => {
-                return Ok(AssumedRole::try_from(&parsed_arn)?.into());
-            }
-            "iam" => {
-                if resource.starts_with("user/") {
-                    return Ok(User::try_from(&parsed_arn)?.into());
-                }
-            }
-            _ => {}
+            "sts" if resource.starts_with("assumed-role/") => Ok(AssumedRole::try_from(&parsed_arn)?.into()),
+            "iam" if resource.starts_with("user/") => Ok(User::try_from(&parsed_arn)?.into()),
+            _ => Err(PrincipalError::InvalidArn(arn.to_string())),
         }
-
-        Err(PrincipalError::InvalidArn(arn.to_string()))
     }
 }
 
