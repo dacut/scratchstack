@@ -3,12 +3,11 @@ use {
     async_trait::async_trait,
     chrono::Utc,
     derive_builder::Builder,
-    http::method::Method,
-    hyper::{body::Body, Request, Response},
+    http::{Request, Response, method::Method},
     log::{info, trace},
     scratchstack_aws_signature::{
-        canonical::get_content_type_and_charset, sigv4_validate_request, GetSigningKeyRequest, GetSigningKeyResponse,
-        SignatureError, SignatureOptions, SignedHeaderRequirements,
+        GetSigningKeyRequest, GetSigningKeyResponse, SignatureError, SignatureOptions, SignedHeaderRequirements,
+        canonical::get_content_type_and_charset, sigv4_validate_request,
     },
     scratchstack_errors::ServiceError,
     serde::Serialize,
@@ -25,13 +24,14 @@ use {
 
 /// AWSSigV4VerifierService implements a Hyper service that authenticates a request against AWS SigV4 signing protocol.
 #[derive(Builder, Clone)]
-pub struct AwsSigV4VerifierService<G, S, E>
+pub struct AwsSigV4VerifierService<B, G, S, E, SHR>
 where
     G: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = BoxError> + Clone + Send + 'static,
     G::Future: Send,
-    S: Service<Request<Body>, Response = Response<Body>, Error = BoxError> + Clone + Send + 'static,
+    S: Service<Request<B>, Response = Response<B>, Error = BoxError> + Clone + Send + 'static,
     S::Future: Send,
     E: ErrorMapper,
+    SHR: SignedHeaderRequirements,
 {
     /// The region this service is operating in.
     #[builder(setter(into))]
@@ -51,7 +51,7 @@ where
 
     /// The HTTP headers that must be signed in the SigV4 signature.
     #[builder(default)]
-    signed_header_requirements: SignedHeaderRequirements,
+    signed_header_requirements: SHR,
 
     /// The signing key provider.
     get_signing_key: G,
@@ -67,17 +67,18 @@ where
     signature_options: SignatureOptions,
 }
 
-impl<G, S, E> AwsSigV4VerifierService<G, S, E>
+impl<B, G, S, E, SHR> AwsSigV4VerifierService<B, G, S, E, SHR>
 where
     G: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = BoxError> + Clone + Send + 'static,
     G::Future: Send,
-    S: Service<Request<Body>, Response = Response<Body>, Error = BoxError> + Clone + Send + 'static,
+    S: Service<Request<B>, Response = Response<B>, Error = BoxError> + Clone + Send + 'static,
     S::Future: Send,
     E: ErrorMapper,
+    SHR: SignedHeaderRequirements,
 {
     /// Create a new [AwsSigV4VerifierServiceBuilder] for constructing a [AwsSigV4VerifierService].
     #[inline]
-    pub fn builder() -> AwsSigV4VerifierServiceBuilder<G, S, E> {
+    pub fn builder() -> AwsSigV4VerifierServiceBuilder<B, G, S, E, SHR> {
         AwsSigV4VerifierServiceBuilder::default()
     }
 
@@ -107,7 +108,7 @@ where
 
     /// Retreive the HTTP headers that must be signed in the SigV4 signature.
     #[inline]
-    pub fn signed_header_requirements(&self) -> &SignedHeaderRequirements {
+    pub fn signed_header_requirements(&self) -> &SHR {
         &self.signed_header_requirements
     }
 
@@ -156,17 +157,18 @@ where
     }
 }
 
-impl<G, S, E> Service<Request<Body>> for AwsSigV4VerifierService<G, S, E>
+impl<B, G, S, E, SHR> Service<Request<B>> for AwsSigV4VerifierService<B, G, S, E, SHR>
 where
     G: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = BoxError> + Clone + Send + 'static,
     G::Future: Send,
-    S: Service<Request<Body>, Response = Response<Body>, Error = BoxError> + Clone + Send + 'static,
+    S: Service<Request<B>, Response = Response<B>, Error = BoxError> + Clone + Send + 'static,
     S::Future: Send,
     E: ErrorMapper,
+    SHR: SignedHeaderRequirements,
 {
     type Response = S::Response;
     type Error = BoxError;
-    type Future = Pin<Box<dyn Future<Output = Result<Response<Body>, BoxError>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Response<B>, BoxError>> + Send>>;
 
     fn poll_ready(&mut self, c: &mut Context) -> Poll<Result<(), Self::Error>> {
         match self.get_signing_key.poll_ready(c) {
@@ -184,7 +186,7 @@ where
         }
     }
 
-    fn call(&mut self, mut req: Request<Body>) -> Self::Future {
+    fn call(&mut self, mut req: Request<B>) -> Self::Future {
         let region = self.region.clone();
         let service = self.service.clone();
         let allowed_request_methods = self.allowed_request_methods.clone();
@@ -383,10 +385,10 @@ mod tests {
         futures::stream::StreamExt,
         http::StatusCode,
         hyper::{
-            client::{connect::dns::GaiResolver, HttpConnector},
+            Body, Request, Response, Server,
+            client::{HttpConnector, connect::dns::GaiResolver},
             server::conn::AddrStream,
             service::{make_service_fn, service_fn},
-            Body, Request, Response, Server,
         },
         log::info,
         pretty_assertions::assert_eq,
@@ -396,7 +398,7 @@ mod tests {
         rusoto_signature::SignedRequest,
         scratchstack_aws_principal::{Principal, User},
         scratchstack_aws_signature::{
-            service_for_signing_key_fn, GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, SignatureError,
+            GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, SignatureError, service_for_signing_key_fn,
         },
         std::{
             convert::Infallible,
@@ -669,12 +671,12 @@ mod tests {
                     "invalid" => {
                         return Err(Box::new(SignatureError::InvalidClientTokenId(
                             "The security token included in the request is invalid".to_string(),
-                        )))
+                        )));
                     }
                     "expired" => {
                         return Err(Box::new(SignatureError::ExpiredToken(
                             "The security token included in the request is expired".to_string(),
-                        )))
+                        )));
                     }
                     _ => (),
                 }

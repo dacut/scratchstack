@@ -20,12 +20,11 @@ derive_builder.workspace = true
 futures.workspace = true
 http.workspace = true
 http-body.workspace = true
-hyper = { workspace = true, features = [ "http1", "http2", "runtime", "server", "tcp" ] }
 log.workspace = true
 quick-xml = { workspace = true, features = [ "serialize" ]}
 rand = { workspace = true, features = [ "std", "std_rng" ]}
 rustls.workspace = true
-scratchstack-arn.path = "../scratchstack-arn"
+scratchstack-arn = { path = "../scratchstack-arn", optional = true }
 scratchstack-aws-principal.path = "../scratchstack-aws-principal"
 scratchstack-aws-signature.path = "../scratchstack-aws-signature"
 scratchstack-errors.path = "../scratchstack-errors"
@@ -38,7 +37,6 @@ uuid = { workspace = true, features = [ "serde" ]}
 
 [dev-dependencies]
 env_logger.workspace = true
-hyper { workspace = true, features = [ "client", "server", "stream", "tcp", "http1", "http2" ] }
 pretty_assertions.workspace = true
 regex.workspace = true
 test-log.workspace = true

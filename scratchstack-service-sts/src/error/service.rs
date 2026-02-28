@@ -1,5 +1,5 @@
 use {
-    hyper::Error as HyperError,
+    axum::Error as AxumError,
     scratchstack_aws_signature::SignatureError,
     sqlx::Error as SqlxError,
     std::{
@@ -11,7 +11,7 @@ use {
 
 #[derive(Debug)]
 pub(crate) enum ServiceError {
-    Hyper(HyperError),
+    Axum(AxumError),
     IO(IOError),
     SignatureError(SignatureError),
     SqlxError(SqlxError),
@@ -39,9 +39,9 @@ impl Display for ServiceError {
     }
 }
 
-impl From<HyperError> for ServiceError {
-    fn from(e: HyperError) -> Self {
-        Self::Hyper(e)
+impl From<AxumError> for ServiceError {
+    fn from(e: AxumError) -> Self {
+        Self::Axum(e)
     }
 }
 

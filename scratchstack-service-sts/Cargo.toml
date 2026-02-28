@@ -1,6 +1,7 @@
 [package]
 name = "scratchstack-service-sts"
 description = "An implementation of the AWS Security Token Service"
+authors.workspace = true
 edition.workspace = true
 homepage.workspace = true
 license.workspace = true
@@ -9,59 +10,28 @@ repository.workspace = true
 version.workspace = true
 
 [dependencies]
-derive_builder = "^0.11"
-env_logger = "^0.9"
-form_urlencoded = "^1.1"
-futures = "^0.3"
+axum.workspace = true
+chrono.workspace = true
+derive_builder.workspace = true
+env_logger.workspace = true
+form_urlencoded.workspace = true
+futures.workspace = true
 getopts = "^0.2"
-http = "^0.2"
-http-body = "^0.4"
-log = "^0.4"
-rustls = "^0.20"
-scratchstack-arn = "^0.4"
-scratchstack-aws-signature = "^0.11.1-preview.2"
-scratchstack-aws-principal = "^0.4"
-tokio-rustls = "^0.23"
-tower = "^0.4"
-
-[dependencies.chrono]
-version = "^0.4"
-default-features = false
-features = [ "std" ]
-
-[dependencies.hyper]
-version = "~0.14.20"
-features = ["http1", "http2", "runtime", "server", "tcp"]
-
-[dependencies.quick-xml]
-version = "^0.25"
-features = ["serialize"]
-
-[dependencies.scratchstack-config]
-git = "https://github.com/dacut/scratchstack-config"
-branch = "main"
-
-[dependencies.scratchstack-http-framework]
-git = "https://github.com/dacut/scratchstack-http-framework"
-branch = "main"
-# path = "../../scratchstack-http-framework"
-# version = "0.1.0"
-features = [ "gsk_direct" ]
-
-[dependencies.serde]
-version = "^1.0"
-features = [ "derive" ]
-
-[dependencies.sqlx]
-# Forking 0.6.2 to fix a libsqlite3 vulnerability until 0.7 is released
-git = "https://github.com/dacut/sqlx.git"
-branch = "0.6.2-sqlite-fix"
-features = ["all-databases", "chrono", "macros", "migrate", "runtime-tokio-rustls"]
-
-[dependencies.tokio]
-version = "^1.19"
-features = [ "rt-multi-thread", "net" ]
+http.workspace = true
+http-body.workspace = true
+log.workspace = true
+quick-xml = { workspace = true, features = [ "serialize" ]}
+rustls.workspace = true
+scratchstack-arn.path = "../scratchstack-arn"
+scratchstack-aws-signature.path = "../scratchstack-aws-signature"
+scratchstack-aws-principal.path = "../scratchstack-aws-principal"
+scratchstack-config.path = "../scratchstack-config"
+serde = { workspace = true, features = [ "derive" ]}
+sqlx = { workspace = true, features = [ "all-databases", "chrono", "macros", "migrate", "runtime-tokio-rustls" ]}
+tokio = { workspace = true, features = [ "net", "rt-multi-thread" ]}
+tokio-rustls.workspace = true
+tower.workspace = true
 
 [dev-dependencies]
-pretty_assertions = "^1.3"
-test-log = "^0.2"
+pretty_assertions.workspace = true
+test-log.workspace = true
