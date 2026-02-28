@@ -349,7 +349,7 @@ mod tests {
 
     #[test_log::test]
     fn test_policy_source_derived() {
-        let policy_sources = vec![
+        let policy_sources = [
             PolicySource::new_entity_inline(
                 "arn:aws:iam::123456789012:user/MyUser",
                 "AIDAIXEXAMPLEID000000",

@@ -50,7 +50,7 @@ mod tests {
 
     #[test]
     fn check_derived() {
-        let errors = vec![
+        let errors = [
             ArnError::InvalidAccountId("1234".to_string()),
             ArnError::InvalidArn("arn:aws:iam::1234:role/role-name".to_string()),
             ArnError::InvalidPartition("aws".to_string()),
