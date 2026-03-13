@@ -102,7 +102,7 @@ pub struct GetCallerIdentityResult {
 impl GetCallerIdentityResult {
     /// Create a [`GetCallerIdentityResultBuilder`] to programmatically construct a
     /// `GetCallerIdentityResult`.
-    /// 
+    ///
     /// TODO: is this needed?
     #[allow(unused)]
     pub fn builder() -> GetCallerIdentityResultBuilder {

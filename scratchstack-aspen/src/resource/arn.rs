@@ -12,7 +12,7 @@ const PARTITION_START: usize = 4;
 /// An Amazon Resource Name (ARN) statement in an IAM Aspen policy.
 ///
 /// This is used to match [`scratchstack_arn::Arn`] objects from a resource statement in the IAM
-/// Aspen policy language. For example, a [`ResourceArn`] created from 
+/// Aspen policy language. For example, a [`ResourceArn`] created from
 /// `"arn:aws*:ec2:us-*-?:123456789012:instance/i-*"` would match the following [`Arn`]
 /// objects:
 /// * `arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0`

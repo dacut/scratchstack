@@ -1,4 +1,5 @@
 /// Content-Type string for HTML forms
+#[allow(dead_code)]
 pub(crate) const CT_APPLICATION_X_WWW_FORM_URLENCODED: &str = "application/x-www-form-urlencoded";
 
 /// Error code for InvalidAction errors

@@ -11,7 +11,6 @@ pub(crate) mod constants;
 mod request_id;
 pub use request_id::*;
 
-
 #[cfg(feature = "axum")]
 mod sigv4;
 #[cfg(feature = "axum")]

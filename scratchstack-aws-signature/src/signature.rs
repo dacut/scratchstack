@@ -64,14 +64,13 @@ impl SignatureOptions {
     /// query string passed as an HTML form.
     ///
     /// This sets `s3` to `false` and `url_encode_form` to `true`.
-    /// 
+    ///
     /// # Deprecation
     /// This function is deprecated. Use [`SignatureOptions::URL_ENCODE_FORM`] instead.
     #[deprecated(since = "0.12.0", note = "Use SignatureOptions::URL_ENCODE_FORM instead")]
     pub const fn url_encode_form() -> Self {
         Self::URL_ENCODE_FORM
     }
-
 
     /// A `SignatureOptions` suitable for use with S3-type authentication.
     ///

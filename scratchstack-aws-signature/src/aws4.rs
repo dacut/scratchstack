@@ -208,9 +208,8 @@ async fn run(basename: &str) {
     let sreq = File::open(&sreq_path).expect(&format!("Failed to open {:?}", sreq_path));
     let request = parse_file(sreq, &sreq_path);
     let (parts, body) = request.into_parts();
-    let (canonical, parts, body) =
-        CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM)
-            .expect("Failed to parse request");
+    let (canonical, parts, body) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM)
+        .expect("Failed to parse request");
 
     // The canonical request calculated by AWS for verification.
     let mut creq_path = PathBuf::new();

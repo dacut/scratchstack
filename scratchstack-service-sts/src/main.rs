@@ -95,6 +95,7 @@ fn main() {
     println!("{:#?}", runtime.block_on(run_server_from_config(config)));
 }
 
+#[allow(unused_variables, clippy::useless_vec)]
 async fn run_server_from_config(config: ResolvedSts) -> Result<(), ServiceError> {
     use crate::service::serve_request;
 
