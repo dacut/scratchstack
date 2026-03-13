@@ -28,7 +28,7 @@ use {
     tower::{BoxError, Layer, Service, ServiceExt},
 };
 
-/// AWSSigV4VerifierLayer implements a Tower layer that produces an [`AWSSigV4VerifierMiddleware`] for authenticating
+/// AWSSigV4VerifierLayer implements a Tower layer that produces an [`AwsSigV4VerifierMiddleware`] for authenticating
 /// requests using AWS SigV4 signing protocol.
 #[derive(Builder)]
 pub struct AwsSigV4VerifierLayer<G, E, SHR> {

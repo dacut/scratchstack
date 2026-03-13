@@ -24,7 +24,7 @@
 //! both canonical users and access control lists (ACLs) in favor of using ARNs and IAM policies for access control.
 //!
 //! Maintaining support for S3 canonical users introduced an oddity in the API where a [`Principal`] and
-//! [`PrincipalIdentity`] were separate concepts: S3 (and only S3) principals could have multiple identities. No
+//! `PrincipalIdentity` were separate concepts: S3 (and only S3) principals could have multiple identities. No
 //! clients have used this feature and it adds significant complexity to both this crate and users of this crate.
 
 mod assumed_role;
