@@ -1567,8 +1567,7 @@ mod tests {
             .unwrap();
         let (parts, body) = request.into_parts();
 
-        let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
+        let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
 
         // Ensure we can debug print the canonical request.
         let _ = format!("{:?}", cr);
@@ -1626,8 +1625,7 @@ mod tests {
             .unwrap();
         let (parts, body) = request.into_parts();
 
-        let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
+        let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         assert!(cr.query_parameters().is_empty());
     }
 
@@ -1644,8 +1642,7 @@ mod tests {
             .unwrap();
         let (parts, body) = request.into_parts();
 
-        let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
+        let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         assert_eq!(cr.query_parameters().get("foo").unwrap(), &vec!["bar%C3%BF".to_string()]);
 
         let uri = Uri::builder().path_and_query(PathAndQuery::from_static("/")).build().unwrap();
@@ -1659,8 +1656,7 @@ mod tests {
             .unwrap();
         let (parts, body) = request.into_parts();
 
-        let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
+        let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         assert_eq!(cr.query_parameters().get("foo").unwrap(), &vec!["bar%C3%BF".to_string()]);
     }
 
@@ -1862,8 +1858,7 @@ mod tests {
 
         let (parts, body) = request.into_parts();
 
-        let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
+        let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::IncompleteSignature(msg) = e {
             assert_eq!(
@@ -1945,8 +1940,7 @@ mod tests {
             .unwrap();
         let (parts, body) = request.into_parts();
 
-        let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
+        let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let auth = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap();
         // Expect last component found
         assert_eq!(auth.builder.get_credential(), Some("ABCD"));
@@ -1965,8 +1959,7 @@ mod tests {
             .unwrap();
         let (parts, body) = request.into_parts();
 
-        let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
+        let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let auth = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap();
         // Expect first component found
         assert_eq!(auth.builder.get_credential(), Some("1234"));
@@ -1993,8 +1986,7 @@ mod tests {
 
         let (parts, body) = request.into_parts();
 
-        let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
+        let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let required_headers = NO_ADDITIONAL_SIGNED_HEADERS;
         let required_headers2 = required_headers;
         assert_eq!(&required_headers, &required_headers2);
@@ -2017,8 +2009,7 @@ mod tests {
 
         let (parts, body) = request.into_parts();
 
-        let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
+        let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::SignatureDoesNotMatch(msg) = e {
             let msg = msg.expect("Expected error message");
@@ -2045,8 +2036,7 @@ mod tests {
 
         let (parts, body) = request.into_parts();
 
-        let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
+        let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let a = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap();
         assert_eq!(a.signed_headers, vec!["a", "host", "x-amz-date"]);
         let cr_bytes = cr.canonical_request(&a.signed_headers);
@@ -2068,8 +2058,7 @@ mod tests {
 
         let (parts, body) = request.into_parts();
 
-        let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
+        let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::MissingAuthenticationToken(msg) = e {
             assert_eq!(msg.as_str(), "Request is missing Authentication Token");
@@ -2090,8 +2079,7 @@ mod tests {
 
         let (parts, body) = request.into_parts();
 
-        let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
+        let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::SignatureDoesNotMatch(ref msg) = e {
             assert!(msg.is_none());
@@ -2113,8 +2101,7 @@ mod tests {
 
         let (parts, body) = request.into_parts();
 
-        let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
+        let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::IncompleteSignature(msg) = e {
             assert_eq!(msg.as_str(), "Unsupported AWS 'algorithm': 'AWS3-HMAC-SHA256'.");
@@ -2134,8 +2121,7 @@ mod tests {
 
         let (parts, body) = request.into_parts();
 
-        let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
+        let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::MissingAuthenticationToken(msg) = e {
             assert_eq!(msg.as_str(), "Request is missing Authentication Token");

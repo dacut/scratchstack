@@ -217,7 +217,7 @@ macro_rules! define_list_like_type {
     };
 }
 
-define_list_like_type!{
+define_list_like_type! {
     /// `MapList` allows a JSON field to be represented as a map or as a list-of-maps.
     ///
     /// The dual syntax is used as a shortcut in Aspen policy documents. For example, the following
@@ -334,7 +334,7 @@ impl<E: Serialize> Serialize for MapList<E> {
 
 define_list_like_type! {
     /// `StringLikeList` allows a JSON field to be represented as a string or as a list-of-strings.
-    /// 
+    ///
     /// The dual syntax is used as a shortcut in Aspen policy documents. For example, the following
     /// policy:
     /// ```text
@@ -346,7 +346,7 @@ define_list_like_type! {
     ///     }
     /// }
     /// ```
-    /// 
+    ///
     /// can also be represented as:
     /// ```text
     /// {

@@ -36,7 +36,7 @@ impl Resource {
     /// Indicates whether this [`Resource`] matches the candidate [`Arn`], given the request
     /// [`Context`] and using variable substitution rules according to the specified
     /// [`PolicyVersion`].
-    /// 
+    ///
     /// # Example
     /// ```
     /// # use scratchstack_aspen::{Context, PolicyVersion, Resource, ResourceArn};

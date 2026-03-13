@@ -60,8 +60,8 @@ where
             .bind(self.account_id.clone())
             .bind(self.email.clone())
             .bind(self.alias.clone())
-            .bind(self.created_at.clone());
-        let result = q.bind(self.created_at.clone()).execute(conn).await?;
+            .bind(self.created_at);
+        let result = q.bind(self.created_at).execute(conn).await?;
         Ok(result)
     }
 }

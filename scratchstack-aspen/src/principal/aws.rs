@@ -119,8 +119,7 @@ mod tests {
     #[test_log::test]
     fn test_matches() {
         assert!(
-            AwsPrincipal::Any
-                .matches(&Principal::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
+            AwsPrincipal::Any.matches(&Principal::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
         );
         assert!(
             AwsPrincipal::Account("123456789012".to_string())
@@ -130,9 +129,7 @@ mod tests {
             !AwsPrincipal::Account("567890123456".to_string())
                 .matches(&Principal::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
         );
-        assert!(
-            !AwsPrincipal::Any.matches(&Principal::from(Service::new("iam", None, "amazonaws.com").unwrap()))
-        );
+        assert!(!AwsPrincipal::Any.matches(&Principal::from(Service::new("iam", None, "amazonaws.com").unwrap())));
         assert!(
             !AwsPrincipal::Account("123456789012".to_string())
                 .matches(&Principal::from(Service::new("iam", None, "amazonaws.com").unwrap()))
