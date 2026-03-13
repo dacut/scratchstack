@@ -98,18 +98,35 @@ where
 
 #[cfg(test)]
 mod tests {
-
     #[test_log::test(tokio::test)]
     #[cfg(all(feature = "schema", feature = "sqlite"))]
     async fn test_load_account() {
         use {
-            super::*,
-            crate::CreateSchema,
+            crate::{Context, CreateSchema, Loadable, model::Account},
+            serde_json::json,
             sqlx::{pool::Pool, sqlite::Sqlite},
         };
 
         let pool = Pool::<Sqlite>::connect("sqlite::memory:").await.unwrap();
         let mut conn = pool.acquire().await.unwrap();
         Account::create_schema(&mut *conn, Context::default()).await.unwrap();
+        let accounts = json!([
+            {
+                "account_id": "123456789012",
+                "email": "hello@example.com",
+                "alias": "example1",
+                "created_at": "2024-01-01T00:00:00Z"
+            },
+            {
+                "account_id": "001122334455",
+                "email": null,
+                "alias": null,
+                "created_at": "2024-02-01T00:00:00Z"
+            }
+        ]);
+        for account in accounts.as_array().unwrap() {
+            let account: Account = serde_json::from_value(account.clone()).unwrap();
+            account.load_into(&mut *conn, Context::default()).await.unwrap();
+        }
     }
 }

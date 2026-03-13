@@ -48,6 +48,7 @@ tower.workspace = true
 env_logger.workspace = true
 pretty_assertions.workspace = true
 regex.workspace = true
+serde_json.workspace = true
 test-log.workspace = true
 aws-sigv4 = { workspace = true, features = ["sign-http"] }
 
