@@ -96,7 +96,7 @@ impl Display for FederatedUser {
 mod tests {
     use {
         super::FederatedUser,
-        crate::{PrincipalIdentity, PrincipalSource},
+        crate::{Principal, PrincipalSource},
         scratchstack_arn::Arn,
         std::{
             collections::hash_map::DefaultHasher,
@@ -117,7 +117,7 @@ mod tests {
         assert_eq!(arn.account_id(), "123456789012");
         assert_eq!(arn.resource(), "federated-user/test-user");
 
-        let p = PrincipalIdentity::from(user);
+        let p = Principal::from(user);
         let source = p.source();
         assert_eq!(source, PrincipalSource::Federated);
         assert_eq!(source.to_string(), "Federated");

@@ -108,7 +108,7 @@ impl Display for Service {
 mod tests {
     use {
         super::Service,
-        crate::{PrincipalIdentity, PrincipalSource},
+        crate::{Principal, PrincipalSource},
         std::{
             collections::hash_map::DefaultHasher,
             hash::{Hash, Hasher},
@@ -128,7 +128,7 @@ mod tests {
         assert_eq!(s2.region(), Some("us-east-1"));
         assert_eq!(s2.dns_suffix(), "amazonaws.com");
 
-        let p = PrincipalIdentity::from(s1);
+        let p = Principal::from(s1);
         let source = p.source();
         assert_eq!(source, PrincipalSource::Service);
         assert_eq!(source.to_string(), "Service".to_string());

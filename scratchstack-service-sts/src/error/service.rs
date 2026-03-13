@@ -20,7 +20,7 @@ pub(crate) enum ServiceError {
 impl Error for ServiceError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::Hyper(e) => Some(e),
+            Self::Axum(e) => Some(e),
             Self::IO(e) => Some(e),
             Self::SignatureError(e) => Some(e),
             Self::SqlxError(e) => Some(e),
@@ -31,7 +31,7 @@ impl Error for ServiceError {
 impl Display for ServiceError {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
-            Self::Hyper(e) => write!(f, "Hyper error: {e}"),
+            Self::Axum(e) => write!(f, "Axum error: {e}"),
             Self::IO(e) => write!(f, "IO error: {e}"),
             Self::SignatureError(e) => write!(f, "Signature error: {e}"),
             Self::SqlxError(e) => write!(f, "Sqlx error: {e}"),

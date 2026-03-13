@@ -209,7 +209,7 @@ async fn run(basename: &str) {
     let request = parse_file(sreq, &sreq_path);
     let (parts, body) = request.into_parts();
     let (canonical, parts, body) =
-        CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form())
+        CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM)
             .expect("Failed to parse request");
 
     // The canonical request calculated by AWS for verification.
@@ -277,7 +277,7 @@ async fn run(basename: &str) {
         &mut signing_key_svc,
         test_time,
         &NO_ADDITIONAL_SIGNED_HEADERS,
-        SignatureOptions::url_encode_form(),
+        SignatureOptions::URL_ENCODE_FORM,
     )
     .await
     .expect(&format!("Failed to validate request: {:?}", sreq_path));

@@ -127,10 +127,11 @@ impl Policy {
         &self.statement
     }
 
-    /// Evaluates the policy against the request [Context].
+    /// Evaluates the policy against the request [`Context`].
     ///
-    /// Returns [Decision::Deny] if the policy denies the request, [Decision::Allow] if the policy allows the request,
-    /// or [Decision::DefaultDeny] if the policy does not explicitly allow or deny the request.
+    /// Returns [`Decision::Deny`] if the policy explicitly denies the request, [`Decision::Allow`]
+    /// if the policy allows the request, or [`Decision::DefaultDeny`] if the policy does not
+    /// explicitly allow or deny the request.
     ///
     /// # Example
     /// ```
@@ -142,7 +143,7 @@ impl Policy {
     /// let statement = Statement::builder().effect(Effect::Allow).action(action).resource(resource).build().unwrap();
     /// let policy = Policy::builder().statement(statement).build().unwrap();
     ///
-    /// let actor = Principal::from(vec![User::from_str("arn:aws:iam::123456789012:user/exampleuser").unwrap().into()]);
+    /// let actor = Principal::from(User::from_str("arn:aws:iam::123456789012:user/exampleuser").unwrap());
     /// let context = Context::builder().service("s3").api("ListBucket").actor(actor)
     ///     .session_data(SessionData::new()).build().unwrap();
     /// policy.evaluate(&context);
@@ -1497,11 +1498,6 @@ mod tests {
             assert_eq!(aws.len(), 2);
             assert_eq!(*aws[0], AwsPrincipal::from_str("arn:aws:iam::123456789012:root").unwrap());
             assert_eq!(*aws[1], AwsPrincipal::from_str("arn:aws:iam::123456789012:user/*").unwrap());
-
-            let canonical_users = specified.canonical_user().unwrap().to_vec();
-            assert_eq!(canonical_users.len(), 2);
-            assert_eq!(canonical_users[0], "d04207a7d9311e77f5837e0e4f4b025322bf2f626f0872c85be8c6bb1290c88b");
-            assert_eq!(canonical_users[1], "2cdb0173470eb5b200f82c8e1b51a88562924cda12e2ccce60d7f00e1567ee7c");
 
             let federated = specified.federated().unwrap().to_vec();
             assert_eq!(federated.len(), 1);

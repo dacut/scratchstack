@@ -3,7 +3,7 @@ use {
     lazy_static::lazy_static,
     regex::Regex,
     scratchstack_arn::Arn,
-    scratchstack_aws_principal::{PrincipalIdentity, PrincipalSource},
+    scratchstack_aws_principal::{Principal, PrincipalSource},
     std::{
         fmt::{Display, Formatter, Result as FmtResult},
         str::FromStr,
@@ -16,7 +16,7 @@ lazy_static! {
 
 /// An AWS account principal clause in an Aspen policy.
 ///
-/// AwsPrincipal enums are immutable.
+/// `AwsPrincipal` enums are immutable.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AwsPrincipal {
     /// Any entity in any AWS account.
@@ -30,8 +30,8 @@ pub enum AwsPrincipal {
 }
 
 impl AwsPrincipal {
-    /// Indicate whether this [AwsPrincipal] matches the given [PrincipalIdentity].
-    pub fn matches(&self, identity: &PrincipalIdentity) -> bool {
+    /// Indicate whether this `AwsPrincipal` matches the given [`Principal`].
+    pub fn matches(&self, identity: &Principal) -> bool {
         if identity.source() != PrincipalSource::Aws {
             return false;
         }
@@ -90,7 +90,7 @@ mod tests {
     use {
         crate::AwsPrincipal,
         pretty_assertions::{assert_eq, assert_ne},
-        scratchstack_aws_principal::{CanonicalUser, PrincipalIdentity, Service, User},
+        scratchstack_aws_principal::{Principal, Service, User},
     };
 
     #[allow(clippy::redundant_clone)]
@@ -120,30 +120,27 @@ mod tests {
     fn test_matches() {
         assert!(
             AwsPrincipal::Any
-                .matches(&PrincipalIdentity::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
+                .matches(&Principal::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
         );
         assert!(
             AwsPrincipal::Account("123456789012".to_string())
-                .matches(&PrincipalIdentity::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
+                .matches(&Principal::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
         );
         assert!(
             !AwsPrincipal::Account("567890123456".to_string())
-                .matches(&PrincipalIdentity::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
+                .matches(&Principal::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
         );
         assert!(
-            !AwsPrincipal::Any.matches(&PrincipalIdentity::from(Service::new("iam", None, "amazonaws.com").unwrap()))
+            !AwsPrincipal::Any.matches(&Principal::from(Service::new("iam", None, "amazonaws.com").unwrap()))
         );
         assert!(
             !AwsPrincipal::Account("123456789012".to_string())
-                .matches(&PrincipalIdentity::from(Service::new("iam", None, "amazonaws.com").unwrap()))
+                .matches(&Principal::from(Service::new("iam", None, "amazonaws.com").unwrap()))
         );
-        assert!(!AwsPrincipal::Any.matches(&PrincipalIdentity::from(
-            CanonicalUser::new("772183b840c93fe103e45cd24ca8b8c94425a373465c6eb535b7c4b9593811e5").unwrap()
-        )));
 
         assert!(
             AwsPrincipal::Arn("arn:aws:iam::123456789012:root".parse().unwrap())
-                .matches(&PrincipalIdentity::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
+                .matches(&Principal::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
         );
     }
 }

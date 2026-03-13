@@ -1,12 +1,9 @@
 use {
-    crate::{AssumedRole, CanonicalUser, FederatedUser, PrincipalError, RootUser, Service, User},
+    crate::{AssumedRole, FederatedUser, PrincipalError, RootUser, Service, User},
     scratchstack_arn::Arn,
     std::{
-        default::Default,
         fmt::{Debug, Display, Formatter, Result as FmtResult},
         hash::Hash,
-        iter::IntoIterator,
-        ops::Deref,
         str::FromStr,
     },
 };
@@ -16,9 +13,6 @@ use {
 pub enum PrincipalSource {
     /// AWS account or IAM principal
     Aws,
-
-    /// S3 canonical user
-    CanonicalUser,
 
     /// Federated identity
     Federated,
@@ -31,7 +25,6 @@ impl Display for PrincipalSource {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Self::Aws => f.write_str("AWS"),
-            Self::CanonicalUser => f.write_str("CanonicalUser"),
             Self::Federated => f.write_str("Federated"),
             Self::Service => f.write_str("Service"),
         }
@@ -40,194 +33,20 @@ impl Display for PrincipalSource {
 
 /// A principal that is the source of an action in an AWS (or AWS-like) service.
 ///
-/// This principal may have multiple aspects to its identity: for example, an assumed role may have an associated
-/// service and S3 canonical user. Thus, the principal is represented as a set of [`PrincipalIdentity`] values.
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
-pub struct Principal {
-    /// A sorted vector of identities.
-    identities: Vec<PrincipalIdentity>,
-}
-
-impl Principal {
-    /// Create a new principal from a vector of identities.
-    pub fn new(mut identities: Vec<PrincipalIdentity>) -> Self {
-        identities.sort_unstable();
-        identities.dedup();
-        Self {
-            identities,
-        }
-    }
-
-    /// Create an empty principal with the specified capacity.
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            identities: Vec::with_capacity(capacity),
-        }
-    }
-
-    /// Adds an identity to the principal.
-    pub fn add(&mut self, identity: PrincipalIdentity) {
-        self.identities.push(identity);
-        self.identities.sort_unstable();
-        self.identities.dedup();
-    }
-
-    /// Extracts a slice containing the identities.
-    pub fn as_slice(&self) -> &[PrincipalIdentity] {
-        &self.identities
-    }
-
-    /// Clears this principal, removing all identities.
-    pub fn clear(&mut self) {
-        self.identities.clear();
-    }
-
-    /// Returns `true` if the principal has no identities.
-    pub fn is_empty(&self) -> bool {
-        self.identities.is_empty()
-    }
-
-    /// Returns the number of identities in the principal.
-    pub fn len(&self) -> usize {
-        self.identities.len()
-    }
-
-    /// Removes and returns the identity at position `index`.
-    ///
-    /// # Panics
-    /// Panics if `index` is out of bounds.
-    pub fn remove(&mut self, index: usize) -> PrincipalIdentity {
-        self.identities.remove(index)
-    }
-
-    /// Keep the first `len` identities and drop the rest. If `len` is greater than the current number of identities,
-    /// this has no effect.
-    pub fn truncate(&mut self, len: usize) {
-        self.identities.truncate(len)
-    }
-}
-
-impl AsRef<[PrincipalIdentity]> for Principal {
-    fn as_ref(&self) -> &[PrincipalIdentity] {
-        self.identities.as_ref()
-    }
-}
-
-impl Deref for Principal {
-    type Target = [PrincipalIdentity];
-
-    fn deref(&self) -> &[PrincipalIdentity] {
-        self.identities.deref()
-    }
-}
-
-impl Display for Principal {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.write_str("Principal(")?;
-        let mut first = true;
-        for identity in &self.identities {
-            if first {
-                first = false;
-            } else {
-                f.write_str(", ")?;
-            }
-            Display::fmt(identity, f)?;
-        }
-        f.write_str(")")
-    }
-}
-
-impl From<&[PrincipalIdentity]> for Principal {
-    fn from(identities: &[PrincipalIdentity]) -> Self {
-        Self::new(identities.to_vec())
-    }
-}
-
-impl From<Vec<PrincipalIdentity>> for Principal {
-    fn from(identities: Vec<PrincipalIdentity>) -> Self {
-        Self::new(identities)
-    }
-}
-
-impl From<&Vec<PrincipalIdentity>> for Principal {
-    fn from(identities: &Vec<PrincipalIdentity>) -> Self {
-        Self::new(identities.clone())
-    }
-}
-
-impl From<AssumedRole> for Principal {
-    fn from(role: AssumedRole) -> Self {
-        Self::new(vec![PrincipalIdentity::AssumedRole(role)])
-    }
-}
-
-impl From<CanonicalUser> for Principal {
-    fn from(user: CanonicalUser) -> Self {
-        Self::new(vec![PrincipalIdentity::CanonicalUser(user)])
-    }
-}
-
-impl From<FederatedUser> for Principal {
-    fn from(user: FederatedUser) -> Self {
-        Self::new(vec![PrincipalIdentity::FederatedUser(user)])
-    }
-}
-
-impl From<RootUser> for Principal {
-    fn from(user: RootUser) -> Self {
-        Self::new(vec![PrincipalIdentity::RootUser(user)])
-    }
-}
-
-impl From<Service> for Principal {
-    fn from(service: Service) -> Self {
-        Self::new(vec![PrincipalIdentity::Service(service)])
-    }
-}
-
-impl From<User> for Principal {
-    fn from(user: User) -> Self {
-        Self::new(vec![PrincipalIdentity::User(user)])
-    }
-}
-
-impl<'a> IntoIterator for &'a Principal {
-    type Item = &'a PrincipalIdentity;
-    type IntoIter = std::slice::Iter<'a, PrincipalIdentity>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.identities.iter()
-    }
-}
-
-impl IntoIterator for Principal {
-    type Item = PrincipalIdentity;
-    type IntoIter = std::vec::IntoIter<PrincipalIdentity>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.identities.into_iter()
-    }
-}
-
-/// A principal identity that is the source of an action in an AWS (or AWS-like) service.
-///
 /// `From` conversions are provided for each specific type of identity.
 ///
 /// # Examples
 ///
 /// ```
-/// # use scratchstack_aws_principal::{PrincipalIdentity, User};
+/// # use scratchstack_aws_principal::{Principal, User};
 /// # use std::str::FromStr;
-/// let pi: PrincipalIdentity = User::from_str("arn:aws:iam::123456789012:user/username").unwrap().into();
+/// let pi: Principal = User::from_str("arn:aws:iam::123456789012:user/username").unwrap().into();
 /// assert_eq!(pi.as_user().unwrap().user_name(), "username");
 /// ```
 #[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum PrincipalIdentity {
+pub enum Principal {
     /// Details for an assumed role.
     AssumedRole(AssumedRole),
-
-    /// Details for an S3 canonical user.
-    CanonicalUser(CanonicalUser),
 
     /// Details for a federated user.
     FederatedUser(FederatedUser),
@@ -242,12 +61,11 @@ pub enum PrincipalIdentity {
     User(User),
 }
 
-impl PrincipalIdentity {
+impl Principal {
     /// Return the source of this principal.
     pub fn source(&self) -> PrincipalSource {
         match self {
             Self::AssumedRole(_) | Self::RootUser(_) | Self::User(_) => PrincipalSource::Aws,
-            Self::CanonicalUser(_) => PrincipalSource::CanonicalUser,
             Self::FederatedUser(_) => PrincipalSource::Federated,
             Self::Service(_) => PrincipalSource::Service,
         }
@@ -255,7 +73,7 @@ impl PrincipalIdentity {
 
     /// Indicates whether this principal has an associated ARN.
     pub fn has_arn(&self) -> bool {
-        !matches!(self, Self::CanonicalUser(_) | Self::Service(_))
+        !matches!(self, Self::Service(_))
     }
 
     /// If the principal identity is an assumed role, return it. Otherwise, return `None`.
@@ -263,15 +81,6 @@ impl PrincipalIdentity {
     pub fn as_assumed_role(&self) -> Option<&AssumedRole> {
         match self {
             Self::AssumedRole(role) => Some(role),
-            _ => None,
-        }
-    }
-
-    /// If the principal identity is a canonical user, return it. Otherwise, return `None`.
-    #[inline]
-    pub fn as_canonical_user(&self) -> Option<&CanonicalUser> {
-        match self {
-            Self::CanonicalUser(user) => Some(user),
             _ => None,
         }
     }
@@ -317,8 +126,8 @@ impl PrincipalIdentity {
     /// # Example
     ///
     /// ```
-    /// # use scratchstack_aws_principal::PrincipalIdentity;
-    /// let pi = PrincipalIdentity::parse_arn("arn:aws:iam::123456789012:user/username").unwrap();
+    /// # use scratchstack_aws_principal::Principal;
+    /// let pi = Principal::parse_arn("arn:aws:iam::123456789012:user/username").unwrap();
     /// assert!(pi.as_user().is_some());
     /// ```
     pub fn parse_arn(arn: &str) -> Result<Self, PrincipalError> {
@@ -334,70 +143,57 @@ impl PrincipalIdentity {
     }
 }
 
-/// Wrap an [AssumedRole] in a [PrincipalIdentity].
-impl From<AssumedRole> for PrincipalIdentity {
+/// Wrap an [`AssumedRole`] in a [`Principal`].
+impl From<AssumedRole> for Principal {
     fn from(assumed_role: AssumedRole) -> Self {
-        PrincipalIdentity::AssumedRole(assumed_role)
+        Principal::AssumedRole(assumed_role)
     }
 }
 
-/// Wrap a [CanonicalUser] in a [PrincipalIdentity].
-impl From<CanonicalUser> for PrincipalIdentity {
-    fn from(canonical_user: CanonicalUser) -> Self {
-        PrincipalIdentity::CanonicalUser(canonical_user)
-    }
-}
-
-/// Wrap a [FederatedUser] in a [PrincipalIdentity].
-impl From<FederatedUser> for PrincipalIdentity {
+/// Wrap a [FederatedUser] in a [`Principal`].
+impl From<FederatedUser> for Principal {
     fn from(federated_user: FederatedUser) -> Self {
-        PrincipalIdentity::FederatedUser(federated_user)
+        Principal::FederatedUser(federated_user)
     }
 }
 
-/// Wrap a [RootUser] in a [PrincipalIdentity].
-impl From<RootUser> for PrincipalIdentity {
+/// Wrap a [RootUser] in a [`Principal`].
+impl From<RootUser> for Principal {
     fn from(root_user: RootUser) -> Self {
-        PrincipalIdentity::RootUser(root_user)
+        Principal::RootUser(root_user)
     }
 }
 
-/// Wrap a [Service] in a [PrincipalIdentity].
-impl From<Service> for PrincipalIdentity {
+/// Wrap a [Service] in a [`Principal`].
+impl From<Service> for Principal {
     fn from(service: Service) -> Self {
-        PrincipalIdentity::Service(service)
+        Principal::Service(service)
     }
 }
 
-/// Wrap a [User] in a [PrincipalIdentity].
-impl From<User> for PrincipalIdentity {
+/// Wrap a [User] in a [`Principal`].
+impl From<User> for Principal {
     fn from(user: User) -> Self {
-        PrincipalIdentity::User(user)
+        Principal::User(user)
     }
 }
 
-impl Debug for PrincipalIdentity {
+impl Debug for Principal {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
-            PrincipalIdentity::AssumedRole(assumed_role) => f.debug_tuple("AssumedRole").field(assumed_role).finish(),
-            PrincipalIdentity::CanonicalUser(canonical_user) => {
-                f.debug_tuple("CanonicalUser").field(canonical_user).finish()
-            }
-            PrincipalIdentity::FederatedUser(federated_user) => {
-                f.debug_tuple("FederatedUser").field(federated_user).finish()
-            }
-            PrincipalIdentity::RootUser(root_user) => f.debug_tuple("RootUser").field(root_user).finish(),
-            PrincipalIdentity::Service(service) => f.debug_tuple("Service").field(service).finish(),
-            PrincipalIdentity::User(user) => f.debug_tuple("User").field(user).finish(),
+            Self::AssumedRole(assumed_role) => f.debug_tuple("AssumedRole").field(assumed_role).finish(),
+            Self::FederatedUser(federated_user) => f.debug_tuple("FederatedUser").field(federated_user).finish(),
+            Self::RootUser(root_user) => f.debug_tuple("RootUser").field(root_user).finish(),
+            Self::Service(service) => f.debug_tuple("Service").field(service).finish(),
+            Self::User(user) => f.debug_tuple("User").field(user).finish(),
         }
     }
 }
 
-impl Display for PrincipalIdentity {
+impl Display for Principal {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
             Self::AssumedRole(inner) => Display::fmt(inner, f),
-            Self::CanonicalUser(inner) => Display::fmt(inner, f),
             Self::FederatedUser(inner) => Display::fmt(inner, f),
             Self::RootUser(inner) => Display::fmt(inner, f),
             Self::Service(inner) => Display::fmt(inner, f),
@@ -406,30 +202,28 @@ impl Display for PrincipalIdentity {
     }
 }
 
-impl TryFrom<&PrincipalIdentity> for Arn {
+impl TryFrom<&Principal> for Arn {
     type Error = PrincipalError;
-    fn try_from(p: &PrincipalIdentity) -> Result<Arn, Self::Error> {
+    fn try_from(p: &Principal) -> Result<Arn, Self::Error> {
         match p {
-            PrincipalIdentity::AssumedRole(d) => Ok(d.into()),
-            PrincipalIdentity::CanonicalUser(_) => Err(PrincipalError::CannotConvertToArn),
-            PrincipalIdentity::FederatedUser(d) => Ok(d.into()),
-            PrincipalIdentity::RootUser(d) => Ok(d.into()),
-            PrincipalIdentity::Service(_) => Err(PrincipalError::CannotConvertToArn),
-            PrincipalIdentity::User(d) => Ok(d.into()),
+            Principal::AssumedRole(d) => Ok(d.into()),
+            Principal::FederatedUser(d) => Ok(d.into()),
+            Principal::RootUser(d) => Ok(d.into()),
+            Principal::Service(_) => Err(PrincipalError::CannotConvertToArn),
+            Principal::User(d) => Ok(d.into()),
         }
     }
 }
 
-impl TryFrom<PrincipalIdentity> for Arn {
+impl TryFrom<Principal> for Arn {
     type Error = PrincipalError;
-    fn try_from(p: PrincipalIdentity) -> Result<Arn, Self::Error> {
+    fn try_from(p: Principal) -> Result<Arn, Self::Error> {
         match p {
-            PrincipalIdentity::AssumedRole(ref d) => Ok(d.into()),
-            PrincipalIdentity::CanonicalUser(_) => Err(PrincipalError::CannotConvertToArn),
-            PrincipalIdentity::FederatedUser(ref d) => Ok(d.into()),
-            PrincipalIdentity::RootUser(ref d) => Ok(d.into()),
-            PrincipalIdentity::Service(_) => Err(PrincipalError::CannotConvertToArn),
-            PrincipalIdentity::User(ref d) => Ok(d.into()),
+            Principal::AssumedRole(ref d) => Ok(d.into()),
+            Principal::FederatedUser(ref d) => Ok(d.into()),
+            Principal::RootUser(ref d) => Ok(d.into()),
+            Principal::Service(_) => Err(PrincipalError::CannotConvertToArn),
+            Principal::User(ref d) => Ok(d.into()),
         }
     }
 }
@@ -437,15 +231,11 @@ impl TryFrom<PrincipalIdentity> for Arn {
 #[cfg(test)]
 mod test {
     use {
-        crate::{
-            AssumedRole, CanonicalUser, FederatedUser, Principal, PrincipalError, PrincipalIdentity, PrincipalSource,
-            RootUser, Service, User,
-        },
+        crate::{AssumedRole, FederatedUser, Principal, PrincipalError, PrincipalSource, RootUser, Service, User},
         scratchstack_arn::Arn,
         std::{
             collections::hash_map::DefaultHasher,
             hash::{Hash, Hasher},
-            io::Write,
             str::FromStr,
         },
     };
@@ -454,39 +244,28 @@ mod test {
     fn check_source_derived() {
         let s1a = PrincipalSource::Aws;
         let s1b = PrincipalSource::Aws;
-        let s2 = PrincipalSource::CanonicalUser;
         let s3 = PrincipalSource::Federated;
         let s4 = PrincipalSource::Service;
 
         assert_eq!(s1a, s1b);
-        assert_ne!(s1a, s2);
         assert_eq!(s1a.clone(), s1a);
         assert_ne!(s1a, s3);
         assert_ne!(s1a, s4);
-        assert_ne!(s2, s3);
-        assert_ne!(s2, s4);
         assert_ne!(s3, s4);
 
         // Ensure we can hash the source.
         let mut h1a = DefaultHasher::new();
         let mut h1b = DefaultHasher::new();
-        let mut h2 = DefaultHasher::new();
         s1a.hash(&mut h1a);
         s1b.hash(&mut h1b);
-        s2.hash(&mut h2);
         let hash1a = h1a.finish();
         let hash1b = h1b.finish();
-        let hash2 = h2.finish();
         assert_eq!(hash1a, hash1b);
-        assert_ne!(hash1a, hash2);
 
         // Ensure ordering is logical.
         assert!(s1a <= s1b);
-        assert!(s1a < s2);
-        assert!(s2 < s3);
+        assert!(s1a < s3);
         assert!(s3 < s4);
-        assert_eq!(s1a.max(s2), s2);
-        assert_eq!(s1a.min(s2), s1a);
 
         // Ensure we can debug print a source.
         let _ = format!("{s1a:?}");
@@ -494,42 +273,31 @@ mod test {
 
     #[test]
     fn check_hash_ord() {
-        let p1 = PrincipalIdentity::from(AssumedRole::new("aws", "123456789012", "Role_name", "session_name").unwrap());
-        let p2 = PrincipalIdentity::from(
-            CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d").unwrap(),
-        );
-        let p3 = PrincipalIdentity::from(FederatedUser::new("aws", "123456789012", "user@domain").unwrap());
-        let p4 = PrincipalIdentity::from(RootUser::new("aws", "123456789012").unwrap());
-        let p5 = PrincipalIdentity::from(Service::new("service-name", None, "amazonaws.com").unwrap());
-        let p6 = PrincipalIdentity::from(User::new("aws", "123456789012", "/", "user-name").unwrap());
+        let p1 = Principal::from(AssumedRole::new("aws", "123456789012", "Role_name", "session_name").unwrap());
+        let p3 = Principal::from(FederatedUser::new("aws", "123456789012", "user@domain").unwrap());
+        let p4 = Principal::from(RootUser::new("aws", "123456789012").unwrap());
+        let p5 = Principal::from(Service::new("service-name", None, "amazonaws.com").unwrap());
+        let p6 = Principal::from(User::new("aws", "123456789012", "/", "user-name").unwrap());
 
         let mut h1 = DefaultHasher::new();
-        let mut h2 = DefaultHasher::new();
         let mut h3 = DefaultHasher::new();
         let mut h4 = DefaultHasher::new();
         let mut h5 = DefaultHasher::new();
         let mut h6 = DefaultHasher::new();
         p1.hash(&mut h1);
-        p2.hash(&mut h2);
         p3.hash(&mut h3);
         p4.hash(&mut h4);
         p5.hash(&mut h5);
         p6.hash(&mut h6);
         let hash1 = h1.finish();
-        let hash2 = h2.finish();
         let hash3 = h3.finish();
         let hash4 = h4.finish();
         let hash5 = h5.finish();
         let hash6 = h6.finish();
-        assert_ne!(hash1, hash2);
         assert_ne!(hash1, hash3);
         assert_ne!(hash1, hash4);
         assert_ne!(hash1, hash5);
         assert_ne!(hash1, hash6);
-        assert_ne!(hash2, hash3);
-        assert_ne!(hash2, hash4);
-        assert_ne!(hash2, hash5);
-        assert_ne!(hash2, hash6);
         assert_ne!(hash3, hash4);
         assert_ne!(hash3, hash5);
         assert_ne!(hash3, hash6);
@@ -537,12 +305,9 @@ mod test {
         assert_ne!(hash4, hash6);
         assert_ne!(hash5, hash6);
 
-        assert!(p1 < p2);
         assert!(p1 < p3);
         assert!(p1 < p4);
         assert!(p1 < p5);
-        assert_eq!(p1.clone().max(p2.clone()), p2);
-        assert_eq!(p1.clone().min(p2), p1);
     }
 
     #[test]
@@ -554,9 +319,9 @@ mod test {
         let r2 =
             AssumedRole::new("aws2", "123456789012", "Role@Foo=bar,baz_=world-1234", "Session@1234,_=-,.OK").unwrap();
 
-        let p1a = PrincipalIdentity::from(r1a);
-        let p1b = PrincipalIdentity::from(r1b);
-        let p2 = PrincipalIdentity::from(r2);
+        let p1a = Principal::from(r1a);
+        let p1b = Principal::from(r1b);
+        let p2 = Principal::from(r2);
 
         assert_eq!(p1a, p1b);
         assert_ne!(p1a, p2);
@@ -585,44 +350,14 @@ mod test {
     }
 
     #[test]
-    fn check_canonical_user() {
-        let cu1a = CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d").unwrap();
-        let cu1b = CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d").unwrap();
-        let cu2 = CanonicalUser::new("772183b840c93fe103e45cd24ca8b8c94425a373465c6eb535b7c4b9593811e5").unwrap();
-
-        let p1a = PrincipalIdentity::from(cu1a);
-        let p1b = PrincipalIdentity::from(cu1b);
-        let p2 = PrincipalIdentity::from(cu2);
-
-        assert_eq!(p1a, p1b);
-        assert_ne!(p1a, p2);
-        assert_eq!(p1a, p1a.clone());
-
-        assert_eq!(p1a.to_string(), "9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d");
-        assert_eq!(p1a.source(), PrincipalSource::CanonicalUser);
-        assert!(!p1a.has_arn());
-
-        // Make sure we can debug the canonical user
-        let _ = format!("{p1a:?}");
-
-        let err = TryInto::<Arn>::try_into(&p1a).unwrap_err();
-        assert_eq!(err, PrincipalError::CannotConvertToArn);
-        assert_eq!(err.to_string(), "Cannot convert entity to ARN");
-
-        let err = TryInto::<Arn>::try_into(p1a).unwrap_err();
-        assert_eq!(err, PrincipalError::CannotConvertToArn);
-        assert_eq!(err.to_string(), "Cannot convert entity to ARN");
-    }
-
-    #[test]
     fn check_federated_user() {
         let f1a = FederatedUser::new("aws", "123456789012", "user@domain").unwrap();
         let f1b = FederatedUser::new("aws", "123456789012", "user@domain").unwrap();
         let f2 = FederatedUser::new("partition-with-32-characters1234", "123456789012", "user@domain").unwrap();
 
-        let p1a = PrincipalIdentity::from(f1a);
-        let p1b = PrincipalIdentity::from(f1b);
-        let p2 = PrincipalIdentity::from(f2);
+        let p1a = Principal::from(f1a);
+        let p1b = Principal::from(f1b);
+        let p2 = Principal::from(f2);
 
         assert_eq!(p1a, p1b);
         assert_ne!(p1a, p2);
@@ -656,9 +391,9 @@ mod test {
         let r1b = RootUser::new("aws", "123456789012").unwrap();
         let r2 = RootUser::new("aws", "123456789099").unwrap();
 
-        let p1a = PrincipalIdentity::from(r1a);
-        let p1b = PrincipalIdentity::from(r1b);
-        let p2 = PrincipalIdentity::from(r2);
+        let p1a = Principal::from(r1a);
+        let p1b = Principal::from(r1b);
+        let p2 = Principal::from(r2);
 
         assert_eq!(p1a, p1b);
         assert_ne!(p1a, p2);
@@ -692,9 +427,9 @@ mod test {
         let s1b = Service::new("service-name", None, "amazonaws.com").unwrap();
         let s2 = Service::new("service-name2", None, "amazonaws.com").unwrap();
 
-        let p1a = PrincipalIdentity::from(s1a);
-        let p1b = PrincipalIdentity::from(s1b);
-        let p2 = PrincipalIdentity::from(s2);
+        let p1a = Principal::from(s1a);
+        let p1b = Principal::from(s1b);
+        let p2 = Principal::from(s2);
 
         assert_eq!(p1a, p1b);
         assert_ne!(p1a, p2);
@@ -720,9 +455,9 @@ mod test {
         let u1b = User::new("aws", "123456789012", "/", "user-name").unwrap();
         let u2 = User::new("aws", "123456789012", "/", "user-name2").unwrap();
 
-        let p1a = PrincipalIdentity::from(u1a);
-        let p1b = PrincipalIdentity::from(u1b);
-        let p2 = PrincipalIdentity::from(u2);
+        let p1a = Principal::from(u1a);
+        let p1b = Principal::from(u1b);
+        let p2 = Principal::from(u2);
 
         assert_eq!(p1a, p1b);
         assert_ne!(p1a, p2);
@@ -754,133 +489,72 @@ mod test {
     fn check_principal_basics() {
         let ar1a = AssumedRole::new("aws", "123456789012", "Role_name", "session_name").unwrap();
         let ar1b = AssumedRole::new("aws", "123456789012", "Role_name", "session_name").unwrap();
-        let cu1a = CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d").unwrap();
-        let cu1b = CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d").unwrap();
+        let ar2 = AssumedRole::new("aws", "123456789012", "Role_name2", "session_name").unwrap();
+        assert_eq!(ar1a, ar1b);
+        assert_ne!(ar1a, ar2);
+        assert_ne!(ar2, ar1b);
+        let par1a = Principal::from(ar1a.clone());
+        let par1b = Principal::from(ar1b.clone());
+        let par2 = Principal::from(ar2.clone());
+        assert_eq!(par1a, par1b);
+        assert_ne!(par1a, par2);
+        assert_ne!(par2, par1b);
+
         let f1a = FederatedUser::new("aws", "123456789012", "user@domain").unwrap();
         let f1b = FederatedUser::new("aws", "123456789012", "user@domain").unwrap();
+        let f2 = FederatedUser::new("aws", "123456789012", "user2@domain").unwrap();
+        assert_eq!(f1a, f1b);
+        assert_ne!(f1a, f2);
+        let pf1a = Principal::from(f1a.clone());
+        let pf1b = Principal::from(f1b.clone());
+        let pf2 = Principal::from(f2.clone());
+        assert_eq!(pf1a, pf1b);
+        assert_ne!(pf1a, pf2);
+        assert_ne!(pf2, pf1b);
+
         let r1a = RootUser::new("aws", "123456789012").unwrap();
         let r1b = RootUser::new("aws", "123456789012").unwrap();
+        let r2 = RootUser::new("aws", "123456789013").unwrap();
+        assert_eq!(r1a, r1b);
+        assert_ne!(r1a, r2);
+        assert_ne!(r2, r1b);
+        let pr1a = Principal::from(r1a.clone());
+        let pr1b = Principal::from(r1b.clone());
+        let pr2 = Principal::from(r2.clone());
+        assert_eq!(pr1a, pr1b);
+        assert_ne!(pr1a, pr2);
+        assert_ne!(pr2, pr1b);
+
         let s1a = Service::new("service-name", None, "amazonaws.com").unwrap();
         let s1b = Service::new("service-name", None, "amazonaws.com").unwrap();
+        let s2 = Service::new("service-name2", None, "amazonaws.com").unwrap();
+        assert_eq!(s1a, s1b);
+        assert_ne!(s1a, s2);
+        assert_ne!(s2, s1b);
+        let ps1a = Principal::from(s1a.clone());
+        let ps1b = Principal::from(s1b.clone());
+        let ps2 = Principal::from(s2.clone());
+        assert_eq!(ps1a, ps1b);
+        assert_ne!(ps1a, ps2);
+        assert_ne!(ps2, ps1b);
+
         let u1a = User::new("aws", "123456789012", "/", "user-name").unwrap();
         let u1b = User::new("aws", "123456789012", "/", "user-name").unwrap();
         let u2 = User::new("aws", "123456789012", "/", "user-name2").unwrap();
-
-        let principals1a = vec![
-            PrincipalIdentity::from(ar1a.clone()),
-            PrincipalIdentity::from(cu1a.clone()),
-            PrincipalIdentity::from(f1a.clone()),
-            PrincipalIdentity::from(r1a.clone()),
-            PrincipalIdentity::from(s1a.clone()),
-            PrincipalIdentity::from(u1a.clone()),
-            PrincipalIdentity::from(ar1b),
-            PrincipalIdentity::from(cu1b),
-            PrincipalIdentity::from(f1b),
-            PrincipalIdentity::from(r1b),
-            PrincipalIdentity::from(s1b),
-            PrincipalIdentity::from(u1b),
-        ];
-        let principals1b = vec![
-            PrincipalIdentity::from(u1a.clone()),
-            PrincipalIdentity::from(s1a.clone()),
-            PrincipalIdentity::from(r1a.clone()),
-            PrincipalIdentity::from(f1a.clone()),
-            PrincipalIdentity::from(cu1a.clone()),
-            PrincipalIdentity::from(ar1a.clone()),
-        ];
-        let principals2 = vec![
-            PrincipalIdentity::from(u1a.clone()),
-            PrincipalIdentity::from(s1a.clone()),
-            PrincipalIdentity::from(r1a.clone()),
-            PrincipalIdentity::from(f1a.clone()),
-            PrincipalIdentity::from(cu1a.clone()),
-            PrincipalIdentity::from(ar1a.clone()),
-            PrincipalIdentity::from(u2.clone()),
-        ];
-
-        let p1a = Principal::from(&principals1a);
-        let p1b = Principal::from(principals1b);
-        let mut p2 = Principal::from(principals2.as_slice());
-        let mut p3 = Principal::with_capacity(p1a.len());
-
-        assert!(!p1a.is_empty());
-        assert!(p3.is_empty());
-
-        assert_eq!(p1a, p1b);
-        assert_eq!(p1a, p1a.clone());
-        assert_ne!(p1a, p2);
-
-        assert_eq!(p1a.as_slice(), p1b.as_slice());
-
-        let p1adebug = format!("{p1a:?}");
-        let p1bdebug = format!("{p1b:?}");
-        assert_eq!(p1adebug, p1bdebug);
-
-        let p1adisplay = format!("{p1a}");
-        let p1bdisplay = format!("{p1b}");
-        assert_eq!(p1adisplay, p1bdisplay);
-
-        let mut p1a_emptied = p1a.clone();
-        p1a_emptied.clear();
-        assert_eq!(p1a_emptied, p3);
-
-        let p2b_slice: &[PrincipalIdentity] = p1b.as_ref();
-        for identity in p1a.iter() {
-            assert!(p2b_slice.contains(identity));
-        }
-
-        p3.add(u1a.into());
-        p3.add(s1a.into());
-        p3.add(r1a.into());
-        p3.add(f1a.into());
-        p3.add(cu1a.into());
-        p3.add(ar1a.into());
-
-        assert_eq!(p3, p1a);
-
-        // Ensure we can hash the principal.
-        let mut h1a = DefaultHasher::new();
-        let mut h1b = DefaultHasher::new();
-        let mut h2 = DefaultHasher::new();
-        p1a.hash(&mut h1a);
-        p1b.hash(&mut h1b);
-        p2.hash(&mut h2);
-        let hash1a = h1a.finish();
-        let hash1b = h1b.finish();
-        let hash2 = h2.finish();
-        assert_eq!(hash1a, hash1b);
-        assert_ne!(hash1a, hash2);
-
-        p2.remove(p2.len() - 1);
-        assert_eq!(p1a, p2);
-
-        p2.add(u2.into());
-        assert_ne!(p1a, p2);
-        p2.truncate(p2.len() - 1);
-        assert_eq!(p1a, p2);
-
-        (&p1a).into_iter().for_each(|identity| {
-            assert!(p1b.contains(identity));
-        });
-
-        p1a.into_iter().for_each(|identity| {
-            assert!(p1b.contains(&identity));
-        });
-    }
-
-    #[test]
-    fn failing_principal_display() {
-        let u1 = User::new("aws", "123456789012", "/", "user-name").unwrap();
-        let u2 = User::new("aws", "123456789012", "/", "user-name2").unwrap();
-
-        // Exercise the failing display code path.
-        for bufsize in 0..94 {
-            let mut buf = vec![0u8; bufsize];
-            let mut p: Principal = Default::default();
-            p.add(u1.clone().into());
-            p.add(u2.clone().into());
-            write!(buf.as_mut_slice(), "{p}").unwrap_err();
-        }
+        assert_eq!(u1a, u1b);
+        assert_ne!(u1a, u2);
+        assert_ne!(u2, u1b);
+        let pu1a = Principal::from(u1a.clone());
+        let pu1b = Principal::from(u1b.clone());
+        let pu2 = Principal::from(u2.clone());
+        assert_eq!(pu1a, pu1b);
+        assert_ne!(pu1a, pu2);
+        assert_ne!(pu2, pu1b);
+        let pu1adisplay = format!("{pu1a}");
+        let pu1bdisplay = format!("{pu1b}");
+        let pu2display = format!("{pu2}");
+        assert_eq!(pu1adisplay, pu1bdisplay);
+        assert_ne!(pu1adisplay, pu2display);
     }
 
     #[test]
@@ -888,88 +562,60 @@ mod test {
         let p = Principal::from(
             AssumedRole::from_str("arn:aws:sts::123456789012:assumed-role/role-name/session-name").unwrap(),
         );
-        assert_eq!(p.len(), 1);
-        assert!(p[0].as_assumed_role().is_some());
-        assert!(p[0].as_canonical_user().is_none());
-        assert!(p[0].as_federated_user().is_none());
-        assert!(p[0].as_root_user().is_none());
-        assert!(p[0].as_service().is_none());
-        assert!(p[0].as_user().is_none());
-
-        let p = Principal::from(
-            CanonicalUser::new("9da4bcba2132ad952bba3c8ecb37e668d99b310ce313da30c98aba4cdf009a7d").unwrap(),
-        );
-        assert_eq!(p.len(), 1);
-        assert!(p[0].as_assumed_role().is_none());
-        assert!(p[0].as_canonical_user().is_some());
-        assert!(p[0].as_federated_user().is_none());
-        assert!(p[0].as_root_user().is_none());
-        assert!(p[0].as_service().is_none());
-        assert!(p[0].as_user().is_none());
+        assert!(p.as_assumed_role().is_some());
+        assert!(p.as_federated_user().is_none());
+        assert!(p.as_root_user().is_none());
+        assert!(p.as_service().is_none());
+        assert!(p.as_user().is_none());
 
         let p = Principal::from(FederatedUser::new("aws", "123456789012", "dacut@kanga.org").unwrap());
-        assert_eq!(p.len(), 1);
-        assert!(p[0].as_assumed_role().is_none());
-        assert!(p[0].as_canonical_user().is_none());
-        assert!(p[0].as_federated_user().is_some());
-        assert!(p[0].as_root_user().is_none());
-        assert!(p[0].as_service().is_none());
-        assert!(p[0].as_user().is_none());
+        assert!(p.as_assumed_role().is_none());
+        assert!(p.as_federated_user().is_some());
+        assert!(p.as_root_user().is_none());
+        assert!(p.as_service().is_none());
+        assert!(p.as_user().is_none());
 
         let p = Principal::from(RootUser::new("aws", "123456789012").unwrap());
-        assert_eq!(p.len(), 1);
-        assert!(p[0].as_assumed_role().is_none());
-        assert!(p[0].as_canonical_user().is_none());
-        assert!(p[0].as_federated_user().is_none());
-        assert!(p[0].as_root_user().is_some());
-        assert!(p[0].as_service().is_none());
-        assert!(p[0].as_user().is_none());
+        assert!(p.as_assumed_role().is_none());
+        assert!(p.as_federated_user().is_none());
+        assert!(p.as_root_user().is_some());
+        assert!(p.as_service().is_none());
+        assert!(p.as_user().is_none());
 
         let p = Principal::from(Service::new("ec2", Some("us-west-2".to_string()), "amazonaws.com").unwrap());
-        assert_eq!(p.len(), 1);
-        assert!(p[0].as_assumed_role().is_none());
-        assert!(p[0].as_canonical_user().is_none());
-        assert!(p[0].as_federated_user().is_none());
-        assert!(p[0].as_root_user().is_none());
-        assert!(p[0].as_service().is_some());
-        assert!(p[0].as_user().is_none());
+        assert!(p.as_assumed_role().is_none());
+        assert!(p.as_federated_user().is_none());
+        assert!(p.as_root_user().is_none());
+        assert!(p.as_service().is_some());
+        assert!(p.as_user().is_none());
 
         let p = Principal::from(User::from_str("arn:aws:iam::123456789012:user/user-name").unwrap());
-        assert_eq!(p.len(), 1);
-        assert!(p[0].as_assumed_role().is_none());
-        assert!(p[0].as_canonical_user().is_none());
-        assert!(p[0].as_federated_user().is_none());
-        assert!(p[0].as_root_user().is_none());
-        assert!(p[0].as_service().is_none());
-        assert!(p[0].as_user().is_some());
-
-        let p = Principal::from(vec![
-            PrincipalIdentity::parse_arn("arn:aws:sts::123456789012:assumed-role/role-name/session-name").unwrap(),
-            PrincipalIdentity::parse_arn("arn:aws:iam::123456789012:user/user-name").unwrap(),
-        ]);
-        assert_eq!(p.len(), 2);
+        assert!(p.as_assumed_role().is_none());
+        assert!(p.as_federated_user().is_none());
+        assert!(p.as_root_user().is_none());
+        assert!(p.as_service().is_none());
+        assert!(p.as_user().is_some());
     }
 
     #[test]
     fn test_invalid_arns() {
-        let e =
-            PrincipalIdentity::parse_arn("arn:-aws:sts::123456789012:assumed-role/role-name/session-name").unwrap_err();
+        let e = Principal::parse_arn("arn:-aws:sts::123456789012:assumed-role/role-name/session-name").unwrap_err();
         assert_eq!(e.to_string(), r#"Invalid partition: "-aws""#);
 
-        let e = PrincipalIdentity::parse_arn("arn:aws:sts:us-west-1:123456789012:assumed-role/role-name/session-name")
-            .unwrap_err();
+        let e =
+            Principal::parse_arn("arn:aws:sts:us-west-1:123456789012:assumed-role/role-name/session-name").unwrap_err();
         assert_eq!(e.to_string(), r#"Invalid region: "us-west-1""#);
 
-        let e = PrincipalIdentity::parse_arn("arn:aws:sts::123456789012:role/role-name/session-name").unwrap_err();
+        let e = Principal::parse_arn("arn:aws:sts::123456789012:role/role-name/session-name").unwrap_err();
         assert_eq!(e.to_string(), r#"Invalid ARN: "arn:aws:sts::123456789012:role/role-name/session-name""#);
 
-        let e = PrincipalIdentity::parse_arn("arn:aws:iam:us-west-1:123456789012:user/path/user-name").unwrap_err();
+        let e = Principal::parse_arn("arn:aws:iam:us-west-1:123456789012:user/path/user-name").unwrap_err();
         assert_eq!(e.to_string(), r#"Invalid region: "us-west-1""#);
 
-        let e = PrincipalIdentity::parse_arn("arn:aws:iam::123456789012:role/role-name/session-name").unwrap_err();
+        let e = Principal::parse_arn("arn:aws:iam::123456789012:role/role-name/session-name").unwrap_err();
         assert_eq!(e.to_string(), r#"Invalid ARN: "arn:aws:iam::123456789012:role/role-name/session-name""#);
 
-        let e = PrincipalIdentity::parse_arn("arn:aws:s3::123456789012:role/role-name").unwrap_err();
+        let e = Principal::parse_arn("arn:aws:s3::123456789012:role/role-name").unwrap_err();
         assert_eq!(e.to_string(), r#"Invalid ARN: "arn:aws:s3::123456789012:role/role-name""#);
     }
 }

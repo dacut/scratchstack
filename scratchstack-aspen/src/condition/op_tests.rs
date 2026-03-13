@@ -2,7 +2,7 @@ use {
     crate::{Condition, Context, PolicyVersion},
     chrono::DateTime,
     scratchstack_arn::Arn,
-    scratchstack_aws_principal::{Principal, PrincipalIdentity, Service, SessionData, SessionValue},
+    scratchstack_aws_principal::{Principal, Service, SessionData, SessionValue},
     std::{
         net::{Ipv4Addr, Ipv6Addr},
         str::FromStr,
@@ -15,8 +15,7 @@ fn session_matches(cmap: &Condition, session_data: &SessionData) -> bool {
 }
 
 fn make_context(session_data: &SessionData) -> Context {
-    let principal: Principal =
-        vec![PrincipalIdentity::from(Service::new("example", None, "amazonaws.com").unwrap())].into();
+    let principal = Principal::from(Service::new("example", None, "amazonaws.com").unwrap());
     Context::builder()
         .api("action")
         .actor(principal)

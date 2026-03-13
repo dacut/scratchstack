@@ -6,7 +6,7 @@ use {bytes::Bytes, std::future::Future, tower::BoxError};
 /// This requires reading the entire body into memory.
 pub trait IntoRequestBytes {
     /// Convert this object into a [`Bytes`] object.
-    fn into_request_bytes(self) -> impl Future<Output = Result<Bytes, BoxError>> + Send + Sync;
+    fn into_request_bytes(self) -> impl Future<Output = Result<Bytes, BoxError>> + Send;
 }
 
 /// Convert the unit type `()` into an empty [`Bytes`] object.
@@ -36,5 +36,14 @@ impl IntoRequestBytes for Bytes {
     /// This is infalliable.
     async fn into_request_bytes(self) -> Result<Bytes, BoxError> {
         Ok(self)
+    }
+}
+
+/// Convert an [`axum::body::Body`] into a [`Bytes`] object.
+#[cfg(feature = "axum")]
+impl IntoRequestBytes for axum::body::Body {
+    async fn into_request_bytes(self) -> Result<Bytes, BoxError> {
+        let body = axum::body::to_bytes(self, usize::MAX).await?;
+        Ok(body)
     }
 }

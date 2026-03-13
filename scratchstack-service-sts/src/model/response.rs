@@ -1,63 +1,26 @@
 use {
-    crate::model,
+    crate::{
+        constants::*,
+        model::{GetCallerIdentityResult, ResponseMetadata, ServiceError},
+    },
+    axum::{
+        body::Body,
+        http::{HeaderValue, StatusCode},
+        response::Response,
+    },
     derive_builder::Builder,
     scratchstack_http_framework::RequestId,
     serde::{Deserialize, Serialize},
+    tower::BoxError,
 };
-
-macro_rules! derive_responder {
-    ($name:ident, $($request_id:ident).+) => {
-        impl $name {
-            pub fn respond(
-                mut self,
-                parts: &::http::request::Parts,
-                status_code: ::http::status::StatusCode,
-            ) -> ::std::result::Result<
-                ::http::response::Response<hyper::body::Body>,
-                ::std::boxed::Box<dyn ::std::error::Error + ::std::marker::Send + ::std::marker::Sync + 'static>,
-            > {
-                let request_id = match self.$($request_id).+ {
-                    None => {
-                        let rid = parts.extensions.get::<scratchstack_http_framework::RequestId>();
-                        match rid {
-                            None => None,
-                            Some(rid) => {
-                                self.$($request_id).+ = Some(*rid);
-                                Some(*rid)
-                            }
-                        }
-                    }
-                    Some(request_id) => Some(request_id),
-                };
-
-                let builder = http::response::Response::builder()
-                    .status(status_code)
-                    .header("Content-Type", http::header::HeaderValue::from_static("text/xml"));
-
-                let builder = if let Some(request_id) = request_id {
-                    builder.header("X-Amzn-RequestId", request_id.to_string())
-                } else {
-                    builder
-                };
-
-                let body = quick_xml::se::to_string(&self)?;
-                let body = hyper::body::Body::from(body);
-                Ok(builder.body(body)?)
-            }
-        }
-    };
-    ($name:ident) => {
-        derive_responder!($name, response_metadata.request_id);
-    };
-}
 
 #[derive(Builder, Clone, Debug, Serialize, Deserialize)]
 pub struct ErrorResponse {
-    #[builder(setter(into), default = "crate::model::STS_XML_NS.to_string()")]
+    #[builder(setter(into), default = "crate::constants::XML_NS_AWSFAULT.to_string()")]
     pub xmlns: String,
 
     #[serde(rename = "Error")]
-    pub error: model::Error,
+    pub error: ServiceError,
 
     #[builder(setter(strip_option))]
     #[serde(rename = "$unflatten=RequestId", skip_serializing_if = "Option::is_none")]
@@ -65,46 +28,68 @@ pub struct ErrorResponse {
 }
 
 impl ErrorResponse {
+    /// Create a [`ErrorResponseBuilder`] for constructing an `ErrorResponse` struct.
     pub fn builder() -> ErrorResponseBuilder {
         ErrorResponseBuilder::default()
     }
-}
 
-derive_responder!(ErrorResponse, request_id);
+    /// Generate an HTTP [`Response`] from this `ErrorResponse` with the given status code.
+    pub fn respond(&self, status_code: StatusCode) -> Result<Response, BoxError> {
+        let xml_body = quick_xml::se::to_string(&self)?;
+        let mut builder =
+            Response::builder().status(status_code).header(HDR_CONTENT_TYPE, HeaderValue::from_static(MIME_TYPE_XML));
+
+        if let Some(request_id) = self.request_id {
+            builder = builder.header(HDR_X_AMZN_REQUEST_ID, request_id.to_string());
+        }
+
+        Ok(builder.body(Body::from(xml_body))?)
+    }
+}
 
 #[derive(Builder, Clone, Debug, Serialize, Deserialize)]
 pub struct GetCallerIdentityResponse {
-    #[builder(setter(into), default = "crate::model::STS_XML_NS.to_string()")]
+    #[builder(setter(into), default = "crate::constants::XML_NS_STS.to_string()")]
     pub xmlns: String,
 
     #[serde(rename = "GetCallerIdentityResult")]
-    pub get_caller_identity_result: model::GetCallerIdentityResult,
+    pub get_caller_identity_result: GetCallerIdentityResult,
 
     #[builder(setter(into), default)]
     #[serde(rename = "ResponseMetadata")]
-    pub response_metadata: model::ResponseMetadata,
+    pub response_metadata: ResponseMetadata,
 }
 
-derive_responder!(GetCallerIdentityResponse, response_metadata.request_id);
-
 impl GetCallerIdentityResponse {
+    /// Create a [`GetCallerIdentityResponseBuilder`] for constructing a `GetCallerIdentityResponse` struct.
     pub fn builder() -> GetCallerIdentityResponseBuilder {
         GetCallerIdentityResponseBuilder::default()
+    }
+
+    /// Generate an HTTP [`Response`] from this `GetCallerIdentityResponse` with the given status code and request id.
+    pub fn respond(&self, status_code: StatusCode, request_id: RequestId) -> Result<Response, BoxError> {
+        let xml_body = quick_xml::se::to_string(&self)?;
+        let response = Response::builder()
+            .status(status_code)
+            .header(HDR_CONTENT_TYPE, HeaderValue::from_static(MIME_TYPE_XML))
+            .header(HDR_X_AMZN_REQUEST_ID, request_id.to_string())
+            .body(Body::from(xml_body))?;
+        Ok(response)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use {
-        crate::model::{response::ErrorResponse, Error, STS_XML_NS},
+        crate::model::{ServiceError, XML_NS_STS, response::ErrorResponse},
         pretty_assertions::assert_eq,
     };
 
     #[test_log::test]
     fn test_serialize_error() {
         let response = ErrorResponse {
-            xmlns: STS_XML_NS.to_string(),
-            error: Error {
+            xmlns: XML_NS_STS.to_string(),
+            error: ServiceError {
                 r#type: "Sender".to_string(),
                 code: "InvalidClientTokenId".to_string(),
                 message: Some("The security token included in the request is invalid.".to_string()),

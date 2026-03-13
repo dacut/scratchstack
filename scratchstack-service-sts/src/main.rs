@@ -1,88 +1,59 @@
+pub(crate) mod constants;
 pub(crate) mod error;
 pub(crate) mod model;
 pub(crate) mod operations;
 pub(crate) mod service;
 
 use {
-    crate::{
-        error::ServiceError,
-        service::{StsService, STS_XML_NS},
+    crate::error::ServiceError,
+    axum::{
+        Router,
+        routing::{get, post, put},
     },
-    getopts::Options,
-    http::method::Method,
-    hyper::server::Server as HyperServer,
+    clap::Parser,
     log::{debug, error, info},
-    scratchstack_config::{service::ResolvedSts, Config},
-    scratchstack_http_framework::{GetSigningKeyFromDatabase, SpawnService, TlsIncoming, XmlErrorMapper},
-    std::{
-        env,
-        io::{self, Write},
-        iter::Iterator,
-        process::exit,
-        sync::Arc,
-    },
+    scratchstack_config::{Config, service::ResolvedSts},
+    scratchstack_database::GetSigningKeyFromDatabase,
+    std::{path::PathBuf, process::exit, sync::Arc},
     tokio::{net::TcpListener, runtime::Builder as RuntimeBuilder},
-    tokio_rustls::TlsAcceptor,
 };
 
 const DEFAULT_CONFIG_FILENAME: &str = "scratchstack.cfg";
 // const CONTENT_LENGTH_LIMIT: u64 = 10 << 20;
 
-#[allow(unused_must_use)]
-fn print_usage(stream: &mut dyn Write, program: &str, opts: Options) {
-    let brief = format!("Usage: {program} [options]");
-    write!(stream, "{}", opts.usage(&brief));
+#[derive(Parser)]
+#[command(version, about)]
+struct CliOptions {
+    /// Configuration file to read
+    #[arg(short, long, value_name = "FILENAME")]
+    config: Option<PathBuf>,
 }
 
 fn main() {
     env_logger::init();
-    let args: Vec<String> = env::args().collect();
-    let program = args[0].clone();
+    let cli = CliOptions::parse();
 
-    let mut opts = Options::new();
-    opts.optopt("c", "config", "configuration file", "FILENAME");
-    opts.optflag("h", "help", "print this usage information");
-
-    let matches = match opts.parse(&args[1..]) {
-        Ok(m) => m,
-        Err(f) => {
-            error!("{}", f);
-            exit(2);
-        }
-    };
-
-    if matches.opt_present("h") {
-        print_usage(&mut io::stdout(), &program, opts);
-        return;
-    }
-
-    let config_filename = match matches.opt_str("c") {
+    let config_filename = match cli.config {
         Some(filename) => filename,
-        None => DEFAULT_CONFIG_FILENAME.to_string(),
+        None => PathBuf::from(DEFAULT_CONFIG_FILENAME),
     };
-
-    // Shouldn't have any other arguments on the command line.
-    if !matches.free.is_empty() {
-        print_usage(&mut io::stderr(), &program, opts);
-        exit(0);
-    }
 
     // Parse the configuration.
-    info!("Reading configuration from {}", config_filename);
+    info!("Reading configuration from {}", config_filename.display());
     let config = match Config::read_file(&config_filename) {
         Ok(c) => c,
         Err(e) => {
-            error!("Unable to read configuration file {}: {}", config_filename, e);
+            error!("Unable to read configuration file {}: {}", config_filename.display(), e);
             exit(2);
         }
     };
-    info!("Configuration read from {}", config_filename);
-    debug!("Configuration: {:?}", config);
+    info!("Configuration read from {}", config_filename.display());
+    debug!("Configuration: {config:?}");
 
     let service_config = match &config.service {
         Some(s) => s,
         None => {
-            error!("No service configuration found in configuration file {}", config_filename);
+            error!("No service configuration found in configuration file {}", config_filename.display());
             exit(2);
         }
     };
@@ -100,12 +71,12 @@ fn main() {
     let config = match sts_config.resolve() {
         Ok(c) => c,
         Err(e) => {
-            error!("Error in configuration file {}: {}", config_filename, e);
+            error!("Error in configuration file {}: {}", config_filename.display(), e);
             exit(2);
         }
     };
     info!("Configuration resolved");
-    debug!("Resolved configuration: {:?}", config);
+    debug!("Resolved configuration: {config:?}");
 
     info!("Creating runtime");
     let runtime = match RuntimeBuilder::new_multi_thread()
@@ -116,7 +87,7 @@ fn main() {
     {
         Ok(rt) => rt,
         Err(e) => {
-            error!("Unable to create runtime: {}", e);
+            error!("Unable to create runtime: {e}");
             exit(1);
         }
     };
@@ -125,56 +96,64 @@ fn main() {
 }
 
 async fn run_server_from_config(config: ResolvedSts) -> Result<(), ServiceError> {
+    use crate::service::serve_request;
+
     let pool = config.database.pool_options.connect(&config.database.url).await?;
     let pool = Arc::new(pool);
     let region = config.service.region.clone();
-    let allowed_request_methods = vec![Method::GET, Method::POST, Method::PUT];
     let allowed_content_types = vec!["application/x-www-form-urlencoded".to_string()];
     let gsk = GetSigningKeyFromDatabase::new(pool, &config.service.partition, &config.service.region, "sts");
-    let service_impl = StsService {};
-    let error_mapper = XmlErrorMapper::new(STS_XML_NS);
+    // let service_impl = StsService {};
+    // let error_mapper = XmlErrorMapper::new(STS_XML_NS);
 
-    match config.service.tls {
-        Some(t) => {
-            info!("TLS configuration detected; creating acceptor and listener");
-            let acceptor = TlsAcceptor::from(Arc::new(t));
-            let tcp_listener = TcpListener::bind(&config.service.address).await?;
-            let incoming = TlsIncoming::new(tcp_listener, acceptor);
-
-            let service_maker: SpawnService<GetSigningKeyFromDatabase, StsService, XmlErrorMapper> =
-                SpawnService::builder()
-                    .region(region)
-                    .service("sts")
-                    .allowed_request_methods(allowed_request_methods)
-                    .allowed_content_types(allowed_content_types)
-                    .get_signing_key(gsk)
-                    .implementation(service_impl)
-                    .error_mapper(error_mapper)
-                    .build()
-                    .expect("Unable to create service maker");
-
-            info!("Starting Hyper");
-
-            HyperServer::builder(incoming).serve(service_maker).await?;
-            Ok(())
-        }
-        None => {
-            info!("Non-TLS configuration detected");
-            let service_maker: SpawnService<GetSigningKeyFromDatabase, StsService, XmlErrorMapper> =
-                SpawnService::builder()
-                    .region(region)
-                    .service("sts")
-                    .allowed_request_methods(allowed_request_methods)
-                    .allowed_content_types(allowed_content_types)
-                    .get_signing_key(gsk)
-                    .implementation(service_impl)
-                    .error_mapper(error_mapper)
-                    .build()
-                    .expect("Unable to create service maker");
-
-            info!("Starting Hyper");
-            HyperServer::bind(&config.service.address).serve(service_maker).await?;
-            Ok(())
-        }
-    }
+    let app =
+        Router::new().route("/", get(serve_request)).route("/", post(serve_request)).route("/", put(serve_request));
+    let listener = TcpListener::bind(&config.service.address).await?;
+    Ok(axum::serve(listener, app).await?)
 }
+
+// {
+//     match config.service.tls {
+//         Some(t) => {
+//             info!("TLS configuration detected; creating acceptor and listener");
+//             let acceptor = TlsAcceptor::from(Arc::new(t));
+//             let tcp_listener = TcpListener::bind(&config.service.address).await?;
+//             let incoming = TlsIncoming::new(tcp_listener, acceptor);
+
+//             let service_maker: SpawnService<GetSigningKeyFromDatabase, StsService, XmlErrorMapper> =
+//                 SpawnService::builder()
+//                     .region(region)
+//                     .service("sts")
+//                     .allowed_request_methods(allowed_request_methods)
+//                     .allowed_content_types(allowed_content_types)
+//                     .get_signing_key(gsk)
+//                     .implementation(service_impl)
+//                     .error_mapper(error_mapper)
+//                     .build()
+//                     .expect("Unable to create service maker");
+
+//             info!("Starting Hyper");
+
+//             HyperServer::builder(incoming).serve(service_maker).await?;
+//             Ok(())
+//         }
+//         None => {
+//             info!("Non-TLS configuration detected");
+//             let service_maker: SpawnService<GetSigningKeyFromDatabase, StsService, XmlErrorMapper> =
+//                 SpawnService::builder()
+//                     .region(region)
+//                     .service("sts")
+//                     .allowed_request_methods(allowed_request_methods)
+//                     .allowed_content_types(allowed_content_types)
+//                     .get_signing_key(gsk)
+//                     .implementation(service_impl)
+//                     .error_mapper(error_mapper)
+//                     .build()
+//                     .expect("Unable to create service maker");
+
+//             info!("Starting Hyper");
+//             HyperServer::bind(&config.service.address).serve(service_maker).await?;
+//             Ok(())
+//         }
+//     }
+// }

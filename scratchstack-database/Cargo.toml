@@ -1,6 +1,6 @@
 [package]
-name = "scratchstack-http-framework"
-description = "HTTP framework for Scratchstack services"
+name = "scratchstack-database"
+description = "Database schema and types for Scratchstack services"
 
 authors.workspace = true
 homepage.workspace = true
@@ -10,24 +10,22 @@ edition.workspace = true
 version.workspace = true
 
 [features]
-default = ["axum", "gsk-direct", "mysql", "postgres", "sqlite"]
-axum = ["dep:axum"]
-gsk-direct = ["dep:scratchstack-arn", "dep:sqlx"]
+default = ["dump", "gsk-direct", "load", "mysql", "postgres", "schema", "sqlite"]
+dump = []
+gsk-direct = ["dep:scratchstack-arn"]
+load = []
 mysql = ["sqlx/mysql"]
 postgres = ["sqlx/postgres"]
+schema = []
 sqlite = ["sqlx/_sqlite"]
 
 [dependencies]
-axum = { workspace = true, optional = true }
-async-trait.workspace = true
-bytes.workspace = true
-chrono = { workspace = true, features = ["clock", "std"] }
+arrayvec = { workspace = true, features = ["serde"] }
+base32.workspace = true
+chrono = { workspace = true, features = ["clock", "serde", "std"] }
 derive_builder.workspace = true
 futures.workspace = true
-http.workspace = true
-http-body.workspace = true
 log.workspace = true
-quick-xml = { workspace = true, features = ["serialize"] }
 rand = { workspace = true, features = ["std", "std_rng"] }
 rustls.workspace = true
 scratchstack-arn = { path = "../scratchstack-arn", optional = true }
@@ -35,8 +33,7 @@ scratchstack-aws-principal.path = "../scratchstack-aws-principal"
 scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features = ["unstable"] }
 scratchstack-errors.path = "../scratchstack-errors"
 serde = { workspace = true, features = ["derive"] }
-sqlx = { workspace = true, optional = true, features = [
-    "all-databases",
+sqlx = { workspace = true, features = [
     "chrono",
     "macros",
     "migrate",
@@ -46,12 +43,16 @@ toml.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 tokio-rustls.workspace = true
 tower.workspace = true
-uuid = { workspace = true, features = ["serde", "v7"] }
 
 [dev-dependencies]
 env_logger.workspace = true
-http-body-util.workspace = true
 pretty_assertions.workspace = true
 regex.workspace = true
 test-log.workspace = true
 aws-sigv4 = { workspace = true, features = ["sign-http"] }
+
+[[test]]
+name = "gsk_sqlite_test"
+path = "tests/gsk_sqlite_test.rs"
+test = true
+required-features = ["sqlite"]

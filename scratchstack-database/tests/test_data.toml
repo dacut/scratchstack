@@ -1,0 +1,11 @@
+[[account]]
+account_id = "000000000001"
+email = "test@example.com"
+alias = "test-example-com"
+
+[[iam_user]]
+user_id = "AEAAAAABAAAAA"
+account_id = "000000000001"
+user_name_lower = "testuser1"
+user_name_cased = "TestUser1"
+path = "/"

@@ -658,6 +658,27 @@ pub trait SignedHeaderRequirements {
     fn prefixes(&self) -> &[Cow<'_, str>];
 }
 
+/// Static implementation of [`SignedHeaderRequirements`] that requires no signed headers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct NoSignedHeaderRequirements;
+
+impl SignedHeaderRequirements for NoSignedHeaderRequirements {
+    #[inline(always)]
+    fn always_present(&self) -> &[Cow<'static, str>] {
+        &[]
+    }
+
+    #[inline(always)]
+    fn if_in_request(&self) -> &[Cow<'static, str>] {
+        &[]
+    }
+
+    #[inline(always)]
+    fn prefixes(&self) -> &[Cow<'static, str>] {
+        &[]
+    }
+}
+
 /// Static implementation of [`SignedHeaderRequirements`] that uses slices of string slices.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SliceSignedHeaderRequirements<'a, 'b, 'c> {
@@ -673,17 +694,17 @@ pub struct SliceSignedHeaderRequirements<'a, 'b, 'c> {
 
 impl<'a, 'b, 'c> SignedHeaderRequirements for SliceSignedHeaderRequirements<'a, 'b, 'c> {
     #[inline(always)]
-    fn always_present(&self) -> &[Cow<'_, str>] {
+    fn always_present(&self) -> &[Cow<'a, str>] {
         self.always_present
     }
 
     #[inline(always)]
-    fn if_in_request(&self) -> &[Cow<'_, str>] {
+    fn if_in_request(&self) -> &[Cow<'b, str>] {
         self.if_in_request
     }
 
     #[inline(always)]
-    fn prefixes(&self) -> &[Cow<'_, str>] {
+    fn prefixes(&self) -> &[Cow<'c, str>] {
         self.prefixes
     }
 }
@@ -708,8 +729,7 @@ pub type ConstSignedHeaderRequirements = SliceSignedHeaderRequirements<'static, 
 
 /// Constant [`SignedHeaderRequirements`] value to use when no additional signed headers are
 /// required.
-pub const NO_ADDITIONAL_SIGNED_HEADERS: ConstSignedHeaderRequirements =
-    ConstSignedHeaderRequirements::new(&[], &[], &[]);
+pub const NO_ADDITIONAL_SIGNED_HEADERS: NoSignedHeaderRequirements = NoSignedHeaderRequirements;
 
 /// `SignedHeaderRequirements` that can be dynamically changed.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -1475,7 +1495,7 @@ mod tests {
                 .unwrap();
             let (parts, body) = request.into_parts();
 
-            let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap_err();
+            let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap_err();
             if let SignatureError::InvalidURIPath(msg) = e {
                 assert_eq!(msg.as_str(), error_message);
             }
@@ -1515,7 +1535,7 @@ mod tests {
                 .unwrap();
             let (parts, body) = request.into_parts();
 
-            let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap_err();
+            let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap_err();
             if let SignatureError::MalformedQueryString(msg) = e {
                 assert_eq!(msg.as_str(), error_message);
             }
@@ -1548,7 +1568,7 @@ mod tests {
         let (parts, body) = request.into_parts();
 
         let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap();
+            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
 
         // Ensure we can debug print the canonical request.
         let _ = format!("{:?}", cr);
@@ -1583,7 +1603,7 @@ mod tests {
             .unwrap();
         let (parts, body) = request.into_parts();
 
-        let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap_err();
+        let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap_err();
         if let SignatureError::InvalidBodyEncoding(_) = e {
             assert_eq!(e.to_string(), "application/x-www-form-urlencoded body uses unsupported charset 'foobar'");
             assert_eq!(e.error_code(), "InvalidBodyEncoding");
@@ -1607,7 +1627,7 @@ mod tests {
         let (parts, body) = request.into_parts();
 
         let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap();
+            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         assert!(cr.query_parameters().is_empty());
     }
 
@@ -1625,7 +1645,7 @@ mod tests {
         let (parts, body) = request.into_parts();
 
         let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap();
+            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         assert_eq!(cr.query_parameters().get("foo").unwrap(), &vec!["bar%C3%BF".to_string()]);
 
         let uri = Uri::builder().path_and_query(PathAndQuery::from_static("/")).build().unwrap();
@@ -1640,7 +1660,7 @@ mod tests {
         let (parts, body) = request.into_parts();
 
         let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap();
+            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         assert_eq!(cr.query_parameters().get("foo").unwrap(), &vec!["bar%C3%BF".to_string()]);
     }
 
@@ -1684,7 +1704,7 @@ mod tests {
             .unwrap();
         let (parts, body) = request.into_parts();
 
-        let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap_err();
+        let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap_err();
         if let SignatureError::InvalidBodyEncoding(msg) = e {
             assert_eq!(
                 msg.as_str(),
@@ -1709,7 +1729,7 @@ mod tests {
         let (parts, body) = request.into_parts();
 
         let (_, _, body) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap();
+            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         assert_eq!(body.as_ref(), b"");
     }
 
@@ -1726,7 +1746,7 @@ mod tests {
             .unwrap();
         let (parts, body) = request.into_parts();
 
-        let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap_err();
+        let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap_err();
         if let SignatureError::MalformedQueryString(msg) = e {
             assert_eq!(msg.as_str(), "Illegal hex character in escape % pattern: %yy")
         } else {
@@ -1744,7 +1764,7 @@ mod tests {
             .unwrap();
         let (parts, body) = request.into_parts();
 
-        let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap_err();
+        let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap_err();
         if let SignatureError::MalformedQueryString(msg) = e {
             assert_eq!(msg.as_str(), "Illegal hex character in escape % pattern: %tt")
         } else {
@@ -1762,7 +1782,7 @@ mod tests {
             .unwrap();
         let (parts, body) = request.into_parts();
 
-        let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap_err();
+        let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap_err();
         if let SignatureError::MalformedQueryString(msg) = e {
             assert_eq!(msg.as_str(), "Incomplete trailing escape % sequence")
         } else {
@@ -1818,7 +1838,7 @@ mod tests {
             let (parts, body) = request.into_parts();
 
             let (cr, _, _) =
-                CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap();
+                CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
             let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
             if let SignatureError::IncompleteSignature(msg) = e {
                 let error_message = format!("{} Authorization=AWS4-HMAC-SHA256", error_messages.join(" "));
@@ -1843,7 +1863,7 @@ mod tests {
         let (parts, body) = request.into_parts();
 
         let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap();
+            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::IncompleteSignature(msg) = e {
             assert_eq!(
@@ -1897,7 +1917,7 @@ mod tests {
             let (parts, body) = request.into_parts();
 
             let (cr, _, _) =
-                CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap();
+                CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
             let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
             if let SignatureError::IncompleteSignature(msg) = e {
                 let error_message = format!("{} Re-examine the query-string parameters.", error_messages.join(" "));
@@ -1926,7 +1946,7 @@ mod tests {
         let (parts, body) = request.into_parts();
 
         let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap();
+            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let auth = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap();
         // Expect last component found
         assert_eq!(auth.builder.get_credential(), Some("ABCD"));
@@ -1946,7 +1966,7 @@ mod tests {
         let (parts, body) = request.into_parts();
 
         let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap();
+            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let auth = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap();
         // Expect first component found
         assert_eq!(auth.builder.get_credential(), Some("1234"));
@@ -1974,7 +1994,7 @@ mod tests {
         let (parts, body) = request.into_parts();
 
         let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap();
+            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let required_headers = NO_ADDITIONAL_SIGNED_HEADERS;
         let required_headers2 = required_headers;
         assert_eq!(&required_headers, &required_headers2);
@@ -1998,7 +2018,7 @@ mod tests {
         let (parts, body) = request.into_parts();
 
         let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap();
+            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::SignatureDoesNotMatch(msg) = e {
             let msg = msg.expect("Expected error message");
@@ -2026,7 +2046,7 @@ mod tests {
         let (parts, body) = request.into_parts();
 
         let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap();
+            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let a = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap();
         assert_eq!(a.signed_headers, vec!["a", "host", "x-amz-date"]);
         let cr_bytes = cr.canonical_request(&a.signed_headers);
@@ -2049,7 +2069,7 @@ mod tests {
         let (parts, body) = request.into_parts();
 
         let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap();
+            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::MissingAuthenticationToken(msg) = e {
             assert_eq!(msg.as_str(), "Request is missing Authentication Token");
@@ -2071,7 +2091,7 @@ mod tests {
         let (parts, body) = request.into_parts();
 
         let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap();
+            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::SignatureDoesNotMatch(ref msg) = e {
             assert!(msg.is_none());
@@ -2094,7 +2114,7 @@ mod tests {
         let (parts, body) = request.into_parts();
 
         let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap();
+            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::IncompleteSignature(msg) = e {
             assert_eq!(msg.as_str(), "Unsupported AWS 'algorithm': 'AWS3-HMAC-SHA256'.");
@@ -2115,7 +2135,7 @@ mod tests {
         let (parts, body) = request.into_parts();
 
         let (cr, _, _) =
-            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::url_encode_form()).unwrap();
+            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::MissingAuthenticationToken(msg) = e {
             assert_eq!(msg.as_str(), "Request is missing Authentication Token");

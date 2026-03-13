@@ -9,7 +9,7 @@
 //! documents and have a source ("AWS", "CanonicalUser", "Federated", or "Service") and an associated value which may
 //! contain wildcards. These are implemented in the [`scratchstack-aspen` crate](https://docs.rs/scratchstack-aspen).
 //!
-//! On the service implementation side, actor principals (represented by [Principal] here) are exact, without
+//! On the service implementation side, actor principals (represented by [`Principal`] here) are exact, without
 //! wildcards. Beyond the core details, there are additional details attached to a principal actor that can be
 //! referenced in
 //! [policy variables](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_variables.html).
@@ -18,9 +18,16 @@
 //! If the `/Sales/Bob` user is deleted and re-created, these two users will have the same ARN but different unique IDs
 //! that can be referenced via the `aws:userid` condition key. These details are carried in [`SessionData`] structures
 //! apart from the [`Principal`] itself.
+//!
+//! # S3 Canonical Users removed
+//! In version 0.12.0 and above, the S3 canonical user principal type has been removed. S3 has effectively deprecated
+//! both canonical users and access control lists (ACLs) in favor of using ARNs and IAM policies for access control.
+//!
+//! Maintaining support for S3 canonical users introduced an oddity in the API where a [`Principal`] and
+//! [`PrincipalIdentity`] were separate concepts: S3 (and only S3) principals could have multiple identities. No
+//! clients have used this feature and it adds significant complexity to both this crate and users of this crate.
 
 mod assumed_role;
-mod canonical_user;
 mod error;
 mod federated_user;
 mod principal;
@@ -30,17 +37,8 @@ mod session;
 mod user;
 
 /// Validation routines used internally by `scratchstack-aws-principal` but may be useful elsewhere.
-pub mod utils;
+mod utils;
 
 pub use {
-    assumed_role::AssumedRole,
-    canonical_user::CanonicalUser,
-    error::PrincipalError,
-    federated_user::FederatedUser,
-    principal::{Principal, PrincipalIdentity, PrincipalSource},
-    root_user::RootUser,
-    service::Service,
-    session::{SessionData, SessionValue},
-    user::User,
-    utils::IamIdPrefix,
+    assumed_role::*, error::*, federated_user::*, principal::*, root_user::*, service::*, session::*, user::*, utils::*,
 };

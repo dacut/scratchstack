@@ -318,7 +318,7 @@ impl GetSigningKeyRequest {
 #[derive(Builder, Clone, Debug)]
 pub struct GetSigningKeyResponse {
     /// The principal actors of the request.
-    #[builder(setter(into), default)]
+    #[builder(setter(into))]
     pub(crate) principal: Principal,
 
     /// The session data associated with the principal.
@@ -330,7 +330,7 @@ pub struct GetSigningKeyResponse {
 }
 
 impl GetSigningKeyResponse {
-    /// Create a [GetSigningKeyResponseBuilder] to construct a [GetSigningKeyResponse].
+    /// Create a [`GetSigningKeyResponseBuilder`] to construct a `GetSigningKeyResponse`.
     #[inline]
     pub fn builder() -> GetSigningKeyResponseBuilder {
         GetSigningKeyResponseBuilder::default()
@@ -352,18 +352,6 @@ impl GetSigningKeyResponse {
     #[inline]
     pub fn signing_key(&self) -> &KSigningKey {
         &self.signing_key
-    }
-}
-
-impl Default for GetSigningKeyResponse {
-    fn default() -> Self {
-        Self {
-            signing_key: KSigningKey {
-                key: [0; SHA256_OUTPUT_LEN],
-            },
-            session_data: SessionData::default(),
-            principal: Principal::new(vec![]),
-        }
     }
 }
 
@@ -531,12 +519,6 @@ mod tests {
     }
 
     #[test_log::test]
-    fn test_gsk_reponse_derived() {
-        let response: GetSigningKeyResponse = Default::default();
-        assert_eq!(response.signing_key.as_ref(), &[0u8; 32]);
-    }
-
-    #[test_log::test]
     fn test_response_builder() {
         let date = NaiveDate::from_ymd_opt(2015, 8, 30).unwrap();
         let signing_key = KSecretKey::from_str("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY").unwrap().to_ksigning(
@@ -544,8 +526,9 @@ mod tests {
             "us-east-1",
             "example",
         );
-        let response = GetSigningKeyResponse::builder().signing_key(signing_key).build().unwrap();
-        assert!(response.principal().is_empty());
+        let principal = Principal::from(AssumedRole::new("aws", "123456789012", "role", "session").unwrap());
+        let response = GetSigningKeyResponse::builder().principal(principal).signing_key(signing_key).build().unwrap();
+        assert!(response.principal().as_assumed_role().is_some());
         assert!(response.session_data().is_empty());
     }
 

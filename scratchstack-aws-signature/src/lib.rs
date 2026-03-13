@@ -141,7 +141,7 @@ pub use {
 
 #[doc(inline)]
 pub use canonical::{
-    ConstSignedHeaderRequirements, NO_ADDITIONAL_SIGNED_HEADERS, SignedHeaderRequirements,
+    ConstSignedHeaderRequirements, NO_ADDITIONAL_SIGNED_HEADERS, NoSignedHeaderRequirements, SignedHeaderRequirements,
     SliceSignedHeaderRequirements, VecSignedHeaderRequirements,
 };
 

@@ -119,8 +119,8 @@ impl SigV4Authenticator {
         allowed_mismatch: Duration,
     ) -> Result<(), SignatureError> {
         let req_ts = self.request_timestamp();
-        let min_ts = server_timestamp.checked_sub_signed(allowed_mismatch).unwrap_or(server_timestamp);
-        let max_ts = server_timestamp.checked_add_signed(allowed_mismatch).unwrap_or(server_timestamp);
+        let min_ts = server_timestamp.checked_sub_signed(allowed_mismatch).unwrap_or(DateTime::<Utc>::MIN_UTC);
+        let max_ts = server_timestamp.checked_add_signed(allowed_mismatch).unwrap_or(DateTime::<Utc>::MAX_UTC);
 
         // Rule 10: Make sure date isn't expired...
         if req_ts < min_ts {
@@ -357,15 +357,15 @@ impl SigV4AuthenticatorBuilder {
     }
 }
 
-/// Upon successful authentication of a signature, this is returned to convey the principal, session data, and possibly
-/// policies associated with the request.
+/// Upon successful authentication of a signature, this is returned to convey the principal,
+/// session data, and possibly policies associated with the request.
 ///
-/// SigV4AuthenticatorResponse structs are immutable. Use [SigV4AuthenticatorResponseBuilder] to construct a new
-/// response.
+/// SigV4AuthenticatorResponse structs are immutable. Use [`SigV4AuthenticatorResponseBuilder`] to
+/// construct a new response.
 #[derive(Builder, Clone, Debug)]
 pub struct SigV4AuthenticatorResponse {
-    /// The principal actors of the request.
-    #[builder(setter(into), default)]
+    /// The principal actor of the request.
+    #[builder(setter(into))]
     principal: Principal,
 
     /// The session data associated with the principal.
@@ -374,7 +374,7 @@ pub struct SigV4AuthenticatorResponse {
 }
 
 impl SigV4AuthenticatorResponse {
-    /// Create a [SigV4AuthenticatorResponseBuilder] to construct a [SigV4AuthenticatorResponse].
+    /// Create a [`SigV4AuthenticatorResponseBuilder`] to construct a `SigV4AuthenticatorResponse`.
     #[inline]
     pub fn builder() -> SigV4AuthenticatorResponseBuilder {
         SigV4AuthenticatorResponseBuilder::default()
@@ -509,7 +509,7 @@ mod tests {
 
         match request.access_key() {
             "AKIDEXAMPLE" => {
-                let principal = Principal::from(vec![User::new("aws", "123456789012", "/", "test").unwrap().into()]);
+                let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
                 let k_secret = KSecretKey::from_str("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY").unwrap();
                 let k_signing = k_secret.to_ksigning(request.request_date(), request.region(), request.service());
 
@@ -822,8 +822,9 @@ mod tests {
 
     #[test_log::test]
     fn test_response_builder() {
-        let response = SigV4AuthenticatorResponse::builder().build().unwrap();
-        assert!(response.principal().is_empty());
+        let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
+        let response = SigV4AuthenticatorResponse::builder().principal(principal).build().unwrap();
+        assert!(response.principal().as_user().is_some());
         assert!(response.session_data().is_empty());
 
         let response2 = response.clone();

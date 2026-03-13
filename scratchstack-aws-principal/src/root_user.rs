@@ -71,7 +71,7 @@ impl Display for RootUser {
 mod tests {
     use {
         super::RootUser,
-        crate::{PrincipalIdentity, PrincipalSource},
+        crate::{Principal, PrincipalSource},
         scratchstack_arn::Arn,
         std::{
             collections::hash_map::DefaultHasher,
@@ -85,7 +85,7 @@ mod tests {
         assert_eq!(root_user.partition(), "aws");
         assert_eq!(root_user.account_id(), "123456789012");
 
-        let p = PrincipalIdentity::from(root_user);
+        let p = Principal::from(root_user);
         let source = p.source();
         assert_eq!(source, PrincipalSource::Aws);
         assert_eq!(source.to_string(), "AWS");

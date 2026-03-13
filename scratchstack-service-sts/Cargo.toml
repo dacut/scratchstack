@@ -10,25 +10,27 @@ repository.workspace = true
 version.workspace = true
 
 [dependencies]
-axum.workspace = true
+axum = { workspace = true, features = [ "form", "http1", "http2", "macros", "original-uri", "query", "tokio", "tower-log", "tracing" ] }
 chrono.workspace = true
+clap = { workspace = true, features = [ "derive" ] }
 derive_builder.workspace = true
 env_logger.workspace = true
 form_urlencoded.workspace = true
 futures.workspace = true
-getopts = "^0.2"
 http.workspace = true
 http-body.workspace = true
 log.workspace = true
-quick-xml = { workspace = true, features = [ "serialize" ]}
+quick-xml = { workspace = true, features = [ "serialize" ] }
 rustls.workspace = true
 scratchstack-arn.path = "../scratchstack-arn"
-scratchstack-aws-signature.path = "../scratchstack-aws-signature"
+scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features = [ "unstable" ] }
 scratchstack-aws-principal.path = "../scratchstack-aws-principal"
 scratchstack-config.path = "../scratchstack-config"
+scratchstack-database.path = "../scratchstack-database"
+scratchstack-http-framework.path = "../scratchstack-http-framework"
 serde = { workspace = true, features = [ "derive" ]}
-sqlx = { workspace = true, features = [ "all-databases", "chrono", "macros", "migrate", "runtime-tokio-rustls" ]}
-tokio = { workspace = true, features = [ "net", "rt-multi-thread" ]}
+sqlx = { workspace = true, features = [ "all-databases", "chrono", "macros", "migrate", "runtime-tokio-rustls" ] }
+tokio = { workspace = true, features = [ "net", "rt-multi-thread" ] }
 tokio-rustls.workspace = true
 tower.workspace = true
 

@@ -339,7 +339,7 @@ mod tests {
         indoc::indoc,
         pretty_assertions::{assert_eq, assert_ne},
         scratchstack_arn::Arn,
-        scratchstack_aws_principal::{Principal, PrincipalIdentity, SessionData, SessionValue, User},
+        scratchstack_aws_principal::{Principal, SessionData, SessionValue, User},
         std::{
             collections::hash_map::DefaultHasher,
             hash::{Hash, Hasher},
@@ -595,8 +595,7 @@ mod tests {
         ps.add_policy(session_source.clone(), session_policy.clone());
 
         assert_eq!(ps.policies().len(), 8);
-        let actor =
-            Principal::from(vec![PrincipalIdentity::from(User::new("aws", "123456789012", "/", "MyUser").unwrap())]);
+        let actor = Principal::from(User::new("aws", "123456789012", "/", "MyUser").unwrap());
         let mut sd = SessionData::new();
         sd.insert("aws:username", SessionValue::from("MyUser"));
         let mut context_builder = Context::builder();

@@ -81,7 +81,7 @@
 //!
 //! async fn get_signing_key(req: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, BoxError>
 //! # {
-//! # Ok(GetSigningKeyResponse::default())
+//! # Err("not implemented".into())
 //! # }
 //! ```
 //!

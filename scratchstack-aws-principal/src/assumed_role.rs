@@ -188,7 +188,7 @@ impl TryFrom<&Arn> for AssumedRole {
 mod tests {
     use {
         super::AssumedRole,
-        crate::{PrincipalIdentity, PrincipalSource},
+        crate::{Principal, PrincipalSource},
         scratchstack_arn::Arn,
         std::{
             collections::hash_map::DefaultHasher,
@@ -212,7 +212,7 @@ mod tests {
         assert_eq!(arn.account_id(), "123456789012");
         assert_eq!(arn.resource(), "assumed-role/role/session");
 
-        let p = PrincipalIdentity::from(role);
+        let p = Principal::from(role);
         let source = p.source();
         assert_eq!(source, PrincipalSource::Aws);
         assert_eq!(source.to_string(), "AWS".to_string());

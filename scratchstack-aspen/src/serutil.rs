@@ -11,7 +11,9 @@ use {
     std::{
         any::type_name,
         fmt::{Debug, Display, Error as FmtError, Formatter, Result as FmtResult},
+        iter::IntoIterator,
         marker::PhantomData,
+        slice::Iter as SliceIter,
         str::{FromStr, from_utf8},
     },
 };
@@ -99,10 +101,8 @@ pub enum JsonRep {
 }
 
 macro_rules! define_list_like_type {
-    ($list_like_type:ident) => {
-        /// $llt allows a JSON field to be represented as the element itself (equivalent to a list of 1 item) or as s
-        /// list of elements.
-
+    ($(#[$meta:meta])* pub struct $list_like_type:ident) => {
+        $(#[$meta])*
         pub struct $list_like_type<E> {
             elements: ::std::vec::Vec<E>,
             kind: $crate::serutil::JsonRep,
@@ -110,15 +110,9 @@ macro_rules! define_list_like_type {
 
         impl<E> $list_like_type<E> {
             /// Returns the JSON representation of the list.
-            #[inline]
+            #[inline(always)]
             pub fn kind(&self) -> $crate::serutil::JsonRep {
                 self.kind
-            }
-
-            /// Returns the elements of the list as a slice.
-            #[inline]
-            pub fn as_slice(&self) -> &[E] {
-                self.elements.as_slice()
             }
 
             /// Returns the elements of the list as a vector of references.
@@ -130,14 +124,20 @@ macro_rules! define_list_like_type {
                 result
             }
 
+            /// Returns a reference to the elements as a slice.
+            #[inline(always)]
+            pub fn as_slice(&self) -> &[E] {
+                self.elements.as_slice()
+            }
+
             /// Returns `true` if the list is empty.
-            #[inline]
+            #[inline(always)]
             pub fn is_empty(&self) -> bool {
                 self.elements.is_empty()
             }
 
             /// Returns the number of elements in the list.
-            #[inline]
+            #[inline(always)]
             pub fn len(&self) -> usize {
                 self.elements.len()
             }
@@ -210,15 +210,36 @@ macro_rules! define_list_like_type {
         impl<E> ::std::ops::Deref for $list_like_type<E> {
             type Target = [E];
 
-            fn deref(&self) -> &[E] {
-                self.elements.deref()
+            fn deref(&self) -> &Self::Target {
+                self.elements.as_slice()
             }
         }
     };
 }
 
-define_list_like_type!(MapList);
+define_list_like_type!{
+    /// `MapList` allows a JSON field to be represented as a map or as a list-of-maps.
+    ///
+    /// The dual syntax is used as a shortcut in Aspen policy documents. For example, the following
+    /// policy:
+    /// ```text
+    /// {
+    ///     "Statement": [
+    ///         { "Effect": "Allow", "Action": "*", "Resource": "*" }
+    ///     ]
+    /// }
+    /// ```
+    ///
+    /// can also be represented as:
+    /// ```text
+    /// {
+    ///     "Statement": { "Effect": "Allow", "Action": "*", "Resource": "*" }
+    /// }
+    /// ```
+    pub struct MapList
+}
 
+#[repr(transparent)]
 struct MapListVisitor<E> {
     phantom: PhantomData<E>,
 }
@@ -278,6 +299,16 @@ impl<E: Serialize> Display for MapList<E> {
     }
 }
 
+impl<'a, E> IntoIterator for &'a MapList<E> {
+    type Item = &'a E;
+    type IntoIter = SliceIter<'a, E>;
+
+    #[inline(always)]
+    fn into_iter(self) -> Self::IntoIter {
+        self.elements.iter()
+    }
+}
+
 impl<'de, E: Deserialize<'de>> Deserialize<'de> for MapList<E> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         deserializer.deserialize_any(MapListVisitor {
@@ -301,10 +332,37 @@ impl<E: Serialize> Serialize for MapList<E> {
     }
 }
 
-define_list_like_type!(StringLikeList);
+define_list_like_type! {
+    /// `StringLikeList` allows a JSON field to be represented as a string or as a list-of-strings.
+    /// 
+    /// The dual syntax is used as a shortcut in Aspen policy documents. For example, the following
+    /// policy:
+    /// ```text
+    /// {
+    ///     "Statement": {
+    ///         "Effect": "Allow",
+    ///         "Action": "*",
+    ///         "Resource": [ "*" ]
+    ///     }
+    /// }
+    /// ```
+    /// 
+    /// can also be represented as:
+    /// ```text
+    /// {
+    ///     "Statement": {
+    ///         "Effect": "Allow",
+    ///         "Action": "*",
+    ///         "Resource": "*"
+    ///     }
+    /// }
+    /// ```
+    pub struct StringLikeList
+}
 
+#[repr(transparent)]
 struct StringListVisitor<T> {
-    _phantom: PhantomData<T>,
+    phantom: PhantomData<T>,
 }
 
 impl<'de, T> Visitor<'de> for StringListVisitor<T>
@@ -375,6 +433,15 @@ impl<E: ToString> Display for StringLikeList<E> {
     }
 }
 
+impl<'a, E> IntoIterator for &'a StringLikeList<E> {
+    type Item = &'a E;
+    type IntoIter = SliceIter<'a, E>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.elements.iter()
+    }
+}
+
 impl<'de, T> Deserialize<'de> for StringLikeList<T>
 where
     T: FromStr,
@@ -382,7 +449,7 @@ where
 {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         deserializer.deserialize_any(StringListVisitor {
-            _phantom: PhantomData,
+            phantom: PhantomData,
         })
     }
 }

@@ -249,13 +249,13 @@ impl Display for Decision {
 mod test {
     use {
         crate::{Context, Decision},
-        scratchstack_aws_principal::{Principal, PrincipalIdentity, SessionData, User},
+        scratchstack_aws_principal::{Principal, SessionData, User},
     };
 
     #[test_log::test]
     fn test_context_derived() {
         let actor =
-            Principal::from(vec![PrincipalIdentity::from(User::new("aws", "123456789012", "/", "user").unwrap())]);
+            Principal::from(User::new("aws", "123456789012", "/", "user").unwrap());
         let c1 = Context::builder()
             .api("RunInstances")
             .actor(actor)

@@ -31,13 +31,14 @@ pub enum Principal {
 }
 
 impl Principal {
-    /// Indicates whether this [Principal] is [Principal::Any].
+    /// Indicates whether this `Principal` is [`Principal::Any`].
     #[inline]
     pub fn is_any(&self) -> bool {
         matches!(self, Principal::Any)
     }
 
-    /// If this [Principal] is [Principal::Specified], returns the [SpecifiedPrincipal]. Otherwise returns `None`.
+    /// If this `Principal` is [`Principal::Specified`], returns the [`SpecifiedPrincipal`].
+    /// Otherwise returns `None`.
     #[inline]
     pub fn specified(&self) -> Option<&SpecifiedPrincipal> {
         match self {
@@ -46,7 +47,7 @@ impl Principal {
         }
     }
 
-    /// Indicates whether this [Principal] matches an identity from the [PrincipalActor].
+    /// Indicates whether this `Principal` matches an identity from the [`PrincipalActor`].
     pub fn matches(&self, actor: &PrincipalActor) -> bool {
         match self {
             Self::Any => true,

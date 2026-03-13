@@ -11,8 +11,9 @@ const PARTITION_START: usize = 4;
 
 /// An Amazon Resource Name (ARN) statement in an IAM Aspen policy.
 ///
-/// This is used to match [scratchstack_arn::Arn] objects from a resource statement in the IAM Aspen policy language. For example,
-/// an [ResourceArn] created from `arn:aws*:ec2:us-*-?:123456789012:instance/i-*` would match the following [Arn]
+/// This is used to match [`scratchstack_arn::Arn`] objects from a resource statement in the IAM
+/// Aspen policy language. For example, a [`ResourceArn`] created from 
+/// `"arn:aws*:ec2:us-*-?:123456789012:instance/i-*"` would match the following [`Arn`]
 /// objects:
 /// * `arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0`
 /// * `arn:aws-us-gov:ec2:us-west-2:123456789012:instance/i-1234567890abcdef0`
@@ -21,7 +22,7 @@ const PARTITION_START: usize = 4;
 /// * The `*` character matches any number of characters, including none, within a single segment of the ARN.
 /// * The `?` character matches any single character within a single segment of the ARN.
 ///
-/// [ResourceArn] objects are immutable.
+/// `ResourceArn` objects are immutable.
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
 pub struct ResourceArn {
     arn: String,
@@ -85,8 +86,9 @@ impl ResourceArn {
         &self.arn[self.resource_start..]
     }
 
-    /// Indicates whether this [ResourceArn] matches the candidate [Arn], given the request [Context] ad using variable
-    /// substitution rules according to the specified [PolicyVersion].
+    /// Indicates whether this [`ResourceArn`] matches the candidate [`Arn`], given the request
+    /// [`Context`] and using variable substitution rules according to the specified
+    /// [`PolicyVersion`].
     ///
     /// # Example
     /// ```
@@ -94,7 +96,7 @@ impl ResourceArn {
     /// # use scratchstack_arn::Arn;
     /// # use scratchstack_aws_principal::{Principal, User, SessionData, SessionValue};
     /// # use std::str::FromStr;
-    /// let actor = Principal::from(vec![User::from_str("arn:aws:iam::123456789012:user/exampleuser").unwrap().into()]);
+    /// let actor = Principal::from(User::from_str("arn:aws:iam::123456789012:user/exampleuser").unwrap());
     /// let s3_object_arn = Arn::from_str("arn:aws:s3:::examplebucket/exampleuser/my-object").unwrap();
     /// let resources = vec![s3_object_arn.clone()];
     /// let session_data = SessionData::from([("aws:username", SessionValue::from("exampleuser"))]);

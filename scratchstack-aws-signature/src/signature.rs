@@ -16,7 +16,7 @@ use {
 /// Options that can be used to configure the signature service.
 #[derive(Clone, Copy, Debug)]
 pub struct SignatureOptions {
-    /// Canonicalize requests according to S3 rules.
+    /// Canonicalize requests according to S3 rules and allow S3-style streaming requests.
     pub s3: bool,
 
     /// Fold `application/x-www-form-urlencoded` bodies into the query string.
@@ -42,6 +42,20 @@ impl Default for SignatureOptions {
 }
 
 impl SignatureOptions {
+    /// A `SignatureOptions` suitable for use with services that treat
+    /// `application/x-www-form-urlencoded` bodies as part of the query string.
+    ///
+    /// Some AWS services require this behavior. This typically happens when a query string is too
+    /// long to fit in the URL, so a `GET` request is transformed into a `POST` request with the
+    /// query string passed as an HTML form.
+    ///
+    /// This sets `s3` to `false` and `url_encode_form` to `true`.
+    pub const URL_ENCODE_FORM: Self = Self {
+        s3: false,
+        url_encode_form: true,
+        allowed_mismatch: Duration::minutes(ALLOWED_MISMATCH_MINUTES),
+    };
+
     /// Create a `SignatureOptions` suitable for use with services that treat
     /// `application/x-www-form-urlencoded` bodies as part of the query string.
     ///
@@ -50,15 +64,16 @@ impl SignatureOptions {
     /// query string passed as an HTML form.
     ///
     /// This sets `s3` to `false` and `url_encode_form` to `true`.
+    /// 
+    /// # Deprecation
+    /// This function is deprecated. Use [`SignatureOptions::URL_ENCODE_FORM`] instead.
+    #[deprecated(since = "0.12.0", note = "Use SignatureOptions::URL_ENCODE_FORM instead")]
     pub const fn url_encode_form() -> Self {
-        Self {
-            s3: false,
-            url_encode_form: true,
-            allowed_mismatch: Duration::minutes(ALLOWED_MISMATCH_MINUTES),
-        }
+        Self::URL_ENCODE_FORM
     }
 
-    /// Create a `SignatureOptions` suitable for use with S3-type authentication.
+
+    /// A `SignatureOptions` suitable for use with S3-type authentication.
     ///
     /// This sets `s3` to `true` and `url_encode_form` to `false`, resulting in AWS SigV4S3-style
     /// canonicalization.
@@ -67,6 +82,20 @@ impl SignatureOptions {
         url_encode_form: false,
         allowed_mismatch: Duration::minutes(ALLOWED_MISMATCH_MINUTES),
     };
+
+    /// Update the allowed mismatch for signature validation. This is primarily used for testing,
+    /// to allow validation of static requests with a fixed timestamp and signature.
+    pub const fn with_allowed_mismatch(mut self, allowed_mismatch: Duration) -> Self {
+        self.allowed_mismatch = allowed_mismatch;
+        self
+    }
+
+    /// Update the allowed mismatch for signature validation to be the maximum possible value.
+    /// This effectively disables timestamp validation for testing.
+    pub const fn with_any_timestamp(mut self) -> Self {
+        self.allowed_mismatch = Duration::MAX;
+        self
+    }
 }
 
 /// State for ongoing signature validation in streamed requests.
@@ -353,7 +382,7 @@ mod tests {
                 let k_secret = KSecretKey::from_str(secret_key.as_str()).unwrap();
                 let k_signing = k_secret.to_ksigning(req.request_date(), req.region(), req.service());
 
-                let principal = Principal::from(vec![User::new("aws", "123456789012", "/", "test").unwrap().into()]);
+                let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
                 Ok(GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build().unwrap())
             })
         }
@@ -363,7 +392,7 @@ mod tests {
         let k_secret = KSecretKey::from_str("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY").unwrap();
         let k_signing = k_secret.to_ksigning(req.request_date(), req.region(), req.service());
 
-        let principal = Principal::from(vec![User::new("aws", "123456789012", "/", "test").unwrap().into()]);
+        let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
         Ok(GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build().unwrap())
     }
 
@@ -385,7 +414,7 @@ mod tests {
             &mut get_signing_key_svc,
             *TEST_TIMESTAMP,
             &NO_ADDITIONAL_SIGNED_HEADERS,
-            SignatureOptions::url_encode_form(),
+            SignatureOptions::URL_ENCODE_FORM,
         )
         .await
     }
@@ -417,7 +446,7 @@ mod tests {
                 &mut gsk_service,
                 *TEST_TIMESTAMP,
                 &NO_ADDITIONAL_SIGNED_HEADERS,
-                SignatureOptions::url_encode_form()
+                SignatureOptions::URL_ENCODE_FORM
             )
             .await,
             IncompleteSignature
@@ -447,7 +476,7 @@ mod tests {
                 &mut gsk_service,
                 *TEST_TIMESTAMP,
                 &NO_ADDITIONAL_SIGNED_HEADERS,
-                SignatureOptions::url_encode_form()
+                SignatureOptions::URL_ENCODE_FORM
             )
             .await,
             IncompleteSignature
@@ -538,7 +567,7 @@ mod tests {
                 &mut get_signing_key_svc.clone(),
                 *TEST_TIMESTAMP,
                 &required_headers,
-                SignatureOptions::url_encode_form(),
+                SignatureOptions::URL_ENCODE_FORM,
             )
             .await;
 
@@ -740,7 +769,7 @@ mod tests {
                 &mut get_signing_key_svc.clone(),
                 *TEST_TIMESTAMP,
                 &required_headers,
-                SignatureOptions::url_encode_form(),
+                SignatureOptions::URL_ENCODE_FORM,
             )
             .await;
 

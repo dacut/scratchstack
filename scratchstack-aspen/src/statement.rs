@@ -122,8 +122,8 @@ impl Statement {
         self.condition.as_ref()
     }
 
-    /// Evaluate this statement against the specified request [Context], using the [PolicyVersion] to perform
-    /// variable substitution.
+    /// Evaluate this statement against the specified request [`Context`], using the
+    /// [`PolicyVersion`] to perform variable substitution.
     ///
     /// # Example
     ///
@@ -132,7 +132,7 @@ impl Statement {
     /// # use scratchstack_arn::Arn;
     /// # use scratchstack_aws_principal::{Principal, User, SessionData, SessionValue};
     /// # use std::str::FromStr;
-    /// let actor = Principal::from(vec![User::from_str("arn:aws:iam::123456789012:user/exampleuser").unwrap().into()]);
+    /// let actor = Principal::from(User::from_str("arn:aws:iam::123456789012:user/exampleuser").unwrap());
     /// let s3_object_arn = Arn::from_str("arn:aws:s3:::examplebucket/exampleuser/my-object").unwrap();
     /// let resources = vec![s3_object_arn.clone()];
     /// let session_data = SessionData::from([("aws:username", SessionValue::from("exampleuser"))]);
@@ -213,7 +213,7 @@ impl Statement {
             } else {
                 for candidate in candidates {
                     log::trace!("NotResource: candidate = {:?}", candidate);
-                    for resource in resources.iter() {
+                    for resource in resources {
                         if resource.matches(context, pv, candidate)? {
                             log::trace!("NotResource: candidate {:?} matched resource {:?}", candidate, resource);
                             return Ok(Decision::DefaultDeny);
@@ -430,7 +430,7 @@ mod tests {
         },
         indoc::indoc,
         pretty_assertions::assert_eq,
-        scratchstack_aws_principal::{Principal as PrincipalActor, PrincipalIdentity, SessionData, User},
+        scratchstack_aws_principal::{Principal as PrincipalActor, SessionData, User},
         std::str::FromStr,
     };
 
@@ -544,9 +544,7 @@ mod tests {
         sb.effect(Effect::Allow).action(Action::Any).resource(Resource::Any);
 
         let s = sb.build().unwrap();
-        let actor = PrincipalActor::from(vec![PrincipalIdentity::from(
-            User::new("aws", "123456789012", "/", "MyUser").unwrap(),
-        )]);
+        let actor = PrincipalActor::from(User::new("aws", "123456789012", "/", "MyUser").unwrap());
         let sd = SessionData::new();
         let context =
             Context::builder().api("DescribeInstances").actor(actor).service("ec2").session_data(sd).build().unwrap();

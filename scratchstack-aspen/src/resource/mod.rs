@@ -33,15 +33,17 @@ impl Resource {
         matches!(self, Self::Any)
     }
 
-    /// Indicates whether this [Resource] matches the candidate [Arn], given the request [Context] ad using variable
-    /// substitution rules according to the specified [PolicyVersion].
+    /// Indicates whether this [`Resource`] matches the candidate [`Arn`], given the request
+    /// [`Context`] and using variable substitution rules according to the specified
+    /// [`PolicyVersion`].
+    /// 
     /// # Example
     /// ```
     /// # use scratchstack_aspen::{Context, PolicyVersion, Resource, ResourceArn};
     /// # use scratchstack_arn::Arn;
     /// # use scratchstack_aws_principal::{Principal, User, SessionData, SessionValue};
     /// # use std::str::FromStr;
-    /// let actor = Principal::from(vec![User::from_str("arn:aws:iam::123456789012:user/exampleuser").unwrap().into()]);
+    /// let actor = Principal::from(User::from_str("arn:aws:iam::123456789012:user/exampleuser").unwrap());
     /// let s3_object_arn = Arn::from_str("arn:aws:s3:::examplebucket/exampleuser/my-object").unwrap();
     /// let resources = vec![s3_object_arn.clone()];
     /// let session_data = SessionData::from([("aws:username", SessionValue::from("exampleuser"))]);
