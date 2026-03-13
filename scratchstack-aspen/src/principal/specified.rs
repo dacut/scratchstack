@@ -56,7 +56,7 @@ impl SpecifiedPrincipal {
         self.service.as_ref()
     }
 
-    /// Indicates whether this Aspen-specified principal matches the given actor [principal][`Principal`].
+    /// Indicates whether this Aspen-specified principal matches the given actor [`Principal`][PrincipalActor].
     pub fn matches(&self, actor: &PrincipalActor) -> bool {
         if let Some(aws_ids) = self.aws() {
             for aws_id in aws_ids {
