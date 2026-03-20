@@ -25,8 +25,8 @@ jobs:
     - name: Run Clippy check.
       run: cargo clippy -- -Dwarnings
     - name: Build
-      run: cargo build --verbose
+      run: cargo build
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test
     - name: Build documentation
-      run: cargo doc --no-deps --verbose
+      run: cargo doc --no-deps
