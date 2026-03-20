@@ -9,7 +9,7 @@ use {
 
 /// AWS IAM user login profile database model
 #[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "PascalCase")]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct UserLoginProfile {
     /// User identifier, without the `AIDA` prefix.
     pub user_id: String,
@@ -40,13 +40,13 @@ impl crate::Loadable for UserLoginProfile {
             password_last_changed_at)
         VALUES($1, $2, $3, $4, $5)
         "})
-            .bind(self.user_id.clone())
-            .bind(self.password_hash_algorithm.clone())
-            .bind(self.password_hash.clone())
-            .bind(self.password_reset_required)
-            .bind(self.password_last_changed_at)
-            .execute(conn)
-            .await?;
+        .bind(self.user_id.clone())
+        .bind(self.password_hash_algorithm.clone())
+        .bind(self.password_hash.clone())
+        .bind(self.password_reset_required)
+        .bind(self.password_last_changed_at)
+        .execute(conn)
+        .await?;
         Ok(result.rows_affected() as usize)
     }
 }

@@ -9,7 +9,7 @@ use {
 
 /// AWS IAM group database model
 #[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "PascalCase")]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Group {
     /// Unique group identifier, without the `AGPA` prefix.
     pub group_id: String,

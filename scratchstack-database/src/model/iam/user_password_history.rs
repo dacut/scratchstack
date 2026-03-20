@@ -9,7 +9,7 @@ use {
 
 /// AWS IAM user password history database model
 #[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "PascalCase")]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct UserPasswordHistory {
     /// User identifier, without the `AIDA` prefix.
     pub user_id: String,

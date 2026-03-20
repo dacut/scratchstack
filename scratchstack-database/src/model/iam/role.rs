@@ -9,7 +9,7 @@ use {
 
 /// AWS IAM role database model
 #[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "PascalCase")]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Role {
     /// Unique role identifier, without the `AROA` prefix.
     pub role_id: String,
@@ -48,15 +48,16 @@ impl crate::Loadable for Role {
                 permissions_boundary_managed_policy_id, description, assume_role_policy_document)
             VALUES($1, $2, $3, $4, $5, $6, $7, $8)
         "})
-            .bind(self.role_id.clone())
-            .bind(self.account_id.clone())
-            .bind(self.role_name_lower.clone())
-            .bind(self.role_name_cased.clone())
-            .bind(self.path.clone())
-            .bind(self.permissions_boundary_managed_policy_id.clone())
-            .bind(self.description.clone())
-            .bind(self.assume_role_policy_document.clone())
-            .execute(conn).await?;
+        .bind(self.role_id.clone())
+        .bind(self.account_id.clone())
+        .bind(self.role_name_lower.clone())
+        .bind(self.role_name_cased.clone())
+        .bind(self.path.clone())
+        .bind(self.permissions_boundary_managed_policy_id.clone())
+        .bind(self.description.clone())
+        .bind(self.assume_role_policy_document.clone())
+        .execute(conn)
+        .await?;
         Ok(result.rows_affected() as usize)
     }
 }

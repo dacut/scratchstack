@@ -6,8 +6,12 @@ use {
         Error as PgError, PostgreSQL, SettingsBuilder as PgSettingsBuilder, Status as PgStatus, VersionReq,
     },
     rand::random_range,
-    scratchstack_database::model::iam,
-    sqlx::{ConnectOptions, postgres::{PgConnectOptions, PgPoolOptions}, query},
+    scratchstack_database::{Loadable, model::iam},
+    sqlx::{
+        ConnectOptions,
+        postgres::{PgConnectOptions, PgPoolOptions},
+        query,
+    },
     std::{env, fmt::Debug, time::Duration},
     tempfile::{TempDir, tempdir},
 };
@@ -171,6 +175,9 @@ impl TempDatabase {
 /// We do this instead of more granular testing because the database we're running against is typically stateful.
 #[test_log::test(tokio::test)]
 async fn test_database() {
+    let iam_data: iam::Database =
+        serde_json::from_str(TEST_DATA).expect("Failed to deserialize test data into IAM database model");
+
     let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
     assert_ne!(database.settings().get_port(), 0, "Database port should be non-zero");
     database.setup().await.expect("Failed to set up PostgreSQL database");
@@ -210,5 +217,9 @@ async fn test_database() {
 
     let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
     iam::MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
+    let rows_affected = iam_data.load_into(&mut *c).await.expect("Failed to load IAM data into database");
+    eprintln!("Loaded {rows_affected} rows of IAM data into database");
     iam::MIGRATOR.undo(&mut *c, 0).await.expect("Failed to undo database migrations");
 }
+
+const TEST_DATA: &str = include_str!("iam_database.json");

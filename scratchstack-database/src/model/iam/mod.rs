@@ -7,6 +7,7 @@ mod group_inline_policy;
 mod group_membership;
 mod managed_policy;
 mod managed_policy_version;
+mod password_hash_algorithm;
 mod role;
 mod role_attached_policy;
 mod role_inline_policy;
@@ -21,5 +22,5 @@ pub use {
     account::*, database::*, group::*, group_attached_policy::*, group_inline_policy::*, group_membership::*,
     managed_policy::*, managed_policy_version::*, role::*, role_attached_policy::*, role_inline_policy::*,
     role_session_token_key::*, user::*, user_attached_policy::*, user_credential::*, user_inline_policy::*,
-    user_login_profile::*, user_password_history::*,
+    user_login_profile::*, user_password_history::*, password_hash_algorithm::*
 };

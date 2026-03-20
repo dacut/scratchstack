@@ -1,0 +1,80 @@
+{
+    "Accounts": [
+        {
+            "AccountId": "123456789012",
+            "Email": "example1@example.com",
+            "Alias": "example-account-1"
+        },
+        {
+            "AccountId": "210987654321",
+            "Email": "example2@example.com",
+            "Alias": "example-account-2"
+        }
+    ],
+    "PasswordHashAlgorithms": [
+        {
+            "PasswordHashAlgorithmId": "Argon2-2025",
+            "AlgorithmName": "Argon2",
+            "Parameters": "{\"parallelism\": 1, \"memory\": 19456, \"iterations\": 4}"
+        }
+    ],
+    "ManagedPolicies": [
+        {
+            "ManagedPolicyId": "AAAABBBBCCCCDDDD",
+            "AccountId": "123456789012",
+            "PolicyNameLower": "example-managed-policy-1",
+            "PolicyNameCased": "Example-Managed-Policy-1",
+            "Path": "/",
+            "DefaultVersion": 1,
+            "Deprecated": false,
+            "LatestVersion": 1
+        }
+    ],
+    "ManagedPolicyVersions": [
+        {
+            "ManagedPolicyId": "AAAABBBBCCCCDDDD",
+            "ManagedPolicyVersion": 1,
+            "PolicyDocument": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"s3:ListBucket\",\"Resource\":\"*\"}]}"
+        }
+    ],
+    "Users": [
+        {
+            "UserId": "EXAMPLEUSERID123",
+            "AccountId": "123456789012",
+            "UserNameLower": "example-user-1",
+            "UserNameCased": "Example-User-1",
+            "Path": "/",
+            "PermissionsBoundaryManagedPolicyId": "AAAABBBBCCCCDDDD"
+        },
+        {
+            "UserId": "EXAMPLEUSERID456",
+            "AccountId": "210987654321",
+            "UserNameLower": "example-user-2",
+            "UserNameCased": "Example-User-2",
+            "Path": "/"
+        }
+    ],
+    "UserAttachedPolicies": [
+        {
+            "UserId": "EXAMPLEUSERID456",
+            "ManagedPolicyId": "AAAABBBBCCCCDDDD"
+        }
+    ],
+    "UserInlinePolicies": [
+        {
+            "UserId": "EXAMPLEUSERID123",
+            "PolicyNameLower": "example-inline-policy-1",
+            "PolicyNameCased": "Example-Inline-Policy-1",
+            "PolicyDocument": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"ec2:*\",\"Resource\":\"*\"}]}"
+        }
+    ],
+    "UserLoginProfiles": [
+        {
+            "UserId": "EXAMPLEUSERID123",
+            "PasswordHashAlgorithm": "Argon2-2025",
+            "PasswordHash": "examplehashvalue",
+            "PasswordResetRequired": false,
+            "PasswordLastChangedAt": "2024-01-01T00:00:00Z"
+        }
+    ]
+}

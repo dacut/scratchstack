@@ -9,7 +9,7 @@ use {
 
 /// AWS account database model
 #[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "PascalCase")]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Account {
     /// 12-digit AWS account id.
     pub account_id: String,
@@ -29,13 +29,13 @@ impl crate::Loadable for Account {
     async fn load_into(&self, conn: &mut PgConnection) -> Result<usize, sqlx::Error> {
         let result = sqlx::query(indoc! {"
             INSERT INTO iam.accounts(account_id, email, alias)
-            VALUES($1, $2)
+            VALUES($1, $2, $3)
         "})
-            .bind(self.account_id.clone())
-            .bind(self.email.clone())
-            .bind(self.alias.clone())
-            .execute(conn)
-            .await?;
+        .bind(self.account_id.clone())
+        .bind(self.email.clone())
+        .bind(self.alias.clone())
+        .execute(conn)
+        .await?;
         Ok(result.rows_affected() as usize)
     }
 }

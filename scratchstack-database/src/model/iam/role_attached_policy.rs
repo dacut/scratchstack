@@ -9,7 +9,7 @@ use {
 
 /// AWS IAM role policy attachment database model
 #[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "PascalCase")]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct RoleAttachedPolicy {
     /// Role identifier, without the `AROA` prefix.
     pub role_id: String,

@@ -9,16 +9,24 @@ CREATE TABLE iam.accounts(
 );
 COMMENT ON TABLE iam.accounts IS 'An account in the partition.';
 
+CREATE TABLE iam.password_hash_algorithms(
+    password_hash_algorithm_id VARCHAR(32) PRIMARY KEY,
+    algorithm_name VARCHAR(32) NOT NULL,
+    parameters JSONB
+);
+COMMENT ON TABLE iam.password_hash_algorithms IS 'Supported password hash algorithms for IAM user login profiles.';
+
 CREATE TABLE iam.managed_policies(
     managed_policy_id CHAR(16) PRIMARY KEY,
     account_id CHAR(12) NOT NULL,
     managed_policy_name_lower VARCHAR(128) NOT NULL,
     managed_policy_name_cased VARCHAR(128) NOT NULL,
     path VARCHAR(512) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     default_version BIGINT,
     deprecated BOOLEAN NOT NULL,
     policy_type VARCHAR(32),
+    latest_version BIGINT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uk_mp_acctid_polname UNIQUE(account_id, managed_policy_name_lower),
     CONSTRAINT ck_mp_polname_lower CHECK (managed_policy_name_lower = LOWER(managed_policy_name_cased)),
     CONSTRAINT ck_mp_path CHECK (path LIKE '/%' AND path LIKE '%/' AND path NOT LIKE '%//%'),
@@ -43,13 +51,13 @@ CREATE TABLE iam.users(
     user_name_lower VARCHAR(64) NOT NULL,
     user_name_cased VARCHAR(64) NOT NULL,
     path VARCHAR(512) NOT NULL,
-    permissons_boundary_managed_policy_id CHAR(17),
+    permissions_boundary_managed_policy_id CHAR(17),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uk_iu_acctid_uname UNIQUE(account_id, user_name_lower),
     CONSTRAINT ck_iu_uname_lower CHECK (user_name_lower = LOWER(user_name_cased)),
     CONSTRAINT ck_iu_path CHECK (path LIKE '/%' AND path LIKE '%/' AND path NOT LIKE '%//%'),
     CONSTRAINT fk_iu_acctid FOREIGN KEY (account_id) REFERENCES iam.accounts(account_id),
-    CONSTRAINT fk_iu_pbmp FOREIGN KEY (permissons_boundary_managed_policy_id) REFERENCES iam.managed_policies(managed_policy_id)
+    CONSTRAINT fk_iu_pbmp FOREIGN KEY (permissions_boundary_managed_policy_id) REFERENCES iam.managed_policies(managed_policy_id)
 );
 COMMENT ON TABLE iam.users IS 'IAM users.';
 COMMENT ON COLUMN iam.users.user_id IS 'Unique identifier for the user without the leading AIDA prefix.';
@@ -79,13 +87,14 @@ COMMENT ON COLUMN iam.user_inline_policies.policy_name_lower IS 'Lowercase versi
 
 CREATE TABLE iam.user_login_profiles(
     user_id CHAR(16) PRIMARY KEY,
-    password_hash_algorithm VARCHAR(32) NOT NULL,
+    password_hash_algorithm_id VARCHAR(256) NOT NULL,
     password_hash VARCHAR(256) NOT NULL,
     password_reset_required BOOLEAN NOT NULL,
     password_last_changed_at TIMESTAMP WITH TIME ZONE NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_used_at TIMESTAMP WITH TIME ZONE,
-    CONSTRAINT fk_iulp_userid FOREIGN KEY (user_id) REFERENCES iam.users(user_id)
+    CONSTRAINT fk_iulp_userid FOREIGN KEY (user_id) REFERENCES iam.users(user_id),
+    CONSTRAINT fk_iulp_password_hash_algorithm_id FOREIGN KEY (password_hash_algorithm_id) REFERENCES iam.password_hash_algorithms(password_hash_algorithm_id)
 );
 COMMENT ON TABLE iam.user_login_profiles IS 'IAM user passwords (hashed) for logging into the console.';
 COMMENT ON COLUMN iam.user_login_profiles.user_id IS 'IAM user id without the leading AIDA prefix.';

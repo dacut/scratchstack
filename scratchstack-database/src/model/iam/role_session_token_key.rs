@@ -9,7 +9,7 @@ use {
 
 /// AWS IAM role session token encryption key database model
 #[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "PascalCase")]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct RoleSessionTokenKey {
     /// The role token id.
     pub role_token_id: String,

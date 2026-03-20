@@ -10,7 +10,7 @@ use {
 
 /// AWS IAM managed policy
 #[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "PascalCase")]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct ManagedPolicy {
     /// Unique managed policy identifier, without the `ANPA` prefix.
     pub managed_policy_id: String,
@@ -58,17 +58,17 @@ impl crate::Loadable for ManagedPolicy {
                 path, default_version, deprecated, policy_type, latest_version)
             VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
         "})
-            .bind(self.managed_policy_id.clone())
-            .bind(self.account_id.clone())
-            .bind(self.policy_name_lower.clone())
-            .bind(self.policy_name_cased.clone())
-            .bind(self.path.clone())
-            .bind(self.default_version.map(|v| v.get() as i64))
-            .bind(self.deprecated)
-            .bind(self.policy_type.clone())
-            .bind(self.latest_version.map(|v| v.get() as i64))
-            .execute(conn)
-            .await?;
+        .bind(self.managed_policy_id.clone())
+        .bind(self.account_id.clone())
+        .bind(self.policy_name_lower.clone())
+        .bind(self.policy_name_cased.clone())
+        .bind(self.path.clone())
+        .bind(self.default_version.map(|v| v.get() as i64))
+        .bind(self.deprecated)
+        .bind(self.policy_type.clone())
+        .bind(self.latest_version.map(|v| v.get() as i64))
+        .execute(conn)
+        .await?;
         Ok(result.rows_affected() as usize)
     }
 }

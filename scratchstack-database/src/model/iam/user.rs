@@ -9,7 +9,7 @@ use {
 
 /// AWS IAM user database model
 #[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "PascalCase")]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct User {
     /// Unique user identifier, without the `AIDA` prefix.
     pub user_id: String,

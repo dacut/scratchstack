@@ -9,7 +9,7 @@ use {
 
 /// AWS IAM user credential database model
 #[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "PascalCase")]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct UserCredential {
     /// Access key identifier, without the `AKIA` prefix.
     pub access_key_id: String,

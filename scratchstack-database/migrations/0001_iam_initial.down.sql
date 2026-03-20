@@ -17,6 +17,7 @@ DROP TABLE IF EXISTS iam.user_service_specific_credentials;
 DROP TABLE IF EXISTS iam.users;
 DROP TABLE IF EXISTS iam.managed_policy_versions;
 DROP TABLE IF EXISTS iam.managed_policies;
+DROP TABLE IF EXISTS iam.password_hash_algorithms;
 DROP TABLE IF EXISTS iam.accounts;
 
 --- History tables; can be dropped in any order
