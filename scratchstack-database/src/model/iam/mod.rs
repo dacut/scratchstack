@@ -18,9 +18,12 @@ mod user_credential;
 mod user_inline_policy;
 mod user_login_profile;
 mod user_password_history;
+mod user_service_specific_credential;
+mod user_ssh_public_key;
 pub use {
     account::*, database::*, group::*, group_attached_policy::*, group_inline_policy::*, group_membership::*,
-    managed_policy::*, managed_policy_version::*, role::*, role_attached_policy::*, role_inline_policy::*,
-    role_session_token_key::*, user::*, user_attached_policy::*, user_credential::*, user_inline_policy::*,
-    user_login_profile::*, user_password_history::*, password_hash_algorithm::*
+    managed_policy::*, managed_policy_version::*, password_hash_algorithm::*, role::*, role_attached_policy::*,
+    role_inline_policy::*, role_session_token_key::*, user::*, user_attached_policy::*, user_credential::*,
+    user_inline_policy::*, user_login_profile::*, user_password_history::*, user_service_specific_credential::*,
+    user_ssh_public_key::*,
 };

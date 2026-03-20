@@ -37,6 +37,10 @@ pub struct Database {
     #[serde(default)]
     pub user_inline_policies: Vec<UserInlinePolicy>,
 
+    /// IAM user credentials
+    #[serde(default)]
+    pub user_credentials: Vec<UserCredential>,
+
     /// IAM user login profiles
     #[serde(default)]
     pub user_login_profiles: Vec<UserLoginProfile>,
@@ -44,6 +48,14 @@ pub struct Database {
     /// IAM user password history
     #[serde(default)]
     pub user_password_history: Vec<UserPasswordHistory>,
+
+    /// IAM user service-specific credentials
+    #[serde(default)]
+    pub user_service_specific_credentials: Vec<UserServiceSpecificCredential>,
+
+    /// IAM user SSH public keys
+    #[serde(default, rename = "UserSSHPublicKeys")] // AWS violated their naming convention here.
+    pub user_ssh_public_keys: Vec<UserSshPublicKey>,
 
     /// IAM groups
     #[serde(default)]
@@ -105,6 +117,21 @@ impl crate::Loadable for Database {
         }
         for user_inline_policy in &self.user_inline_policies {
             total_rows_affected += user_inline_policy.load_into(conn).await?;
+        }
+        for user_credential in &self.user_credentials {
+            total_rows_affected += user_credential.load_into(conn).await?;
+        }
+        for user_login_profile in &self.user_login_profiles {
+            total_rows_affected += user_login_profile.load_into(conn).await?;
+        }
+        for user_password_history in &self.user_password_history {
+            total_rows_affected += user_password_history.load_into(conn).await?;
+        }
+        for user_service_specific_credential in &self.user_service_specific_credentials {
+            total_rows_affected += user_service_specific_credential.load_into(conn).await?;
+        }
+        for user_ssh_public_key in &self.user_ssh_public_keys {
+            total_rows_affected += user_ssh_public_key.load_into(conn).await?;
         }
         for group in &self.groups {
             total_rows_affected += group.load_into(conn).await?;

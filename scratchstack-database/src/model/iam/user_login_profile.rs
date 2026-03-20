@@ -15,7 +15,7 @@ pub struct UserLoginProfile {
     pub user_id: String,
 
     /// The password hash algorithm used.
-    pub password_hash_algorithm: String,
+    pub password_hash_algorithm_id: String,
 
     /// The password hash; the format of this field depends on the value of
     /// `password_hash_algorithm`.
@@ -36,12 +36,12 @@ impl crate::Loadable for UserLoginProfile {
     async fn load_into(&self, conn: &mut PgConnection) -> Result<usize, sqlx::Error> {
         let result = sqlx::query(indoc! {"
         INSERT INTO iam.user_login_profiles(
-            user_id, password_hash_algorithm, password_hash, password_reset_required,
+            user_id, password_hash_algorithm_id, password_hash, password_reset_required,
             password_last_changed_at)
         VALUES($1, $2, $3, $4, $5)
         "})
         .bind(self.user_id.clone())
-        .bind(self.password_hash_algorithm.clone())
+        .bind(self.password_hash_algorithm_id.clone())
         .bind(self.password_hash.clone())
         .bind(self.password_reset_required)
         .bind(self.password_last_changed_at)

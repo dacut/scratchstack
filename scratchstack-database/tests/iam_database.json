@@ -68,13 +68,50 @@
             "PolicyDocument": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"ec2:*\",\"Resource\":\"*\"}]}"
         }
     ],
+    "UserCredentials": [
+        {
+            "AccessKeyId": "EXAMPLEACCESSKEYID123",
+            "UserId": "EXAMPLEUSERID123",
+            "SecretKey": "examplesecretaccesskey",
+            "Enabled": true
+        }
+    ],
     "UserLoginProfiles": [
         {
             "UserId": "EXAMPLEUSERID123",
-            "PasswordHashAlgorithm": "Argon2-2025",
+            "PasswordHashAlgorithmId": "Argon2-2025",
             "PasswordHash": "examplehashvalue",
             "PasswordResetRequired": false,
             "PasswordLastChangedAt": "2024-01-01T00:00:00Z"
+        }
+    ],
+    "UserPasswordHistory": [
+        {
+            "UserId": "EXAMPLEUSERID123",
+            "PasswordHashAlgorithm": "Argon2-2025",
+            "PasswordHash": "oldexamplehashvalue",
+            "PasswordCreatedAt": "2023-11-01T00:00:00Z",
+            "PasswordChangedAt": "2023-12-01T00:00:00Z"
+        }
+    ],
+    "UserServiceSpecificCredentials": [
+        {
+            "ServiceSpecificCredentialId": "EXAMPLESERVICECREDENTIALID123",
+            "UserId": "EXAMPLEUSERID123",
+            "ServiceName": "example-service",
+            "ServiceUserName": "example-at-123456789012",
+            "ServicePassword": "exampleservicepassword",
+            "ExpiresAt": "2024-12-31T23:59:59Z",
+            "Enabled": true
+        }
+    ],
+    "UserSSHPublicKeys": [
+        {
+            "SSHPublicKeyId": "EXAMPLESSHPUBLICKEYID123",
+            "UserId": "EXAMPLEUSERID123",
+            "Fingerprint": "1d:b2:bd:a3:e5:96:99:eb:9a:38:59:dc:53:69:7d:6a",
+            "SSHPublicKeyBody": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFki4uuVgDirq4l+jDmJ8shLIBG7minPPZpBV7M/UZpM example@example.com",
+            "Enabled": true
         }
     ]
 }

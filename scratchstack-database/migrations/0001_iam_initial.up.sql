@@ -17,7 +17,7 @@ CREATE TABLE iam.password_hash_algorithms(
 COMMENT ON TABLE iam.password_hash_algorithms IS 'Supported password hash algorithms for IAM user login profiles.';
 
 CREATE TABLE iam.managed_policies(
-    managed_policy_id CHAR(16) PRIMARY KEY,
+    managed_policy_id VARCHAR(32) PRIMARY KEY,
     account_id CHAR(12) NOT NULL,
     managed_policy_name_lower VARCHAR(128) NOT NULL,
     managed_policy_name_cased VARCHAR(128) NOT NULL,
@@ -36,7 +36,7 @@ COMMENT ON TABLE iam.managed_policies IS 'IAM managed policy (AWS or customer). 
 COMMENT ON COLUMN iam.managed_policies.managed_policy_id IS 'Unique identifier for the managed policy without the leading ANPA prefix.';
 
 CREATE TABLE iam.managed_policy_versions(
-    managed_policy_id CHAR(16) NOT NULL,
+    managed_policy_id VARCHAR(32) NOT NULL,
     managed_policy_version BIGINT NOT NULL CHECK (managed_policy_version > 0),
     policy_document TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -46,7 +46,7 @@ CREATE TABLE iam.managed_policy_versions(
 COMMENT ON TABLE iam.managed_policy_versions IS 'Version of an IAM managed policy.';
 
 CREATE TABLE iam.users(
-    user_id CHAR(16) PRIMARY KEY,
+    user_id VARCHAR(32) PRIMARY KEY,
     account_id CHAR(12) NOT NULL,
     user_name_lower VARCHAR(64) NOT NULL,
     user_name_cased VARCHAR(64) NOT NULL,
@@ -63,8 +63,8 @@ COMMENT ON TABLE iam.users IS 'IAM users.';
 COMMENT ON COLUMN iam.users.user_id IS 'Unique identifier for the user without the leading AIDA prefix.';
 
 CREATE TABLE iam.user_attached_policies(
-    user_id CHAR(16) PRIMARY KEY,
-    managed_policy_id CHAR(16) NOT NULL,
+    user_id VARCHAR(32) PRIMARY KEY,
+    managed_policy_id VARCHAR(32) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_iuap_userid FOREIGN KEY (user_id) REFERENCES iam.users(user_id),
     CONSTRAINT fk_iuap_mp_id FOREIGN KEY (managed_policy_id) REFERENCES iam.managed_policies(managed_policy_id)
@@ -72,7 +72,7 @@ CREATE TABLE iam.user_attached_policies(
 COMMENT ON TABLE iam.user_attached_policies IS 'Managed policies attached to IAM users.';
 
 CREATE TABLE iam.user_inline_policies(
-    user_id CHAR(16) NOT NULL,
+    user_id VARCHAR(32) NOT NULL,
     policy_name_lower VARCHAR(128) NOT NULL,
     policy_name_cased VARCHAR(128) NOT NULL,
     policy_document TEXT NOT NULL,
@@ -86,7 +86,7 @@ COMMENT ON COLUMN iam.user_inline_policies.user_id IS 'IAM user id without the l
 COMMENT ON COLUMN iam.user_inline_policies.policy_name_lower IS 'Lowercase version of the policy name; this must be unique per user.';
 
 CREATE TABLE iam.user_login_profiles(
-    user_id CHAR(16) PRIMARY KEY,
+    user_id VARCHAR(32) PRIMARY KEY,
     password_hash_algorithm_id VARCHAR(256) NOT NULL,
     password_hash VARCHAR(256) NOT NULL,
     password_reset_required BOOLEAN NOT NULL,
@@ -100,7 +100,7 @@ COMMENT ON TABLE iam.user_login_profiles IS 'IAM user passwords (hashed) for log
 COMMENT ON COLUMN iam.user_login_profiles.user_id IS 'IAM user id without the leading AIDA prefix.';
 
 CREATE TABLE iam.user_password_history(
-    user_id CHAR(16) NOT NULL,
+    user_id VARCHAR(32) NOT NULL,
     password_hash_algorithm VARCHAR(32) NOT NULL,
     password_hash VARCHAR(256) NOT NULL,
     password_created_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -110,8 +110,8 @@ COMMENT ON TABLE iam.user_password_history IS 'Previously used hashed passwords 
 COMMENT ON COLUMN iam.user_password_history.user_id IS 'IAM user id without the leading AIDA prefix.';
 
 CREATE TABLE iam.user_credentials(
-    access_key_id CHAR(16) PRIMARY KEY,
-    user_id CHAR(16) NOT NULL,
+    access_key_id VARCHAR(32) PRIMARY KEY,
+    user_id VARCHAR(32) NOT NULL,
     secret_key VARCHAR(256) NOT NULL,
     enabled BOOLEAN NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -120,8 +120,36 @@ CREATE TABLE iam.user_credentials(
 COMMENT ON TABLE iam.user_credentials IS 'Static access/secret keys for API access.';
 COMMENT ON COLUMN iam.user_credentials.access_key_id IS 'Unique identifier for the access key without the leading AKIA prefix.';
 
+CREATE TABLE iam.user_service_specific_credentials(
+    service_specific_credential_id VARCHAR(32) PRIMARY KEY,
+    user_id VARCHAR(32) NOT NULL,
+    service_name VARCHAR(64) NOT NULL,
+    service_user_name VARCHAR(64) NOT NULL,
+    service_password VARCHAR(256) NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    enabled BOOLEAN NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_iussc_userid FOREIGN KEY (user_id) REFERENCES iam.users(user_id)
+);
+COMMENT ON TABLE iam.user_service_specific_credentials IS 'Service-specific credentials for CodeCommit, Cassandra, etc.';
+COMMENT ON COLUMN iam.user_service_specific_credentials.service_specific_credential_id IS 'Unique identifier for the service-specific credential without the leading ASSC prefix.';
+
+CREATE TABLE iam.user_ssh_public_keys(
+    ssh_public_key_id VARCHAR(32) PRIMARY KEY,
+    user_id VARCHAR(32) NOT NULL,
+    fingerprint VARCHAR(64) NOT NULL,
+    ssh_public_key_body TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_iuspk_userid FOREIGN KEY (user_id) REFERENCES iam.users(user_id)
+);
+COMMENT ON TABLE iam.user_ssh_public_keys IS 'SSH public keys for CodeCommit.';
+COMMENT ON COLUMN iam.user_ssh_public_keys.ssh_public_key_id IS 'Unique identifier for the SSH public key without the leading APKA prefix.';
+COMMENT ON COLUMN iam.user_ssh_public_keys.user_id IS 'IAM user id without the leading AIDA prefix.';
+
+
 CREATE TABLE iam.groups(
-    group_id CHAR(16) PRIMARY KEY,
+    group_id VARCHAR(32) PRIMARY KEY,
     account_id CHAR(12) NOT NULL,
     group_name_lower VARCHAR(64) NOT NULL,
     group_name_cased VARCHAR(64) NOT NULL,
@@ -136,8 +164,8 @@ COMMENT ON TABLE iam.groups IS 'IAM groups.';
 COMMENT ON COLUMN iam.groups.group_id IS 'Unique identifier for the group without the leading AGPA prefix.';
 
 CREATE TABLE iam.group_attached_policies(
-    group_id CHAR(16),
-    managed_policy_id CHAR(16) NOT NULL,
+    group_id VARCHAR(32),
+    managed_policy_id VARCHAR(32) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_igap_groupid FOREIGN KEY (group_id) REFERENCES iam.groups(group_id),
     CONSTRAINT fk_igap_mp_id FOREIGN KEY (managed_policy_id) REFERENCES iam.managed_policies(managed_policy_id)
@@ -147,7 +175,7 @@ COMMENT ON COLUMN iam.group_attached_policies.group_id IS 'IAM group id without 
 COMMENT ON COLUMN iam.group_attached_policies.managed_policy_id IS 'Managed policy id without the leading ANPA prefix.';
 
 CREATE TABLE iam.group_inline_policies(
-    group_id CHAR(16) NOT NULL,
+    group_id VARCHAR(32) NOT NULL,
     policy_name_lower VARCHAR(128) NOT NULL,
     policy_name_cased VARCHAR(128) NOT NULL,
     policy_document TEXT NOT NULL,
@@ -161,8 +189,8 @@ COMMENT ON COLUMN iam.group_inline_policies.group_id IS 'IAM group id without th
 COMMENT ON COLUMN iam.group_inline_policies.policy_name_lower IS 'Lowercase version of the policy name; this must be unique per group.';
 
 CREATE TABLE iam.group_members(
-    group_id CHAR(16) NOT NULL,
-    user_id CHAR(16) NOT NULL,
+    group_id VARCHAR(32) NOT NULL,
+    user_id VARCHAR(32) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (group_id, user_id),
     FOREIGN KEY (group_id) REFERENCES iam.groups(group_id) ON DELETE CASCADE,
@@ -173,12 +201,12 @@ COMMENT ON COLUMN iam.group_members.group_id IS 'IAM group id without the leadin
 COMMENT ON COLUMN iam.group_members.user_id IS 'IAM user id without the leading AIDA prefix.';
 
 CREATE TABLE iam.roles(
-    role_id CHAR(16) PRIMARY KEY,
+    role_id VARCHAR(32) PRIMARY KEY,
     account_id CHAR(12) NOT NULL,
     role_name_lower VARCHAR(64) NOT NULL,
     role_name_cased VARCHAR(64) NOT NULL,
     path VARCHAR(512) NOT NULL,
-    permissions_boundary_managed_policy_id CHAR(16),
+    permissions_boundary_managed_policy_id VARCHAR(32),
     description VARCHAR(1024),
     assume_role_policy_document TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -192,7 +220,7 @@ COMMENT ON TABLE iam.roles IS 'IAM roles.';
 COMMENT ON COLUMN iam.roles.role_id IS 'Unique identifier for the role without the leading AROA prefix.';
 
 CREATE TABLE iam.role_inline_policies(
-    role_id CHAR(16) NOT NULL,
+    role_id VARCHAR(32) NOT NULL,
     policy_name_lower VARCHAR(128) NOT NULL,
     policy_name_cased VARCHAR(128) NOT NULL,
     policy_document TEXT NOT NULL,
@@ -206,8 +234,8 @@ COMMENT ON COLUMN iam.role_inline_policies.role_id IS 'IAM role id without the l
 COMMENT ON COLUMN iam.role_inline_policies.policy_name_lower IS 'Lowercase version of the policy name; this must be unique per role.';
 
 CREATE TABLE iam.role_attached_policies(
-    role_id CHAR(16) NOT NULL,
-    managed_policy_id CHAR(16) NOT NULL,
+    role_id VARCHAR(32) NOT NULL,
+    managed_policy_id VARCHAR(32) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (role_id, managed_policy_id),
     FOREIGN KEY (role_id) REFERENCES iam.roles(role_id) ON DELETE CASCADE,
