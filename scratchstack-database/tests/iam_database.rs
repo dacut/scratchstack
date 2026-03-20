@@ -12,7 +12,7 @@ use {
         postgres::{PgConnectOptions, PgPoolOptions},
         query,
     },
-    std::{env, fmt::Debug, time::Duration},
+    std::{env, fmt::Debug, fs::create_dir_all, path::PathBuf, time::Duration},
     tempfile::{TempDir, tempdir},
 };
 
@@ -72,7 +72,11 @@ impl TempDatabase {
     async fn new() -> Result<Self, PgError> {
         let base_dir = tempdir().expect("Failed to create temporary directory");
         let bootstrap_password: String = generate_password(32);
-        let install_dir = env::var("HOME").expect("HOME environment variable not set") + "/.theseus/postgresql/18.3.0";
+        let home = PathBuf::from(env::var("HOME").expect("HOME environment variable not set"));
+        let install_dir = home.join(".theseus/postgresql/18.3.0");
+        if !install_dir.exists() {
+            create_dir_all(&install_dir).expect("Failed to create PostgreSQL installation directory");
+        }
 
         let settings = PgSettingsBuilder::new()
             .version(VersionReq::parse(DB_VERSION).expect("Failed to parse database version requirement"))
