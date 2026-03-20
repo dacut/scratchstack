@@ -1,0 +1,36 @@
+//! AWS IAM role policy attachment database model
+use {
+    chrono::{DateTime, Utc},
+    derive_builder::Builder,
+    indoc::indoc,
+    serde::{Deserialize, Serialize},
+    sqlx::postgres::PgConnection,
+};
+
+/// AWS IAM role policy attachment database model
+#[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct RoleAttachedPolicy {
+    /// Role identifier, without the `AROA` prefix.
+    pub role_id: String,
+
+    /// Managed policy identifier, without the `ANPA` prefix.
+    pub managed_policy_id: String,
+
+    /// Timestamp when the role-policy attachment was created.
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+#[cfg(feature = "load")]
+impl crate::Loadable for RoleAttachedPolicy {
+    async fn load_into(&self, conn: &mut PgConnection) -> Result<usize, sqlx::Error> {
+        let result = sqlx::query(indoc! {"
+            INSERT INTO iam.role_attached_policies(role_id, managed_policy_id)
+            VALUES($1, $2)"})
+        .bind(self.role_id.clone())
+        .bind(self.managed_policy_id.clone())
+        .execute(conn)
+        .await?;
+        Ok(result.rows_affected() as usize)
+    }
+}

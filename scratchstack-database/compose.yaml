@@ -1,0 +1,11 @@
+services:
+  database:
+    build:
+      context: test-database
+      dockerfile_inline: |
+        FROM postgres:18
+        RUN mkdir -p /docker-entrypoint-initdb.d
+        COPY initialization.sql /docker-entrypoint-initdb.d/
+    env_file: .env
+    ports:
+      - "[::1]:7715:5432/tcp"

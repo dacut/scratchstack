@@ -1,109 +1,85 @@
 //! Database loading and dumping utilities.
 use {
-    sqlx::{Connection, Error as SqlxError, Executor},
-    std::future::Future,
+    pct_str::{PctString, UriReserved},
+    std::env::var,
+    sqlx::postgres::PgConnection,
+    tower::BoxError,
 };
-
-/// The load or dump context, which allows for the table name to be prefixed or suffixed.
-#[cfg(any(feature = "dump", feature = "load"))]
-#[derive(Clone, Debug, Default)]
-pub struct Context {
-    /// Prefix for table names; if no prefix is desired, this should be an empty string.
-    pub prefix: String,
-
-    /// Optional suffix for table names; if no suffix is desired, this be an empty string.
-    pub suffix: String,
-}
-
-impl Context {
-    pub(crate) fn table_name(&self, base_name: impl AsRef<str>) -> String {
-        format!("{}{}{}", self.prefix, base_name.as_ref(), self.suffix)
-    }
-}
 
 /// Trait that allows a model object to be dumped from a database.
 #[cfg(feature = "load")]
-pub trait Dumpable<D>: Sized {
+pub trait Dumpable: Sized {
     /// Dump a table containing the specified objects from the database.
-    fn dump_from(database: &mut D, context: Context) -> impl Future<Output = Result<Vec<Self>, SqlxError>>;
+    fn dump_from(
+        database: &mut PgConnection,
+    ) -> impl std::future::Future<Output = Result<Vec<Self>, sqlx::Error>>;
 }
 
 /// Trait that allows a model object to be loaded into a database.
 #[cfg(feature = "load")]
-pub trait Loadable<C>
-where
-    C: Connection,
-    for<'c> &'c mut C: Executor<'c>,
-{
+pub trait Loadable {
     /// Load the model object into the database.
     ///
     /// On success, returns the number of records inserted into the database.
-    fn load_into<'c>(
+    fn load_into(
         &self,
-        conn: &'c mut C,
-        context: Context,
-    ) -> impl Future<Output = Result<<<&'c mut C as Executor<'c>>::Database as sqlx::Database>::QueryResult, SqlxError>>;
+        conn: &mut PgConnection,
+    ) -> impl std::future::Future<Output = Result<usize, sqlx::Error>>;
 }
 
-/// Trait that allows a model object type to create its corresponding database schema.
-#[cfg(feature = "schema")]
-pub trait CreateSchema<C>
-where
-    C: Connection,
-    for<'c> &'c mut C: Executor<'c>,
-{
-    /// Create the database schema for the model object.
-    fn create_schema<'c>(
-        conn: &'c mut C,
-        context: Context,
-    ) -> impl Future<Output = Result<<<&'c mut C as Executor<'c>>::Database as sqlx::Database>::QueryResult, SqlxError>>;
-}
+/// Create a database URL from environment variables.
+///
+/// The environment variables used are determined by the `env_prefix` parameter.
+///
+/// If `<env_prefix>_DATABASE_URL` is set, it will be returned directly. Otherwise:
+/// * The host will be obtained from `<env_prefix>_DATABASE_HOST`, defaulting to `localhost` if not
+///   set.
+/// * The port will be obtained from `<env_prefix>_DATABASE_PORT`, defaulting to `default_port` if
+///   not set.
+/// * The user will be obtained from `<env_prefix>_DATABASE_USER`, defaulting to `default_user` if
+///   not set.
+/// * The password will be obtained from `<env_prefix>_DATABASE_PASSWORD`. If this is not set, an
+///   error will be returned.
+///
+/// The resulting URL will be in the format `postgres://<user>:<password>@<host>:<port>/<database>`.
+/// The user and password will be percent-encoded to ensure that special characters are properly
+/// escaped.
+pub fn database_url_from_env(
+    env_prefix: impl AsRef<str>,
+    default_database: impl Into<String>,
+    default_user: impl Into<String>,
+    default_port: u16,
+) -> Result<String, BoxError> {
+    let env_prefix = env_prefix.as_ref();
 
-/// A trait for types that can produce SQL query placeholder.
-pub(crate) trait QueryPlaceholder: Default {
-    /// Return the next placeholder.
-    fn next(&mut self) -> String;
-}
+    let url_env = format!("{env_prefix}_DATABASE_URL");
+    let host_env = format!("{env_prefix}_DATABASE_HOST");
+    let port_env = format!("{env_prefix}_DATABASE_PORT");
+    let db_env = format!("{env_prefix}_DB");
+    let user_env = format!("{env_prefix}_DATABASE_USER");
+    let password_env = format!("{env_prefix}_DATABASE_PASSWORD");
 
-/// A trait for sqlx databases that defines the query placeholder type.
-pub(crate) trait GetQueryPlaceholder {
-    type QueryPlaceholder: QueryPlaceholder;
-}
-
-/// A Postgres-style query placeholder that produces placeholders in the form `${1}`, `${2}`, etc.
-#[derive(Debug, Default, Clone, Copy)]
-pub(crate) struct DollarParamPlaceholder {
-    prev_index: usize,
-}
-
-impl QueryPlaceholder for DollarParamPlaceholder {
-    fn next(&mut self) -> String {
-        self.prev_index += 1;
-        format!("${{{}}}", self.prev_index)
+    // If there's a prefix_DATABASE_URL environment variable set, use it.
+    if let Ok(url) = var(url_env)
+        && !url.is_empty()
+    {
+        return Ok(url);
     }
-}
 
-/// A MySQL and SQLite-style query placeholder that produces `?` placeholders.
-#[derive(Debug, Default, Clone, Copy)]
-pub(crate) struct QmPlaceholder;
+    // Otherwise, obtain this from individual environment variables.
+    let host = var(host_env).unwrap_or_else(|_| "localhost".to_string());
+    let port = if let Ok(port) = var(&port_env) {
+        port.parse::<u16>()
+            .map_err(|_| format!("{port_env} environment variable must be a valid port number from 1-65535"))?
+    } else {
+        default_port
+    };
+    let user = PctString::encode(var(user_env).unwrap_or_else(|_| default_user.into()).chars(), UriReserved::Any);
+    let Some(password) = var(&password_env).ok() else {
+        return Err(format!("{password_env} environment variable not set").into());
+    };
+    let password = PctString::encode(password.chars(), UriReserved::Any);
+    let database = var(db_env).unwrap_or_else(|_| default_database.into());
 
-impl QueryPlaceholder for QmPlaceholder {
-    fn next(&mut self) -> String {
-        "?".to_string()
-    }
-}
-
-#[cfg(feature = "mysql")]
-impl GetQueryPlaceholder for sqlx::mysql::MySql {
-    type QueryPlaceholder = QmPlaceholder;
-}
-
-#[cfg(feature = "postgres")]
-impl GetQueryPlaceholder for sqlx::postgres::Postgres {
-    type QueryPlaceholder = DollarParamPlaceholder;
-}
-
-#[cfg(feature = "sqlite")]
-impl GetQueryPlaceholder for sqlx::sqlite::Sqlite {
-    type QueryPlaceholder = QmPlaceholder;
+    Ok(format!("postgres://{}:{}@{}:{}/{}", user, password, host, port, database))
 }

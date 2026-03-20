@@ -10,14 +10,10 @@ edition.workspace = true
 version.workspace = true
 
 [features]
-default = ["dump", "gsk-direct", "load", "mysql", "postgres", "schema", "sqlite"]
+default = ["dump", "gsk-direct", "load"]
 dump = []
 gsk-direct = ["dep:scratchstack-arn"]
 load = []
-mysql = ["sqlx/mysql"]
-postgres = ["sqlx/postgres"]
-schema = []
-sqlite = ["sqlx/_sqlite"]
 
 [dependencies]
 arrayvec = { workspace = true, features = ["serde"] }
@@ -25,7 +21,9 @@ base32.workspace = true
 chrono = { workspace = true, features = ["clock", "serde", "std"] }
 derive_builder.workspace = true
 futures.workspace = true
+indoc.workspace = true
 log.workspace = true
+pct-str.workspace = true
 rand = { workspace = true, features = ["std", "std_rng"] }
 rustls.workspace = true
 scratchstack-arn = { path = "../scratchstack-arn", optional = true }
@@ -37,6 +35,7 @@ sqlx = { workspace = true, features = [
     "chrono",
     "macros",
     "migrate",
+    "postgres",
     "runtime-tokio-rustls",
 ] }
 toml.workspace = true
@@ -45,15 +44,13 @@ tokio-rustls.workspace = true
 tower.workspace = true
 
 [dev-dependencies]
+aws-sigv4 = { workspace = true, features = ["sign-http"] }
 env_logger.workspace = true
+postgresql_commands.workspace = true
+postgresql_embedded = { workspace = true, features = [ "rustls", "theseus", "tokio" ] }
 pretty_assertions.workspace = true
+rand = { workspace = true, features = ["thread_rng"] }
 regex.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 test-log.workspace = true
-aws-sigv4 = { workspace = true, features = ["sign-http"] }
-
-[[test]]
-name = "gsk_sqlite_test"
-path = "tests/gsk_sqlite_test.rs"
-test = true
-required-features = ["sqlite"]

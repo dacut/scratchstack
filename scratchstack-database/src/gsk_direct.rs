@@ -6,7 +6,8 @@
 #![warn(clippy::all)]
 
 use {
-    crate::{GetQueryPlaceholder, QueryPlaceholder, constants::*},
+    crate::constants::*,
+    indoc::indoc,
     log::error,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::{Principal, SessionData, SessionValue, User},
@@ -75,9 +76,7 @@ fn internal_error<E: Error + Send + Sync + 'static>(e: E) -> BoxError {
 
 impl<DB> Service<GetSigningKeyRequest> for GetSigningKeyFromDatabase<DB>
 where
-    DB: Database + GetQueryPlaceholder,
-    DB: GetQueryPlaceholder, // Need query placeholder types
-    <DB as GetQueryPlaceholder>::QueryPlaceholder: Send,
+    DB: Database,
     for<'c> &'c mut DB::Connection: Executor<'c>, // Need to be able to execute queries on the connection
     for<'a, 'c> String: Decode<'a, <&'c mut <DB as Database>::Connection as Executor<'c>>::Database>, // String handling
     for<'a, 'c> String: Encode<'a, <&'c mut <DB as Database>::Connection as Executor<'c>>::Database>, // String handling
@@ -116,17 +115,15 @@ async fn get_signing_key_from_database<'c, C>(
 ) -> Result<GetSigningKeyResponse, BoxError>
 where
     C: Connection,
-    <C as sqlx::Connection>::Database: GetQueryPlaceholder, // Need query placeholder types
-    &'c mut C: Executor<'c>,                                // Need to be able to execute queries on the connection
+    &'c mut C: Executor<'c>, // Need to be able to execute queries on the connection
     for<'a> String: Decode<'a, <&'c mut C as Executor<'c>>::Database>, // String handling
     for<'a> String: Encode<'a, <&'c mut C as Executor<'c>>::Database>, // String handling
-    String: Type<<&'c mut C as Executor<'c>>::Database>,    // String handling
+    String: Type<<&'c mut C as Executor<'c>>::Database>, // String handling
     usize: ColumnIndex<<<&'c mut C as Executor<'c>>::Database as Database>::Row>, // Row results
     for<'a> <<&'c mut C as Executor<'c>>::Database as sqlx::Database>::Arguments<'a>:
         IntoArguments<'a, <&'c mut C as Executor<'c>>::Database>, // Query arguments
 {
     let access_key = req.access_key();
-    let mut qp = <<<C as Connection>::Database as GetQueryPlaceholder>::QueryPlaceholder as Default>::default();
 
     // Access keys are 20 characters (at least) in length.
     if access_key.len() < 20 {
@@ -138,19 +135,18 @@ where
     let access_suffix = access_key[4..].to_string();
     match access_prefix {
         "AKIA" => {
-            let access_key_param_id = qp.next();
-            let sql = format!(
-                r#"
+            let result = query_as(indoc! {"
                 SELECT iam_user_credential.user_id, account_id, path, user_name_cased, secret_key
                 FROM iam_user_credential
                 INNER JOIN iam_user
                 ON iam_user_credential.user_id = iam_user.user_id
-                WHERE access_key_id = {}"#,
-                access_key_param_id
-            );
-
+                WHERE access_key_id = $1
+                "})
+            .bind(access_suffix)
+            .fetch_one(e)
+            .await;
             let (user_id, account_id, path, user_name, secret_key_str): (String, String, String, String, String) =
-                match query_as(&sql).bind(access_suffix).fetch_one(e).await {
+                match result {
                     Ok(row) => row,
                     Err(e) => {
                         return Err(match e {
