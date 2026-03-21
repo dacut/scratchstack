@@ -3,7 +3,7 @@ use {
     derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
-    sqlx::{postgres::PgConnection, FromRow},
+    sqlx::{FromRow, postgres::PgConnection},
 };
 
 /// AWS IAM password hash algorithm database model

@@ -2,8 +2,8 @@
 use {
     super::*,
     serde::{Deserialize, Serialize},
-    std::collections::HashSet,
     sqlx::{migrate, migrate::Migrator},
+    std::collections::HashSet,
 };
 
 /// Model of a Scratchstack IAM database
@@ -119,7 +119,8 @@ impl PartialEq for Database {
                 == other.user_service_specific_credentials.iter().cloned().collect::<HashSet<_>>()
             && self.user_ssh_public_keys.iter().cloned().collect::<HashSet<_>>()
                 == other.user_ssh_public_keys.iter().cloned().collect::<HashSet<_>>()
-            && self.groups.iter().cloned().collect::<HashSet<_>>() == other.groups.iter().cloned().collect::<HashSet<_>>()
+            && self.groups.iter().cloned().collect::<HashSet<_>>()
+                == other.groups.iter().cloned().collect::<HashSet<_>>()
     }
 }
 
