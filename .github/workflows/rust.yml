@@ -25,6 +25,10 @@ jobs:
         role-to-assume: arn:aws:iam::557925715019:role/github-scratchstack-actions
         role-session-name: github-scratchstack-actions
         aws-region: ${{ env.AWS_REGION }}
+    - name: Echo access key
+      run: echo "AWS_ACCESS_KEY_ID=${{ steps.aws_creds.outputs.aws-access-key-id }}"
+    - name: Exit
+      run: exit 1
     - name: Install Rust nightly
       uses: dtolnay/rust-toolchain@stable
       with:
