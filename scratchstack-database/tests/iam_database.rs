@@ -5,6 +5,7 @@ use {
     postgresql_embedded::{
         Error as PgError, PostgreSQL, SettingsBuilder as PgSettingsBuilder, Status as PgStatus, VersionReq,
     },
+    pretty_assertions::{assert_eq, assert_ne},
     rand::random_range,
     scratchstack_database::{Loadable, model::iam},
     sqlx::{
@@ -14,7 +15,6 @@ use {
     },
     std::{fmt::Debug, time::Duration},
     tempfile::{TempDir, tempdir},
-    pretty_assertions::{assert_eq, assert_ne},
 };
 
 struct TempDatabase {
@@ -220,7 +220,8 @@ async fn test_database() {
 
     let iam_dump = iam::Database::dump_from(&mut *c).await.expect("Failed to dump IAM data from database");
     assert_ne!(iam_data, iam_dump, "Dumped IAM data should not be equal to original IAM data due to created_at fields");
-    let iam_dump2 = iam::Database::dump_from(&mut *c).await.expect("Failed to dump IAM data from database a second time");
+    let iam_dump2 =
+        iam::Database::dump_from(&mut *c).await.expect("Failed to dump IAM data from database a second time");
     assert_eq!(iam_dump, iam_dump2, "Dumped IAM data should be equal across multiple dumps");
 
     iam::MIGRATOR.undo(&mut *c, 0).await.expect("Failed to undo database migrations");
