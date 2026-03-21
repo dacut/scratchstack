@@ -6,6 +6,10 @@ env:
   CARGO_INCREMENTAL: '0'
   RUSTFLAGS: '-Ccodegen-units=1 -Cinstrument-coverage -Copt-level=0'
   RUSTDOCFLAGS: '-Ccodegen-units=1 -Cinstrument-coverage -Copt-level=0'
+  AWS_REGION: us-west-2
+permissions:
+  id-token: write   # This is required for requesting the JWT
+  contents: read    # This is required for actions/checkout
 
 jobs:
   build:
@@ -13,6 +17,12 @@ jobs:
     timeout-minutes: 30
     steps:
     - uses: actions/checkout@v6
+    - name: Configure aws credentials
+      uses: aws-actions/configure-aws-credentials@v1.7.0
+      with:
+        role-to-assume: arn:aws:iam::557925715019:role/github-scratchstack-actions
+        role-session-name: github-scratchstack-actions
+        aws-region: ${{ env.AWS_REGION }}
     - name: Install Rust nightly
       uses: dtolnay/rust-toolchain@stable
       with:
@@ -24,9 +34,13 @@ jobs:
       run: cargo fmt --check
     - name: Run Clippy check.
       run: cargo clippy -- -Dwarnings
-    - name: Build
-      run: cargo build
-    - name: Run tests
-      run: cargo test
+    - name: Run tests and gather coverage data
+      run: cargo llvm-cov --tests --html --output-dir coverage-report
+    - name: Upload coverage report to AWS
+      uses: jakejarvis/s3-sync-action@master
+      env:
+        AWS_S3_BUCKET: ${{ secrets.COVERAGE_S3_BUCKET }}
+        SOURCE_DIR: coverage-report/html
+        DEST_DIR: "coverage/scratchstack/${{ github.run_number }}"
     - name: Build documentation
       run: cargo doc --no-deps
