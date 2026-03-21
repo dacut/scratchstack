@@ -35,6 +35,8 @@ jobs:
     - name: Run Clippy check.
       run: cargo clippy -- -Dwarnings
     - name: Run tests and gather coverage data
+      env:
+        RUST_LOG: debug
       run: cargo llvm-cov --tests --html --output-dir coverage-report
     - name: Upload coverage report to AWS
       uses: jakejarvis/s3-sync-action@master
