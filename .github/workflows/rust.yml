@@ -45,4 +45,6 @@ jobs:
     - name: Build documentation
       run: cargo doc --no-deps
     - name: Upload documentation to AWS
-      run: aws s3 sync target/doc s3://${{ secrets.COVERAGE_S3_BUCKET }}/docs/scratchstack/${{ github.run_number }}
+      run: |
+        cp index.html target/doc/index.html
+        aws s3 sync target/doc s3://${{ secrets.COVERAGE_S3_BUCKET }}/docs/scratchstack/${{ github.run_number }}
