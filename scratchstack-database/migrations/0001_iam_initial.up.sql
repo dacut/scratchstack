@@ -188,7 +188,7 @@ COMMENT ON TABLE iam.group_inline_policies IS 'Inline policies attached to IAM g
 COMMENT ON COLUMN iam.group_inline_policies.group_id IS 'IAM group id without the leading AGPA prefix.';
 COMMENT ON COLUMN iam.group_inline_policies.policy_name_lower IS 'Lowercase version of the policy name; this must be unique per group.';
 
-CREATE TABLE iam.group_members(
+CREATE TABLE iam.group_memberships(
     group_id VARCHAR(32) NOT NULL,
     user_id VARCHAR(32) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -196,9 +196,9 @@ CREATE TABLE iam.group_members(
     FOREIGN KEY (group_id) REFERENCES iam.groups(group_id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES iam.users(user_id) ON DELETE CASCADE
 );
-COMMENT ON TABLE iam.group_members IS 'User memberships in IAM groups.';
-COMMENT ON COLUMN iam.group_members.group_id IS 'IAM group id without the leading AGPA prefix.';
-COMMENT ON COLUMN iam.group_members.user_id IS 'IAM user id without the leading AIDA prefix.';
+COMMENT ON TABLE iam.group_memberships IS 'User memberships in IAM groups.';
+COMMENT ON COLUMN iam.group_memberships.group_id IS 'IAM group id without the leading AGPA prefix.';
+COMMENT ON COLUMN iam.group_memberships.user_id IS 'IAM user id without the leading AIDA prefix.';
 
 CREATE TABLE iam.roles(
     role_id VARCHAR(32) PRIMARY KEY,
@@ -246,7 +246,7 @@ COMMENT ON COLUMN iam.role_attached_policies.role_id IS 'IAM role id without the
 COMMENT ON COLUMN iam.role_attached_policies.managed_policy_id IS 'Managed policy id without the leading ANPA prefix.';
 
 CREATE TABLE iam.role_session_token_keys(
-    role_token_id VARCHAR(64) PRIMARY KEY,
+    role_session_token_key_id VARCHAR(64) PRIMARY KEY,
     encryption_algorithm VARCHAR(64) NOT NULL,
     encryption_key VARCHAR(64) NOT NULL,
     valid_from TIMESTAMP WITH TIME ZONE NOT NULL,

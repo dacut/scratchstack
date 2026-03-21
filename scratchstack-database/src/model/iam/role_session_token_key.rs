@@ -11,8 +11,8 @@ use {
 #[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct RoleSessionTokenKey {
-    /// The role token id.
-    pub role_token_id: String,
+    /// The role session token key id.
+    pub role_session_token_key_id: String,
 
     /// The encryption algorithm used.
     pub encryption_algorithm: String,
@@ -42,10 +42,10 @@ impl crate::Loadable for RoleSessionTokenKey {
     async fn load_into(&self, conn: &mut PgConnection) -> Result<usize, sqlx::Error> {
         let result = sqlx::query(indoc! {"
             INSERT INTO iam.role_session_token_keys(
-                role_token_id, encryption_algorithm, encryption_key, valid_from, expires_at)
+                role_session_token_key_id, encryption_algorithm, encryption_key, valid_from, expires_at)
             VALUES($1, $2, $3, $4, $5)
         "})
-        .bind(self.role_token_id.clone())
+        .bind(self.role_session_token_key_id.clone())
         .bind(self.encryption_algorithm.clone())
         .bind(self.encryption_key.clone())
         .bind(self.valid_from)

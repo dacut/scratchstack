@@ -113,5 +113,68 @@
             "SSHPublicKeyBody": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFki4uuVgDirq4l+jDmJ8shLIBG7minPPZpBV7M/UZpM example@example.com",
             "Enabled": true
         }
+    ],
+    "Groups": [
+        {
+            "GroupId": "EXAMPLEGROUPID123",
+            "AccountId": "123456789012",
+            "GroupNameLower": "example-group-1",
+            "GroupNameCased": "Example-Group-1",
+            "Path": "/"
+        }
+    ],
+    "GroupAttachedPolicies": [
+        {
+            "GroupId": "EXAMPLEGROUPID123",
+            "ManagedPolicyId": "AAAABBBBCCCCDDDD"
+        }
+    ],
+    "GroupInlinePolicies": [
+        {
+            "GroupId": "EXAMPLEGROUPID123",
+            "PolicyNameLower": "example-group-inline-policy-1",
+            "PolicyNameCased": "Example-Group-Inline-Policy-1",
+            "PolicyDocument": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"dynamodb:*\",\"Resource\":\"*\"}]}"
+        }
+    ],
+    "GroupMemberships": [
+        {
+            "GroupId": "EXAMPLEGROUPID123",
+            "UserId": "EXAMPLEUSERID123"
+        }
+    ],
+    "Roles": [
+        {
+            "RoleId": "EXAMPLEROLEID123",
+            "AccountId": "123456789012",
+            "RoleNameLower": "example-role-1",
+            "RoleNameCased": "Example-Role-1",
+            "Path": "/",
+            "PermissionsBoundaryManagedPolicyId": null,
+            "AssumeRolePolicyDocument": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"lambda.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}"
+        }
+    ],
+    "RoleAttachedPolicies": [
+        {
+            "RoleId": "EXAMPLEROLEID123",
+            "ManagedPolicyId": "AAAABBBBCCCCDDDD"
+        }
+    ],
+    "RoleInlinePolicies": [
+        {
+            "RoleId": "EXAMPLEROLEID123",
+            "PolicyNameLower": "example-role-inline-policy-1",
+            "PolicyNameCased": "Example-Role-Inline-Policy-1",
+            "PolicyDocument": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"lambda:*\",\"Resource\":\"*\"}]}"
+        }
+    ],
+    "RoleSessionTokenKeys": [
+        {
+            "RoleSessionTokenKeyId": "TK1",
+            "EncryptionAlgorithm": "AES256GCM",
+            "EncryptionKey": "exampleencryptionkey",
+            "ValidFrom": "2024-01-01T00:00:00Z",
+            "ExpiresAt": "2024-01-02T00:00:00Z"
+        }
     ]
 }

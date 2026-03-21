@@ -33,7 +33,7 @@ impl crate::Loadable for GroupInlinePolicy {
         let result = sqlx::query(indoc! {"
             INSERT INTO iam.group_inline_policies(
                 group_id, policy_name_lower, policy_name_cased, policy_document)
-            VALUES($1, $2, $3, $4, $5)"})
+            VALUES($1, $2, $3, $4)"})
         .bind(self.group_id.clone())
         .bind(self.policy_name_lower.clone())
         .bind(self.policy_name_cased.clone())

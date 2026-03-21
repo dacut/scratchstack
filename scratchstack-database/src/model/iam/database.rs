@@ -71,7 +71,7 @@ pub struct Database {
 
     /// IAM group memberships
     #[serde(default)]
-    pub group_memberships: Vec<GroupMember>,
+    pub group_memberships: Vec<GroupMembership>,
 
     /// IAM roles
     #[serde(default)]
@@ -87,7 +87,7 @@ pub struct Database {
 
     /// IAM role session token encryption keys
     #[serde(default)]
-    pub role_session_token_encryption_keys: Vec<RoleSessionTokenKey>,
+    pub role_session_token_keys: Vec<RoleSessionTokenKey>,
 }
 
 /// Migrations for the Scratchstack IAM database
@@ -154,8 +154,8 @@ impl crate::Loadable for Database {
         for role_inline_policy in &self.role_inline_policies {
             total_rows_affected += role_inline_policy.load_into(conn).await?;
         }
-        for role_session_token_encryption_key in &self.role_session_token_encryption_keys {
-            total_rows_affected += role_session_token_encryption_key.load_into(conn).await?;
+        for role_session_token_key in &self.role_session_token_keys {
+            total_rows_affected += role_session_token_key.load_into(conn).await?;
         }
         Ok(total_rows_affected)
     }

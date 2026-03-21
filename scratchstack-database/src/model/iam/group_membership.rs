@@ -10,7 +10,7 @@ use {
 /// AWS IAM group membership database model
 #[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
-pub struct GroupMember {
+pub struct GroupMembership {
     /// Group identifier, without the `AGPA` prefix.
     pub group_id: String,
 
@@ -22,10 +22,10 @@ pub struct GroupMember {
 }
 
 #[cfg(feature = "load")]
-impl crate::Loadable for GroupMember {
+impl crate::Loadable for GroupMembership {
     async fn load_into(&self, conn: &mut PgConnection) -> Result<usize, sqlx::Error> {
         let sql = indoc! {"
-            INSERT INTO iam.group_members(group_id, user_id)
+            INSERT INTO iam.group_memberships(group_id, user_id)
             VALUES($1, $2)
         "};
         let result = sqlx::query(sql).bind(self.group_id.clone()).bind(self.user_id.clone()).execute(conn).await?;

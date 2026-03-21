@@ -16,6 +16,7 @@ Cargo.lock
 *.profdata
 *.profraw
 coverage-html
+coverage-report
 lcov.info
 *.lcov
 

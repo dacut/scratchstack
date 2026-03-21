@@ -43,7 +43,7 @@ pub struct Role {
 impl crate::Loadable for Role {
     async fn load_into(&self, conn: &mut PgConnection) -> Result<usize, sqlx::Error> {
         let result = sqlx::query(indoc! {"
-            INSERT INTO roles(
+            INSERT INTO iam.roles(
                 role_id, account_id, role_name_lower, role_name_cased, path,
                 permissions_boundary_managed_policy_id, description, assume_role_policy_document)
             VALUES($1, $2, $3, $4, $5, $6, $7, $8)
