@@ -3,11 +3,11 @@ use {
     derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
-    sqlx::postgres::PgConnection,
+    sqlx::{postgres::PgConnection, FromRow},
 };
 
 /// A version of an AWS IAM managed policy
-#[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Builder, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, FromRow)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct ManagedPolicyVersion {
     /// Managed policy identifier, without the `ANPA` prefix.
@@ -21,6 +21,19 @@ pub struct ManagedPolicyVersion {
 
     /// Timestamp when the policy version was created.
     pub created_at: Option<DateTime<Utc>>,
+}
+
+#[cfg(feature = "dump")]
+impl crate::Dumpable for ManagedPolicyVersion {
+    async fn dump_from(database: &mut PgConnection) -> Result<Vec<Self>, sqlx::Error> {
+        sqlx::query_as(indoc! {"
+            SELECT managed_policy_id, managed_policy_version, policy_document, created_at
+            FROM iam.managed_policy_versions
+            ORDER BY managed_policy_id, managed_policy_version
+        "})
+        .fetch_all(database)
+        .await
+    }
 }
 
 #[cfg(feature = "load")]

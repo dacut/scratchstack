@@ -4,11 +4,11 @@ use {
     derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
-    sqlx::postgres::PgConnection,
+    sqlx::{postgres::PgConnection, FromRow},
 };
 
 /// AWS IAM user password history database model
-#[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Builder, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, FromRow)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct UserPasswordHistory {
     /// User identifier, without the `AIDA` prefix.
@@ -27,6 +27,20 @@ pub struct UserPasswordHistory {
     /// Timestamp when the password was changed and this password was added to the user's password
     /// history.
     pub password_changed_at: DateTime<Utc>,
+}
+
+#[cfg(feature = "dump")]
+impl crate::Dumpable for UserPasswordHistory {
+    async fn dump_from(database: &mut PgConnection) -> Result<Vec<Self>, sqlx::Error> {
+        sqlx::query_as(indoc! {"
+            SELECT user_id, password_hash_algorithm, password_hash,
+                   password_created_at, password_changed_at
+            FROM iam.user_password_history
+            ORDER BY user_id, password_changed_at
+        "})
+        .fetch_all(database)
+        .await
+    }
 }
 
 #[cfg(feature = "load")]

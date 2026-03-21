@@ -4,11 +4,11 @@ use {
     derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
-    sqlx::postgres::PgConnection,
+    sqlx::{postgres::PgConnection, FromRow},
 };
 
 /// AWS IAM user login profile database model
-#[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Builder, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, FromRow)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct UserLoginProfile {
     /// User identifier, without the `AIDA` prefix.
@@ -29,6 +29,20 @@ pub struct UserLoginProfile {
 
     /// Timestamp when the login profile was created.
     pub created_at: Option<DateTime<Utc>>,
+}
+
+#[cfg(feature = "dump")]
+impl crate::Dumpable for UserLoginProfile {
+    async fn dump_from(database: &mut PgConnection) -> Result<Vec<Self>, sqlx::Error> {
+        sqlx::query_as(indoc! {"
+            SELECT user_id, password_hash_algorithm_id, password_hash, password_reset_required,
+                   password_last_changed_at, created_at
+            FROM iam.user_login_profiles
+            ORDER BY user_id
+        "})
+        .fetch_all(database)
+        .await
+    }
 }
 
 #[cfg(feature = "load")]

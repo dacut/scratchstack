@@ -4,11 +4,11 @@ use {
     derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
-    sqlx::postgres::PgConnection,
+    sqlx::{postgres::PgConnection, FromRow},
 };
 
 /// AWS IAM user credential database model
-#[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Builder, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, FromRow)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct UserCredential {
     /// Access key identifier, without the `AKIA` prefix.
@@ -25,6 +25,19 @@ pub struct UserCredential {
 
     /// Timestamp when the credential was created.
     pub created_at: Option<DateTime<Utc>>,
+}
+
+#[cfg(feature = "dump")]
+impl crate::Dumpable for UserCredential {
+    async fn dump_from(database: &mut PgConnection) -> Result<Vec<Self>, sqlx::Error> {
+        sqlx::query_as(indoc! {"
+            SELECT access_key_id, user_id, secret_key, enabled, created_at
+            FROM iam.user_credentials
+            ORDER BY user_id, access_key_id
+        "})
+        .fetch_all(database)
+        .await
+    }
 }
 
 #[cfg(feature = "load")]

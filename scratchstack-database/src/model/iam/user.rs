@@ -4,11 +4,11 @@ use {
     derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
-    sqlx::postgres::PgConnection,
+    sqlx::{postgres::PgConnection, FromRow},
 };
 
 /// AWS IAM user database model
-#[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Builder, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, FromRow)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct User {
     /// Unique user identifier, without the `AIDA` prefix.
@@ -31,6 +31,20 @@ pub struct User {
 
     /// Timestamp when the user was created.
     pub created_at: Option<DateTime<Utc>>,
+}
+
+#[cfg(feature = "dump")]
+impl crate::Dumpable for User {
+    async fn dump_from(database: &mut PgConnection) -> Result<Vec<Self>, sqlx::Error> {
+        sqlx::query_as(indoc! {"
+            SELECT user_id, account_id, user_name_lower, user_name_cased, path,
+                   permissions_boundary_managed_policy_id, created_at
+            FROM iam.users
+            ORDER BY account_id, user_id
+        "})
+        .fetch_all(database)
+        .await
+    }
 }
 
 #[cfg(feature = "load")]

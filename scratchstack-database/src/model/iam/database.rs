@@ -2,11 +2,12 @@
 use {
     super::*,
     serde::{Deserialize, Serialize},
+    std::collections::HashSet,
     sqlx::{migrate, migrate::Migrator},
 };
 
 /// Model of a Scratchstack IAM database
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Database {
     /// Accounts
@@ -92,6 +93,84 @@ pub struct Database {
 
 /// Migrations for the Scratchstack IAM database
 pub static MIGRATOR: Migrator = migrate!("./migrations");
+
+impl PartialEq for Database {
+    fn eq(&self, other: &Self) -> bool {
+        // Compare each field as a set, since the order of rows in the database is not guaranteed.
+        self.accounts.iter().cloned().collect::<HashSet<_>>() == other.accounts.iter().cloned().collect::<HashSet<_>>()
+            && self.password_hash_algorithms.iter().cloned().collect::<HashSet<_>>()
+                == other.password_hash_algorithms.iter().cloned().collect::<HashSet<_>>()
+            && self.managed_policies.iter().cloned().collect::<HashSet<_>>()
+                == other.managed_policies.iter().cloned().collect::<HashSet<_>>()
+            && self.managed_policy_versions.iter().cloned().collect::<HashSet<_>>()
+                == other.managed_policy_versions.iter().cloned().collect::<HashSet<_>>()
+            && self.users.iter().cloned().collect::<HashSet<_>>() == other.users.iter().cloned().collect::<HashSet<_>>()
+            && self.user_attached_policies.iter().cloned().collect::<HashSet<_>>()
+                == other.user_attached_policies.iter().cloned().collect::<HashSet<_>>()
+            && self.user_inline_policies.iter().cloned().collect::<HashSet<_>>()
+                == other.user_inline_policies.iter().cloned().collect::<HashSet<_>>()
+            && self.user_credentials.iter().cloned().collect::<HashSet<_>>()
+                == other.user_credentials.iter().cloned().collect::<HashSet<_>>()
+            && self.user_login_profiles.iter().cloned().collect::<HashSet<_>>()
+                == other.user_login_profiles.iter().cloned().collect::<HashSet<_>>()
+            && self.user_password_history.iter().cloned().collect::<HashSet<_>>()
+                == other.user_password_history.iter().cloned().collect::<HashSet<_>>()
+            && self.user_service_specific_credentials.iter().cloned().collect::<HashSet<_>>()
+                == other.user_service_specific_credentials.iter().cloned().collect::<HashSet<_>>()
+            && self.user_ssh_public_keys.iter().cloned().collect::<HashSet<_>>()
+                == other.user_ssh_public_keys.iter().cloned().collect::<HashSet<_>>()
+            && self.groups.iter().cloned().collect::<HashSet<_>>() == other.groups.iter().cloned().collect::<HashSet<_>>()
+    }
+}
+
+#[cfg(feature = "dump")]
+impl Database {
+    pub async fn dump_from(database: &mut sqlx::postgres::PgConnection) -> Result<Self, sqlx::Error> {
+        use crate::Dumpable as _;
+        let accounts = Account::dump_from(database).await?;
+        let password_hash_algorithms = PasswordHashAlgorithm::dump_from(database).await?;
+        let managed_policies = ManagedPolicy::dump_from(database).await?;
+        let managed_policy_versions = ManagedPolicyVersion::dump_from(database).await?;
+        let users = User::dump_from(database).await?;
+        let user_attached_policies = UserAttachedPolicy::dump_from(database).await?;
+        let user_inline_policies = UserInlinePolicy::dump_from(database).await?;
+        let user_credentials = UserCredential::dump_from(database).await?;
+        let user_login_profiles = UserLoginProfile::dump_from(database).await?;
+        let user_password_history = UserPasswordHistory::dump_from(database).await?;
+        let user_service_specific_credentials = UserServiceSpecificCredential::dump_from(database).await?;
+        let user_ssh_public_keys = UserSshPublicKey::dump_from(database).await?;
+        let groups = Group::dump_from(database).await?;
+        let group_attached_policies = GroupAttachedPolicy::dump_from(database).await?;
+        let group_inline_policies = GroupInlinePolicy::dump_from(database).await?;
+        let group_memberships = GroupMembership::dump_from(database).await?;
+        let roles = Role::dump_from(database).await?;
+        let role_attached_policies = RoleAttachedPolicy::dump_from(database).await?;
+        let role_inline_policies = RoleInlinePolicy::dump_from(database).await?;
+        let role_session_token_keys = RoleSessionTokenKey::dump_from(database).await?;
+        Ok(Self {
+            accounts,
+            password_hash_algorithms,
+            managed_policies,
+            managed_policy_versions,
+            users,
+            user_attached_policies,
+            user_inline_policies,
+            user_credentials,
+            user_login_profiles,
+            user_password_history,
+            user_service_specific_credentials,
+            user_ssh_public_keys,
+            groups,
+            group_attached_policies,
+            group_inline_policies,
+            group_memberships,
+            roles,
+            role_attached_policies,
+            role_inline_policies,
+            role_session_token_keys,
+        })
+    }
+}
 
 #[cfg(feature = "load")]
 impl crate::Loadable for Database {

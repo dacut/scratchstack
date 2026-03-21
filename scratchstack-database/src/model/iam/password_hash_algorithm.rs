@@ -3,11 +3,11 @@ use {
     derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
-    sqlx::postgres::PgConnection,
+    sqlx::{postgres::PgConnection, FromRow},
 };
 
 /// AWS IAM password hash algorithm database model
-#[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Builder, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, FromRow)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct PasswordHashAlgorithm {
     /// Password hash algorithm identifier.
@@ -18,6 +18,19 @@ pub struct PasswordHashAlgorithm {
 
     /// Algorithm parameters.
     pub parameters: Option<String>,
+}
+
+#[cfg(feature = "dump")]
+impl crate::Dumpable for PasswordHashAlgorithm {
+    async fn dump_from(database: &mut PgConnection) -> Result<Vec<Self>, sqlx::Error> {
+        sqlx::query_as(indoc! {"
+            SELECT password_hash_algorithm_id, algorithm_name, parameters::text AS parameters
+            FROM iam.password_hash_algorithms
+            ORDER BY password_hash_algorithm_id
+        "})
+        .fetch_all(database)
+        .await
+    }
 }
 
 #[cfg(feature = "load")]

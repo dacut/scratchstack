@@ -4,11 +4,11 @@ use {
     derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
-    sqlx::postgres::PgConnection,
+    sqlx::{postgres::PgConnection, FromRow},
 };
 
 /// AWS account database model
-#[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Builder, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, FromRow)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Account {
     /// 12-digit AWS account id.
@@ -22,6 +22,19 @@ pub struct Account {
 
     /// Timestamp when the account was created.
     pub created_at: Option<DateTime<Utc>>,
+}
+
+#[cfg(feature = "dump")]
+impl crate::Dumpable for Account {
+    async fn dump_from(database: &mut PgConnection) -> Result<Vec<Self>, sqlx::Error> {
+        sqlx::query_as(indoc! {"
+            SELECT account_id, email, alias, created_at
+            FROM iam.accounts
+            ORDER BY account_id
+        "})
+        .fetch_all(database)
+        .await
+    }
 }
 
 #[cfg(feature = "load")]

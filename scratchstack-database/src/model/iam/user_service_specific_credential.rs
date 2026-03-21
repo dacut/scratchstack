@@ -4,11 +4,11 @@ use {
     derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
-    sqlx::postgres::PgConnection,
+    sqlx::{postgres::PgConnection, FromRow},
 };
 
 /// AWS IAM user service-specific credential database model
-#[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Builder, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, FromRow)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct UserServiceSpecificCredential {
     /// Service-specific credential identifier, without the `ASSC` prefix.
@@ -34,6 +34,20 @@ pub struct UserServiceSpecificCredential {
 
     /// Timestamp when the credential was created.
     pub created_at: Option<DateTime<Utc>>,
+}
+
+#[cfg(feature = "dump")]
+impl crate::Dumpable for UserServiceSpecificCredential {
+    async fn dump_from(database: &mut PgConnection) -> Result<Vec<Self>, sqlx::Error> {
+        sqlx::query_as(indoc! {"
+            SELECT service_specific_credential_id, user_id, service_name, service_user_name,
+                   service_password, expires_at, enabled, created_at
+            FROM iam.user_service_specific_credentials
+            ORDER BY user_id, service_specific_credential_id
+        "})
+        .fetch_all(database)
+        .await
+    }
 }
 
 #[cfg(feature = "load")]

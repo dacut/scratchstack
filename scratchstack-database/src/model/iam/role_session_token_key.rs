@@ -4,11 +4,11 @@ use {
     derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
-    sqlx::postgres::PgConnection,
+    sqlx::{postgres::PgConnection, FromRow},
 };
 
 /// AWS IAM role session token encryption key database model
-#[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Builder, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, FromRow)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct RoleSessionTokenKey {
     /// The role session token key id.
@@ -35,6 +35,20 @@ pub struct RoleSessionTokenKey {
     /// This is always before `valid_from` to allow other systems to synchronize with the new key
     /// before it becomes active.
     pub created_at: Option<DateTime<Utc>>,
+}
+
+#[cfg(feature = "dump")]
+impl crate::Dumpable for RoleSessionTokenKey {
+    async fn dump_from(database: &mut PgConnection) -> Result<Vec<Self>, sqlx::Error> {
+        sqlx::query_as(indoc! {"
+            SELECT role_session_token_key_id, encryption_algorithm, encryption_key,
+                   valid_from, expires_at, created_at
+            FROM iam.role_session_token_keys
+            ORDER BY role_session_token_key_id
+        "})
+        .fetch_all(database)
+        .await
+    }
 }
 
 #[cfg(feature = "load")]
