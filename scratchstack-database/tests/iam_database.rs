@@ -72,20 +72,13 @@ impl TempDatabase {
     async fn new() -> Result<Self, PgError> {
         let base_dir = tempdir().expect("Failed to create temporary directory");
         let bootstrap_password: String = generate_password(32);
-        let home = PathBuf::from(env::var("HOME").expect("HOME environment variable not set"));
-        let install_dir = home.join(".theseus/postgresql/18.3.0");
-        if !install_dir.exists() {
-            create_dir_all(&install_dir).expect("Failed to create PostgreSQL installation directory");
-        }
 
         let settings = PgSettingsBuilder::new()
             .version(VersionReq::parse(DB_VERSION).expect("Failed to parse database version requirement"))
-            .installation_dir(install_dir)
             .temporary(true)
             .host("127.0.0.1")
             .port(DB_PORT)
             .password(&bootstrap_password)
-            .trust_installation_dir(true)
             .build();
 
         let database = PostgreSQL::new(settings);
