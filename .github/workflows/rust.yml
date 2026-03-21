@@ -44,9 +44,9 @@ jobs:
       uses: jakejarvis/s3-sync-action@master
       env:
         AWS_S3_BUCKET: ${{ secrets.COVERAGE_S3_BUCKET }}
-        AWS_ACCESS_KEY_ID: ${{ steps.aws_creds.outputs.aws_access_key_id }}
-        AWS_SECRET_ACCESS_KEY: ${{ steps.aws_creds.outputs.aws_secret_access_key }}
-        AWS_SESSION_TOKEN: ${{ steps.aws_creds.outputs.aws_session_token }}
+        AWS_ACCESS_KEY_ID: ${{ steps.aws_creds.outputs.aws-access-key-id }}
+        AWS_SECRET_ACCESS_KEY: ${{ steps.aws_creds.outputs.aws-secret-access-key }}
+        AWS_SESSION_TOKEN: ${{ steps.aws_creds.outputs.aws-session-token }}
         SOURCE_DIR: coverage-report/html
         DEST_DIR: "coverage/scratchstack/${{ github.run_number }}"
     - name: Build documentation
