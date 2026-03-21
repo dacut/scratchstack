@@ -12,7 +12,7 @@ use {
         postgres::{PgConnectOptions, PgPoolOptions},
         query,
     },
-    std::{env, fmt::Debug, fs::create_dir_all, path::PathBuf, time::Duration},
+    std::{fmt::Debug, time::Duration},
     tempfile::{TempDir, tempdir},
 };
 
