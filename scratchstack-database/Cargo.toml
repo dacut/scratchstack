@@ -10,9 +10,10 @@ edition.workspace = true
 version.workspace = true
 
 [features]
-default = ["dump", "gsk-direct", "load"]
+default = ["dump", "gsk-direct", "iam", "load"]
 dump = []
 gsk-direct = ["dep:scratchstack-arn"]
+iam = []
 load = []
 
 [dependencies]
