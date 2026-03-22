@@ -9,6 +9,8 @@ CREATE TABLE iam.accounts(
 );
 COMMENT ON TABLE iam.accounts IS 'An account in the partition.';
 
+INSERT INTO iam.accounts(account_id, alias) VALUES ('000000000000', 'aws');
+
 CREATE TABLE iam.password_hash_algorithms(
     password_hash_algorithm_id VARCHAR(32) PRIMARY KEY,
     algorithm_name VARCHAR(32) NOT NULL,
