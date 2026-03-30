@@ -10,12 +10,9 @@ edition.workspace = true
 version.workspace = true
 
 [features]
-default = ["axum", "gsk-direct", "mysql", "postgres", "sqlite"]
+default = ["axum", "gsk-direct"]
 axum = ["dep:axum"]
-gsk-direct = ["dep:scratchstack-arn", "dep:sqlx"]
-mysql = ["sqlx/mysql"]
-postgres = ["sqlx/postgres"]
-sqlite = ["sqlx/_sqlite"]
+gsk-direct = ["dep:scratchstack-arn"]
 
 [dependencies]
 axum = { workspace = true, optional = true }

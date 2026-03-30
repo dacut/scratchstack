@@ -1,0 +1,36 @@
+[package]
+name = "scratchstack-bootstrap"
+description = "Scratchstack bootstrap utility for creating initial users"
+
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "ssbs"
+path = "src/ssbs.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap = { workspace = true, features = ["derive", "env"] }
+env_logger.workspace = true
+indoc.workspace = true
+log.workspace = true
+rand = { workspace = true, features = ["thread_rng"] }
+regex.workspace = true
+rpassword.workspace = true
+scratchstack-database = { path = "../scratchstack-database", features = ["clap"] }
+scratchstack-shapes = { path = "../scratchstack-shapes" }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+sqlx = { workspace = true, features = ["chrono", "macros", "migrate", "postgres", "runtime-tokio-rustls" ] }
+tokio = { workspace = true, features = ["macros", "rt"] }
+whoami.workspace = true
+
+[dev-dependencies]
+env_logger.workspace = true
+pretty_assertions.workspace = true
+test-log.workspace = true

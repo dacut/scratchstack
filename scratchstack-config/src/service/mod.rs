@@ -3,7 +3,7 @@ mod sts;
 
 use {
     super::TlsConfig,
-    crate::error::ConfigError,
+    crate::{DatabaseConfig, error::ConfigError},
     rustls::ServerConfig as TlsServerConfig,
     serde::Deserialize,
     std::{
@@ -30,38 +30,54 @@ const DEFAULT_PARTITION: &str = "aws";
 
 const DEFAULT_THREADS: usize = 1;
 
-/// Base configuration data for a service. This allows for optional fields and references  to files for things like
-/// TLS certificates and keys.
+/// Base configuration data for a service. This allows for optional fields and references to files
+/// for the TLS configuration.
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BaseServiceConfig {
+    /// The IP address to listen on. Defaults to the localhost address (`::1`), which does
+    /// not accept external connections.
     #[serde(default)]
     pub address: Option<IpAddr>,
 
+    /// The port to listen on. If unspecified, a random port will be chosen at runtime.
     #[serde(default)]
     pub port: Option<u16>,
 
-    #[serde(default)]
-    pub partition: Option<String>,
+    /// The cloud partition this service is running in.
+    #[serde(default = "BaseServiceConfig::default_partition")]
+    pub partition: String,
 
+    /// The region this service is running in. This must be specified.
     pub region: String,
 
+    /// TLS configuration for the service. If unspecified, TLS will be disabled.
     #[serde(default)]
     pub tls: Option<TlsConfig>,
 
+    /// The number of threads to use for the service. If unspecified, defaults to the number of
+    /// cores on the machine.
     #[serde(default)]
     pub threads: Option<usize>,
+
+    /// Database configuration for the service.
+    pub database: DatabaseConfig,
 }
 
 impl BaseServiceConfig {
-    pub fn resolve(&self, default_port: u16) -> Result<ResolvedBaseServiceConfig, ConfigError> {
+    /// Returns the default partition to use.
+    #[inline(always)]
+    pub fn default_partition() -> String {
+        DEFAULT_PARTITION.to_string()
+    }
+
+    /// Resolves the configuration by filling in default values and validating fields. This should be called
+    /// before starting the service to ensure the configuration is valid and complete.
+    pub fn resolve(&self) -> Result<ResolvedBaseServiceConfig, ConfigError> {
         let address = self.address.unwrap_or(DEFAULT_ADDRESS);
+        let port = self.port.unwrap_or_default();
 
-        let port = self.port.unwrap_or(default_port);
-        if port == 0 {
-            return Err(ConfigError::InvalidPort);
-        }
-
-        let partition = self.partition.clone().unwrap_or_else(|| DEFAULT_PARTITION.to_string());
+        let partition = self.partition.clone();
         if partition.is_empty() {
             return Err(ConfigError::InvalidPartition);
         }
@@ -88,7 +104,7 @@ impl BaseServiceConfig {
     }
 }
 
-/// The resolved configuration: optional values have been replaced
+/// The resolved configuration where optional values have been replaced.
 pub struct ResolvedBaseServiceConfig {
     pub address: SocketAddr,
     pub partition: String,

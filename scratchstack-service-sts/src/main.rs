@@ -66,9 +66,18 @@ fn main() {
         Some(c) => c,
     };
 
-    // Resolve the configuration -- this may uncover additional errors such as missing TLS certificate files, etc.
+    // Resolve the configuration -- this may uncover additional errors such as missing TLS
+    // certificate files, etc.
+    let config_rt = match RuntimeBuilder::new_current_thread().enable_io().build() {
+        Ok(rt) => rt,
+        Err(e) => {
+            error!("Unable to create runtime for configuration resolution: {e}");
+            exit(1);
+        }
+    };
+
     info!("Resolving configuration");
-    let config = match sts_config.resolve() {
+    let config = match config_rt.block_on(sts_config.resolve()) {
         Ok(c) => c,
         Err(e) => {
             error!("Error in configuration file {}: {}", config_filename.display(), e);
@@ -77,6 +86,7 @@ fn main() {
     };
     info!("Configuration resolved");
     debug!("Resolved configuration: {config:?}");
+    drop(config_rt);
 
     info!("Creating runtime");
     let runtime = match RuntimeBuilder::new_multi_thread()

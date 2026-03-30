@@ -28,7 +28,7 @@ pub struct TempDatabase {
 }
 
 /// Subset of characters to use when generating random passwords for testing.
-/// 
+///
 /// PostgreSQL allows more characters than these in passwords, but these are sufficient for testing and avoid issues
 /// with characters that may need to be escaped in URLs.
 pub const PASSWORD_CHARSET: &[u8] = br#"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$*+,-./^_`|~"#;

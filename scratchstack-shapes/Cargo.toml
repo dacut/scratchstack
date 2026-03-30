@@ -1,0 +1,30 @@
+[package]
+name = "scratchstack-shapes"
+description = "API shapes for Scratchstack services"
+
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[features]
+default = ["clap", "iam"]
+clap = ["dep:clap"]
+iam = []
+
+[dependencies]
+clap = { workspace = true, optional = true, features = ["derive"] }
+derive_builder.workspace = true
+log.workspace = true
+regex.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+
+[dev-dependencies]
+env_logger.workspace = true
+pretty_assertions.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+test-log.workspace = true

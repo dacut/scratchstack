@@ -1,4 +1,4 @@
-//! AWS account database model
+//! Scratchstack AWS account IAM database model
 use {
     chrono::{DateTime, Utc},
     derive_builder::Builder,
@@ -7,7 +7,7 @@ use {
     sqlx::{FromRow, postgres::PgConnection},
 };
 
-/// AWS account database model
+/// Scratchstack AWS account IAM database model
 #[derive(Builder, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, FromRow)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Account {

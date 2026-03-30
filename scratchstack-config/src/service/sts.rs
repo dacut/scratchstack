@@ -5,8 +5,6 @@ use {
     std::fmt::Debug,
 };
 
-const DEFAULT_PORT: u16 = 8190;
-
 /// Service configuration for Security Token Service (STS).
 #[derive(Debug, Deserialize)]
 pub struct Sts {
@@ -24,9 +22,9 @@ pub struct ResolvedSts {
 }
 
 impl Sts {
-    pub fn resolve(&self) -> Result<ResolvedSts, ConfigError> {
-        let service = self.base.resolve(DEFAULT_PORT)?;
-        let database = self.database.resolve()?;
+    pub async fn resolve(&self) -> Result<ResolvedSts, ConfigError> {
+        let service = self.base.resolve()?;
+        let database = self.database.resolve().await?;
 
         Ok(ResolvedSts {
             service,

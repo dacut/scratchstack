@@ -13,12 +13,14 @@ version.workspace = true
 default = ["dump", "gsk-direct", "iam", "load"]
 dump = []
 gsk-direct = ["dep:scratchstack-arn"]
-iam = []
+iam = ["dep:scratchstack-shapes"]
 load = []
 
 [dependencies]
+anyhow = { workspace = true }
 arrayvec = { workspace = true, features = ["serde"] }
 base32.workspace = true
+clap = { workspace = true, optional = true, features = ["derive"] }
 chrono = { workspace = true, features = ["clock", "serde", "std"] }
 derive_builder.workspace = true
 futures.workspace = true
@@ -26,10 +28,12 @@ indoc.workspace = true
 log.workspace = true
 pct-str.workspace = true
 rand = { workspace = true, features = ["std", "std_rng"] }
+regex.workspace = true
 rustls.workspace = true
 scratchstack-arn = { path = "../scratchstack-arn", optional = true }
 scratchstack-aws-principal.path = "../scratchstack-aws-principal"
 scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features = ["unstable"] }
+scratchstack-shapes = { path = "../scratchstack-shapes", optional = true }
 scratchstack-errors.path = "../scratchstack-errors"
 serde = { workspace = true, features = ["derive"] }
 sqlx = { workspace = true, features = [

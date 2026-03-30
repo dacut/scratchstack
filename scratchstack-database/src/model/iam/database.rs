@@ -92,7 +92,7 @@ pub struct Database {
 }
 
 /// Migrations for the Scratchstack IAM database
-pub static MIGRATOR: Migrator = migrate!("./migrations");
+pub static MIGRATOR: Migrator = migrate!("./migrations/iam");
 
 impl PartialEq for Database {
     fn eq(&self, other: &Self) -> bool {

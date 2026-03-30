@@ -5,8 +5,6 @@ use {
     std::fmt::Debug,
 };
 
-const DEFAULT_PORT: u16 = 8150;
-
 /// Service configuration for Identity and Access Management (IAM).
 #[derive(Debug, Deserialize)]
 pub struct Iam {
@@ -24,9 +22,9 @@ pub struct ResolvedIam {
 }
 
 impl Iam {
-    pub fn resolve(&self) -> Result<ResolvedIam, ConfigError> {
-        let service = self.base.resolve(DEFAULT_PORT)?;
-        let database = self.database.resolve()?;
+    pub async fn resolve(&self) -> Result<ResolvedIam, ConfigError> {
+        let service = self.base.resolve()?;
+        let database = self.database.resolve().await?;
 
         Ok(ResolvedIam {
             service,

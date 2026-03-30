@@ -19,6 +19,7 @@ DROP TABLE IF EXISTS iam.managed_policy_versions;
 DROP TABLE IF EXISTS iam.managed_policies;
 DROP TABLE IF EXISTS iam.password_hash_algorithms;
 DROP TABLE IF EXISTS iam.accounts;
+DROP TABLE IF EXISTS iam.partition;
 
 --- History tables; can be dropped in any order
 DROP TABLE IF EXISTS iam.deleted_accounts;

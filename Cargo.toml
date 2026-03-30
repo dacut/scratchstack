@@ -10,6 +10,7 @@ members = [
     "scratchstack-errors",
     "scratchstack-http-framework",
     "scratchstack-service-sts",
+    "scratchstack-shapes",
 ]
 resolver = "2"
 

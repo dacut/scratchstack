@@ -1,6 +1,11 @@
 CREATE SCHEMA iam;
 COMMENT ON SCHEMA iam IS 'Schema for Identity and Access Management (IAM) data.';
 
+CREATE TABLE iam.partition(
+    partition_id VARCHAR(32) NOT NULL
+);
+COMMENT ON TABLE iam.partition IS 'The cloud partition this database is for.';
+
 CREATE TABLE iam.accounts(
     account_id CHAR(12) PRIMARY KEY,
     email VARCHAR(256),
