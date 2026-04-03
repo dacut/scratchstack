@@ -17,7 +17,7 @@ use {
     },
     bytes::Bytes,
     chrono::{DateTime, Utc, offset::FixedOffset},
-    encoding::{all::UTF_8, label::encoding_from_whatwg_label, types::DecoderTrap},
+    encoding_rs::UTF_8,
     http::{
         header::{HeaderMap, HeaderValue},
         request::{Parts, Request},
@@ -120,12 +120,11 @@ impl CanonicalRequest {
                 trace!("Body is application/x-www-form-urlencoded; converting to query parameters");
 
                 let encoding = match &content_type.charset {
-                    Some(charset) => match encoding_from_whatwg_label(charset.as_str()) {
+                    Some(charset) => match encoding_rs::Encoding::for_label(charset.as_bytes()) {
                         Some(encoding) => encoding,
                         None => {
                             return Err(SignatureError::InvalidBodyEncoding(format!(
-                                "application/x-www-form-urlencoded body uses unsupported charset '{}'",
-                                charset
+                                "application/x-www-form-urlencoded body uses unsupported charset '{charset}'"
                             )));
                         }
                     },
@@ -135,17 +134,15 @@ impl CanonicalRequest {
                     }
                 };
 
-                let body_query = match encoding.decode(&body, DecoderTrap::Strict) {
-                    Ok(body) => body,
-                    Err(_) => {
-                        return Err(SignatureError::InvalidBodyEncoding(format!(
-                            "Invalid body data encountered parsing application/x-www-form-urlencoded with charset '{}'",
-                            encoding.whatwg_name().unwrap_or(encoding.name())
-                        )));
-                    }
-                };
+                let (body_query, _, has_errors) = encoding.decode(&body);
+                if has_errors {
+                    return Err(SignatureError::InvalidBodyEncoding(format!(
+                        "Invalid body data encountered parsing application/x-www-form-urlencoded with charset '{}'",
+                        encoding.name()
+                    )));
+                }
 
-                query_parameters.extend(query_string_to_normalized_map(body_query.as_str())?);
+                query_parameters.extend(query_string_to_normalized_map(&body_query)?);
                 // Rebuild the parts URI with the new query string.
                 let qs = canonicalize_query_to_string(&query_parameters);
                 trace!("Rebuilding URI with new query string: {}", qs);
@@ -1704,7 +1701,7 @@ mod tests {
         if let SignatureError::InvalidBodyEncoding(msg) = e {
             assert_eq!(
                 msg.as_str(),
-                "Invalid body data encountered parsing application/x-www-form-urlencoded with charset 'utf-8'"
+                "Invalid body data encountered parsing application/x-www-form-urlencoded with charset 'UTF-8'"
             )
         } else {
             panic!("Unexpected error: {:?}", e);
