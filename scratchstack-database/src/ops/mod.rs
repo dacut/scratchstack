@@ -1,6 +1,7 @@
 //! Operations on the Scratchstack database.
 use {anyhow::Result as AnyResult, futures::Future, serde::Serialize, sqlx::postgres::PgTransaction};
 
+/// Operations related to Identity and Access Management (IAM).
 #[cfg(feature = "iam")]
 pub mod iam;
 

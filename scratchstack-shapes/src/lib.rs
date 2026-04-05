@@ -5,8 +5,8 @@
 //! be used as a dependency by the service implementations and clients that need to interact with
 //! the services.
 
-mod shorthand;
-pub use shorthand::*;
+/// AWS CLI shorthand notation shapes.
+pub mod shorthand;
 
 /// Identity and Access Management (IAM) API shapes.
 #[cfg(feature = "iam")]

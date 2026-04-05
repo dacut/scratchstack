@@ -25,8 +25,10 @@
 //! Licensed under the Apache License, Version 2.0.
 
 use std::{
+    collections::HashMap,
     error::Error,
     fmt::{Display, Formatter, Result as FmtResult},
+    str::FromStr,
 };
 
 // ---------------------------------------------------------------------------
@@ -114,7 +116,7 @@ impl Error for ParseError {}
 pub enum Value {
     Scalar(String),
     List(Vec<Value>),
-    Map(Vec<(String, Value)>),
+    Map(HashMap<String, Value>),
 }
 
 impl Value {
@@ -135,7 +137,7 @@ impl Value {
     }
 
     /// Convenience: get a map reference.
-    pub fn as_map(&self) -> Option<&[(String, Value)]> {
+    pub fn as_map(&self) -> Option<&HashMap<String, Value>> {
         match self {
             Value::Map(v) => Some(v),
             _ => None,
@@ -145,9 +147,17 @@ impl Value {
     /// Look up a key in a Map value.
     pub fn get(&self, key: &str) -> Option<&Value> {
         match self {
-            Value::Map(entries) => entries.iter().find(|(k, _)| k == key).map(|(_, v)| v),
+            Value::Map(entries) => entries.get(key),
             _ => None,
         }
+    }
+}
+
+impl FromStr for Value {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        ShorthandParser::new(s).parse()
     }
 }
 
@@ -203,7 +213,7 @@ impl<'a> ShorthandParser<'a> {
     /// Parse the input and return the top-level map.
     ///
     /// ```
-    /// use scratchstack_shapes::ShorthandParser;
+    /// use scratchstack_shapes::shorthand::ShorthandParser;
     /// let result = ShorthandParser::new("Key=Value,Foo=Bar").parse().unwrap();
     /// ```
     pub fn parse(mut self) -> Result<Value, ParseError> {
@@ -278,16 +288,16 @@ impl<'a> ShorthandParser<'a> {
 
     /// `parameter = keyval *("," keyval)`
     fn parameter(&mut self) -> Result<Value, ParseError> {
-        let mut entries: Vec<(String, Value)> = Vec::new();
+        let mut entries = HashMap::new();
         let (key, val) = self.keyval()?;
-        entries.push((key, val));
+        entries.insert(key, val);
 
         let mut last_index = self.index;
         while !self.at_eof() {
             self.expect(',', true)?;
             let (key, val) = self.keyval()?;
             // Check for duplicate keys.
-            if entries.iter().any(|(k, _)| k == &key) {
+            if entries.contains_key(&key) {
                 return Err(ParseError::DuplicateKey {
                     key,
                     location: ErrorLocation {
@@ -296,7 +306,7 @@ impl<'a> ShorthandParser<'a> {
                     },
                 });
             }
-            entries.push((key, val));
+            entries.insert(key, val);
             last_index = self.index;
         }
 
@@ -443,7 +453,7 @@ impl<'a> ShorthandParser<'a> {
     /// `hash-literal = "{" keyval *("," keyval) "}"`
     fn hash_literal(&mut self) -> Result<Value, ParseError> {
         self.expect('{', true)?;
-        let mut entries: Vec<(String, Value)> = Vec::new();
+        let mut entries = HashMap::new();
         while self.current() != Some('}') {
             let key = self.key()?;
             // Handle @= inside hash literals too.
@@ -464,7 +474,7 @@ impl<'a> ShorthandParser<'a> {
                 self.expect(',', false)?;
                 self.consume_whitespace();
             }
-            entries.push((key, val));
+            entries.insert(key, val);
         }
         self.expect('}', false)?;
         Ok(Value::Map(entries))
@@ -618,7 +628,7 @@ impl<'a> ShorthandParser<'a> {
 /// Parse a shorthand expression, returning the top-level value.
 ///
 /// ```
-/// use scratchstack_shapes::{parse, Value};
+/// use scratchstack_shapes::shorthand::{parse, Value};
 ///
 /// let val = parse("Key=Hello,Foo=Bar").unwrap();
 /// assert_eq!(val.get("Key").unwrap().as_str(), Some("Hello"));

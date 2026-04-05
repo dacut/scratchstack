@@ -1,19 +1,13 @@
-//! Database operations for the Scratchstack IAM database implementation.
-//!
-//! All operations take database transactions, allowing these operations to be used in larger
-//! transactions as needed. Any returned results are subject to the transaction being committed.
-//! Do **not** use results until the commit has been completed.
+//! CreateAccount database level operation.
 
-//! Scratchstack AWS account IAM database operations
 use {
     crate::{
-        model::iam::{IamId, IamResourceType},
-        ops::RequestExecutor,
+        model::iam::{ACCOUNT_ALIAS_REGEX, ACCOUNT_ID_REGEX, IamId, IamResourceType, PATH_REGEX, USER_NAME_REGEX},
+        ops::{RequestExecutor, iam::get_current_partition::get_current_partition},
     },
-    anyhow::Result as AnyResult,
+    anyhow::{Result as AnyResult, bail},
     indoc::indoc,
     rand::random_range,
-    regex::Regex,
     scratchstack_arn::Arn,
     scratchstack_shapes::iam::Tag,
     serde::{Deserialize, Serialize},
@@ -23,28 +17,7 @@ use {
         postgres::PgTransaction,
         query,
     },
-    std::sync::LazyLock,
 };
-
-/// Regular expression for account ids.
-static ACCOUNT_ID_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d{12}$").unwrap());
-
-/// Regular expression for account aliases.
-static ACCOUNT_ALIAS_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[a-z0-9]([a-z0-9]|-[a-z0-9])+[a-z0-9]$").unwrap());
-
-/// Regular expression for paths.
-static PATH_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^/|/[\x21-\x7e]{1,510}/$").unwrap());
-
-/// Regular expression for user names.
-static USER_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\w+=,.@-]{1,64}$").unwrap());
-
-/// Retrieve the current partition of the database.
-pub async fn get_partition(tx: &mut PgTransaction<'_>) -> AnyResult<String> {
-    let result = query("SELECT partition_id FROM iam.partition").fetch_one(tx.as_mut()).await?;
-    let partition_id: &str = result.try_get(1)?;
-    Ok(partition_id.to_string())
-}
 
 /// Parameters to create a new account on the Scratchstack IAM database.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -97,31 +70,31 @@ impl RequestExecutor for CreateAccountRequest {
 
     async fn execute(&self, tx: &mut PgTransaction<'_>) -> AnyResult<Self::Response> {
         if self.organization_id.is_some() {
-            anyhow::bail!("Creating accounts in an organization is currently unsupported");
+            bail!("Creating accounts in an organization is currently unsupported");
         }
 
         if let Some(account_id) = &self.account_id {
-            create_account_with_account_id(tx, account_id.clone(), self.email.clone(), self.alias.clone()).await
+            create_account(tx, account_id.clone(), self.email.clone(), self.alias.clone()).await
         } else {
             create_account_with_random_account_id(tx, self.email.clone(), self.alias.clone()).await
         }
     }
 }
 
-/// Create a new account on the database with the specified account ID.
-async fn create_account_with_account_id(
+/// Create a new account on the database.
+async fn create_account(
     tx: &mut PgTransaction<'_>,
     account_id: String,
     email: Option<String>,
     alias: Option<String>,
 ) -> AnyResult<CreateAccountResponse> {
     if !ACCOUNT_ID_REGEX.is_match(&account_id) {
-        anyhow::bail!("Account ID must be a 12-digit number");
+        bail!("Account ID must be a 12-digit number");
     }
 
     let alias = if let Some(alias) = alias {
         if !ACCOUNT_ALIAS_REGEX.is_match(&alias) || alias.len() < 3 || alias.len() > 63 {
-            anyhow::bail!(
+            bail!(
                 "Account alias must be 3-63 characters long and consist of lowercase letters, digits, and dashes. The alias cannot start or end with a dash and cannot contain consecutive dashes."
             );
         }
@@ -158,7 +131,7 @@ async fn create_account_with_random_account_id(
         // Create a savepoint that we can roll back to if the account ID already exists.
         let mut savepoint = tx.begin().await?;
 
-        match create_account_with_account_id(&mut savepoint, account_id, email.clone(), alias.clone()).await {
+        match create_account(&mut savepoint, account_id, email.clone(), alias.clone()).await {
             Ok(account_id) => {
                 savepoint.commit().await?;
                 return Ok(account_id);
@@ -230,7 +203,10 @@ impl RequestExecutor for CreateUserRequest {
     type Response = CreateUserResponse;
 
     async fn execute(&self, tx: &mut sqlx::postgres::PgTransaction<'_>) -> anyhow::Result<Self::Response> {
-        let partition = get_partition(tx).await?;
+        let partition = get_current_partition(tx).await?;
+        let Some(partition) = partition.partition_id else {
+            anyhow::bail!("No partition found in database");
+        };
 
         if !ACCOUNT_ID_REGEX.is_match(&self.account_id) {
             anyhow::bail!("Account ID must be a 12-digit number");

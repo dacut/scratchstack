@@ -88,9 +88,8 @@ fn parse_tag_shorthand(s: &str) -> Result<Tag, String> {
     let value = crate::shorthand::parse(s).map_err(|e| format!("Invalid shorthand tag syntax: {e}"))?;
     let map = value.as_map().ok_or("Expected shorthand key=value pairs")?;
     let get = |field: &str| -> Result<String, String> {
-        map.iter()
-            .find(|(k, _)| k == field)
-            .and_then(|(_, v)| v.as_str())
+        map.get(field)
+            .and_then(|v| v.as_str())
             .map(str::to_string)
             .ok_or_else(|| format!("Missing '{field}' in tag shorthand (expected Key=...,Value=...)"))
     };

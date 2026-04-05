@@ -12,7 +12,7 @@ version.workspace = true
 [features]
 default = ["dump", "gsk-direct", "iam", "load"]
 dump = []
-gsk-direct = ["dep:scratchstack-arn"]
+gsk-direct = ["iam", "dep:scratchstack-arn"]
 iam = ["dep:scratchstack-shapes"]
 load = []
 
@@ -20,6 +20,7 @@ load = []
 anyhow = { workspace = true }
 arrayvec = { workspace = true, features = ["serde"] }
 base32.workspace = true
+base64.workspace = true
 clap = { workspace = true, optional = true, features = ["derive"] }
 chrono = { workspace = true, features = ["clock", "serde", "std"] }
 derive_builder.workspace = true

@@ -1,6 +1,5 @@
 //! Scratchstack database schema and models
 
-mod constants;
 mod core;
 pub use core::*;
 

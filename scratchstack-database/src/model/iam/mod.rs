@@ -1,5 +1,6 @@
 //! Database object models for the Scratchstack IAM database implementation.
 mod account;
+mod constants;
 mod database;
 mod group;
 mod group_attached_policy;
@@ -22,9 +23,9 @@ mod user_password_history;
 mod user_service_specific_credential;
 mod user_ssh_public_key;
 pub use {
-    account::*, database::*, group::*, group_attached_policy::*, group_inline_policy::*, group_membership::*, id::*,
-    managed_policy::*, managed_policy_version::*, password_hash_algorithm::*, role::*, role_attached_policy::*,
-    role_inline_policy::*, role_session_token_key::*, user::*, user_attached_policy::*, user_credential::*,
-    user_inline_policy::*, user_login_profile::*, user_password_history::*, user_service_specific_credential::*,
-    user_ssh_public_key::*,
+    account::*, constants::*, database::*, group::*, group_attached_policy::*, group_inline_policy::*,
+    group_membership::*, id::*, managed_policy::*, managed_policy_version::*, password_hash_algorithm::*, role::*,
+    role_attached_policy::*, role_inline_policy::*, role_session_token_key::*, user::*, user_attached_policy::*,
+    user_credential::*, user_inline_policy::*, user_login_profile::*, user_password_history::*,
+    user_service_specific_credential::*, user_ssh_public_key::*,
 };

@@ -5,11 +5,13 @@ mod partition;
 mod user;
 
 use {
-    crate::partition::SetPartitionRequest,
     anyhow::{Error as AnyError, Result as AnyResult},
     clap::{Parser, Subcommand},
     rpassword::prompt_password,
-    scratchstack_database::ops::iam::{CreateAccountRequest, CreateUserRequest},
+    scratchstack_database::ops::iam::{
+        CreateAccountRequest, CreateUserRequest, GetCurrentPartitionRequest, ListAccountsRequest,
+        SetCurrentPartitionRequest,
+    },
     sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions},
     std::{env, time::Duration},
 };
@@ -68,16 +70,24 @@ enum Commands {
     #[command(name = "create-user")]
     CreateUser(CreateUserRequest),
 
+    /// Get the current partition of the database.
+    #[command(name = "get-current-partition")]
+    GetCurrentPartition(GetCurrentPartitionRequest),
+
+    /// List IAM accounts.
+    #[command(name = "list-accounts")]
+    ListAccounts(ListAccountsRequest),
+
     /// Migrate the database to the latest version or a specified version.
     #[command(name = "migrate")]
     Migrate(migrate::MigrateCommand),
 
-    /// Set the a partition for the database.
+    /// Set the current partition for the database.
     ///
     /// This is required to be set before using any other features of the database. Partitions are
     /// separate instances of a cloud and are independent of any other partitions.
-    #[command(name = "create-partition")]
-    SetPartition(SetPartitionRequest),
+    #[command(name = "set-current-partition")]
+    SetCurrentPartition(SetCurrentPartitionRequest),
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -93,11 +103,19 @@ async fn main() -> AnyResult<()> {
             let response = sub.run(&cli).await?;
             serde_json::to_string_pretty(&response)?
         }
+        Commands::GetCurrentPartition(sub) => {
+            let response = sub.run(&cli).await?;
+            serde_json::to_string_pretty(&response)?
+        }
+        Commands::ListAccounts(sub) => {
+            let response = sub.run(&cli).await?;
+            serde_json::to_string_pretty(&response)?
+        }
         Commands::Migrate(sub) => {
             sub.run(&cli).await?;
             "Migration completed successfully.".to_string()
         }
-        Commands::SetPartition(sub) => {
+        Commands::SetCurrentPartition(sub) => {
             let response = sub.run(&cli).await?;
             serde_json::to_string_pretty(&response)?
         }
