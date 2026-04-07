@@ -15,4 +15,4 @@ mod error;
 /// Validation utilities used internally, but may be useful elsewhere.
 pub mod utils;
 
-pub use {arn::Arn, error::ArnError};
+pub use {arn::*, error::*};

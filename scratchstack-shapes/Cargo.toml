@@ -12,17 +12,21 @@ version.workspace = true
 [features]
 default = ["clap", "iam"]
 clap = ["dep:clap"]
-iam = []
+iam = ["chrono/serde"]
 
 [dependencies]
+anyhow.workspace = true
+chrono.workspace = true
 clap = { workspace = true, optional = true, features = ["derive"] }
 derive_builder.workspace = true
 log.workspace = true
 regex.workspace = true
+scratchstack-arn = { path = "../scratchstack-arn" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 
 [dev-dependencies]
+chrono = { workspace = true, features = ["clock"] }
 env_logger.workspace = true
 pretty_assertions.workspace = true
 regex.workspace = true

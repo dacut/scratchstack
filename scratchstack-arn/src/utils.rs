@@ -216,11 +216,210 @@ pub fn validate_service(service: &str) -> Result<(), ArnError> {
 
 #[cfg(test)]
 mod test {
+    use {super::*, crate::ArnError, pretty_assertions::assert_eq};
+
+    // ── validate_partition ───────────────────────────────────────────────────
+
     #[test]
-    fn check_valid_services() {
-        assert!(super::validate_service("s3").is_ok());
-        assert!(super::validate_service("kafka-cluster").is_ok());
-        assert!(super::validate_service("execute-api").is_ok());
+    fn partition_valid() {
+        assert!(validate_partition("aws").is_ok());
+        assert!(validate_partition("local").is_ok());
+        assert!(validate_partition("1").is_ok());
+        assert!(validate_partition("intranet-1").is_ok());
+        assert!(validate_partition("aws-中国").is_ok());
+        assert!(validate_partition("việtnam").is_ok());
+    }
+
+    #[test]
+    fn partition_at_max_length() {
+        // 32 chars is the maximum (checked at byte index 32, so a 32-char ASCII name is valid).
+        assert!(validate_partition("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1").is_ok());
+    }
+
+    #[test]
+    fn partition_too_long() {
+        let p = "a".repeat(33);
+        assert_eq!(validate_partition(&p), Err(ArnError::InvalidPartition(p)));
+    }
+
+    #[test]
+    fn partition_empty() {
+        assert_eq!(validate_partition(""), Err(ArnError::InvalidPartition("".to_string())));
+    }
+
+    #[test]
+    fn partition_leading_dash() {
+        assert_eq!(validate_partition("-aws"), Err(ArnError::InvalidPartition("-aws".to_string())));
+    }
+
+    #[test]
+    fn partition_trailing_dash() {
+        assert_eq!(validate_partition("aws-"), Err(ArnError::InvalidPartition("aws-".to_string())));
+    }
+
+    #[test]
+    fn partition_consecutive_dashes() {
+        assert_eq!(validate_partition("aws--1"), Err(ArnError::InvalidPartition("aws--1".to_string())));
+    }
+
+    #[test]
+    fn partition_uppercase() {
+        assert_eq!(validate_partition("Aws"), Err(ArnError::InvalidPartition("Aws".to_string())));
+    }
+
+    #[test]
+    fn partition_invalid_char() {
+        assert_eq!(validate_partition("aws_1"), Err(ArnError::InvalidPartition("aws_1".to_string())));
+    }
+
+    #[test]
+    fn partition_emoji() {
+        assert_eq!(validate_partition("🦀"), Err(ArnError::InvalidPartition("🦀".to_string())));
+    }
+
+    // ── validate_account_id ──────────────────────────────────────────────────
+
+    #[test]
+    fn account_id_valid_numeric() {
+        assert!(validate_account_id("123456789012").is_ok());
+    }
+
+    #[test]
+    fn account_id_valid_aws() {
+        assert!(validate_account_id("aws").is_ok());
+    }
+
+    #[test]
+    fn account_id_empty() {
+        assert_eq!(validate_account_id(""), Err(ArnError::InvalidAccountId("".to_string())));
+    }
+
+    #[test]
+    fn account_id_too_short() {
+        assert_eq!(validate_account_id("12345678901"), Err(ArnError::InvalidAccountId("12345678901".to_string())));
+    }
+
+    #[test]
+    fn account_id_too_long() {
+        assert_eq!(validate_account_id("1234567890123"), Err(ArnError::InvalidAccountId("1234567890123".to_string())));
+    }
+
+    #[test]
+    fn account_id_non_numeric() {
+        assert_eq!(validate_account_id("12345678901a"), Err(ArnError::InvalidAccountId("12345678901a".to_string())));
+    }
+
+    #[test]
+    fn account_id_not_aws_string() {
+        // "AWS" (uppercase) is not the special "aws" literal.
+        assert_eq!(validate_account_id("AWS"), Err(ArnError::InvalidAccountId("AWS".to_string())));
+    }
+
+    // ── validate_region ──────────────────────────────────────────────────────
+
+    #[test]
+    fn region_valid() {
+        assert!(validate_region("local").is_ok());
+        assert!(validate_region("us-east-1").is_ok());
+        assert!(validate_region("us-west-2").is_ok());
+        assert!(validate_region("test-1").is_ok());
+        assert!(validate_region("us-east-1-bos-1").is_ok());
+        assert!(validate_region("ap-southeast-7-hòa-hiệp-bắc-3").is_ok());
+    }
+
+    #[test]
+    fn region_empty() {
+        assert_eq!(validate_region(""), Err(ArnError::InvalidRegion("".to_string())));
+    }
+
+    #[test]
+    fn region_leading_dash() {
+        assert_eq!(validate_region("-us-east-1"), Err(ArnError::InvalidRegion("-us-east-1".to_string())));
+    }
+
+    #[test]
+    fn region_trailing_dash() {
+        assert_eq!(validate_region("us-east-1-"), Err(ArnError::InvalidRegion("us-east-1-".to_string())));
+    }
+
+    #[test]
+    fn region_consecutive_dashes() {
+        assert_eq!(validate_region("us-east--1"), Err(ArnError::InvalidRegion("us-east--1".to_string())));
+    }
+
+    #[test]
+    fn region_uppercase() {
+        assert_eq!(validate_region("Us-East-1"), Err(ArnError::InvalidRegion("Us-East-1".to_string())));
+    }
+
+    #[test]
+    fn region_no_numeric_suffix() {
+        // Must end with a digit group.
+        assert_eq!(validate_region("us-east"), Err(ArnError::InvalidRegion("us-east".to_string())));
+    }
+
+    #[test]
+    fn region_digit_before_alpha() {
+        // Digits cannot precede alphabetic chars (e.g. "us-east-1a" is invalid).
+        assert_eq!(validate_region("us-east-1a"), Err(ArnError::InvalidRegion("us-east-1a".to_string())));
+    }
+
+    #[test]
+    fn region_alpha_only() {
+        assert_eq!(validate_region("us-east"), Err(ArnError::InvalidRegion("us-east".to_string())));
+    }
+
+    #[test]
+    fn region_too_many_local_zones() {
+        // Only one local-zone suffix is allowed.
+        assert_eq!(
+            validate_region("us-east-1-bos-1-lax-1"),
+            Err(ArnError::InvalidRegion("us-east-1-bos-1-lax-1".to_string()))
+        );
+    }
+
+    #[test]
+    fn region_emoji() {
+        assert_eq!(validate_region("us-east-🦀"), Err(ArnError::InvalidRegion("us-east-🦀".to_string())));
+    }
+
+    // ── validate_service ─────────────────────────────────────────────────────
+
+    #[test]
+    fn service_valid() {
+        assert!(validate_service("s3").is_ok());
+        assert!(validate_service("ec2").is_ok());
+        assert!(validate_service("kafka-cluster").is_ok());
+        assert!(validate_service("execute-api").is_ok());
+    }
+
+    #[test]
+    fn service_empty() {
+        assert_eq!(validate_service(""), Err(ArnError::InvalidService("".to_string())));
+    }
+
+    #[test]
+    fn service_leading_dash() {
+        assert_eq!(validate_service("-ec2"), Err(ArnError::InvalidService("-ec2".to_string())));
+    }
+
+    #[test]
+    fn service_trailing_dash() {
+        assert_eq!(validate_service("ec2-"), Err(ArnError::InvalidService("ec2-".to_string())));
+    }
+
+    #[test]
+    fn service_consecutive_dashes() {
+        assert_eq!(validate_service("ec--2"), Err(ArnError::InvalidService("ec--2".to_string())));
+    }
+
+    #[test]
+    fn service_uppercase() {
+        assert_eq!(validate_service("Ec2"), Err(ArnError::InvalidService("Ec2".to_string())));
+    }
+
+    #[test]
+    fn service_emoji() {
+        assert_eq!(validate_service("🦀"), Err(ArnError::InvalidService("🦀".to_string())));
     }
 }
-// end tests -- do not delete; needed for coverage.

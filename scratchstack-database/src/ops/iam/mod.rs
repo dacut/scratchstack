@@ -10,4 +10,4 @@ mod get_current_partition;
 mod list_accounts;
 mod set_current_partition;
 
-pub use {create_account::*, create_user::*, get_current_partition::*, list_accounts::*, set_current_partition::*};
+pub use {create_account::*, get_current_partition::*, list_accounts::*, set_current_partition::*};

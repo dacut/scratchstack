@@ -51,7 +51,7 @@
             "AccountId": "210987654321",
             "UserNameLower": "example-user-2",
             "UserNameCased": "Example-User-2",
-            "Path": "/"
+            "Path": "/a/b/c/"
         }
     ],
     "UserAttachedPolicies": [

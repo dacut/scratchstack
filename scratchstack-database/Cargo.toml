@@ -10,11 +10,12 @@ edition.workspace = true
 version.workspace = true
 
 [features]
-default = ["dump", "gsk-direct", "iam", "load"]
+default = ["dump", "gsk-direct", "iam", "load", "utils"]
 dump = []
 gsk-direct = ["iam", "dep:scratchstack-arn"]
 iam = ["dep:scratchstack-shapes"]
 load = []
+utils = ["dep:postgresql_commands", "dep:postgresql_embedded", "dep:tempfile"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -28,6 +29,8 @@ futures.workspace = true
 indoc.workspace = true
 log.workspace = true
 pct-str.workspace = true
+postgresql_commands = { workspace = true, optional = true }
+postgresql_embedded = { workspace = true, optional = true, features = [ "rustls", "theseus", "tokio" ] }
 rand = { workspace = true, features = ["std", "std_rng"] }
 regex.workspace = true
 rustls.workspace = true
@@ -44,6 +47,7 @@ sqlx = { workspace = true, features = [
     "postgres",
     "runtime-tokio-rustls",
 ] }
+tempfile = { workspace = true, optional = true }
 toml.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 tokio-rustls.workspace = true
@@ -52,11 +56,8 @@ tower.workspace = true
 [dev-dependencies]
 aws-sigv4 = { workspace = true, features = ["sign-http"] }
 env_logger.workspace = true
-postgresql_commands.workspace = true
-postgresql_embedded = { workspace = true, features = [ "rustls", "theseus", "tokio" ] }
 pretty_assertions.workspace = true
 rand = { workspace = true, features = ["thread_rng"] }
 regex.workspace = true
 serde_json.workspace = true
-tempfile.workspace = true
 test-log.workspace = true

@@ -1,17 +1,19 @@
 //! Scratchstack bootsrap create-user subcommand
 use {
     crate::{Cli, Runnable},
-    scratchstack_database::ops::{
-        RequestExecutor,
-        iam::{CreateUserRequest, CreateUserResponse},
-    },
+    anyhow::Result as AnyResult,
+    scratchstack_database::ops::RequestExecutor,
+    scratchstack_shapes::iam::{CreateUserRequestInternal, CreateUserResponseInternal},
 };
 
-impl Runnable for CreateUserRequest {
-    type Result = CreateUserResponse;
+impl Runnable for CreateUserRequestInternal {
+    type Result = CreateUserResponseInternal;
 
-    async fn run(&self, args: &Cli) -> anyhow::Result<CreateUserResponse> {
-        let conn = args.connect().await?;
+    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<CreateUserResponseInternal>
+    where
+        I: IntoIterator<Item = (std::ffi::OsString, String)> + Clone + Send,
+    {
+        let conn = args.connect(vars).await?;
         let mut tx = conn.begin().await?;
         let response = self.execute(&mut tx).await?;
         tx.commit().await?;

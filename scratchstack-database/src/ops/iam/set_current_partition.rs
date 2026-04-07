@@ -3,25 +3,54 @@
 use {
     crate::{model::iam::PARTITION_NAME_REGEX, ops::RequestExecutor},
     anyhow::{Result as AnyResult, bail},
+    derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
     sqlx::{postgres::PgTransaction, query},
 };
 
 /// Sets the partition for the Scratchstack database.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Builder, Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct SetCurrentPartitionRequest {
     /// The name of the partition to set for the database. Must match the regex `^[a-z][-a-z0-9]+[a-z0-9]$`.
     #[cfg_attr(feature = "clap", arg(long))]
-    pub partition_id: String,
+    #[builder(setter(into))]
+    partition_id: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+impl SetCurrentPartitionRequest {
+    /// Creates a [`SetCurrentPartitionRequestBuilder`] for constructing a [`SetCurrentPartitionRequest`].
+    #[inline(always)]
+    pub fn builder() -> SetCurrentPartitionRequestBuilder {
+        SetCurrentPartitionRequestBuilder::default()
+    }
+
+    /// Returns the partition ID to set for the database.
+    pub fn partition_id(&self) -> &str {
+        &self.partition_id
+    }
+}
+
+#[derive(Builder, Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct SetCurrentPartitionResponse {
+    #[builder(setter(into))]
     partition_id: String,
+}
+
+impl SetCurrentPartitionResponse {
+    /// Creates a [`SetCurrentPartitionResponseBuilder`] for constructing a [`SetCurrentPartitionResponse`].
+    #[inline(always)]
+    pub fn builder() -> SetCurrentPartitionResponseBuilder {
+        SetCurrentPartitionResponseBuilder::default()
+    }
+
+    /// Returns the partition ID that was set for the database.
+    pub fn partition_id(&self) -> &str {
+        &self.partition_id
+    }
 }
 
 impl RequestExecutor for SetCurrentPartitionRequest {
@@ -61,7 +90,5 @@ pub async fn set_current_partition(
     .execute(tx.as_mut())
     .await?;
 
-    Ok(SetCurrentPartitionResponse {
-        partition_id: req.partition_id.clone(),
-    })
+    Ok(SetCurrentPartitionResponse::builder().partition_id(req.partition_id.clone()).build()?)
 }

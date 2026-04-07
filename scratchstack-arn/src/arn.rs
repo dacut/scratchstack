@@ -1,6 +1,6 @@
 use {
     crate::{
-        ArnError,
+        ArnBuilderError, ArnError,
         utils::{validate_account_id, validate_partition, validate_region, validate_service},
     },
     serde::{Deserialize, Serialize, de},
@@ -104,6 +104,11 @@ impl Arn {
             account_id_start,
             resource_start,
         }
+    }
+
+    /// Create a new [`ArnBuilder`] for programmatically constructing an ARN.
+    pub fn builder() -> ArnBuilder {
+        ArnBuilder::default()
     }
 
     /// Retrieve the partition the resource is in.
@@ -220,12 +225,67 @@ impl Serialize for Arn {
     }
 }
 
+/// A builder for programmatically constructing ARNs.
+#[derive(Clone, Debug, Default)]
+pub struct ArnBuilder {
+    partition: Option<String>,
+    service: Option<String>,
+    region: String,
+    account_id: String,
+    resource: String,
+}
+
+impl ArnBuilder {
+    /// Set the partition on this ARN.
+    pub fn partition(mut self, partition: impl Into<String>) -> Self {
+        self.partition = Some(partition.into());
+        self
+    }
+
+    /// Set the service on this ARN.
+    pub fn service(mut self, service: impl Into<String>) -> Self {
+        self.service = Some(service.into());
+        self
+    }
+
+    /// Set the region on this ARN.
+    pub fn region(mut self, region: impl Into<String>) -> Self {
+        self.region = region.into();
+        self
+    }
+
+    /// Set the account ID on this ARN.
+    pub fn account_id(mut self, account_id: impl Into<String>) -> Self {
+        self.account_id = account_id.into();
+        self
+    }
+
+    /// Set the resource on this ARN.
+    pub fn resource(mut self, resource: impl Into<String>) -> Self {
+        self.resource = resource.into();
+        self
+    }
+
+    /// Build the ARN, returning an [`ArnBuilderError`] if any required fields are missing or invalid.
+    pub fn build(self) -> Result<Arn, ArnBuilderError> {
+        let Some(partition) = self.partition else {
+            return Err(ArnBuilderError::MissingPartition);
+        };
+
+        let Some(service) = self.service else {
+            return Err(ArnBuilderError::MissingService);
+        };
+
+        Ok(Arn::new(&partition, &service, &self.region, &self.account_id, &self.resource)?)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use {
         super::Arn,
         crate::{
-            ArnError,
+            ArnBuilderError, ArnError,
             utils::{validate_account_id, validate_region},
         },
         pretty_assertions::assert_eq,
@@ -474,5 +534,122 @@ mod test {
 
         let arn_err = serde_json::from_str::<Arn>(r#"{}"#);
         assert_eq!(arn_err.unwrap_err().to_string(), "invalid type: map, expected a string at line 1 column 0");
+    }
+
+    // ── ArnBuilder ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn builder_full() {
+        let arn = Arn::builder()
+            .partition("aws")
+            .service("ec2")
+            .region("us-east-1")
+            .account_id("123456789012")
+            .resource("instance/i-1234567890abcdef0")
+            .build()
+            .unwrap();
+        assert_eq!(arn.partition(), "aws");
+        assert_eq!(arn.service(), "ec2");
+        assert_eq!(arn.region(), "us-east-1");
+        assert_eq!(arn.account_id(), "123456789012");
+        assert_eq!(arn.resource(), "instance/i-1234567890abcdef0");
+        assert_eq!(arn.to_string(), "arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0");
+    }
+
+    #[test]
+    fn builder_global_resource() {
+        // Region and account_id default to empty (global resource, e.g. IAM).
+        let arn = Arn::builder()
+            .partition("aws")
+            .service("iam")
+            .account_id("123456789012")
+            .resource("user/alice")
+            .build()
+            .unwrap();
+        assert_eq!(arn.region(), "");
+        assert_eq!(arn.to_string(), "arn:aws:iam::123456789012:user/alice");
+    }
+
+    #[test]
+    fn builder_no_account_id() {
+        // S3 buckets are globally unique and don't need an account ID.
+        let arn = Arn::builder().partition("aws").service("s3").resource("my-bucket").build().unwrap();
+        assert_eq!(arn.region(), "");
+        assert_eq!(arn.account_id(), "");
+        assert_eq!(arn.to_string(), "arn:aws:s3:::my-bucket");
+    }
+
+    #[test]
+    fn builder_missing_partition() {
+        let err = Arn::builder()
+            .service("ec2")
+            .region("us-east-1")
+            .account_id("123456789012")
+            .resource("instance/i-1234567890abcdef0")
+            .build()
+            .unwrap_err();
+        assert_eq!(err, ArnBuilderError::MissingPartition);
+        assert_eq!(err.to_string(), "Missing partition");
+    }
+
+    #[test]
+    fn builder_missing_service() {
+        let err = Arn::builder()
+            .partition("aws")
+            .region("us-east-1")
+            .account_id("123456789012")
+            .resource("instance/i-1234567890abcdef0")
+            .build()
+            .unwrap_err();
+        assert_eq!(err, ArnBuilderError::MissingService);
+        assert_eq!(err.to_string(), "Missing service");
+    }
+
+    #[test]
+    fn builder_invalid_partition() {
+        let err = Arn::builder()
+            .partition("Aws")
+            .service("ec2")
+            .resource("instance/i-1234567890abcdef0")
+            .build()
+            .unwrap_err();
+        assert_eq!(err, ArnBuilderError::InvalidPartition("Aws".to_string()));
+    }
+
+    #[test]
+    fn builder_invalid_service() {
+        let err = Arn::builder()
+            .partition("aws")
+            .service("Ec2")
+            .resource("instance/i-1234567890abcdef0")
+            .build()
+            .unwrap_err();
+        assert_eq!(err, ArnBuilderError::InvalidService("Ec2".to_string()));
+    }
+
+    #[test]
+    fn builder_invalid_region() {
+        let err = Arn::builder()
+            .partition("aws")
+            .service("ec2")
+            .region("us-east-1-")
+            .account_id("123456789012")
+            .resource("instance/i-1234567890abcdef0")
+            .build()
+            .unwrap_err();
+        assert_eq!(err, ArnBuilderError::InvalidRegion("us-east-1-".to_string()));
+    }
+
+    #[test]
+    fn builder_invalid_account_id() {
+        let err = Arn::builder()
+            .partition("aws")
+            .service("ec2")
+            .region("us-east-1")
+            .account_id("bad-account")
+            .resource("instance/i-1234567890abcdef0")
+            .build()
+            .unwrap_err();
+        assert_eq!(err, ArnBuilderError::InvalidAccountId("bad-account".to_string()));
     }
 }

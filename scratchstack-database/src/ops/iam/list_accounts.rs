@@ -2,12 +2,13 @@
 
 use {
     crate::{model::iam::Account, ops::RequestExecutor},
-    anyhow::{Error as AnyError, Result as AnyResult, anyhow},
+    anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail},
     base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
     scratchstack_shapes::shorthand::Value as ShorthandValue,
     serde::{Deserialize, Serialize},
     sqlx::{Row as _, postgres::PgTransaction, query},
     std::{
+        cmp::min,
         fmt::{Display, Formatter, Result as FmtResult},
         str::FromStr,
     },
@@ -46,7 +47,7 @@ impl RequestExecutor for ListAccountsRequest {
 async fn list_accounts(tx: &mut PgTransaction<'_>, request: &ListAccountsRequest) -> AnyResult<ListAccountsResponse> {
     let mut sql = "SELECT account_id, email, alias, created_at FROM iam.accounts WHERE 1=1".to_string();
     let mut filter_bindings = Vec::with_capacity(request.filters.len());
-    let max_items = request.max_items.unwrap_or(100);
+    let max_items = min(request.max_items.unwrap_or(100), 100);
     let mut next_id: usize = 1;
 
     if !request.filters.is_empty() {
@@ -97,7 +98,7 @@ async fn list_accounts(tx: &mut PgTransaction<'_>, request: &ListAccountsRequest
 
     let rows = q.fetch_all(tx.as_mut()).await?;
     let mut accounts = Vec::new();
-    let mut last_account_id = None;
+    let mut has_more = false;
 
     for row in rows {
         let account_id: String = row.try_get(0)?;
@@ -106,7 +107,8 @@ async fn list_accounts(tx: &mut PgTransaction<'_>, request: &ListAccountsRequest
         let created_at = row.try_get(3)?;
 
         if accounts.len() == max_items {
-            last_account_id = Some(account_id.clone());
+            // The overflow row confirms there are more results; don't include it.
+            has_more = true;
             break;
         }
 
@@ -118,7 +120,14 @@ async fn list_accounts(tx: &mut PgTransaction<'_>, request: &ListAccountsRequest
         });
     }
 
-    let next_token = last_account_id.map(|id| format!("1{}", URL_SAFE_NO_PAD.encode(id.as_bytes())));
+    // The cursor is the last *included* account ID, not the overflow row's ID.
+    // The next page queries `account_id > cursor`, so using the overflow row's ID
+    // would skip it entirely.
+    let next_token = if has_more {
+        accounts.last().map(|a| format!("1{}", URL_SAFE_NO_PAD.encode(a.account_id.as_bytes())))
+    } else {
+        None
+    };
 
     Ok(ListAccountsResponse {
         accounts,
@@ -155,31 +164,32 @@ impl FromStr for ListAccountsFilter {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let value = ShorthandValue::from_str(s)?;
-        if let ShorthandValue::Map(obj) = value {
-            let name =
-                obj.get("Name").and_then(|v| v.as_str()).ok_or_else(|| anyhow!("Missing 'Name' field in filter"))?;
+        // The shorthand grammar's top-level production always returns a Map; a
+        // Scalar or List can only appear as nested values, never at the top level.
+        let ShorthandValue::Map(obj) = value else {
+            unreachable!("shorthand top-level parse always returns a Map");
+        };
 
-            let name = ListAccountsFilterKey::from_str(name)?;
+        let name = obj.get("Name").and_then(|v| v.as_str()).ok_or_else(|| anyhow!("Missing 'Name' field in filter"))?;
 
-            let values = obj.get("Values").ok_or_else(|| anyhow!("Missing 'Values' field in filter"))?;
+        let name = ListAccountsFilterKey::from_str(name)?;
 
-            if let Some(values) = values.as_list() {
-                let values = values.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect();
-                Ok(ListAccountsFilter {
-                    name,
-                    values,
-                })
-            } else if let Some(values) = values.as_str() {
-                let values = vec![values.to_string()];
-                Ok(ListAccountsFilter {
-                    name,
-                    values,
-                })
-            } else {
-                Err(anyhow!("'Values' field in filter must be either a string or a list of strings"))
-            }
+        let values = obj.get("Values").ok_or_else(|| anyhow!("Missing 'Values' field in filter"))?;
+
+        if let Some(values) = values.as_list() {
+            let values = values.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect();
+            Ok(ListAccountsFilter {
+                name,
+                values,
+            })
+        } else if let Some(values) = values.as_str() {
+            let values = vec![values.to_string()];
+            Ok(ListAccountsFilter {
+                name,
+                values,
+            })
         } else {
-            Err(anyhow!("Expected an object for filter"))
+            bail!("'Values' field in filter must be either a string or a list of strings")
         }
     }
 }
@@ -207,7 +217,7 @@ impl FromStr for ListAccountsFilterKey {
             "AccountId" | "account-id" => Ok(ListAccountsFilterKey::AccountId),
             "Alias" | "alias" => Ok(ListAccountsFilterKey::Alias),
             "Email" | "email" => Ok(ListAccountsFilterKey::Email),
-            _ => Err(anyhow!("Invalid filter key: {s}")),
+            _ => bail!("Invalid filter key: {s}"),
         }
     }
 }
@@ -219,5 +229,130 @@ impl Display for ListAccountsFilterKey {
             ListAccountsFilterKey::Alias => write!(f, "Alias"),
             ListAccountsFilterKey::Email => write!(f, "Email"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- ListAccountsFilterKey::from_str -------------------------------------
+
+    #[test]
+    fn filter_key_from_str_account_id_pascal() {
+        let key: ListAccountsFilterKey = "AccountId".parse().expect("Failed to parse 'AccountId'");
+        assert!(matches!(key, ListAccountsFilterKey::AccountId));
+    }
+
+    #[test]
+    fn filter_key_from_str_account_id_kebab() {
+        let key: ListAccountsFilterKey = "account-id".parse().expect("Failed to parse 'account-id'");
+        assert!(matches!(key, ListAccountsFilterKey::AccountId));
+    }
+
+    #[test]
+    fn filter_key_from_str_alias_pascal() {
+        let key: ListAccountsFilterKey = "Alias".parse().expect("Failed to parse 'Alias'");
+        assert!(matches!(key, ListAccountsFilterKey::Alias));
+    }
+
+    #[test]
+    fn filter_key_from_str_alias_lower() {
+        let key: ListAccountsFilterKey = "alias".parse().expect("Failed to parse 'alias'");
+        assert!(matches!(key, ListAccountsFilterKey::Alias));
+    }
+
+    #[test]
+    fn filter_key_from_str_email_pascal() {
+        let key: ListAccountsFilterKey = "Email".parse().expect("Failed to parse 'Email'");
+        assert!(matches!(key, ListAccountsFilterKey::Email));
+    }
+
+    #[test]
+    fn filter_key_from_str_email_lower() {
+        let key: ListAccountsFilterKey = "email".parse().expect("Failed to parse 'email'");
+        assert!(matches!(key, ListAccountsFilterKey::Email));
+    }
+
+    #[test]
+    fn filter_key_from_str_invalid() {
+        assert!("OrganizationId".parse::<ListAccountsFilterKey>().is_err());
+    }
+
+    // -- ListAccountsFilterKey::fmt ------------------------------------------
+
+    #[test]
+    fn filter_key_display_account_id() {
+        assert_eq!(ListAccountsFilterKey::AccountId.to_string(), "AccountId");
+    }
+
+    #[test]
+    fn filter_key_display_alias() {
+        assert_eq!(ListAccountsFilterKey::Alias.to_string(), "Alias");
+    }
+
+    #[test]
+    fn filter_key_display_email() {
+        assert_eq!(ListAccountsFilterKey::Email.to_string(), "Email");
+    }
+
+    // -- ListAccountsFilter::from_str ----------------------------------------
+
+    #[test]
+    fn filter_from_str_account_id_single_value() {
+        let f: ListAccountsFilter = "Name=AccountId,Values=[123456789012]".parse().expect("Failed to parse filter");
+        assert!(matches!(f.name, ListAccountsFilterKey::AccountId));
+        assert_eq!(f.values, vec!["123456789012"]);
+    }
+
+    #[test]
+    fn filter_from_str_account_id_multiple_values() {
+        let f: ListAccountsFilter =
+            "Name=AccountId,Values=[111111111111,222222222222]".parse().expect("Failed to parse filter");
+        assert!(matches!(f.name, ListAccountsFilterKey::AccountId));
+        assert_eq!(f.values, vec!["111111111111", "222222222222"]);
+    }
+
+    #[test]
+    fn filter_from_str_email_scalar_value() {
+        // A single value can be given as a plain scalar rather than an explicit list.
+        let f: ListAccountsFilter = "Name=Email,Values=admin@example.com".parse().expect("Failed to parse filter");
+        assert!(matches!(f.name, ListAccountsFilterKey::Email));
+        assert_eq!(f.values, vec!["admin@example.com"]);
+    }
+
+    #[test]
+    fn filter_from_str_alias() {
+        let f: ListAccountsFilter = "Name=Alias,Values=[example-corp]".parse().expect("Failed to parse filter");
+        assert!(matches!(f.name, ListAccountsFilterKey::Alias));
+        assert_eq!(f.values, vec!["example-corp"]);
+    }
+
+    #[test]
+    fn filter_from_str_missing_name() {
+        assert!("Values=[123456789012]".parse::<ListAccountsFilter>().is_err());
+    }
+
+    #[test]
+    fn filter_from_str_missing_values() {
+        assert!("Name=AccountId".parse::<ListAccountsFilter>().is_err());
+    }
+
+    #[test]
+    fn filter_from_str_invalid_key_name() {
+        assert!("Name=OrganizationId,Values=[o-12345]".parse::<ListAccountsFilter>().is_err());
+    }
+
+    #[test]
+    fn filter_from_str_not_a_map() {
+        // A bare scalar has no '=' so the shorthand parser itself rejects it.
+        assert!("AccountId".parse::<ListAccountsFilter>().is_err());
+    }
+
+    #[test]
+    fn filter_from_str_values_is_a_map() {
+        // Values={...} is a map, which is neither a string nor a list — hits the
+        // "'Values' field must be either a string or a list of strings" error.
+        assert!("Name=AccountId,Values={a=b}".parse::<ListAccountsFilter>().is_err());
     }
 }

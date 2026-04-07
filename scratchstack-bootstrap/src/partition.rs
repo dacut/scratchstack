@@ -14,8 +14,11 @@ use {
 impl Runnable for GetCurrentPartitionRequest {
     type Result = GetCurrentPartitionResponse;
 
-    async fn run(&self, args: &Cli) -> AnyResult<GetCurrentPartitionResponse> {
-        let conn = args.connect().await?;
+    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<GetCurrentPartitionResponse>
+    where
+        I: IntoIterator<Item = (std::ffi::OsString, String)> + Clone + Send,
+    {
+        let conn = args.connect(vars).await?;
         let mut tx = conn.begin().await?;
         let result = self.execute(&mut tx).await?;
         tx.commit().await?;
@@ -26,8 +29,11 @@ impl Runnable for GetCurrentPartitionRequest {
 impl Runnable for SetCurrentPartitionRequest {
     type Result = SetCurrentPartitionResponse;
 
-    async fn run(&self, args: &Cli) -> AnyResult<SetCurrentPartitionResponse> {
-        let conn = args.connect().await?;
+    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<SetCurrentPartitionResponse>
+    where
+        I: IntoIterator<Item = (std::ffi::OsString, String)> + Clone + Send,
+    {
+        let conn = args.connect(vars).await?;
         let mut tx = conn.begin().await?;
         let result = self.execute(&mut tx).await?;
         tx.commit().await?;

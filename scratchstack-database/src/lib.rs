@@ -13,3 +13,7 @@ pub mod model;
 
 /// Database operations.
 pub mod ops;
+
+/// Database utilities.
+#[cfg(feature = "utils")]
+pub mod utils;

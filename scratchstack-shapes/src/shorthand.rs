@@ -38,7 +38,10 @@ use std::{
 /// Position within the input where an error occurred.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ErrorLocation {
+    /// The literal input string being parsed.
     pub input: String,
+
+    /// The byte index within the input where the error was detected.
     pub index: usize,
 }
 
@@ -62,15 +65,27 @@ impl Display for ErrorLocation {
     }
 }
 
+/// Errors that can occur during parsing of shorthand input.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
+    /// Unexpected character or end of input.
     SyntaxError {
+        /// The expected token or character(s) that were not found.
         expected: String,
+
+        /// The actual token or character(s) encountered instead.
         actual: String,
+
+        /// The location in the input where the error occurred.
         location: ErrorLocation,
     },
+
+    /// Duplicate key encountered in a map context.
     DuplicateKey {
+        /// The key that was duplicated.
         key: String,
+
+        /// The location in the input where the duplicate key was detected.
         location: ErrorLocation,
     },
 }
@@ -114,8 +129,13 @@ impl Error for ParseError {}
 /// - Maps (top-level `Key=Val,...` or nested `{Key=Val,...}`)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
+    /// A single scalar value.
     Scalar(String),
+
+    /// A list of values.
     List(Vec<Value>),
+
+    /// A map of string keys to values.
     Map(HashMap<String, Value>),
 }
 
@@ -203,6 +223,7 @@ pub struct ShorthandParser<'a> {
 }
 
 impl<'a> ShorthandParser<'a> {
+    /// Create a new `ShorthandParser` for the given input string.
     pub fn new(input: &'a str) -> Self {
         Self {
             input,

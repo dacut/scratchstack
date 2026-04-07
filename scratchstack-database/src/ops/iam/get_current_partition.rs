@@ -8,7 +8,7 @@ use {
 };
 
 /// Parameters to get the current partition on the Scratchstack IAM database.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct GetCurrentPartitionRequest {}
@@ -19,7 +19,15 @@ pub struct GetCurrentPartitionRequest {}
 pub struct GetCurrentPartitionResponse {
     /// The current partition of the database.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub partition_id: Option<String>,
+    partition_id: Option<String>,
+}
+
+impl GetCurrentPartitionResponse {
+    /// Returns the current partition of the database, if it exists.
+    #[inline(always)]
+    pub fn partition_id(&self) -> Option<&str> {
+        self.partition_id.as_deref()
+    }
 }
 
 impl RequestExecutor for GetCurrentPartitionRequest {

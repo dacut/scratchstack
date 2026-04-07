@@ -6,13 +6,17 @@ use {
         RequestExecutor,
         iam::{CreateAccountRequest, CreateAccountResponse, ListAccountsRequest, ListAccountsResponse},
     },
+    std::ffi::OsString,
 };
 
 impl Runnable for CreateAccountRequest {
     type Result = CreateAccountResponse;
 
-    async fn run(&self, args: &Cli) -> Result<Self::Result, AnyError> {
-        let conn = args.connect().await?;
+    async fn run<I>(&self, args: &Cli, vars: I) -> Result<Self::Result, AnyError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let conn = args.connect(vars).await?;
         let mut tx = conn.begin().await?;
         let response = self.execute(&mut tx).await?;
         tx.commit().await?;
@@ -24,8 +28,11 @@ impl Runnable for CreateAccountRequest {
 impl Runnable for ListAccountsRequest {
     type Result = ListAccountsResponse;
 
-    async fn run(&self, args: &Cli) -> Result<Self::Result, AnyError> {
-        let conn = args.connect().await?;
+    async fn run<I>(&self, args: &Cli, vars: I) -> Result<Self::Result, AnyError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let conn = args.connect(vars).await?;
         let mut tx = conn.begin().await?;
         let response = self.execute(&mut tx).await?;
         tx.commit().await?;
