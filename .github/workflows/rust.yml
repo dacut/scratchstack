@@ -45,10 +45,10 @@ jobs:
         RUST_LOG: debug
       run: cargo llvm-cov --tests --html --output-dir coverage-report
     - name: Upload coverage report to AWS
-      run: aws s3 sync coverage-report/html s3://${{ secrets.COVERAGE_S3_BUCKET }}/coverage/scratchstack/${{ github.run_number }}
+      run: aws s3 sync coverage-report/html s3://${{ secrets.COVERAGE_S3_BUCKET }}/coverage/scratchstack/${{ github.run_number }} --no-progress
     - name: Build documentation
       run: cargo doc --no-deps
     - name: Upload documentation to AWS
       run: |
         cp index.html target/doc/index.html
-        aws s3 sync target/doc s3://${{ secrets.COVERAGE_S3_BUCKET }}/docs/scratchstack/${{ github.run_number }}
+        aws s3 sync target/doc s3://${{ secrets.COVERAGE_S3_BUCKET }}/docs/scratchstack/${{ github.run_number }} --no-progress
