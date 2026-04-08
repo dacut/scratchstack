@@ -30,6 +30,10 @@ jobs:
       with:
         toolchain: nightly
         components: "clippy,rustfmt"
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2.9.1
+      with:
+        shared-key: scratchstack-ci-${{ github.head_ref || github.ref_name }}
     - name: Instal cargo-llvm-cov
       run: cargo install cargo-llvm-cov
     - name: Run formatting check.
