@@ -19,7 +19,7 @@
 //! ```
 //!
 //! This is a port of the original AWS CLI shorthand parser, which is implemented in Python and can
-//! be found here: https://github.com/aws/aws-cli/blob/develop/awscli/shorthand.py
+//! be found [here](https://github.com/aws/aws-cli/blob/develop/awscli/shorthand.py)
 //!
 //! Original is Copyright 2012-2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 //! Licensed under the Apache License, Version 2.0.

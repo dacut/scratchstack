@@ -1,9 +1,17 @@
-#![warn(clippy::all)]
-#![deny(rustdoc::missing_crate_level_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
-#![deny(missing_docs)]
-
 //! AWS IAM policy document (Aspen) representation and evaluation.
+
+#![warn(clippy::all)]
+#![allow(clippy::manual_range_contains)]
+#![deny(
+    missing_docs,
+    rustdoc::bare_urls,
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_codeblock_attributes,
+    rustdoc::invalid_html_tags,
+    rustdoc::private_intra_doc_links,
+    rustdoc::unescaped_backticks
+)]
+#![cfg_attr(doc, feature(doc_cfg))]
 
 pub(crate) mod action;
 pub(crate) mod condition;

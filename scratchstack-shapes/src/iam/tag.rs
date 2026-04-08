@@ -63,7 +63,7 @@ pub struct Tag {
 }
 
 impl Tag {
-    /// Create a new [`TagBulder`] for programmatically constructing a `Tag`.
+    /// Create a new [`TagBuilder`] for programmatically constructing a `Tag`.
     pub fn builder() -> TagBuilder {
         TagBuilder::default()
     }

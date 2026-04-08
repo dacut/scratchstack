@@ -20,14 +20,23 @@ pub use self::{
 /// Configuration for all services.
 #[derive(Debug, Deserialize)]
 pub struct ServiceConfig {
+    /// Configuration for the Identity and Access Management (IAM) service.
     pub iam: Option<Iam>,
+
+    /// Configuration for the Security Token Service (STS).
     pub sts: Option<Sts>,
 }
 
-const DEFAULT_ADDRESS: IpAddr = IpAddr::V6(Ipv6Addr::LOCALHOST);
+/// The default address to listen on if none is specified. This is the localhost address (`::1`),
+/// which does not accept external connections.
+pub const DEFAULT_ADDRESS: IpAddr = IpAddr::V6(Ipv6Addr::LOCALHOST);
 
-const DEFAULT_PARTITION: &str = "aws";
+/// The default cloud partition to use if none is specified.
+pub const DEFAULT_PARTITION: &str = "aws";
 
+/// The default number of threads to use if none is specified. This is set to 1 currently for
+/// development efforts; this is not reasonable to use in a production configuration (but, then,
+/// this crate is still in development and not intended for production use yet).
 const DEFAULT_THREADS: usize = 1;
 
 /// Base configuration data for a service. This allows for optional fields and references to files
@@ -106,10 +115,19 @@ impl BaseServiceConfig {
 
 /// The resolved configuration where optional values have been replaced.
 pub struct ResolvedBaseServiceConfig {
+    /// The socket address to listen on.
     pub address: SocketAddr,
+
+    /// The cloud partition this service is running in.
     pub partition: String,
+
+    /// The region this service is running in.
     pub region: String,
+
+    /// The number of threads to use for the service.
     pub threads: usize,
+
+    /// TLS configuration for the service. If None, TLS is disabled.
     pub tls: Option<TlsServerConfig>,
 }
 

@@ -143,7 +143,7 @@ pub struct StreamingSignatureState {
 /// * `required_headers` - The headers that are required to be signed in the request in addition to
 ///   the default SigV4 headers. If none, use
 ///   [`NO_ADDITIONAL_SIGNED_HEADERS`][crate::NO_ADDITIONAL_SIGNED_HEADERS].
-/// * `options` - [`SignatureOptions`]` that affect the behavior of the signature validation. For
+/// * `options` - [`SignatureOptions`] that affect the behavior of the signature validation. For
 ///   most services, use `SignatureOptions::default()`.
 ///
 /// # Errors

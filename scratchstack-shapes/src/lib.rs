@@ -5,6 +5,7 @@
 //! be used as a dependency by the service implementations and clients that need to interact with
 //! the services.
 
+#![warn(clippy::all)]
 #![allow(clippy::manual_range_contains)]
 #![deny(
     missing_docs,
@@ -15,6 +16,7 @@
     rustdoc::private_intra_doc_links,
     rustdoc::unescaped_backticks
 )]
+#![cfg_attr(doc, feature(doc_cfg))]
 
 pub use scratchstack_arn::{self, Arn};
 

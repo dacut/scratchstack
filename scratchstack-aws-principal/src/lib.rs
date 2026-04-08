@@ -1,8 +1,3 @@
-#![warn(clippy::all)]
-#![deny(rustdoc::missing_crate_level_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
-#![deny(missing_docs)]
-
 //! Actor principals for AWS and AWS-like services.
 //!
 //! Principals come in two "flavors": actor principals and policy principals. Policy principals are used in Aspen
@@ -26,6 +21,19 @@
 //! Maintaining support for S3 canonical users introduced an oddity in the API where a [`Principal`] and
 //! `PrincipalIdentity` were separate concepts: S3 (and only S3) principals could have multiple identities. No
 //! clients have used this feature and it adds significant complexity to both this crate and users of this crate.
+
+#![warn(clippy::all)]
+#![allow(clippy::manual_range_contains)]
+#![deny(
+    missing_docs,
+    rustdoc::bare_urls,
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_codeblock_attributes,
+    rustdoc::invalid_html_tags,
+    rustdoc::private_intra_doc_links,
+    rustdoc::unescaped_backticks
+)]
+#![cfg_attr(doc, feature(doc_cfg))]
 
 mod assumed_role;
 mod error;

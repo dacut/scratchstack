@@ -113,7 +113,7 @@ enum RegionParseSection {
 /// *   `prod-east-1-dca-2`
 /// *   `sverige-söder-1`
 /// *   `ap-southeast-7-hòa-hiệp-bắc-3`
-/// *   ｀日本-東京-1`
+/// *   `日本-東京-1`
 ///
 /// If `region` meets the requirements, Ok is returned. Otherwise, a [ArnError::InvalidRegion] error is returned.
 pub fn validate_region(region: &str) -> Result<(), ArnError> {

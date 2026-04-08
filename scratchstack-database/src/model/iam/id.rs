@@ -145,6 +145,7 @@ impl FromStr for IamId {
     }
 }
 
+/// Error returned when an invalid IAM identifier string is parsed.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct InvalidIamId(String);
 
@@ -223,6 +224,7 @@ impl IamResourceType {
     }
 }
 
+/// Error returned when an invalid IAM resource type string is parsed.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InvalidIamResourceType(String);
 

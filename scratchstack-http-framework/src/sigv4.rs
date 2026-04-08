@@ -841,10 +841,12 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)] // Until we fix up our GSK middleware
     #[derive(Clone)]
     struct GetDummyCreds {}
 
     impl GetDummyCreds {
+        #[allow(dead_code)] // Until we fix up our GSK middleware
         async fn get_signing_key(req: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, BoxError> {
             if let Some(token) = req.session_token() {
                 match token {
@@ -892,6 +894,7 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)] // Until we fix up our GSK middleware
     #[derive(Clone)]
     struct BadGetCredsService {
         calls: usize,

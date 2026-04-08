@@ -118,9 +118,17 @@
 //! assert_eq!(auth.principal(), &expected_principal);
 //! # });
 //! ```
-#![warn(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
-#![warn(rustdoc::missing_crate_level_docs)]
+#![warn(clippy::all)]
+#![allow(clippy::manual_range_contains)]
+#![deny(
+    missing_docs,
+    rustdoc::bare_urls,
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_codeblock_attributes,
+    rustdoc::invalid_html_tags,
+    rustdoc::private_intra_doc_links,
+    rustdoc::unescaped_backticks
+)]
 #![cfg_attr(doc, feature(doc_cfg))]
 
 mod body;

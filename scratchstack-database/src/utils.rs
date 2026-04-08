@@ -168,6 +168,7 @@ pub const DB_VERSION: &str = "18.3";
 /// The initial username to use for connecting to the database before creating a scratchstack user.
 pub const BOOTSTRAP_USER: &str = "postgres";
 
+/// Generates a random password of the given length using characters from [`PASSWORD_CHARSET`].
 pub fn generate_password(length: usize) -> String {
     let mut result = String::with_capacity(length);
 

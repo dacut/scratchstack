@@ -9,10 +9,12 @@ use {
 /// to files for things like TLS certificates and keys.
 #[derive(Debug, Deserialize)]
 pub struct Config {
+    /// Per-service configuration.
     pub service: Option<ServiceConfig>,
 }
 
 impl Config {
+    /// Reads the configuration from a file at the given path.
     pub fn read_file<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
         match File::open(path) {
             Err(e) => Err(ConfigError::IO(e)),

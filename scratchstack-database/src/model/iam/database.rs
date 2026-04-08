@@ -126,6 +126,7 @@ impl PartialEq for Database {
 
 #[cfg(feature = "dump")]
 impl Database {
+    /// Dump the entire IAM database into a `Database` struct.
     pub async fn dump_from(database: &mut sqlx::postgres::PgConnection) -> Result<Self, sqlx::Error> {
         use crate::Dumpable as _;
         let accounts = Account::dump_from(database).await?;

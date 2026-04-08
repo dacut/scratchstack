@@ -33,9 +33,11 @@ impl SetCurrentPartitionRequest {
     }
 }
 
+/// Response returned by the `SetCurrentPartition` operation.
 #[derive(Builder, Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct SetCurrentPartitionResponse {
+    /// The partition ID that was set for the service.
     #[builder(setter(into))]
     partition_id: String,
 }

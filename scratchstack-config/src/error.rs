@@ -10,16 +10,36 @@ use {
     toml::de::Error as TomlDeError,
 };
 
+/// Errors that can occur when reading or resolving the configuration.
 #[derive(Debug)]
 pub enum ConfigError {
+    /// An error occurred while deserializing the configuration from TOML.
     DeserError(TomlDeError),
+
+    /// An I/O error occurred while reading a file referenced in the configuration.
     IO(IOError),
+
+    /// The configuration is invalid for some reason not covered by a more specific error variant.
     InvalidConfig(String),
+
+    /// The TLS configuration is invalid, such as an invalid certificate or private key, or a
+    /// failure to set up the TLS configuration.
     InvalidTlsConfig(TlsConfigErrorKind),
+
+    /// The database configuration is invalid, such as an invalid hostname or a missing
+    /// password.
     InvalidDatabaseConfig(DatabaseConfigErrorKind),
+
+    /// An address specified in the configuration is invalid.
     InvalidAddress(AddrParseError),
+
+    /// The partition specified in the configuration is invalid.
     InvalidPartition,
+
+    /// The port specified in the configuration is invalid.
     InvalidPort,
+
+    /// The region specified in the configuration is invalid.
     InvalidRegion,
 }
 

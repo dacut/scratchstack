@@ -1,0 +1,19 @@
+#!/bin/sh
+
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+
+cargo fmt --all -- --check > "$TMPDIR/fmt.out"    2>&1 & FMT_PID=$!
+cargo clippy --all-features -- -D warnings > "$TMPDIR/clippy.out" 2>&1 & CLIPPY_PID=$!
+cargo test --all > "$TMPDIR/test.out"   2>&1 & TEST_PID=$!
+cargo doc --all --no-deps > "$TMPDIR/doc.out"    2>&1 & DOC_PID=$!
+
+FAILED=0
+
+wait $FMT_PID    || { printf '\n=== cargo fmt failed ===\n';    cat "$TMPDIR/fmt.out";    FAILED=1; }
+wait $CLIPPY_PID || { printf '\n=== cargo clippy failed ===\n'; cat "$TMPDIR/clippy.out"; FAILED=1; }
+wait $TEST_PID   || { printf '\n=== cargo test failed ===\n';   cat "$TMPDIR/test.out";   FAILED=1; }
+wait $DOC_PID    || { printf '\n=== cargo doc failed ===\n';    cat "$TMPDIR/doc.out";    FAILED=1; }
+
+[ $FAILED -eq 0 ] && echo "All checks passed."
+exit $FAILED

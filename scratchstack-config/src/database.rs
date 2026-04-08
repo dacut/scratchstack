@@ -3,7 +3,7 @@ use {
     log::{debug, error},
     pct_str::{PctString, UriReserved},
     serde::Deserialize,
-    sqlx::{any::Any as AnyDB, pool::PoolOptions},
+    sqlx::postgres::PgPoolOptions,
     std::{fmt::Debug, time::Duration},
     tokio::fs::read,
 };
@@ -182,8 +182,9 @@ impl DatabaseConfig {
         }
     }
 
-    pub fn get_pool_options(&self) -> Result<PoolOptions<AnyDB>, ConfigError> {
-        let options = PoolOptions::<AnyDB>::new();
+    /// Returns the connection pool options for this database configuration.
+    pub fn get_pool_options(&self) -> Result<PgPoolOptions, ConfigError> {
+        let options = PgPoolOptions::new();
         let options = options.max_lifetime(self.max_lifetime);
         let mut options = options.idle_timeout(self.idle_timeout);
 
@@ -206,6 +207,7 @@ impl DatabaseConfig {
         Ok(options)
     }
 
+    /// Resolves the database configuration by validating fields and resolving any references.
     pub async fn resolve(&self) -> Result<ResolvedDatabaseConfig, ConfigError> {
         let url = self.get_database_url().await?;
         let pool_options = self.get_pool_options()?;
@@ -217,8 +219,12 @@ impl DatabaseConfig {
     }
 }
 
+/// The resolved database configuration after validating fields and resolving any references.
 #[derive(Debug)]
 pub struct ResolvedDatabaseConfig {
+    /// The database URL to connect to.
     pub url: String,
-    pub pool_options: PoolOptions<AnyDB>,
+
+    /// The connection pool options to use when connecting to the database.
+    pub pool_options: PgPoolOptions,
 }

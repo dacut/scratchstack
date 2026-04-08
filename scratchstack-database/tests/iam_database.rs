@@ -1,5 +1,17 @@
 //! Tests for the IAM database model and related functionality.
 #![cfg(all(feature = "iam", feature = "utils"))]
+#![warn(clippy::all)]
+#![allow(clippy::manual_range_contains)]
+#![deny(
+    missing_docs,
+    rustdoc::bare_urls,
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_codeblock_attributes,
+    rustdoc::invalid_html_tags,
+    rustdoc::private_intra_doc_links,
+    rustdoc::unescaped_backticks
+)]
+#![cfg_attr(doc, feature(doc_cfg))]
 
 use {
     pretty_assertions::{assert_eq, assert_ne},
@@ -37,7 +49,7 @@ async fn test_database() {
 
     let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
     iam::MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
-    let rows_affected = iam_data.load_into(&mut *c).await.expect("Failed to load IAM data into database");
+    let rows_affected = iam_data.load_into(&mut c).await.expect("Failed to load IAM data into database");
     eprintln!("Loaded {rows_affected} rows of IAM data into database");
 
     // -- SetCurrentPartition and GetCurrentPartition --------------------------
@@ -45,10 +57,10 @@ async fn test_database() {
     test_set_current_partition(&pool).await;
     test_get_current_partition(&pool).await;
 
-    let iam_dump = iam::Database::dump_from(&mut *c).await.expect("Failed to dump IAM data from database");
+    let iam_dump = iam::Database::dump_from(&mut c).await.expect("Failed to dump IAM data from database");
     assert_ne!(iam_data, iam_dump, "Dumped IAM data should not be equal to original IAM data due to created_at fields");
     let iam_dump2 =
-        iam::Database::dump_from(&mut *c).await.expect("Failed to dump IAM data from database a second time");
+        iam::Database::dump_from(&mut c).await.expect("Failed to dump IAM data from database a second time");
     assert_eq!(iam_dump, iam_dump2, "Dumped IAM data should be equal across multiple dumps");
 
     // -- CreateAccountRequest -------------------------------------------------

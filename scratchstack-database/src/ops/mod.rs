@@ -7,6 +7,7 @@ pub mod iam;
 
 /// Trait that all request types implement to be executed and return a response.
 pub trait RequestExecutor {
+    /// The type of response returned by this request.
     type Response: Serialize + Send + 'static;
 
     /// Execute the request and return the response. The transaction is not committed, so any

@@ -11,9 +11,15 @@ use {
     },
 };
 
+/// TLS configuration for a service.
 #[derive(Clone, Deserialize, Debug)]
 pub struct TlsConfig {
+    /// The path to the certificate chain file in PEM format. This file should contain the server
+    /// certificate followed by any intermediate certificates, in that order.
     pub certificate_chain_file: String,
+
+    /// The path to the private key file for the server certificate in PEM format. This file should
+    /// contain a single RSA private key.
     pub private_key_file: String,
 }
 
