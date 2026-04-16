@@ -1,12 +1,17 @@
 use {
     crate::PrincipalError,
-    std::fmt::{Display, Formatter, Result as FmtResult},
+    std::{
+        error::Error as StdError,
+        fmt::{Display, Formatter, Result as FmtResult},
+        str::FromStr,
+    },
 };
 
-/// `IamIdPrefix` represents the four character prefix used to identify IAM resources.
-/// See [the unique identifiers section of the IAM identifiers documentation](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_identifiers.html).
+/// `IamResourceType` represents a type of IAM resource.
+/// See [the unique identifiers section of the IAM identifiers documentation](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_identifiers.html)
+/// for details on the resource types and their corresponding prefixes.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum IamIdPrefix {
+pub enum IamResourceType {
     /// The prefix for static IAM access keys: `AKIA`.
     AccessKey,
 
@@ -39,6 +44,9 @@ pub enum IamIdPrefix {
     /// The prefix for IAM roles: `AROA`.
     Role,
 
+    /// SSH public key (`APKA`).
+    SshPublicKey,
+
     /// The prefix for IAM temporary access keys: `ASIA`.
     TemporaryAccessKey,
 
@@ -46,27 +54,21 @@ pub enum IamIdPrefix {
     User,
 }
 
-impl Display for IamIdPrefix {
+impl Display for IamResourceType {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        match self {
-            Self::AccessKey => f.write_str("AKIA"),
-            Self::BearerToken => f.write_str("ABIA"),
-            Self::Certificate => f.write_str("ASCA"),
-            Self::ContextSpecificCredential => f.write_str("ACCA"),
-            Self::Group => f.write_str("AGPA"),
-            Self::InstanceProfile => f.write_str("AIPA"),
-            Self::ManagedPolicy => f.write_str("ANPA"),
-            Self::ManagedPolicyVersion => f.write_str("ANVA"),
-            Self::PublicKey => f.write_str("APKA"),
-            Self::Role => f.write_str("AROA"),
-            Self::TemporaryAccessKey => f.write_str("ASIA"),
-            Self::User => f.write_str("AIDA"),
-        }
+        f.write_str(self.as_str())
     }
 }
 
-impl AsRef<str> for IamIdPrefix {
+impl AsRef<str> for IamResourceType {
     fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl IamResourceType {
+    /// Returns the IAM ID prefix as a string.
+    pub const fn as_str(&self) -> &str {
         match self {
             Self::AccessKey => "AKIA",
             Self::BearerToken => "ABIA",
@@ -78,18 +80,46 @@ impl AsRef<str> for IamIdPrefix {
             Self::ManagedPolicyVersion => "ANVA",
             Self::PublicKey => "APKA",
             Self::Role => "AROA",
+            Self::SshPublicKey => "APKA",
             Self::TemporaryAccessKey => "ASIA",
             Self::User => "AIDA",
         }
     }
 }
 
-impl IamIdPrefix {
-    /// Returns the IAM ID prefix as a string.
-    pub fn as_str(&self) -> &str {
-        self.as_ref()
+impl FromStr for IamResourceType {
+    type Err = InvalidIamResourceType;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "AKIA" => Ok(Self::AccessKey),
+            "ABIA" => Ok(Self::BearerToken),
+            "ASCA" => Ok(Self::Certificate),
+            "ACCA" => Ok(Self::ContextSpecificCredential),
+            "AGPA" => Ok(Self::Group),
+            "AIPA" => Ok(Self::InstanceProfile),
+            "ANPA" => Ok(Self::ManagedPolicy),
+            "ANVA" => Ok(Self::ManagedPolicyVersion),
+            "AROA" => Ok(Self::Role),
+            "APKA" => Ok(Self::SshPublicKey),
+            "ASIA" => Ok(Self::TemporaryAccessKey),
+            "AIDA" => Ok(Self::User),
+            _ => Err(InvalidIamResourceType(s.to_string())),
+        }
     }
 }
+
+/// Error returned when an invalid IAM resource type string is parsed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InvalidIamResourceType(pub String);
+
+impl Display for InvalidIamResourceType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "Invalid IAM resource type: {}", self.0)
+    }
+}
+
+impl StdError for InvalidIamResourceType {}
 
 /// Verify that an instance profile, group, role, or user name meets AWS requirements.
 ///
@@ -240,7 +270,7 @@ pub fn validate_dns<F: FnOnce(String) -> PrincipalError>(
 #[cfg(test)]
 mod test {
     use {
-        super::{IamIdPrefix, validate_dns, validate_identifier, validate_name},
+        super::{IamResourceType, validate_dns, validate_identifier, validate_name},
         crate::PrincipalError,
         std::{
             collections::hash_map::DefaultHasher,
@@ -259,19 +289,19 @@ mod test {
     }
 
     fn validate_group_id(id: &str) -> Result<(), PrincipalError> {
-        validate_identifier(id, IamIdPrefix::Group.as_str(), PrincipalError::InvalidGroupId)
+        validate_identifier(id, IamResourceType::Group.as_str(), PrincipalError::InvalidGroupId)
     }
 
     fn validate_instance_profile_id(id: &str) -> Result<(), PrincipalError> {
-        validate_identifier(id, IamIdPrefix::InstanceProfile.as_str(), PrincipalError::InvalidInstanceProfileId)
+        validate_identifier(id, IamResourceType::InstanceProfile.as_str(), PrincipalError::InvalidInstanceProfileId)
     }
 
     fn validate_role_id(id: &str) -> Result<(), PrincipalError> {
-        validate_identifier(id, IamIdPrefix::Role.as_str(), PrincipalError::InvalidRoleId)
+        validate_identifier(id, IamResourceType::Role.as_str(), PrincipalError::InvalidRoleId)
     }
 
     fn validate_user_id(id: &str) -> Result<(), PrincipalError> {
-        validate_identifier(id, IamIdPrefix::User.as_str(), PrincipalError::InvalidUserId)
+        validate_identifier(id, IamResourceType::User.as_str(), PrincipalError::InvalidUserId)
     }
 
     #[test]
@@ -312,22 +342,22 @@ mod test {
     #[test]
     fn check_id_prefix_derived() {
         let prefixes = [
-            IamIdPrefix::AccessKey,
-            IamIdPrefix::BearerToken,
-            IamIdPrefix::Certificate,
-            IamIdPrefix::ContextSpecificCredential,
-            IamIdPrefix::Group,
-            IamIdPrefix::InstanceProfile,
-            IamIdPrefix::ManagedPolicy,
-            IamIdPrefix::ManagedPolicyVersion,
-            IamIdPrefix::PublicKey,
-            IamIdPrefix::Role,
-            IamIdPrefix::TemporaryAccessKey,
-            IamIdPrefix::User,
+            IamResourceType::AccessKey,
+            IamResourceType::BearerToken,
+            IamResourceType::Certificate,
+            IamResourceType::ContextSpecificCredential,
+            IamResourceType::Group,
+            IamResourceType::InstanceProfile,
+            IamResourceType::ManagedPolicy,
+            IamResourceType::ManagedPolicyVersion,
+            IamResourceType::PublicKey,
+            IamResourceType::Role,
+            IamResourceType::TemporaryAccessKey,
+            IamResourceType::User,
         ];
-        let p1a = IamIdPrefix::AccessKey;
+        let p1a = IamResourceType::AccessKey;
         let p1b = p1a;
-        let p2 = IamIdPrefix::BearerToken;
+        let p2 = IamResourceType::BearerToken;
         assert_eq!(p1a, p1b);
         assert_eq!(p1a, p1a.clone());
         assert_ne!(p1a, p2);
@@ -361,8 +391,8 @@ mod test {
     #[test]
     fn check_access_key() {
         // Miscellaneous bits for AKIA/access key.
-        assert_eq!(IamIdPrefix::AccessKey.as_ref(), "AKIA");
-        assert_eq!(format!("{}", IamIdPrefix::AccessKey).as_str(), "AKIA");
+        assert_eq!(IamResourceType::AccessKey.as_ref(), "AKIA");
+        assert_eq!(format!("{}", IamResourceType::AccessKey).as_str(), "AKIA");
     }
 
     #[test]
