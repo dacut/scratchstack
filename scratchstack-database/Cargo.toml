@@ -19,7 +19,6 @@ utils = ["dep:postgresql_commands", "dep:postgresql_embedded", "dep:tempfile"]
 
 [dependencies]
 anyhow = { workspace = true }
-arrayvec = { workspace = true, features = ["serde"] }
 base32.workspace = true
 base64.workspace = true
 clap = { workspace = true, optional = true, features = ["derive"] }
@@ -33,7 +32,6 @@ postgresql_commands = { workspace = true, optional = true }
 postgresql_embedded = { workspace = true, optional = true, features = [ "rustls", "theseus", "tokio" ] }
 rand = { workspace = true, features = ["std", "std_rng"] }
 regex.workspace = true
-rustls.workspace = true
 scratchstack-arn = { path = "../scratchstack-arn", optional = true }
 scratchstack-aws-principal.path = "../scratchstack-aws-principal"
 scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features = ["unstable"] }
@@ -49,9 +47,7 @@ sqlx = { workspace = true, features = [
     "runtime-tokio-rustls",
 ] }
 tempfile = { workspace = true, optional = true }
-toml.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
-tokio-rustls.workspace = true
 tower.workspace = true
 uuid.workspace = true
 

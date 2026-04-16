@@ -31,7 +31,6 @@ scratchstack-http-framework.path = "../scratchstack-http-framework"
 serde = { workspace = true, features = [ "derive" ]}
 sqlx = { workspace = true, features = [ "all-databases", "chrono", "macros", "migrate", "runtime-tokio-rustls" ] }
 tokio = { workspace = true, features = [ "net", "rt-multi-thread" ] }
-tokio-rustls.workspace = true
 tower.workspace = true
 
 [dev-dependencies]
