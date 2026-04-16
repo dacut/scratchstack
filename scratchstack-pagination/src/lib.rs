@@ -539,7 +539,7 @@ where
 
             // If we have a cached key and it is not expired, return it.
             if let Some(key) = current_key_read.as_ref()
-                && key.expires_at.map_or(true, |expires_at| expires_at > Utc::now())
+                && key.expires_at.is_none_or(|expires_at| expires_at > Utc::now())
             {
                 return Ok(key.clone());
             }
