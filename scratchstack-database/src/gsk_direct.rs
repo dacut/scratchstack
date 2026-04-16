@@ -6,7 +6,7 @@
 #![warn(clippy::all)]
 
 use {
-    crate::model::iam::MSG_ACCESS_KEY_PROVIDED_DOES_NOT_EXIST,
+    crate::constants::iam::*,
     indoc::indoc,
     log::error,
     scratchstack_arn::Arn,

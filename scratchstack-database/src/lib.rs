@@ -21,6 +21,9 @@ mod gsk_direct;
 #[cfg(feature = "gsk-direct")]
 pub use gsk_direct::*;
 
+/// Constants used across database operations.
+pub mod constants;
+
 /// Database schema and models.
 pub mod model;
 

@@ -2,16 +2,15 @@
 
 use {
     crate::{
-        model::iam::{IamId, IamResourceType},
-        ops::{
-            RequestExecutor,
-            iam::{IAM_API_VERSION, PAGINATION_KEY, PAGINATION_KEY_ID, get_current_partition},
-        },
+        constants::iam::*,
+        model::iam::IamId,
+        ops::{RequestExecutor, iam::get_current_partition_or_fail},
     },
     anyhow::{Result as AnyResult, anyhow, bail},
     chrono::{DateTime, Utc},
     indoc::indoc,
     scratchstack_arn::Arn,
+    scratchstack_aws_principal::IamResourceType,
     scratchstack_pagination::{OperationPaginator, ScratchstackOperationMetadata, ScratchstackServiceMetadata},
     scratchstack_shapes::iam::{
         AttachedPermissionsBoundary, CreateUserInternalRequest, CreateUserResponse, ListUsersInternalRequest,
@@ -39,17 +38,18 @@ pub async fn create_user(
     permissions_boundary: Option<&Arn>,
     tags: &[Tag],
 ) -> AnyResult<CreateUserResponse> {
-    let partition = get_current_partition(tx).await?;
-    let Some(partition) = partition.partition_id() else {
-        bail!("No partition found in database");
-    };
+    let partition = get_current_partition_or_fail(tx).await?;
 
     // If a permissions boundary was specified, look it up and verify that it exists. We need the actual IAM
     // identifier for the boundary, not just the ARN.
     let permissions_boundary_id = if let Some(permissions_boundary) = permissions_boundary {
         let resource = permissions_boundary.resource();
+        if !resource.starts_with(ARN_RESOURCE_PREFIX_POLICY) {
+            bail!("Permissions boundary ARN must have a resource that starts with \"policy/\"");
+        }
+
         let account_id = match account_id {
-            "aws" => "000000000000",
+            AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
             account_id => account_id,
         };
         let policy_path_and_name = &resource[6..];
@@ -82,7 +82,7 @@ pub async fn create_user(
     };
 
     let account_id = match account_id {
-        "aws" => "000000000000",
+        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
     let user_id = IamId::new(IamResourceType::User, account_id.parse().unwrap()).to_string();
@@ -123,9 +123,9 @@ pub async fn create_user(
 
     let arn = Arn::builder()
         .partition(partition)
-        .service("iam")
+        .service(SERVICE_KEY_IAM)
         .account_id(account_id)
-        .resource(format!("user/{}", user_name))
+        .resource(format!("{ARN_RESOURCE_PREFIX_USER}{user_name}"))
         .build()?;
 
     let permissions_boundary = if let Some(pb) = permissions_boundary {
@@ -184,15 +184,11 @@ pub async fn list_users(
     max_items: Option<usize>,
     path_prefix: Option<&str>,
 ) -> AnyResult<ListUsersResponse> {
-    let partition = get_current_partition(tx).await?;
-    let partition = partition
-        .partition_id()
-        .map(str::to_string)
-        .ok_or_else(|| anyhow::anyhow!("No partition found in database"))?;
+    let partition = get_current_partition_or_fail(tx).await?;
 
     // Create the paginator for this operation.
-    let service_metadata = ScratchstackServiceMetadata::new(partition.clone(), "", "iam.amazonaws.com");
-    let operation_metadata = ScratchstackOperationMetadata::new(IAM_API_VERSION, "ListUsers");
+    let service_metadata = ScratchstackServiceMetadata::new(partition.clone(), "", SERVICE_ID_IAM);
+    let operation_metadata = ScratchstackOperationMetadata::new(IAM_API_VERSION, OP_LIST_USERS);
     let paginator =
         OperationPaginator::new_fixed_key(&service_metadata, &operation_metadata, PAGINATION_KEY_ID, *PAGINATION_KEY)
             .map_err(|e| anyhow!("Failed to create paginator for ListUsers: {e}"))?;
@@ -263,9 +259,9 @@ pub async fn list_users(
                     .permissions_boundary_arn(
                         Arn::builder()
                             .partition(partition.clone())
-                            .service("iam")
+                            .service(SERVICE_KEY_IAM)
                             .account_id(account_id)
-                            .resource(format!("policy/{}", pb_id))
+                            .resource(format!("{ARN_RESOURCE_PREFIX_POLICY}{pb_id}"))
                             .build()?,
                     )
                     .permissions_boundary_type(PermissionsBoundaryType::Policy)
@@ -280,7 +276,7 @@ pub async fn list_users(
                 .arn(arn)
                 .create_date(row.created_at)
                 .path(row.path)
-                .user_id(format!("AIDA{}", row.user_id))
+                .user_id(format!("{}{}", IamResourceType::User.as_str(), row.user_id))
                 .user_name(row.user_name_cased)
                 .permissions_boundary(permissions_boundary)
                 .build()?,

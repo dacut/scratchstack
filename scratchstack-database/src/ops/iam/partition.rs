@@ -1,7 +1,7 @@
 //! Partition database level operations.
 
 use {
-    crate::{model::iam::PARTITION_NAME_REGEX, ops::RequestExecutor},
+    crate::{constants::iam::*, ops::RequestExecutor},
     anyhow::{Result as AnyResult, anyhow, bail},
     derive_builder::Builder,
     indoc::indoc,
@@ -55,6 +55,16 @@ pub async fn get_current_partition(tx: &mut PgTransaction<'_>) -> AnyResult<GetC
     Ok(GetCurrentPartitionResponse {
         partition_id,
     })
+}
+
+/// Retrieve the current partition of the database, failing if it is not set.
+pub async fn get_current_partition_or_fail(tx: &mut PgTransaction<'_>) -> AnyResult<String> {
+    let resp = get_current_partition(tx).await?;
+    if let Some(partition_id) = resp.partition_id() {
+        Ok(partition_id.to_string())
+    } else {
+        Err(anyhow!("No partition found in database"))
+    }
 }
 
 /// Sets the partition for the Scratchstack database.

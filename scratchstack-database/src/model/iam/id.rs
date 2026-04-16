@@ -1,8 +1,8 @@
 //! IAM identifier generation and parsing.
 use {
     rand::random,
+    scratchstack_aws_principal::{IamResourceType, InvalidIamResourceType},
     std::{
-        error::Error as StdError,
         fmt::{Display, Formatter, Result as FmtResult},
         str::FromStr,
     },
@@ -161,103 +161,6 @@ impl From<InvalidIamResourceType> for InvalidIamId {
     }
 }
 
-/// The resource type that an IAM identifier represents.
-///
-/// Reference: [IAM identifiers: Unique identifiers](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_identifiers.html#identifiers-unique-ids)
-#[derive(Debug, Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[non_exhaustive]
-pub enum IamResourceType {
-    /// Certificate (`ASCA`).
-    Certificate,
-
-    /// A context-specific credential (`ACCA`).
-    ContextSpecificCredential,
-
-    /// IAM group (`AGPA`).
-    Group,
-
-    /// Instance profile (`AIPA`).
-    InstanceProfile,
-
-    /// IAM managed policy (`ANPA`).
-    ManagedPolicy,
-
-    /// IAM managed policy version (`ANVA`).
-    ManagedPolicyVersion,
-
-    /// Persistent access key (`AKIA`).
-    PersistentAccessKey,
-
-    /// An IAM role (`AROA`).
-    Role,
-
-    /// STS service bearer token (`ABIA`).
-    ServiceBearerToken,
-
-    /// SSH public key (`APKA`).
-    SshPublicKey,
-
-    /// Temporary access key (`ASIA`).
-    TemporaryAccessKey,
-
-    /// IAM user (`AIDA`).
-    User,
-}
-
-impl IamResourceType {
-    /// Get the 4-character string representation of the resource type.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Certificate => "ASCA",
-            Self::ContextSpecificCredential => "ACCA",
-            Self::Group => "AGPA",
-            Self::InstanceProfile => "AIPA",
-            Self::ManagedPolicy => "ANPA",
-            Self::ManagedPolicyVersion => "ANVA",
-            Self::PersistentAccessKey => "AKIA",
-            Self::Role => "AROA",
-            Self::ServiceBearerToken => "ABIA",
-            Self::SshPublicKey => "APKA",
-            Self::TemporaryAccessKey => "ASIA",
-            Self::User => "AIDA",
-        }
-    }
-}
-
-/// Error returned when an invalid IAM resource type string is parsed.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct InvalidIamResourceType(String);
-
-impl Display for InvalidIamResourceType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "Invalid IAM resource type: {}", self.0)
-    }
-}
-
-impl StdError for InvalidIamResourceType {}
-
-impl FromStr for IamResourceType {
-    type Err = InvalidIamResourceType;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "ASCA" => Ok(Self::Certificate),
-            "ACCA" => Ok(Self::ContextSpecificCredential),
-            "AGPA" => Ok(Self::Group),
-            "AIPA" => Ok(Self::InstanceProfile),
-            "ANPA" => Ok(Self::ManagedPolicy),
-            "ANVA" => Ok(Self::ManagedPolicyVersion),
-            "AKIA" => Ok(Self::PersistentAccessKey),
-            "AROA" => Ok(Self::Role),
-            "ABIA" => Ok(Self::ServiceBearerToken),
-            "APKA" => Ok(Self::SshPublicKey),
-            "ASIA" => Ok(Self::TemporaryAccessKey),
-            "AIDA" => Ok(Self::User),
-            _ => Err(InvalidIamResourceType(s.to_string())),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use {super::*, pretty_assertions::assert_eq};
@@ -268,7 +171,7 @@ mod tests {
     #[test_log::test]
     fn known_id_display() {
         let id = IamId {
-            resource_type: IamResourceType::PersistentAccessKey,
+            resource_type: IamResourceType::AccessKey,
             account_id: 557925715019,
             resource_id: 258422848521,
         };
@@ -281,7 +184,7 @@ mod tests {
     #[test_log::test]
     fn roundtrip() {
         let id = IamId {
-            resource_type: IamResourceType::PersistentAccessKey,
+            resource_type: IamResourceType::AccessKey,
             account_id: 557925715019,
             resource_id: 258422848521,
         };
@@ -312,15 +215,15 @@ mod tests {
     #[test_log::test]
     fn resource_type_all_variants() {
         let cases = [
+            (IamResourceType::AccessKey, "AKIA"),
+            (IamResourceType::BearerToken, "ABIA"),
             (IamResourceType::Certificate, "ASCA"),
             (IamResourceType::ContextSpecificCredential, "ACCA"),
             (IamResourceType::Group, "AGPA"),
             (IamResourceType::InstanceProfile, "AIPA"),
             (IamResourceType::ManagedPolicy, "ANPA"),
             (IamResourceType::ManagedPolicyVersion, "ANVA"),
-            (IamResourceType::PersistentAccessKey, "AKIA"),
             (IamResourceType::Role, "AROA"),
-            (IamResourceType::ServiceBearerToken, "ABIA"),
             (IamResourceType::SshPublicKey, "APKA"),
             (IamResourceType::TemporaryAccessKey, "ASIA"),
             (IamResourceType::User, "AIDA"),
@@ -342,15 +245,15 @@ mod tests {
     #[test_log::test]
     fn resource_type_derived_traits() {
         let types = [
+            IamResourceType::AccessKey,
+            IamResourceType::BearerToken,
             IamResourceType::Certificate,
             IamResourceType::ContextSpecificCredential,
             IamResourceType::Group,
             IamResourceType::InstanceProfile,
             IamResourceType::ManagedPolicy,
             IamResourceType::ManagedPolicyVersion,
-            IamResourceType::PersistentAccessKey,
             IamResourceType::Role,
-            IamResourceType::ServiceBearerToken,
             IamResourceType::SshPublicKey,
             IamResourceType::TemporaryAccessKey,
             IamResourceType::User,
