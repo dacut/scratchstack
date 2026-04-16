@@ -17,9 +17,9 @@
 //! (authenticated encryption with associated data, or AEAD). This context is used to prevent tokens
 //! from being used across different services or API operations.
 //!
-//! In general, any type that implements [`Serialize`][serde::Serialize] can be used as the content
-//! of the token or key structure. Under the hood, this crate uses the
-//! [Postcard][https://docs.rs/postcard/latest/postcard/] serialization library.
+//! In general, any type that implements [`Serialize`] can be used as the content of the token or
+//! key structure. Under the hood, this crate uses the
+//! [Postcard](https://docs.rs/postcard/latest/postcard/) serialization library.
 
 use {
     aes_gcm::{AeadCore, AeadInPlace, Aes256Gcm, KeyInit as _, aead::OsRng},

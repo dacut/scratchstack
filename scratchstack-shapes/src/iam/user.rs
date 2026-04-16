@@ -174,7 +174,7 @@ pub struct CreateUserInternalRequest {
 }
 
 impl CreateUserInternalRequest {
-    /// Create a new [`CreateUserRequestInternalBuilder`] for programmatically constructing a `CreateUserRequestInternal`.
+    /// Create a new [`CreateUserInternalRequestBuilder`] for programmatically constructing a `CreateUserInternalRequest`.
     #[inline(always)]
     pub fn builder() -> CreateUserInternalRequestBuilder {
         CreateUserInternalRequestBuilder::default()
