@@ -6,7 +6,12 @@
 
 version: 2
 updates:
- - package-ecosystem: "cargo"
-   directory: "/"
-   schedule:
-     interval: weekly
+  - package-ecosystem: "cargo"
+    directory: "/"
+    exclude-paths:
+      - "/scratchstack-services/**"
+    schedule:
+      interval: weekly
+      days: ["tuesday"]
+      time: "04:23"
+      timezone: "America/Los_Angeles"
