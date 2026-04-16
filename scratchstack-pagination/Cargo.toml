@@ -18,6 +18,7 @@ derive_builder.workspace = true
 lru.workspace = true
 postcard = { workspace = true, features = ["use-std"] }
 serde = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["sync"] }
 tower = { workspace = true, features = ["util"] }
 uuid.workspace = true
 

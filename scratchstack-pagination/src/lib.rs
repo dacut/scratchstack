@@ -35,9 +35,10 @@ use {
         future::Future,
         num::NonZeroUsize,
         pin::Pin,
-        sync::{Arc, Mutex, RwLock},
+        sync::Arc,
         task::{Context, Poll},
     },
+    tokio::sync::{Mutex, RwLock},
     tower::{BoxError, Service, ServiceExt as _},
     uuid::Uuid,
 };
@@ -193,10 +194,31 @@ where
 /// relevant for pagination token encryption. This is compromised of the partition, region, and
 /// service name.
 #[derive(Builder, Clone, Debug, Deserialize, Serialize)]
+#[builder(setter(into))]
 pub struct ScratchstackServiceMetadata {
-    partition_id: String,
+    partition: String,
+    #[builder(setter(into), default)]
     region: String,
     service_name: String,
+}
+
+impl ScratchstackServiceMetadata {
+    /// Create a new `ScratchstackServiceMetadata` with the given partition, region, and service
+    /// name.
+    #[inline(always)]
+    pub fn new(partition: impl Into<String>, region: impl Into<String>, service_name: impl Into<String>) -> Self {
+        Self {
+            partition: partition.into(),
+            region: region.into(),
+            service_name: service_name.into(),
+        }
+    }
+
+    /// Creates a [`ScratchstackServiceMetadataBuilder`] for constructing a `ScratchstackServiceMetadata`.
+    #[inline(always)]
+    pub fn builder() -> ScratchstackServiceMetadataBuilder {
+        ScratchstackServiceMetadataBuilder::default()
+    }
 }
 
 /// State for managing pagination tokens for an API operation. This encompasses information about
@@ -244,16 +266,38 @@ where
     }
 }
 
+impl OperationPaginator<FixedKeyService, FixedKeyService> {
+    /// Create a new `OperationPaginator` that uses a fixed key for encryption and decryption. This
+    /// is generally only useful for testing or other situations where a fixed key is acceptable.
+    pub fn new_fixed_key<S, O>(
+        service_metadata: &S,
+        operation_metadata: &O,
+        key_id: impl Into<Uuid>,
+        encrypted_key: [u8; PAGINATION_KEY_SIZE],
+    ) -> Result<Self, BoxError>
+    where
+        S: Serialize + ?Sized,
+        O: Serialize + ?Sized,
+    {
+        let key_id = key_id.into();
+        let current_key_service = FixedKeyService::new(key_id, encrypted_key);
+        let key_service = FixedKeyService::new(key_id, encrypted_key);
+        let service_paginator = ServicePaginator::new(service_metadata, current_key_service, key_service)?;
+        service_paginator.operation_paginator(operation_metadata)
+    }
+}
+
 impl<C, K> OperationPaginator<C, K> {
     /// Create a new `OperationPaginator` for the specified service and operation metadata.
-    pub fn new<S>(
+    pub fn new<S, O>(
         service_metadata: &S,
-        operation_metadata: &S,
+        operation_metadata: &O,
         current_key_service: C,
         key_service: K,
     ) -> Result<Self, BoxError>
     where
         S: Serialize + ?Sized,
+        O: Serialize + ?Sized,
     {
         let mut aad = postcard::to_stdvec(service_metadata)?;
         aad.extend_from_slice(&postcard::to_stdvec(operation_metadata)?);
@@ -339,9 +383,27 @@ where
 /// is relevant for Scratchstack pagination token encryption. This is compromised of the API version
 /// and API operation name.
 #[derive(Builder, Clone, Debug, Deserialize, Serialize)]
+#[builder(setter(into))]
 pub struct ScratchstackOperationMetadata {
     api_version: String,
-    api_name: String,
+    operation: String,
+}
+
+impl ScratchstackOperationMetadata {
+    /// Create a new `ScratchstackOperationMetadata` with the given API version and operation name.
+    #[inline(always)]
+    pub fn new(api_version: impl Into<String>, operation: impl Into<String>) -> Self {
+        Self {
+            api_version: api_version.into(),
+            operation: operation.into(),
+        }
+    }
+
+    /// Creates a [`ScratchstackOperationMetadataBuilder`] for constructing a `ScratchstackOperationMetadata`.
+    #[inline(always)]
+    pub fn builder() -> ScratchstackOperationMetadataBuilder {
+        ScratchstackOperationMetadataBuilder::default()
+    }
 }
 
 /// `FixedKeyService` provides a simple implementation of a key service that always returns the
@@ -371,7 +433,7 @@ impl FixedKeyService {
 impl Service<()> for FixedKeyService {
     type Response = Key;
     type Error = BoxError;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -386,7 +448,7 @@ impl Service<()> for FixedKeyService {
 impl Service<Uuid> for FixedKeyService {
     type Response = Key;
     type Error = BoxError;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -457,11 +519,12 @@ impl<C, K> CachingKeyService<C, K> {
 
 impl<C, K> Service<()> for CachingKeyService<C, K>
 where
-    C: Clone + Service<(), Response = Key, Error = BoxError> + 'static,
+    C: Clone + Service<(), Response = Key, Error = BoxError> + Send + 'static,
+    <C as Service<()>>::Future: Send,
 {
     type Response = Key;
     type Error = BoxError;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -471,9 +534,8 @@ where
         let current_key_service = self.current_key_service.clone();
         let current_key = self.current_key.clone();
 
-        Box::pin(async move { 
-            let current_key_read =
-            current_key.read().map_err(|_| anyhow!("Failed to acquire read lock on current key cache"))?;
+        Box::pin(async move {
+            let current_key_read = current_key.read().await;
 
             // If we have a cached key and it is not expired, return it.
             if let Some(key) = current_key_read.as_ref()
@@ -485,21 +547,21 @@ where
 
             // Otherwise, we need to retrieve the current key from the underlying service.
             let key = current_key_service.clone().oneshot(()).await?;
-            let mut current_key_write =
-                current_key.write().map_err(|_| anyhow!("Failed to acquire write lock on current key cache"))?;
+            let mut current_key_write = current_key.write().await;
             *current_key_write = Some(key.clone());
             Ok(key)
-         })
+        })
     }
 }
 
 impl<C, K> Service<Uuid> for CachingKeyService<C, K>
 where
-    K: Clone + Service<Uuid, Response = Key, Error = BoxError> + 'static,
+    K: Clone + Service<Uuid, Response = Key, Error = BoxError> + Send + 'static,
+    <K as Service<Uuid>>::Future: Send,
 {
     type Response = Key;
     type Error = BoxError;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -510,7 +572,7 @@ where
         let known_keys = self.known_keys.clone();
 
         Box::pin(async move {
-            let mut known_keys = known_keys.lock().map_err(|_| anyhow!("Failed to acquire lock on known keys cache"))?;
+            let mut known_keys = known_keys.lock().await;
             if let Some(key) = known_keys.get(&key_id) {
                 return Ok(key.clone());
             }
@@ -533,8 +595,7 @@ pub struct InMemoryKeyService {
 
 impl InMemoryKeyService {
     /// Add a key to the service. If a key with the same ID already exists, an error is returned.
-    pub fn add_key(&mut self, key: Key) -> Result<(), BoxError>
-    {
+    pub fn add_key(&mut self, key: Key) -> Result<(), BoxError> {
         if self.keys_by_id.contains_key(&key.key_id) {
             return Err(anyhow!("Key with ID {} already exists", key.key_id).into());
         }
@@ -581,10 +642,7 @@ impl Service<Uuid> for InMemoryKeyService {
     fn call(&mut self, key_id: Uuid) -> Self::Future {
         let keys_by_id = self.keys_by_id.clone();
         Box::pin(async move {
-            let key = keys_by_id
-                .get(&key_id)
-                .cloned()
-                .ok_or_else(|| anyhow!("Key with ID {} not found", key_id))?;
+            let key = keys_by_id.get(&key_id).cloned().ok_or_else(|| anyhow!("Key with ID {} not found", key_id))?;
             Ok(key)
         })
     }
@@ -592,12 +650,7 @@ impl Service<Uuid> for InMemoryKeyService {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        chrono::Utc,
-        std::num::NonZeroUsize,
-        uuid::Uuid,
-    };
+    use {super::*, chrono::Utc, std::num::NonZeroUsize, uuid::Uuid};
 
     fn make_key(key_id: Uuid, valid_from: DateTime<Utc>, expires_at: Option<DateTime<Utc>>) -> Key {
         Key {
@@ -754,7 +807,10 @@ mod tests {
         }
 
         let paginator = make_operation_paginator();
-        let state = PaginationState { last_id: 12345, marker: "alice".to_string() };
+        let state = PaginationState {
+            last_id: 12345,
+            marker: "alice".to_string(),
+        };
         let token = paginator.encrypt_token(&state).await.unwrap();
         let decoded: PaginationState = paginator.decrypt_token(&token).await.unwrap();
         assert_eq!(decoded, state);
@@ -791,10 +847,8 @@ mod tests {
         let encrypted_key = [99u8; PAGINATION_KEY_SIZE];
         let svc = FixedKeyService::new(key_id, encrypted_key);
 
-        let paginator1 =
-            OperationPaginator::new(&"test-service", &"ListItems", svc.clone(), svc.clone()).unwrap();
-        let paginator2 =
-            OperationPaginator::new(&"test-service", &"ListOtherItems", svc.clone(), svc).unwrap();
+        let paginator1 = OperationPaginator::new(&"test-service", &"ListItems", svc.clone(), svc.clone()).unwrap();
+        let paginator2 = OperationPaginator::new(&"test-service", &"ListOtherItems", svc.clone(), svc).unwrap();
 
         let token = paginator1.encrypt_token(&"some_cursor").await.unwrap();
         let result: Result<String, _> = paginator2.decrypt_token(&token).await;
@@ -811,11 +865,9 @@ mod tests {
         let decrypt_svc = FixedKeyService::new(other_key_id, encrypted_key);
 
         let encrypt_paginator =
-            OperationPaginator::new(&"test-service", &"ListItems", encrypt_svc.clone(), encrypt_svc)
-                .unwrap();
+            OperationPaginator::new(&"test-service", &"ListItems", encrypt_svc.clone(), encrypt_svc).unwrap();
         let decrypt_paginator =
-            OperationPaginator::new(&"test-service", &"ListItems", decrypt_svc.clone(), decrypt_svc)
-                .unwrap();
+            OperationPaginator::new(&"test-service", &"ListItems", decrypt_svc.clone(), decrypt_svc).unwrap();
 
         let token = encrypt_paginator.encrypt_token(&"cursor").await.unwrap();
         let result: Result<String, _> = decrypt_paginator.decrypt_token(&token).await;
@@ -838,7 +890,7 @@ mod tests {
         let svc = FixedKeyService::new(key_id, encrypted_key);
 
         let service_meta = ScratchstackServiceMetadataBuilder::default()
-            .partition_id("aws".to_string())
+            .partition("aws".to_string())
             .region("us-east-1".to_string())
             .service_name("iam".to_string())
             .build()
@@ -847,7 +899,7 @@ mod tests {
 
         let op_meta = ScratchstackOperationMetadataBuilder::default()
             .api_version("2010-05-08".to_string())
-            .api_name("ListUsers".to_string())
+            .operation("ListUsers".to_string())
             .build()
             .unwrap();
         let op_paginator = service_paginator.operation_paginator(&op_meta).unwrap();
@@ -865,7 +917,7 @@ mod tests {
         let svc = FixedKeyService::new(key_id, encrypted_key);
 
         let service_meta = ScratchstackServiceMetadataBuilder::default()
-            .partition_id("aws".to_string())
+            .partition("aws".to_string())
             .region("us-east-1".to_string())
             .service_name("iam".to_string())
             .build()
@@ -874,12 +926,12 @@ mod tests {
 
         let op_meta1 = ScratchstackOperationMetadataBuilder::default()
             .api_version("2010-05-08".to_string())
-            .api_name("ListUsers".to_string())
+            .operation("ListUsers".to_string())
             .build()
             .unwrap();
         let op_meta2 = ScratchstackOperationMetadataBuilder::default()
             .api_version("2010-05-08".to_string())
-            .api_name("ListGroups".to_string())
+            .operation("ListGroups".to_string())
             .build()
             .unwrap();
 
