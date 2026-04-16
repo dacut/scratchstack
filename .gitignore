@@ -20,5 +20,8 @@ coverage-report
 lcov.info
 *.lcov
 
+# Claude chat logs
+.cc-history/
+
 # Python environment
 venv/
