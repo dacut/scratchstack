@@ -1,5 +1,8 @@
 use {
-    super::{AttachedPermissionsBoundary, Tag, validate_account_id, validate_path, validate_policy_arn},
+    super::{
+        AttachedPermissionsBoundary, Tag, validate_account_id, validate_marker, validate_max_items, validate_path,
+        validate_path_prefix, validate_policy_arn,
+    },
     crate::Arn,
     anyhow::{Result as AnyResult, bail},
     chrono::{DateTime, Utc},
@@ -7,6 +10,12 @@ use {
     regex::Regex,
     serde::{Deserialize, Serialize},
     std::sync::LazyLock,
+};
+
+#[cfg(feature = "clap")]
+use super::{
+    clap_parse_account_id, clap_parse_marker, clap_parse_max_items, clap_parse_path, clap_parse_path_prefix,
+    clap_parse_policy_arn, clap_parse_tags,
 };
 
 /// Validate that the given user name is valid according to AWS IAM rules.
@@ -28,6 +37,13 @@ pub fn validate_user_name(user_name: impl AsRef<str>) -> AnyResult<()> {
     Ok(())
 }
 
+/// Parse and validate a `user_name` field for Clap.
+#[cfg(feature = "clap")]
+pub fn clap_parse_user_name(user_name: &str) -> Result<String, String> {
+    validate_user_name(user_name).map_err(|e| format!("Invalid user name: {e}"))?;
+    Ok(user_name.to_owned())
+}
+
 /// Parameters to create a new user.
 ///
 /// ## References
@@ -36,11 +52,11 @@ pub fn validate_user_name(user_name: impl AsRef<str>) -> AnyResult<()> {
 #[derive(Builder, Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
-#[builder(build_fn(validate = "CreateUserRequestBuilder::validate"), setter(strip_option))]
+#[builder(build_fn(validate = "CreateUserRequestBuilder::validate"), setter(into))]
 pub struct CreateUserRequest {
     /// The user name to create. This is required and must be unique within the account
     /// (case-insensitive).
-    #[cfg_attr(feature = "clap", arg(long, value_parser = Self::clap_parse_user_name))]
+    #[cfg_attr(feature = "clap", arg(long, value_parser = clap_parse_user_name))]
     user_name: String,
 
     /// The path to create the user at. This is optional and defaults to a slash (`/`).
@@ -48,20 +64,20 @@ pub struct CreateUserRequest {
     /// Paths must start and end with a slash, and can contain any ASCII characters from 33 to 126.
     /// Paths must not contain consecutive slashes, and must be at most 512 characters long.
     #[builder(default = "/".to_string())]
-    #[cfg_attr(feature = "clap", arg(long, default_value = "/", value_parser = Self::clap_parse_path))]
+    #[cfg_attr(feature = "clap", arg(long, default_value = "/", value_parser = clap_parse_path))]
     path: String,
 
     /// The permissions boundary to set for the user. This is optional and can be used to set a
     /// managed policy as the permissions boundary for the user. The permissions boundary must be a
     /// valid IAM policy ARN.
     #[builder(default)]
-    #[cfg_attr(feature = "clap", arg(long, value_parser = Self::clap_parse_permissions_boundary))]
+    #[cfg_attr(feature = "clap", arg(long, value_parser = clap_parse_policy_arn))]
     permissions_boundary: Option<Arn>,
 
     /// Tags to attach to the user. This is optional and can be used to attach any number of
     /// key-value pairs as tags to the user.
     #[builder(default)]
-    #[cfg_attr(feature = "clap", arg(long, num_args = 1.., value_parser = Self::clap_parse_tags))]
+    #[cfg_attr(feature = "clap", arg(long, num_args = 1.., value_parser = clap_parse_tags))]
     tags: Vec<Tag>,
 }
 
@@ -97,35 +113,6 @@ impl CreateUserRequest {
     }
 }
 
-#[cfg(feature = "clap")]
-impl CreateUserRequest {
-    /// Parse the user_name field.
-    fn clap_parse_user_name(user_name: &str) -> Result<String, String> {
-        validate_user_name(user_name).map_err(|e| format!("Invalid user name: {e}"))?;
-        Ok(user_name.to_owned())
-    }
-
-    /// Parse the path field.
-    fn clap_parse_path(path: &str) -> Result<String, String> {
-        validate_path(path).map_err(|e| format!("Invalid path: {e}"))?;
-        Ok(path.to_owned())
-    }
-
-    /// Parse the permissions_boundary field.
-    fn clap_parse_permissions_boundary(permissions_boundary: &str) -> Result<Arn, String> {
-        use std::str::FromStr as _;
-        let arn = Arn::from_str(permissions_boundary)
-            .map_err(|e| format!("Invalid ARN syntax for permissions boundary: {e}"))?;
-        validate_policy_arn(&arn).map_err(|e| format!("Invalid permissions boundary ARN: {e}"))?;
-        Ok(arn)
-    }
-
-    /// Parse a single tag value.
-    fn clap_parse_tags(tag_str: &str) -> Result<Tag, String> {
-        tag_str.parse::<Tag>().map_err(|e| format!("Invalid tag syntax for tag '{tag_str}': {e}"))
-    }
-}
-
 impl CreateUserRequestBuilder {
     fn validate(&self) -> Result<(), String> {
         let Some(user_name) = &self.user_name else {
@@ -153,11 +140,11 @@ impl CreateUserRequestBuilder {
 #[derive(Builder, Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
-#[builder(build_fn(validate = "CreateUserRequestInternalBuilder::validate"), setter(strip_option))]
-pub struct CreateUserRequestInternal {
+#[builder(build_fn(validate = "CreateUserInternalRequestBuilder::validate"), setter(into))]
+pub struct CreateUserInternalRequest {
     /// The user name to create. This is required and must be unique within the account
     /// (case-insensitive).
-    #[cfg_attr(feature = "clap", arg(long, value_parser = Self::clap_parse_user_name))]
+    #[cfg_attr(feature = "clap", arg(long, value_parser = clap_parse_user_name))]
     user_name: String,
 
     /// The path to create the user at. This is optional and defaults to a slash (`/`).
@@ -165,32 +152,32 @@ pub struct CreateUserRequestInternal {
     /// Paths must start and end with a slash, and can contain any ASCII characters from 33 to 126.
     /// Paths must not contain consecutive slashes, and must be at most 512 characters long.
     #[builder(default = "/".to_string())]
-    #[cfg_attr(feature = "clap", arg(long, default_value = "/", value_parser = Self::clap_parse_path))]
+    #[cfg_attr(feature = "clap", arg(long, default_value = "/", value_parser = clap_parse_path))]
     path: String,
 
     /// The permissions boundary to set for the user. This is optional and can be used to set a
     /// managed policy as the permissions boundary for the user. The permissions boundary must be a
     /// valid IAM policy ARN.
     #[builder(default)]
-    #[cfg_attr(feature = "clap", arg(long, value_parser = Self::clap_parse_permissions_boundary))]
+    #[cfg_attr(feature = "clap", arg(long, value_parser = clap_parse_policy_arn))]
     permissions_boundary: Option<Arn>,
 
     /// Tags to attach to the user. This is optional and can be used to attach any number of
     /// key-value pairs as tags to the user.
     #[builder(default)]
-    #[cfg_attr(feature = "clap", arg(long, num_args = 1.., value_parser = Self::clap_parse_tags))]
+    #[cfg_attr(feature = "clap", arg(long, num_args = 1.., value_parser = clap_parse_tags))]
     tags: Vec<Tag>,
 
     /// The account id to create the user in. The account must already exist.
-    #[cfg_attr(feature = "clap", arg(long, value_parser = Self::clap_parse_account_id))]
+    #[cfg_attr(feature = "clap", arg(long, value_parser = clap_parse_account_id))]
     account_id: String,
 }
 
-impl CreateUserRequestInternal {
+impl CreateUserInternalRequest {
     /// Create a new [`CreateUserRequestInternalBuilder`] for programmatically constructing a `CreateUserRequestInternal`.
     #[inline(always)]
-    pub fn builder() -> CreateUserRequestInternalBuilder {
-        CreateUserRequestInternalBuilder::default()
+    pub fn builder() -> CreateUserInternalRequestBuilder {
+        CreateUserInternalRequestBuilder::default()
     }
 
     /// Return the user_name field of this request.
@@ -224,41 +211,7 @@ impl CreateUserRequestInternal {
     }
 }
 
-#[cfg(feature = "clap")]
-impl CreateUserRequestInternal {
-    /// Parse the user_name field.
-    #[inline(always)]
-    fn clap_parse_user_name(user_name: &str) -> Result<String, String> {
-        CreateUserRequest::clap_parse_user_name(user_name)
-    }
-
-    /// Parse the path field.
-    #[inline(always)]
-    fn clap_parse_path(path: &str) -> Result<String, String> {
-        CreateUserRequest::clap_parse_path(path)
-    }
-
-    /// Parse the permissions_boundary field.
-    #[inline(always)]
-    fn clap_parse_permissions_boundary(permissions_boundary: &str) -> Result<Arn, String> {
-        CreateUserRequest::clap_parse_permissions_boundary(permissions_boundary)
-    }
-
-    /// Parse a single tag value.
-    #[inline(always)]
-    fn clap_parse_tags(tag_str: &str) -> Result<Tag, String> {
-        CreateUserRequest::clap_parse_tags(tag_str)
-    }
-
-    /// Parse the account_id field.
-    #[inline(always)]
-    fn clap_parse_account_id(account_id: &str) -> Result<String, String> {
-        validate_account_id(account_id).map_err(|e| format!("Invalid account id: {e}"))?;
-        Ok(account_id.to_owned())
-    }
-}
-
-impl CreateUserRequestInternalBuilder {
+impl CreateUserInternalRequestBuilder {
     fn validate(&self) -> Result<(), String> {
         let Some(user_name) = &self.user_name else {
             Err("UserName is required".to_string())?
@@ -309,34 +262,211 @@ impl CreateUserResponse {
     }
 }
 
-/// Result of creating a user in a specific AWS account, which is returned as JSON in the API response.
+/// Parameters to list users in the AWS account.
+///
+/// ## References
+/// * [AWS ListUsers API](https://docs.aws.amazon.com/IAM/latest/APIReference/API_ListUsers.html)
+/// * [Archived](https://web.archive.org/web/20251208003306/https://docs.aws.amazon.com/IAM/latest/APIReference/API_ListUsers.html)
 #[derive(Builder, Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
-pub struct CreateUserResponseInternal {
-    /// The user that was created.
-    user: User,
+#[cfg_attr(feature = "clap", derive(clap::Args))]
+#[builder(build_fn(validate = "ListUsersRequestBuilder::validate"), setter(into))]
+pub struct ListUsersRequest {
+    /// Marker for paginating results.
+    #[cfg_attr(feature = "clap", arg(long, value_parser = clap_parse_marker))]
+    marker: Option<String>,
 
-    /// The account id that the user was created in.
+    /// Maximum number of items to return. Valid range is 1-1000.
+    #[cfg_attr(feature = "clap", arg(long, value_parser = clap_parse_max_items))]
+    max_items: Option<usize>,
+
+    /// Path prefix for filtering the results.
+    #[cfg_attr(feature = "clap", arg(long, value_parser = clap_parse_path_prefix))]
+    path_prefix: Option<String>,
+}
+
+impl ListUsersRequest {
+    /// Create a new [`ListUsersRequestBuilder`] for programmatically constructing a `ListUsersRequest`.
+    #[inline(always)]
+    pub fn builder() -> ListUsersRequestBuilder {
+        ListUsersRequestBuilder::default()
+    }
+
+    /// Return the marker field of this request.
+    #[inline(always)]
+    pub fn marker(&self) -> Option<&str> {
+        self.marker.as_deref()
+    }
+
+    /// Return the max_items field of this request.
+    #[inline(always)]
+    pub fn max_items(&self) -> Option<usize> {
+        self.max_items
+    }
+
+    /// Return the path_prefix field of this request.
+    #[inline(always)]
+    pub fn path_prefix(&self) -> Option<&str> {
+        self.path_prefix.as_deref()
+    }
+}
+
+impl ListUsersRequestBuilder {
+    fn validate(&self) -> Result<(), String> {
+        if let Some(marker_opt) = self.marker.as_ref()
+            && let Some(marker) = marker_opt.as_ref()
+        {
+            validate_marker(marker).map_err(|e| format!("Invalid marker: {e}"))?;
+        }
+
+        if let Some(max_items_opt) = self.max_items
+            && let Some(max_items) = max_items_opt
+        {
+            validate_max_items(max_items).map_err(|e| format!("Invalid max_items: {e}"))?;
+        }
+
+        if let Some(path_prefix_opt) = &self.path_prefix.as_ref()
+            && let Some(path_prefix) = path_prefix_opt.as_ref()
+        {
+            validate_path_prefix(path_prefix).map_err(|e| format!("Invalid path_prefix: {e}"))?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Parameters to list users in a specific AWS account.
+///
+/// This is used internally in the Scratchstack database operations, and includes the `account_id`
+/// field to specify which account to list the users in.
+#[derive(Builder, Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[cfg_attr(feature = "clap", derive(clap::Args))]
+#[builder(build_fn(validate = "ListUsersInternalRequestBuilder::validate"), setter(into))]
+pub struct ListUsersInternalRequest {
+    /// Marker for paginating results.
+    #[cfg_attr(feature = "clap", arg(long, value_parser = clap_parse_marker))]
+    marker: Option<String>,
+
+    /// Maximum number of items to return. Valid range is 1-1000.
+    #[cfg_attr(feature = "clap", arg(long, value_parser = clap_parse_max_items))]
+    max_items: Option<usize>,
+
+    /// Path prefix for filtering the results.
+    #[cfg_attr(feature = "clap", arg(long, value_parser = clap_parse_path_prefix))]
+    path_prefix: Option<String>,
+
+    /// The account id to create the user in. The account must already exist.
+    #[cfg_attr(feature = "clap", arg(long, value_parser = clap_parse_account_id))]
     account_id: String,
 }
 
-impl CreateUserResponseInternal {
-    /// Create a new [`CreateUserResponseInternalBuilder`] for programmatically constructing a `CreateUserResponseInternal`.
+impl ListUsersInternalRequest {
+    /// Create a new [`ListUsersInternalRequestBuilder`] for programmatically constructing a `ListUsersInternalRequest`.
     #[inline(always)]
-    pub fn builder() -> CreateUserResponseInternalBuilder {
-        CreateUserResponseInternalBuilder::default()
+    pub fn builder() -> ListUsersInternalRequestBuilder {
+        ListUsersInternalRequestBuilder::default()
     }
 
-    /// Returns the user that was created.
+    /// Return the marker field of this request.
     #[inline(always)]
-    pub fn user(&self) -> &User {
-        &self.user
+    pub fn marker(&self) -> Option<&str> {
+        self.marker.as_deref()
     }
 
-    /// Returns the account id that the user was created in.
+    /// Return the max_items field of this request.
+    #[inline(always)]
+    pub fn max_items(&self) -> Option<usize> {
+        self.max_items
+    }
+
+    /// Return the path_prefix field of this request.
+    #[inline(always)]
+    pub fn path_prefix(&self) -> Option<&str> {
+        self.path_prefix.as_deref()
+    }
+
+    /// Return the account_id field of this request.
     #[inline(always)]
     pub fn account_id(&self) -> &str {
         &self.account_id
+    }
+}
+
+impl ListUsersInternalRequestBuilder {
+    fn validate(&self) -> Result<(), String> {
+        if let Some(marker_opt) = self.marker.as_ref()
+            && let Some(marker) = marker_opt.as_ref()
+        {
+            validate_marker(marker).map_err(|e| format!("Invalid marker: {e}"))?;
+        }
+
+        if let Some(max_items_opt) = self.max_items
+            && let Some(max_items) = max_items_opt
+        {
+            validate_max_items(max_items).map_err(|e| format!("Invalid max_items: {e}"))?;
+        }
+
+        if let Some(path_prefix_opt) = &self.path_prefix.as_ref()
+            && let Some(path_prefix) = path_prefix_opt.as_ref()
+        {
+            validate_path_prefix(path_prefix).map_err(|e| format!("Invalid path_prefix: {e}"))?;
+        }
+
+        if let Some(account_id) = self.account_id.as_ref() {
+            validate_account_id(account_id).map_err(|e| format!("Invalid account id: {e}"))?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Result of listing users, which is returned as JSON in the API response.
+///
+/// ## References
+/// * [AWS ListUsers API](https://docs.aws.amazon.com/IAM/latest/APIReference/API_ListUsers.html)
+/// * [Archived](https://web.archive.org/web/20251208003306/https://docs.aws.amazon.com/IAM/latest/APIReference/API_ListUsers.html)
+#[derive(Builder, Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[builder(setter(into))]
+pub struct ListUsersResponse {
+    /// A flag that indicates whether there are more items to return.
+    #[builder(default)]
+    is_truncated: bool,
+
+    /// When `IsTruncated` is `true`, this element is present and contains the value to use for the `Marker`
+    /// parameter in a subsequent pagination request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    marker: Option<String>,
+
+    /// A list of users.
+    users: Vec<User>,
+}
+
+impl ListUsersResponse {
+    /// Create a new [`ListUsersResponseBuilder`] for programmatically constructing a `ListUsersResponse`.
+    #[inline(always)]
+    pub fn builder() -> ListUsersResponseBuilder {
+        ListUsersResponseBuilder::default()
+    }
+
+    /// Returns whether there are more items to return.
+    #[inline(always)]
+    pub fn is_truncated(&self) -> bool {
+        self.is_truncated
+    }
+
+    /// Returns the marker to use for pagination, if present.
+    #[inline(always)]
+    pub fn marker(&self) -> Option<&str> {
+        self.marker.as_deref()
+    }
+
+    /// Returns the list of users.
+    #[inline(always)]
+    pub fn users(&self) -> &[User] {
+        &self.users
     }
 }
 
@@ -347,7 +477,7 @@ impl CreateUserResponseInternal {
 /// * [Archived](https://web.archive.org/web/20251124073340/https://docs.aws.amazon.com/IAM/latest/APIReference/API_User.html)
 #[derive(Builder, Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
-#[builder(build_fn(validate = "UserBuilder::validate"))]
+#[builder(build_fn(validate = "UserBuilder::validate"), setter(into))]
 pub struct User {
     /// The Amazon Resource Name (ARN) of the user.
     arn: Arn,
@@ -458,9 +588,7 @@ mod tests {
         use {
             crate::{
                 Arn,
-                iam::{
-                    CreateUserRequest, CreateUserRequestInternal, CreateUserResponse, CreateUserResponseInternal, User,
-                },
+                iam::{CreateUserInternalRequest, CreateUserRequest, CreateUserResponse, User},
             },
             chrono::{DateTime, Utc},
             std::str::FromStr as _,
@@ -661,7 +789,7 @@ mod tests {
 
         #[test_log::test]
         fn create_user_request_internal_builder_valid() {
-            let req = CreateUserRequestInternal::builder()
+            let req = CreateUserInternalRequest::builder()
                 .user_name("bob".to_string())
                 .account_id("123456789012".to_string())
                 .build()
@@ -675,18 +803,18 @@ mod tests {
 
         #[test_log::test]
         fn create_user_request_internal_builder_missing_user_name() {
-            assert!(CreateUserRequestInternal::builder().account_id("123456789012".to_string()).build().is_err());
+            assert!(CreateUserInternalRequest::builder().account_id("123456789012".to_string()).build().is_err());
         }
 
         #[test_log::test]
         fn create_user_request_internal_builder_missing_account_id() {
-            assert!(CreateUserRequestInternal::builder().user_name("bob".to_string()).build().is_err());
+            assert!(CreateUserInternalRequest::builder().user_name("bob".to_string()).build().is_err());
         }
 
         #[test_log::test]
         fn create_user_request_internal_builder_invalid_user_name() {
             assert!(
-                CreateUserRequestInternal::builder()
+                CreateUserInternalRequest::builder()
                     .user_name("bad name!".to_string())
                     .account_id("123456789012".to_string())
                     .build()
@@ -697,7 +825,7 @@ mod tests {
         #[test_log::test]
         fn create_user_request_internal_builder_invalid_path() {
             assert!(
-                CreateUserRequestInternal::builder()
+                CreateUserInternalRequest::builder()
                     .user_name("bob".to_string())
                     .path("no-slashes".to_string())
                     .account_id("123456789012".to_string())
@@ -709,7 +837,7 @@ mod tests {
         #[test_log::test]
         fn create_user_request_internal_builder_invalid_account_id() {
             assert!(
-                CreateUserRequestInternal::builder()
+                CreateUserInternalRequest::builder()
                     .user_name("bob".to_string())
                     .account_id("not-an-account".to_string())
                     .build()
@@ -720,7 +848,7 @@ mod tests {
         #[test_log::test]
         fn create_user_request_internal_builder_invalid_permissions_boundary() {
             assert!(
-                CreateUserRequestInternal::builder()
+                CreateUserInternalRequest::builder()
                     .user_name("bob".to_string())
                     .account_id("123456789012".to_string())
                     .permissions_boundary(Arn::from_str("arn:aws:iam::123456789012:user/Alice").unwrap())
@@ -741,35 +869,12 @@ mod tests {
         fn create_user_response_builder_missing_user() {
             assert!(CreateUserResponse::builder().build().is_err());
         }
-
-        // ── CreateUserResponseInternalBuilder ────────────────────────────────
-
-        #[test_log::test]
-        fn create_user_response_internal_builder_valid() {
-            let resp = CreateUserResponseInternal::builder()
-                .user(valid_user())
-                .account_id("123456789012".to_string())
-                .build()
-                .unwrap();
-            assert_eq!(resp.user().user_name(), "alice");
-            assert_eq!(resp.account_id(), "123456789012");
-        }
-
-        #[test_log::test]
-        fn create_user_response_internal_builder_missing_user() {
-            assert!(CreateUserResponseInternal::builder().account_id("123456789012".to_string()).build().is_err());
-        }
-
-        #[test_log::test]
-        fn create_user_response_internal_builder_missing_account_id() {
-            assert!(CreateUserResponseInternal::builder().user(valid_user()).build().is_err());
-        }
     }
 
     #[cfg(feature = "clap")]
     mod clap_parsing {
         use {
-            crate::iam::{CreateUserRequest, CreateUserRequestInternal},
+            crate::iam::{CreateUserInternalRequest, CreateUserRequest},
             clap::Parser,
             pretty_assertions::assert_eq,
         };
@@ -785,7 +890,7 @@ mod tests {
         #[derive(Parser)]
         struct CreateUserInternalCmd {
             #[command(flatten)]
-            req: CreateUserRequestInternal,
+            req: CreateUserInternalRequest,
         }
 
         // ── CreateUserRequest: missing validation (these tests currently fail) ─

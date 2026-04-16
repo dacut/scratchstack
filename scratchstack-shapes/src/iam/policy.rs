@@ -17,6 +17,14 @@ pub fn validate_policy_arn(arn: &Arn) -> AnyResult<()> {
     Ok(())
 }
 
+/// Parse and validate a policy ARN for Clap.
+pub(crate) fn clap_parse_policy_arn(arn: &str) -> Result<Arn, String> {
+    use std::str::FromStr as _;
+    let arn = Arn::from_str(arn).map_err(|e| format!("Invalid ARN syntax for permissions boundary: {e}"))?;
+    validate_policy_arn(&arn).map_err(|e| format!("Invalid permissions boundary ARN: {e}"))?;
+    Ok(arn)
+}
+
 /// Information about an attached permissions boundary.
 ///
 /// ## References

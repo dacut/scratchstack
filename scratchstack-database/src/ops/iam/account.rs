@@ -1,18 +1,169 @@
-//! ListAccounts database level operation.
+//! Account database level operations.
 
 use {
-    crate::{model::iam::Account, ops::RequestExecutor},
+    crate::{
+        model::iam::{ACCOUNT_ALIAS_REGEX, ACCOUNT_ID_REGEX, Account},
+        ops::RequestExecutor,
+    },
     anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail},
     base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
+    indoc::indoc,
+    rand::random_range,
     scratchstack_shapes::shorthand::Value as ShorthandValue,
     serde::{Deserialize, Serialize},
-    sqlx::{Row as _, postgres::PgTransaction, query},
+    sqlx::{
+        Acquire as _, Row as _,
+        error::{Error as SqlxError, ErrorKind as SqlxErrorKind},
+        postgres::PgTransaction,
+        query,
+    },
     std::{
         cmp::min,
         fmt::{Display, Formatter, Result as FmtResult},
         str::FromStr,
     },
 };
+
+/// Parameters to create a new account on the Scratchstack IAM database.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[cfg_attr(feature = "clap", derive(clap::Args))]
+pub struct CreateAccountRequest {
+    /// The organization id to create the account in. This is currently unsupported and must be
+    /// `None`. In the future, this can be used to specify an organization to create the account in.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub organization_id: Option<String>,
+
+    /// The account id to create. This is usually unspecified, which will return a random
+    /// unused account id, but this can be used to specify a particular account id to create.
+    /// The account id must be a 12-digit number.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub account_id: Option<String>,
+
+    /// Email address associated with the account.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub email: Option<String>,
+
+    /// Unique alias for the account. This must be a string of length 3 to 63 characters consisting
+    /// of ASCII lowercase letters, digits, and dashes. The alias cannot start or finish with a
+    /// dash and cannot contain consecutive dashes.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub alias: Option<String>,
+}
+
+/// Result of creating an account, which is returned as JSON in the API response.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+pub struct CreateAccountResponse {
+    /// The organization id that the account was created in. This is currently always `None`, but
+    /// in the future, this will be used to specify the organization that the account was created
+    /// in.
+    pub organization_id: Option<String>,
+
+    /// The account id of the newly created account.
+    pub account_id: String,
+
+    /// Email address associated with the account.
+    pub email: Option<String>,
+
+    /// Unique alias for the account.
+    pub alias: Option<String>,
+}
+
+impl RequestExecutor for CreateAccountRequest {
+    type Response = CreateAccountResponse;
+
+    async fn execute(&self, tx: &mut PgTransaction<'_>) -> AnyResult<Self::Response> {
+        if self.organization_id.is_some() {
+            bail!("Creating accounts in an organization is currently unsupported");
+        }
+
+        if let Some(account_id) = &self.account_id {
+            create_account(tx, account_id.clone(), self.email.clone(), self.alias.clone()).await
+        } else {
+            create_account_with_random_account_id(tx, self.email.clone(), self.alias.clone()).await
+        }
+    }
+}
+
+/// Create a new account on the database.
+async fn create_account(
+    tx: &mut PgTransaction<'_>,
+    account_id: String,
+    email: Option<String>,
+    alias: Option<String>,
+) -> AnyResult<CreateAccountResponse> {
+    if !ACCOUNT_ID_REGEX.is_match(&account_id) {
+        bail!("Account ID must be a 12-digit number");
+    }
+
+    let alias = if let Some(alias) = alias {
+        if !ACCOUNT_ALIAS_REGEX.is_match(&alias) || alias.len() < 3 || alias.len() > 63 {
+            bail!(
+                "Account alias must be 3-63 characters long and consist of lowercase letters, digits, and dashes. The alias cannot start or end with a dash and cannot contain consecutive dashes."
+            );
+        }
+        Some(alias)
+    } else {
+        None
+    };
+
+    query(indoc! {"
+        INSERT INTO iam.accounts(account_id, email, alias)
+        VALUES($1, $2, $3)
+    "})
+    .bind(account_id.clone())
+    .bind(email.clone())
+    .bind(alias.clone())
+    .execute(tx.as_mut())
+    .await?;
+    Ok(CreateAccountResponse {
+        organization_id: None,
+        account_id,
+        email,
+        alias,
+    })
+}
+
+/// Create a new account on the database with a random account ID.
+async fn create_account_with_random_account_id(
+    tx: &mut PgTransaction<'_>,
+    email: Option<String>,
+    alias: Option<String>,
+) -> AnyResult<CreateAccountResponse> {
+    loop {
+        let account_id = format!("{:012}", random_range(1u64..=999_999_999_999));
+        // Create a savepoint that we can roll back to if the account ID already exists.
+        let mut savepoint = tx.begin().await?;
+
+        match create_account(&mut savepoint, account_id, email.clone(), alias.clone()).await {
+            Ok(account_id) => {
+                savepoint.commit().await?;
+                return Ok(account_id);
+            }
+            Err(e) => match e.downcast::<SqlxError>() {
+                Ok(sqlx_error) => {
+                    if let SqlxError::Database(ref dbe) = sqlx_error
+                        && dbe.kind() == SqlxErrorKind::UniqueViolation
+                    {
+                        // Account ID already exists, try again with a different random account ID.
+                        savepoint.rollback().await?;
+                        continue;
+                    }
+
+                    log::error!("Failed to create account with random account id: {sqlx_error}");
+                    savepoint.rollback().await?;
+                    return Err(sqlx_error.into());
+                }
+                Err(other) => {
+                    log::error!("Failed to create account with random account id: {other}");
+                    savepoint.rollback().await?;
+                    return Err(other);
+                }
+            },
+        }
+    }
+}
 
 /// Parameters to list accounts on the Scratchstack IAM database.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -39,100 +190,95 @@ impl RequestExecutor for ListAccountsRequest {
     type Response = ListAccountsResponse;
 
     async fn execute(&self, tx: &mut PgTransaction<'_>) -> AnyResult<Self::Response> {
-        list_accounts(tx, self).await
-    }
-}
+        let mut sql = "SELECT account_id, email, alias, created_at FROM iam.accounts WHERE 1=1".to_string();
+        let mut filter_bindings = Vec::with_capacity(self.filters.len());
+        let max_items = min(self.max_items.unwrap_or(100), 100);
+        let mut next_id: usize = 1;
 
-/// List accounts in the database, applying the provided filters if any.
-async fn list_accounts(tx: &mut PgTransaction<'_>, request: &ListAccountsRequest) -> AnyResult<ListAccountsResponse> {
-    let mut sql = "SELECT account_id, email, alias, created_at FROM iam.accounts WHERE 1=1".to_string();
-    let mut filter_bindings = Vec::with_capacity(request.filters.len());
-    let max_items = min(request.max_items.unwrap_or(100), 100);
-    let mut next_id: usize = 1;
+        if !self.filters.is_empty() {
+            for filter in self.filters.iter() {
+                sql.push_str(" AND ");
 
-    if !request.filters.is_empty() {
-        for filter in request.filters.iter() {
-            sql.push_str(" AND ");
-
-            match filter.name {
-                ListAccountsFilterKey::AccountId => sql.push_str(&format!("account_id = ANY(${})", next_id)),
-                ListAccountsFilterKey::Alias => sql.push_str(&format!("alias = ANY(${})", next_id)),
-                ListAccountsFilterKey::Email => sql.push_str(&format!("email = ANY(${})", next_id)),
-            }
-            filter_bindings.push(&filter.values);
-            next_id += 1;
-        }
-    }
-
-    let mut prev_account_id = None;
-
-    if let Some(token) = request.next_token.clone()
-        && !token.is_empty()
-    {
-        let version = token.as_bytes()[0];
-        if version == b'1' {
-            // Version 1 tokens are just the account id to start after,
-            // encoded in base64.
-            if let Ok(previous_account_id_bytes) = URL_SAFE_NO_PAD.decode(&token[1..])
-                && let Ok(previous_account_id_str) = String::from_utf8(previous_account_id_bytes)
-            {
-                sql.push_str(&format!(" AND account_id > ${}", next_id));
+                match filter.name {
+                    ListAccountsFilterKey::AccountId => sql.push_str(&format!("account_id = ANY(${})", next_id)),
+                    ListAccountsFilterKey::Alias => sql.push_str(&format!("alias = ANY(${})", next_id)),
+                    ListAccountsFilterKey::Email => sql.push_str(&format!("email = ANY(${})", next_id)),
+                }
+                filter_bindings.push(&filter.values);
                 next_id += 1;
-                prev_account_id = Some(previous_account_id_str.clone());
             }
         }
-    }
 
-    sql.push_str(&format!(" ORDER BY account_id LIMIT ${}", next_id));
+        let mut prev_account_id = None;
 
-    let mut q = query(&sql);
-    for values in filter_bindings.into_iter() {
-        q = q.bind(values);
-    }
-
-    if let Some(prev_account_id) = prev_account_id {
-        q = q.bind(prev_account_id);
-    }
-
-    q = q.bind(max_items as i64 + 1); // Request one more than max items so we can determine if there are more results.
-
-    let rows = q.fetch_all(tx.as_mut()).await?;
-    let mut accounts = Vec::new();
-    let mut has_more = false;
-
-    for row in rows {
-        let account_id: String = row.try_get(0)?;
-        let email = row.try_get(1)?;
-        let alias = row.try_get(2)?;
-        let created_at = row.try_get(3)?;
-
-        if accounts.len() == max_items {
-            // The overflow row confirms there are more results; don't include it.
-            has_more = true;
-            break;
+        if let Some(token) = self.next_token.clone()
+            && !token.is_empty()
+        {
+            let version = token.as_bytes()[0];
+            if version == b'1' {
+                // Version 1 tokens are just the account id to start after,
+                // encoded in base64.
+                if let Ok(previous_account_id_bytes) = URL_SAFE_NO_PAD.decode(&token[1..])
+                    && let Ok(previous_account_id_str) = String::from_utf8(previous_account_id_bytes)
+                {
+                    sql.push_str(&format!(" AND account_id > ${}", next_id));
+                    next_id += 1;
+                    prev_account_id = Some(previous_account_id_str.clone());
+                }
+            }
         }
 
-        accounts.push(Account {
-            account_id,
-            alias,
-            email,
-            created_at,
-        });
+        sql.push_str(&format!(" ORDER BY account_id LIMIT ${}", next_id));
+
+        let mut q = query(&sql);
+        for values in filter_bindings.into_iter() {
+            q = q.bind(values);
+        }
+
+        if let Some(prev_account_id) = prev_account_id {
+            q = q.bind(prev_account_id);
+        }
+
+        q = q.bind(max_items as i64 + 1); // Request one more than max items so we can determine if there are more results.
+
+        let rows = q.fetch_all(tx.as_mut()).await?;
+        let mut accounts = Vec::new();
+        let mut has_more = false;
+
+        for row in rows {
+            let account_id: String = row.try_get(0)?;
+            let email = row.try_get(1)?;
+            let alias = row.try_get(2)?;
+            let created_at = row.try_get(3)?;
+
+            if accounts.len() == max_items {
+                // The overflow row confirms there are more results; don't include it.
+                has_more = true;
+                break;
+            }
+
+            accounts.push(Account {
+                account_id,
+                alias,
+                email,
+                created_at,
+            });
+        }
+
+        // The cursor is the last *included* account ID, not the overflow row's ID.
+        // The next page queries `account_id > cursor`, so using the overflow row's ID
+        // would skip it entirely.
+        let next_token = if has_more {
+            accounts.last().map(|a| format!("1{}", URL_SAFE_NO_PAD.encode(a.account_id.as_bytes())))
+        } else {
+            None
+        };
+
+        Ok(ListAccountsResponse {
+            accounts,
+            next_token,
+        })
     }
-
-    // The cursor is the last *included* account ID, not the overflow row's ID.
-    // The next page queries `account_id > cursor`, so using the overflow row's ID
-    // would skip it entirely.
-    let next_token = if has_more {
-        accounts.last().map(|a| format!("1{}", URL_SAFE_NO_PAD.encode(a.account_id.as_bytes())))
-    } else {
-        None
-    };
-
-    Ok(ListAccountsResponse {
-        accounts,
-        next_token,
-    })
 }
 
 /// Response for the ListAccounts operation.

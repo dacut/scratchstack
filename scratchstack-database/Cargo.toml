@@ -37,8 +37,9 @@ rustls.workspace = true
 scratchstack-arn = { path = "../scratchstack-arn", optional = true }
 scratchstack-aws-principal.path = "../scratchstack-aws-principal"
 scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features = ["unstable"] }
-scratchstack-shapes = { path = "../scratchstack-shapes", optional = true }
 scratchstack-errors.path = "../scratchstack-errors"
+scratchstack-pagination.path = "../scratchstack-pagination"
+scratchstack-shapes = { path = "../scratchstack-shapes", optional = true }
 serde = { workspace = true, features = ["derive"] }
 sqlx = { workspace = true, features = [
     "chrono",
@@ -52,6 +53,7 @@ toml.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 tokio-rustls.workspace = true
 tower.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 aws-sigv4 = { workspace = true, features = ["sign-http"] }

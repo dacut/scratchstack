@@ -27,7 +27,7 @@ use {
     scratchstack_database::ops::iam::{
         CreateAccountRequest, GetCurrentPartitionRequest, ListAccountsRequest, SetCurrentPartitionRequest,
     },
-    scratchstack_shapes::iam::CreateUserRequestInternal,
+    scratchstack_shapes::iam::{CreateUserInternalRequest, ListUsersInternalRequest},
     sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions},
     std::{
         collections::{HashMap, hash_map::Entry},
@@ -97,7 +97,7 @@ enum Commands {
 
     /// Create an IAM user in an account.
     #[command(name = "create-user")]
-    CreateUser(CreateUserRequestInternal),
+    CreateUser(CreateUserInternalRequest),
 
     /// Get the current partition of the database.
     #[command(name = "get-current-partition")]
@@ -106,6 +106,10 @@ enum Commands {
     /// List IAM accounts.
     #[command(name = "list-accounts")]
     ListAccounts(ListAccountsRequest),
+
+    /// List IAM users in an account.
+    #[command(name = "list-users")]
+    ListUsers(ListUsersInternalRequest),
 
     /// Migrate the database to the latest version or a specified version.
     #[command(name = "migrate")]
@@ -150,6 +154,10 @@ where
             serde_json::to_string_pretty(&response)?
         }
         Commands::ListAccounts(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response)?
+        }
+        Commands::ListUsers(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response)?
         }

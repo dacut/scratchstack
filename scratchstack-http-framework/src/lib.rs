@@ -17,7 +17,6 @@
 #![cfg_attr(doc, feature(doc_cfg))]
 
 pub(crate) mod constants;
-
 mod request_id;
 pub use request_id::*;
 

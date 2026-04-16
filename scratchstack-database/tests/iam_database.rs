@@ -29,7 +29,7 @@ use {
     },
     scratchstack_shapes::{
         Arn,
-        iam::{CreateUserRequestInternal, Tag},
+        iam::{CreateUserInternalRequest, Tag},
     },
     std::str::FromStr as _,
 };
@@ -584,7 +584,7 @@ async fn test_list_accounts_filter_nonexistent(pool: &sqlx::PgPool) {
 /// Create a user with only a name and account — all other fields take defaults.
 async fn test_create_user_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
-    let resp = CreateUserRequestInternal::builder()
+    let resp = CreateUserInternalRequest::builder()
         .user_name("alice".to_string())
         .account_id("123456789012".to_string())
         .build()
@@ -597,7 +597,6 @@ async fn test_create_user_simple(pool: &sqlx::PgPool) {
     let user = resp.user();
     assert_eq!(user.user_name(), "alice");
     assert_eq!(user.path(), "/");
-    assert_eq!(resp.account_id(), "123456789012");
     assert!(user.user_id().starts_with("AIDA"), "User ID must start with AIDA prefix");
     assert!(user.arn().to_string().ends_with(":user/alice"), "ARN must end with :user/alice, got {}", user.arn());
     assert!(user.permissions_boundary().is_none());
@@ -607,7 +606,7 @@ async fn test_create_user_simple(pool: &sqlx::PgPool) {
 /// Create a user at a non-default path.
 async fn test_create_user_with_path(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
-    let resp = CreateUserRequestInternal::builder()
+    let resp = CreateUserInternalRequest::builder()
         .user_name("bob".to_string())
         .path("/engineering/".to_string())
         .account_id("123456789012".to_string())
@@ -621,13 +620,12 @@ async fn test_create_user_with_path(pool: &sqlx::PgPool) {
     let user = resp.user();
     assert_eq!(user.user_name(), "bob");
     assert_eq!(user.path(), "/engineering/");
-    assert_eq!(resp.account_id(), "123456789012");
 }
 
 /// Create a user with tags attached.
 async fn test_create_user_with_tags(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
-    let resp = CreateUserRequestInternal::builder()
+    let resp = CreateUserInternalRequest::builder()
         .user_name("carol".to_string())
         .account_id("210987654321".to_string())
         .tags(vec![
@@ -643,7 +641,6 @@ async fn test_create_user_with_tags(pool: &sqlx::PgPool) {
 
     let user = resp.user();
     assert_eq!(user.user_name(), "carol");
-    assert_eq!(resp.account_id(), "210987654321");
 }
 
 /// Create a user with an existing managed policy as the permissions boundary.
@@ -653,7 +650,7 @@ async fn test_create_user_with_permissions_boundary(pool: &sqlx::PgPool) {
         Arn::from_str("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1").expect("Failed to parse policy ARN");
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
-    let resp = CreateUserRequestInternal::builder()
+    let resp = CreateUserInternalRequest::builder()
         .user_name("dave".to_string())
         .account_id("123456789012".to_string())
         .permissions_boundary(policy_arn.clone())
@@ -674,7 +671,7 @@ async fn test_create_user_with_permissions_boundary(pool: &sqlx::PgPool) {
 async fn test_create_user_duplicate_name(pool: &sqlx::PgPool) {
     // "alice" was committed by test_create_user_simple; re-inserting it must fail.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
-    let result = CreateUserRequestInternal::builder()
+    let result = CreateUserInternalRequest::builder()
         .user_name("alice".to_string())
         .account_id("123456789012".to_string())
         .build()
@@ -688,7 +685,7 @@ async fn test_create_user_duplicate_name(pool: &sqlx::PgPool) {
 /// Building a request with an invalid user name must fail before touching the database.
 fn test_create_user_invalid_name() {
     // Spaces and `!` are not in the allowed character set.
-    let result = CreateUserRequestInternal::builder()
+    let result = CreateUserInternalRequest::builder()
         .user_name("bad name!".to_string())
         .account_id("123456789012".to_string())
         .build();
@@ -698,7 +695,7 @@ fn test_create_user_invalid_name() {
 /// Creating a user in an account that does not exist must fail with a FK violation.
 async fn test_create_user_nonexistent_account(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
-    let result = CreateUserRequestInternal::builder()
+    let result = CreateUserInternalRequest::builder()
         .user_name("eve".to_string())
         .account_id("999999999999".to_string())
         .build()
@@ -715,7 +712,7 @@ async fn test_create_user_nonexistent_permissions_boundary(pool: &sqlx::PgPool) 
         Arn::from_str("arn:aws:iam::123456789012:policy/NonExistentPolicy").expect("Failed to parse policy ARN");
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
-    let result = CreateUserRequestInternal::builder()
+    let result = CreateUserInternalRequest::builder()
         .user_name("frank".to_string())
         .account_id("123456789012".to_string())
         .permissions_boundary(policy_arn)

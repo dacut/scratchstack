@@ -46,6 +46,12 @@ pub fn validate_tag_value(value: impl AsRef<str>) -> AnyResult<()> {
     Ok(())
 }
 
+/// Parse and validate a single tag value for Clap.
+#[cfg(feature = "clap")]
+pub fn clap_parse_tags(tag_str: &str) -> Result<Tag, String> {
+    tag_str.parse::<Tag>().map_err(|e| format!("Invalid tag syntax for tag '{tag_str}': {e}"))
+}
+
 /// User-provided metadata associated with an IAM resource.
 ///
 /// ## References
