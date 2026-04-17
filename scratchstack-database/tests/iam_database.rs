@@ -99,20 +99,20 @@ async fn test_database() {
 async fn test_set_current_partition(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let req = SetCurrentPartitionRequest::builder()
-        .partition_id("test-partition")
+        .partition("test-partition")
         .build()
         .expect("Failed to build SetCurrentPartitionRequest");
-    assert_eq!(req.partition_id(), "test-partition");
+    assert_eq!(req.partition(), "test-partition");
 
     let resp = req.execute(&mut tx).await.expect("Failed to set current partition");
-    assert_eq!(resp.partition_id(), "test-partition");
+    assert_eq!(resp.partition(), "test-partition");
     tx.commit().await.expect("Failed to commit transaction");
 }
 
 async fn test_invalid_set_current_partition(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let req = SetCurrentPartitionRequest::builder()
-        .partition_id("")
+        .partition("")
         .build()
         .expect("Failed to build SetCurrentPartitionRequest with empty partition ID");
     let result = req.execute(&mut tx).await;
@@ -121,7 +121,7 @@ async fn test_invalid_set_current_partition(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let req = SetCurrentPartitionRequest::builder()
-        .partition_id("-")
+        .partition("-")
         .build()
         .expect("Failed to build SetCurrentPartitionRequest with invalid partition ID");
     let result = req.execute(&mut tx).await;
@@ -135,7 +135,7 @@ async fn test_get_current_partition(pool: &sqlx::PgPool) {
     let resp = GetCurrentPartitionRequest::default().execute(&mut tx).await.expect("Failed to get current partition");
     tx.commit().await.expect("Failed to commit transaction");
 
-    assert_eq!(resp.partition_id(), Some("test-partition"));
+    assert_eq!(resp.partition(), Some("test-partition"));
 }
 
 async fn test_create_account_specific_id(pool: &sqlx::PgPool) {

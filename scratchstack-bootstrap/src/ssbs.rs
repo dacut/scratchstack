@@ -16,24 +16,22 @@
 mod account;
 mod migrate;
 mod partition;
+mod user;
+
 #[cfg(test)]
 mod tests;
-mod user;
 
 use {
     anyhow::{Error as AnyError, Result as AnyResult},
     clap::{Parser, Subcommand},
-    rpassword::prompt_password,
     scratchstack_database::ops::iam::{
         CreateAccountRequest, GetCurrentPartitionRequest, ListAccountsRequest, SetCurrentPartitionRequest,
     },
     scratchstack_shapes::iam::{CreateUserInternalRequest, ListUsersInternalRequest},
     sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions},
     std::{
-        collections::{HashMap, hash_map::Entry},
         ffi::OsString,
         io::{Write, stdout},
-        sync::{Arc, Mutex},
         time::Duration,
     },
 };
@@ -80,13 +78,8 @@ struct Cli {
     /// Force password prompt. This overrides --no-password if both are specified. A password can
     /// also be provided via the PGPASSWORD environment variable, which will be used if neither
     /// --force-password-prompt nor --no-password are specified.
-    #[arg(long = "force-password-prompt")]
+    #[arg(long = "force-password-prompt", default_value_t = false, conflicts_with = "no_password")]
     force_password_prompt: bool,
-
-    /// A mapping from the environment variable name to use as the password to the password itself.
-    /// This is used to resolve the password for the database user if it has not already been resolved.
-    #[arg(skip)]
-    passwords: Arc<Mutex<HashMap<String, String>>>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -190,34 +183,30 @@ impl Cli {
     }
 
     /// Returns the database password.
-    pub(crate) fn get_password<I>(&self, vars: I, username: &str, env_password: &str) -> AnyResult<String>
+    pub(crate) fn get_password<I>(&self, vars: I) -> AnyResult<String>
     where
         I: IntoIterator<Item = (OsString, String)> + Send,
     {
-        let mut passwords = self.passwords.lock().expect("Passwords lock poisoned");
+        if self.no_password {
+            return Ok(String::new());
+        }
 
-        match passwords.entry(env_password.to_string()) {
-            Entry::Occupied(entry) => Ok(entry.get().clone()),
-            Entry::Vacant(entry) => {
-                let password = if self.force_password_prompt {
-                    let prompt = format!("Password for database user {username}: ");
-                    prompt_password(&prompt)?
-                } else if self.no_password {
-                    "".to_string()
-                } else if let Some(env_password) = vars.into_iter().find_map(|(k, v)| {
-                    if k == env_password {
-                        Some(v)
-                    } else {
-                        None
-                    }
-                }) {
-                    env_password
-                } else {
-                    "".to_string()
-                };
+        let username = self.get_username().map(Some).unwrap_or(None);
+        if self.force_password_prompt {
+            prompt_password(username)
+        } else {
+            let mut password = None;
+            for (k, v) in vars {
+                if k == "PGPASSWORD" {
+                    password = Some(v);
+                    break;
+                }
+            }
 
-                entry.insert(password.clone());
+            if let Some(password) = password {
                 Ok(password)
+            } else {
+                prompt_password(username)
             }
         }
     }
@@ -232,26 +221,6 @@ impl Cli {
     where
         I: IntoIterator<Item = (OsString, String)> + Send,
     {
-        self.get_connection_options_ex(vars, &self.get_username()?, "PGPASSWORD")
-    }
-
-    /// Get bootstrap database connection options, which are the same as the regular connection
-    /// options but with the database set to "postgres".
-    pub(crate) fn get_bootstrap_connection_options<I>(&self, var: I, database: &str) -> AnyResult<PgConnectOptions>
-    where
-        I: IntoIterator<Item = (OsString, String)> + Send,
-    {
-        let options = self.get_connection_options_ex(var, "postgres", "BOOTSTRAP_PGPASSWORD")?;
-        Ok(options.username("postgres").database(database))
-    }
-
-    /// Get database connection options based on the CLI arguments and environment variables.
-    /// The environment variable to use as the password is also specified here.
-    ///
-    fn get_connection_options_ex<I>(&self, vars: I, username: &str, env_var: &str) -> AnyResult<PgConnectOptions>
-    where
-        I: IntoIterator<Item = (OsString, String)> + Send,
-    {
         let mut opts = PgConnectOptions::new();
         opts = opts.application_name("scratchstack-bootstrap");
 
@@ -259,7 +228,7 @@ impl Cli {
             opts = opts.username(username);
         };
 
-        let password = self.get_password(vars, username, env_var)?;
+        let password = self.get_password(vars)?;
         if !password.is_empty() {
             opts = opts.password(&password);
         }
@@ -269,7 +238,7 @@ impl Cli {
         }
 
         opts = opts.port(self.port);
-        opts = opts.database(&self.database);
+        opts = opts.database(self.get_database());
         Ok(opts)
     }
 
@@ -281,13 +250,15 @@ impl Cli {
         let pool_opts = PgPoolOptions::new().max_connections(1).acquire_timeout(Duration::from_secs(5));
         Ok(pool_opts.connect_with(pg_opts).await?)
     }
+}
 
-    pub(crate) async fn connect_bootstrap<I>(&self, vars: I, database: &str) -> AnyResult<PgPool>
-    where
-        I: IntoIterator<Item = (OsString, String)> + Send,
-    {
-        let pg_opts = self.get_bootstrap_connection_options(vars, database)?;
-        let pool_opts = PgPoolOptions::new().max_connections(1).acquire_timeout(Duration::from_secs(5));
-        Ok(pool_opts.connect_with(pg_opts).await?)
-    }
+/// Prompt for a password for the given username.
+pub(crate) fn prompt_password(username: Option<impl AsRef<str>>) -> AnyResult<String> {
+    let prompt = if let Some(username) = &username {
+        format!("Password for {}: ", username.as_ref())
+    } else {
+        "Password: ".to_string()
+    };
+
+    Ok(rpassword::prompt_password(&prompt)?)
 }

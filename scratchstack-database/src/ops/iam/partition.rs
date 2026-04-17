@@ -9,7 +9,7 @@ use {
     sqlx::{Row as _, postgres::PgTransaction, query},
 };
 
-/// Parameters to get the current partition on the Scratchstack IAM database.
+/// Parameters to get the current partition on the Scratchstack IAM service.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
@@ -19,16 +19,16 @@ pub struct GetCurrentPartitionRequest {}
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct GetCurrentPartitionResponse {
-    /// The current partition of the database.
+    /// The current partition of the service.
     #[serde(skip_serializing_if = "Option::is_none")]
-    partition_id: Option<String>,
+    partition: Option<String>,
 }
 
 impl GetCurrentPartitionResponse {
-    /// Returns the current partition of the database, if it exists.
+    /// Returns the current partition of the service, if it exists.
     #[inline(always)]
-    pub fn partition_id(&self) -> Option<&str> {
-        self.partition_id.as_deref()
+    pub fn partition(&self) -> Option<&str> {
+        self.partition.as_deref()
     }
 }
 
@@ -40,42 +40,42 @@ impl RequestExecutor for GetCurrentPartitionRequest {
     }
 }
 
-/// Retrieve the current partition of the database.
+/// Retrieve the current partition of the service.
 pub async fn get_current_partition(tx: &mut PgTransaction<'_>) -> AnyResult<GetCurrentPartitionResponse> {
-    let result = query("SELECT partition_id FROM iam.partition").fetch_all(tx.as_mut()).await?;
-    let mut partition_id = None;
+    let result = query("SELECT partition FROM iam.partition").fetch_all(tx.as_mut()).await?;
+    let mut partition = None;
 
     for row in result {
-        if partition_id.is_some() {
+        if partition.is_some() {
             return Err(anyhow!("Multiple partitions found in database"));
         }
-        partition_id = Some(row.try_get(0)?);
+        partition = Some(row.try_get(0)?);
     }
 
     Ok(GetCurrentPartitionResponse {
-        partition_id,
+        partition,
     })
 }
 
-/// Retrieve the current partition of the database, failing if it is not set.
+/// Retrieve the current partition of the service, failing if it is not set.
 pub async fn get_current_partition_or_fail(tx: &mut PgTransaction<'_>) -> AnyResult<String> {
     let resp = get_current_partition(tx).await?;
-    if let Some(partition_id) = resp.partition_id() {
-        Ok(partition_id.to_string())
+    if let Some(partition) = resp.partition() {
+        Ok(partition.to_string())
     } else {
-        Err(anyhow!("No partition found in database"))
+        Err(anyhow!("No partition found for service"))
     }
 }
 
-/// Sets the partition for the Scratchstack database.
+/// Sets the partition for the Scratchstack IAM service.
 #[derive(Builder, Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct SetCurrentPartitionRequest {
-    /// The name of the partition to set for the database. Must match the regex `^[a-z][-a-z0-9]+[a-z0-9]$`.
+    /// The name of the partition to set for the service. Must match the regex `^[a-z][-a-z0-9]+[a-z0-9]$`.
     #[cfg_attr(feature = "clap", arg(long))]
     #[builder(setter(into))]
-    partition_id: String,
+    partition: String,
 }
 
 impl SetCurrentPartitionRequest {
@@ -85,9 +85,9 @@ impl SetCurrentPartitionRequest {
         SetCurrentPartitionRequestBuilder::default()
     }
 
-    /// Returns the partition ID to set for the database.
-    pub fn partition_id(&self) -> &str {
-        &self.partition_id
+    /// Returns the partition to set for the service.
+    pub fn partition(&self) -> &str {
+        &self.partition
     }
 }
 
@@ -95,9 +95,9 @@ impl SetCurrentPartitionRequest {
 #[derive(Builder, Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct SetCurrentPartitionResponse {
-    /// The partition ID that was set for the service.
+    /// The partition that was set for the service.
     #[builder(setter(into))]
-    partition_id: String,
+    partition: String,
 }
 
 impl SetCurrentPartitionResponse {
@@ -107,9 +107,9 @@ impl SetCurrentPartitionResponse {
         SetCurrentPartitionResponseBuilder::default()
     }
 
-    /// Returns the partition ID that was set for the database.
-    pub fn partition_id(&self) -> &str {
-        &self.partition_id
+    /// Returns the partition that was set for the service.
+    pub fn partition(&self) -> &str {
+        &self.partition
     }
 }
 
@@ -121,34 +121,31 @@ impl RequestExecutor for SetCurrentPartitionRequest {
     }
 }
 
-/// Set the current partition of the database.
+/// Set the current partition of the service.
 pub async fn set_current_partition(
     tx: &mut PgTransaction<'_>,
     req: &SetCurrentPartitionRequest,
 ) -> AnyResult<SetCurrentPartitionResponse> {
-    if req.partition_id.is_empty() {
+    if req.partition.is_empty() {
         bail!("Partition name cannot be empty");
     }
 
-    if !PARTITION_NAME_REGEX.is_match(&req.partition_id) {
-        bail!("Invalid partition name {}", req.partition_id);
+    if !PARTITION_NAME_REGEX.is_match(&req.partition) {
+        bail!("Invalid partition name {}", req.partition);
     }
 
     // Remove any partitions with differing names.
-    query("DELETE FROM iam.partition WHERE partition_id != $1")
-        .bind(req.partition_id.clone())
-        .execute(tx.as_mut())
-        .await?;
+    query("DELETE FROM iam.partition WHERE partition != $1").bind(req.partition.clone()).execute(tx.as_mut()).await?;
 
     // Insert the new partition if it doesn't already exist.
     query(indoc! {"
-            INSERT INTO iam.partition (partition_id)
+            INSERT INTO iam.partition (partition)
             VALUES ($1)
             ON CONFLICT DO NOTHING
         "})
-    .bind(req.partition_id.clone())
+    .bind(req.partition.clone())
     .execute(tx.as_mut())
     .await?;
 
-    Ok(SetCurrentPartitionResponse::builder().partition_id(req.partition_id.clone()).build()?)
+    Ok(SetCurrentPartitionResponse::builder().partition(req.partition.clone()).build()?)
 }

@@ -38,14 +38,14 @@ async fn test_partition(database: &TempDatabase) -> AnyResult<()> {
             "--username",
             "scratchstack",
             "set-current-partition",
-            "--partition-id",
+            "--partition",
             "test-partition",
         ])
         .await?;
-    assert!(result.contains(r#""PartitionId": "test-partition""#));
+    assert!(result.contains(r#""Partition": "test-partition""#));
 
     let result = database.run(["ssbs", "--port", &port, "--username", "scratchstack", "get-current-partition"]).await?;
-    assert!(result.contains(r#""PartitionId": "test-partition""#));
+    assert!(result.contains(r#""Partition": "test-partition""#));
 
     Ok(())
 }

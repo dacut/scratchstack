@@ -48,10 +48,15 @@ pub async fn create_user(
             bail!("Permissions boundary ARN must have a resource that starts with \"policy/\"");
         }
 
-        let account_id = match account_id {
-            AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
-            account_id => account_id,
+        let pb_account_id = permissions_boundary.account_id();
+        let pb_account_id = if pb_account_id == AWS_ACCOUNT_ID {
+            AWS_ACCOUNT_ID_NUMERIC
+        } else if pb_account_id == account_id {
+            account_id
+        } else {
+            bail!("Permissions boundary ARN must have an account ID that matches the request's account ID or 'aws'");
         };
+
         let policy_path_and_name = &resource[6..];
         let name_start = policy_path_and_name.rfind('/').map(|i| i + 1).unwrap_or(0);
         let policy_path = &policy_path_and_name[..name_start];
@@ -61,7 +66,7 @@ pub async fn create_user(
                 FROM iam.managed_policies
                 WHERE account_id = $1 AND path = $2 AND managed_policy_name_lower = $3
             "})
-        .bind(account_id)
+        .bind(pb_account_id)
         .bind(policy_path)
         .bind(policy_name)
         .fetch_all(tx.as_mut())

@@ -83,11 +83,15 @@ pub async fn create_user_if_not_exists(
     if present == 0 {
         // No; create the user.
         log::info!("Creating database role for user {username}");
-        let sql = format!(
-            "CREATE ROLE {} WITH LOGIN NOSUPERUSER CREATEDB NOCREATEROLE NOINHERIT NOREPLICATION PASSWORD {}",
-            pg_quote_ident(username),
-            pg_quote_literal(password),
+        let mut sql = format!(
+            "CREATE ROLE {} WITH LOGIN NOSUPERUSER CREATEDB NOCREATEROLE NOINHERIT NOREPLICATION",
+            pg_quote_ident(username)
         );
+
+        if !password.is_empty() {
+            sql += &format!(" PASSWORD {}", pg_quote_literal(password));
+        };
+
         query(&sql).bind(username).execute(&mut *conn).await?;
         log::info!("Created database role for user {username}");
     } else {
@@ -339,14 +343,14 @@ impl TempDatabase {
             .await?;
 
         query(&format!(
-            "CREATE ROLE scratchstack NOSUPERUSER CREATEDB NOCREATEROLE LOGIN PASSWORD '{}'",
-            self.scratchstack_password
+            "CREATE ROLE scratchstack NOSUPERUSER CREATEDB NOCREATEROLE LOGIN PASSWORD {}",
+            pg_quote_literal(&self.scratchstack_password)
         ))
         .execute(&mut c)
         .await
         .expect("Failed to create role in PostgreSQL database");
 
-        query("CREATE DATABASE iam OWNER scratchstack")
+        query("CREATE DATABASE scratchstack_iam OWNER scratchstack")
             .execute(&mut c)
             .await
             .expect("Failed to create database in PostgreSQL database");
@@ -383,7 +387,7 @@ impl TempDatabase {
             .port(self.settings().get_port())
             .username("scratchstack")
             .password(&self.scratchstack_password)
-            .database("iam");
+            .database("scratchstack_iam");
 
         PgPoolOptions::new()
             .min_connections(1)
