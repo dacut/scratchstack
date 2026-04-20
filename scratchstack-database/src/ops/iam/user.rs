@@ -273,8 +273,7 @@ pub async fn list_users(
             // FIXME: The ARN here is incorrect; we need to translate the managed policy ID back into
             // its path and name.
             log::warn!(
-                "Permissions boundary ARN for user {} is incorrect because we don't have the policy name and path available",
-                row.user_name_cased
+                "Permissions boundary ARN for user is incorrect because we don't have the policy name and path available"
             );
             let arn = format!("arn:{partition}:{SERVICE_KEY_IAM}::{account_id}:{ARN_RESOURCE_PREFIX_POLICY}{pb_id}");
             Some(

@@ -31,7 +31,7 @@ def main():
 
         if "POSTGRES_PASSWORD" not in seen_vars:
             password = pwgen()
-            ofd.write(f"POSTGRES_PASSWORD={password}\n")
+            ofd.write(f"POSTGRES_PASSWORD={password}\n") # codeql[py/clear-text-storage-sensitive-data]
 
         if "POSTGRES_USER" not in seen_vars:
             ofd.write("POSTGRES_USER=postgres\n")

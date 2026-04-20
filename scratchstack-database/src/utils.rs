@@ -82,7 +82,7 @@ pub async fn create_user_if_not_exists(
 
     if present == 0 {
         // No; create the user.
-        log::info!("Creating database role for user {username}");
+        log::info!("Creating database role for user {username}"); // codeql[rust/cleartext-logging]
         let mut sql = format!(
             "CREATE ROLE {} WITH LOGIN NOSUPERUSER CREATEDB NOCREATEROLE NOINHERIT NOREPLICATION",
             pg_quote_ident(username)
@@ -93,9 +93,9 @@ pub async fn create_user_if_not_exists(
         };
 
         query(&sql).bind(username).execute(&mut *conn).await?;
-        log::info!("Created database role for user {username}");
+        log::info!("Created database role for user {username}"); // codeql[rust/cleartext-logging]
     } else {
-        log::info!("Database role for user {username} already exists");
+        log::info!("Database role for user {username} already exists"); // codeql[rust/cleartext-logging]
     }
 
     Ok(())
@@ -109,7 +109,7 @@ pub async fn grant_ddl_permissions(conn: &mut PgConnection, db_name: &str, usern
         pg_quote_ident(username)
     );
     query(&sql).bind(username).execute(&mut *conn).await?;
-    log::info!("Granted DDL permissions to user {username} on database {db_name}");
+    log::info!("Granted DDL permissions to user {username} on database {db_name}"); // codeql[rust/cleartext-logging]
     Ok(())
 }
 

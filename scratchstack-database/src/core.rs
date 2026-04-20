@@ -121,7 +121,7 @@ mod tests {
     fn test_password_special_chars_encoded() {
         // '@' and ':' in the password would break URL parsing if unencoded.
         let url = ConnectionUrlBuilder::default().username("alice").password("p@ss:word").build();
-        assert_eq!(url, "postgres://alice:p%40ss%3Aword@localhost");
+        assert_eq!(url, "postgres://alice:p%40ss%3Aword@localhost"); // codeql[rust/hard-coded-cryptographic-value]
     }
 
     #[test]
@@ -136,7 +136,7 @@ mod tests {
     fn test_host_directory_path_with_credentials_and_database() {
         let url = ConnectionUrlBuilder::default()
             .username("alice")
-            .password("secret")
+            .password("secret") // codeql[rust/hard-coded-cryptographic-value]
             .host("/var/run/postgresql")
             .database("mydb")
             .build();
