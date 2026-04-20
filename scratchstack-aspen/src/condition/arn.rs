@@ -1,7 +1,6 @@
 use {
     super::variant::Variant,
     crate::{AspenError, Context, PolicyVersion, eval::regex_from_glob, serutil::StringLikeList},
-    log::trace,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::SessionValue,
     std::str::FromStr,
@@ -64,12 +63,6 @@ pub(super) fn arn_match(
                         let region = regex_from_glob(parts[3], false);
                         let account_id = regex_from_glob(parts[4], false);
                         let resource = context.matcher(parts[5], pv, false)?;
-
-                        trace!(
-                            "partition={} service={} region={} account_id={} resource={}",
-                            partition, service, region, account_id, resource
-                        );
-                        trace!("value={}", value);
 
                         let is_match = partition.is_match(value.partition())
                             && service.is_match(value.service())

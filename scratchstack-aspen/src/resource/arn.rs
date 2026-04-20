@@ -129,24 +129,6 @@ impl ResourceArn {
         let resource_match = resource.is_match(candidate.resource());
         let result = partition_match && service_match && region_match && account_id_match && resource_match;
 
-        log::trace!(
-            "arn_pattern_matches: pattern={:?}, candidate={} -> partition={:?} ({}) service={:?} ({}) region={:?} ({}) account_id={:?} ({}) resource={:?} vs {:?} ({}) -> result={}",
-            self,
-            candidate,
-            partition,
-            partition_match,
-            service,
-            service_match,
-            region,
-            region_match,
-            account_id,
-            account_id_match,
-            resource,
-            candidate.resource(),
-            resource_match,
-            result
-        );
-
         Ok(result)
     }
 }

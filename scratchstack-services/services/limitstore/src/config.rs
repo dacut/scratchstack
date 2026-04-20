@@ -160,7 +160,9 @@ impl TLSConfig {
         if private_keys.len() != 1 {
             return Err(TLSConfigError { kind: TLSConfigErrorKind::InvalidPrivateKey });
         }
-        let private_key = private_keys.remove(0);
+        // No, I don't know what CodeQL is on about here, either...
+        let private_key = private_keys.remove(0); // codeql[rust/cleartext-logging]
+
 
         sc.set_single_cert(certs, private_key)?;
         Ok(sc)

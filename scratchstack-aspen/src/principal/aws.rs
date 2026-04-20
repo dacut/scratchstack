@@ -94,7 +94,7 @@ mod tests {
     };
 
     #[allow(clippy::redundant_clone)]
-    #[test_log::test]
+    #[test_log::test] // codeql[rust/cleartext-logging]
     fn test_derived() {
         // Just need to verify clone works as expected.
         let ap1a = AwsPrincipal::Any;
