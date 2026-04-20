@@ -51,3 +51,9 @@ pub static ACCOUNT_ALIAS_REGEX: LazyLock<Regex> =
 /// Regular expression for partition names.
 pub static PARTITION_NAME_REGEX: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"^[a-z][-a-z0-9]+[a-z0-9]$").unwrap());
+
+/// Regular expression for paths.
+pub static PATH_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(/|/[\x21-\x7e]+/)$").unwrap());
+
+/// Regular expression for path prefixes.
+pub static PATH_PREFIX_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^/[\x21-\x7e]+$").unwrap());

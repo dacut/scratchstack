@@ -3,7 +3,7 @@ use {
     crate::{Cli, Runnable},
     anyhow::Result as AnyResult,
     scratchstack_database::ops::RequestExecutor,
-    scratchstack_shapes::iam::{
+    scratchstack_shapes_iam::{
         CreateUserInternalRequest, CreateUserResponse, ListUsersInternalRequest, ListUsersResponse,
     },
     std::ffi::OsString,

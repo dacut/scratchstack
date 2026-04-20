@@ -24,11 +24,14 @@
 //! Original is Copyright 2012-2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 //! Licensed under the Apache License, Version 2.0.
 
-use std::{
-    collections::HashMap,
-    error::Error,
-    fmt::{Display, Formatter, Result as FmtResult},
-    str::FromStr,
+use {
+    chrono::{DateTime, Utc},
+    std::{
+        collections::HashMap,
+        error::Error,
+        fmt::{Display, Formatter, Result as FmtResult},
+        str::FromStr,
+    },
 };
 
 // ---------------------------------------------------------------------------
@@ -139,6 +142,122 @@ pub enum Value {
     Map(HashMap<String, Value>),
 }
 
+impl<T> TryFrom<&Value> for HashMap<String, T>
+where
+    T: for<'a> TryFrom<&'a Value, Error = String>,
+{
+    type Error = String;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Map(m) => m.iter().map(|(k, v)| Ok((k.clone(), T::try_from(v)?))).collect(),
+            other => Err(format!("Expected a map/object, but got {other:?}")),
+        }
+    }
+}
+
+impl<T> TryFrom<&Value> for Option<T>
+where
+    T: for<'a> TryFrom<&'a Value, Error = String>,
+{
+    type Error = String;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        T::try_from(value).map(Some)
+    }
+}
+
+impl<T> TryFrom<&Value> for Vec<T>
+where
+    T: for<'a> TryFrom<&'a Value, Error = String>,
+{
+    type Error = String;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::List(l) => l.iter().map(|v| T::try_from(v)).collect(),
+            other => Err(format!("Expected a list/array, but got {other:?}")),
+        }
+    }
+}
+
+impl TryFrom<&Value> for DateTime<Utc> {
+    type Error = String;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Scalar(s) => s.parse::<DateTime<Utc>>().map_err(|e| format!("Failed to parse DateTime: {}", e)),
+            other => Err(format!("Expected a scalar value, but got {other:?}")),
+        }
+    }
+}
+
+impl TryFrom<&Value> for String {
+    type Error = String;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Scalar(s) => Ok(s.clone()),
+            other => Err(format!("Expected a scalar value, but got {other:?}")),
+        }
+    }
+}
+
+impl TryFrom<&Value> for bool {
+    type Error = String;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Scalar(s) => s.parse::<bool>().map_err(|e| format!("Failed to parse bool: {}", e)),
+            other => Err(format!("Expected a scalar value, but got {other:?}")),
+        }
+    }
+}
+
+impl TryFrom<&Value> for i8 {
+    type Error = String;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Scalar(s) => s.parse::<i8>().map_err(|e| format!("Failed to parse i8: {}", e)),
+            other => Err(format!("Expected a scalar value, but got {other:?}")),
+        }
+    }
+}
+
+impl TryFrom<&Value> for i16 {
+    type Error = String;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Scalar(s) => s.parse::<i16>().map_err(|e| format!("Failed to parse i16: {}", e)),
+            other => Err(format!("Expected a scalar value, but got {other:?}")),
+        }
+    }
+}
+
+impl TryFrom<&Value> for i32 {
+    type Error = String;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Scalar(s) => s.parse::<i32>().map_err(|e| format!("Failed to parse i32: {}", e)),
+            other => Err(format!("Expected a scalar value, but got {other:?}")),
+        }
+    }
+}
+
+impl TryFrom<&Value> for i64 {
+    type Error = String;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Scalar(s) => s.parse::<i64>().map_err(|e| format!("Failed to parse i64: {}", e)),
+            other => Err(format!("Expected a scalar value, but got {other:?}")),
+        }
+    }
+}
+
 impl Value {
     /// Convenience: get a scalar string reference.
     pub fn as_str(&self) -> Option<&str> {
@@ -234,7 +353,7 @@ impl<'a> ShorthandParser<'a> {
     /// Parse the input and return the top-level map.
     ///
     /// ```
-    /// use scratchstack_shapes::shorthand::ShorthandParser;
+    /// use scratchstack_shapes_iam::shorthand::ShorthandParser;
     /// let result = ShorthandParser::new("Key=Value,Foo=Bar").parse().unwrap();
     /// ```
     pub fn parse(mut self) -> Result<Value, ParseError> {
@@ -649,7 +768,7 @@ impl<'a> ShorthandParser<'a> {
 /// Parse a shorthand expression, returning the top-level value.
 ///
 /// ```
-/// use scratchstack_shapes::shorthand::{parse, Value};
+/// use scratchstack_shapes_iam::shorthand::{parse, Value};
 ///
 /// let val = parse("Key=Hello,Foo=Bar").unwrap();
 /// assert_eq!(val.get("Key").unwrap().as_str(), Some("Hello"));

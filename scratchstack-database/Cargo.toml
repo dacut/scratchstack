@@ -13,7 +13,7 @@ version.workspace = true
 default = ["dump", "gsk-direct", "iam", "load", "utils"]
 dump = []
 gsk-direct = ["iam", "dep:scratchstack-arn"]
-iam = ["dep:scratchstack-shapes"]
+iam = ["dep:scratchstack-shapes-iam"]
 load = []
 utils = ["dep:postgresql_commands", "dep:postgresql_embedded", "dep:tempfile"]
 
@@ -37,7 +37,7 @@ scratchstack-aws-principal.path = "../scratchstack-aws-principal"
 scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features = ["unstable"] }
 scratchstack-errors.path = "../scratchstack-errors"
 scratchstack-pagination.path = "../scratchstack-pagination"
-scratchstack-shapes = { path = "../scratchstack-shapes", optional = true }
+scratchstack-shapes-iam = { path = "../scratchstack-shapes-iam", optional = true }
 serde = { workspace = true, features = ["derive"] }
 sqlx = { workspace = true, features = [
     "chrono",

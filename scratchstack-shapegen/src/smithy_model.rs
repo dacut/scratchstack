@@ -1,0 +1,190 @@
+use {
+    super::{Shape, Typed, to_pascal_case},
+    serde::{Deserialize, Serialize},
+    serde_json::Value,
+    std::{
+        cell::RefCell,
+        collections::HashMap,
+        io::{Result as IoResult, Write},
+        rc::Rc,
+    },
+};
+
+/// Smithy service model.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SmithyModel {
+    /// Defines the version of the Smithy specification (e.g., "2.0"). The version can be set to a
+    /// single number like "2" or include a point release like "2.0".
+    pub smithy: String,
+
+    /// Defines all of the metadata about the model using a JSON object. Each key is the metadata
+    /// key to set, and each value is the metadata value to assign to the key.
+    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
+    pub metadata: HashMap<String, Value>,
+
+    /// A map of absolute shape IDs to shape definitions.
+    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
+    pub shapes: HashMap<String, Rc<RefCell<Shape>>>,
+}
+
+impl SmithyModel {
+    /// Resolve all shapes in the model by calling `resolve` on each shape until all shapes are resolved.
+    pub fn resolve(&self) {
+        for (shape_name, shape) in &self.shapes {
+            let mut shape = shape.borrow_mut();
+            let hash_pos = shape_name.find('#').expect("Shape ID should contain a '#' character");
+            let simple_typename = &shape_name[hash_pos + 1..];
+            let rust_typename = to_pascal_case(simple_typename);
+
+            match &mut *shape {
+                Shape::Unit(u) => {
+                    assert!(u.smithy_typename.is_none());
+                    assert!(u.rust_typename.is_none());
+                    u.smithy_typename = Some(shape_name.clone());
+                    u.rust_typename = Some(rust_typename);
+                }
+                Shape::Blob(b) => {
+                    assert!(b.smithy_typename.is_none());
+                    assert!(b.rust_typename.is_none());
+                    b.smithy_typename = Some(shape_name.clone());
+                    b.rust_typename = Some(rust_typename);
+                }
+                Shape::Boolean(b) => {
+                    assert!(b.smithy_typename.is_none());
+                    assert!(b.rust_typename.is_none());
+                    b.smithy_typename = Some(shape_name.clone());
+                    b.rust_typename = Some(rust_typename);
+                }
+                Shape::String(s) => {
+                    assert!(s.smithy_typename.is_none());
+                    assert!(s.rust_typename.is_none());
+                    s.smithy_typename = Some(shape_name.clone());
+                    s.rust_typename = Some(rust_typename);
+                }
+                Shape::Byte(b) => {
+                    assert!(b.smithy_typename.is_none());
+                    assert!(b.rust_typename.is_none());
+                    b.smithy_typename = Some(shape_name.clone());
+                    b.rust_typename = Some(rust_typename);
+                }
+                Shape::Short(s) => {
+                    assert!(s.smithy_typename.is_none());
+                    assert!(s.rust_typename.is_none());
+                    s.smithy_typename = Some(shape_name.clone());
+                    s.rust_typename = Some(rust_typename);
+                }
+                Shape::Integer(i) => {
+                    assert!(i.smithy_typename.is_none());
+                    assert!(i.rust_typename.is_none());
+                    i.smithy_typename = Some(shape_name.clone());
+                    i.rust_typename = Some(rust_typename);
+                }
+                Shape::Long(l) => {
+                    assert!(l.smithy_typename.is_none());
+                    assert!(l.rust_typename.is_none());
+                    l.smithy_typename = Some(shape_name.clone());
+                    l.rust_typename = Some(rust_typename);
+                }
+                Shape::Float(f) => {
+                    assert!(f.smithy_typename.is_none());
+                    assert!(f.rust_typename.is_none());
+                    f.smithy_typename = Some(shape_name.clone());
+                    f.rust_typename = Some(rust_typename);
+                }
+                Shape::Double(d) => {
+                    assert!(d.smithy_typename.is_none());
+                    assert!(d.rust_typename.is_none());
+                    d.smithy_typename = Some(shape_name.clone());
+                    d.rust_typename = Some(rust_typename);
+                }
+                Shape::BigInteger(b) => {
+                    assert!(b.smithy_typename.is_none());
+                    assert!(b.rust_typename.is_none());
+                    b.smithy_typename = Some(shape_name.clone());
+                    b.rust_typename = Some(rust_typename);
+                }
+                Shape::BigDecimal(b) => {
+                    assert!(b.smithy_typename.is_none());
+                    assert!(b.rust_typename.is_none());
+                    b.smithy_typename = Some(shape_name.clone());
+                    b.rust_typename = Some(rust_typename);
+                }
+                Shape::Document => {
+                    unimplemented!("Document type is not supported yet");
+                }
+                Shape::Timestamp(t) => {
+                    assert!(t.smithy_typename.is_none());
+                    assert!(t.rust_typename.is_none());
+                    t.smithy_typename = Some(shape_name.clone());
+                    t.rust_typename = Some(rust_typename);
+                }
+                Shape::Enum(e) => {
+                    assert!(e.smithy_typename.is_none());
+                    assert!(e.rust_typename.is_none());
+                    e.smithy_typename = Some(shape_name.clone());
+                    e.rust_typename = Some(rust_typename);
+                }
+                Shape::IntEnum(e) => {
+                    assert!(e.smithy_typename.is_none());
+                    assert!(e.rust_typename.is_none());
+                    e.smithy_typename = Some(shape_name.clone());
+                    e.rust_typename = Some(rust_typename);
+                }
+                Shape::List(l) => {
+                    let member_shape =
+                        self.shapes.get(&l.member.target).expect("List member should exist in model").clone();
+                    l.member.shape = Some(member_shape);
+                }
+                Shape::Map(m) => {
+                    let key_shape = self.shapes.get(&m.key.target).expect("Map key should exist in model").clone();
+                    let value_shape =
+                        self.shapes.get(&m.value.target).expect("Map value should exist in model").clone();
+                    m.key.shape = Some(key_shape);
+                    m.value.shape = Some(value_shape);
+                }
+                Shape::Structure(s) => {
+                    assert!(s.smithy_typename.is_none());
+                    assert!(s.rust_typename.is_none());
+                    s.smithy_typename = Some(shape_name.clone());
+                    s.rust_typename = Some(rust_typename);
+
+                    for member in &mut s.members.values_mut() {
+                        let member_shape =
+                            self.shapes.get(&member.target).expect("Structure member should exist in model").clone();
+                        member.shape = Some(member_shape);
+                    }
+                }
+                Shape::Union(u) => {
+                    assert!(u.smithy_typename.is_none());
+                    assert!(u.rust_typename.is_none());
+                    u.smithy_typename = Some(shape_name.clone());
+                    u.rust_typename = Some(rust_typename);
+                }
+                _ => {}
+            }
+        }
+
+        // Mark all input structures as reachable from the input.
+        for shape in self.shapes.values() {
+            let mut shape = shape.borrow_mut();
+            if let Shape::Structure(s) = &mut *shape
+                && s.traits.contains_key("smithy.api#input")
+            {
+                s.mark_reachable_from_input();
+            }
+        }
+    }
+
+    /// Gets a shape by its shape ID.
+    pub fn get_shape(&self, shape_id: &str) -> Option<Rc<RefCell<Shape>>> {
+        self.shapes.get(shape_id).cloned()
+    }
+
+    /// Generates Rust code for the Smithy model.
+    pub fn generate(&self, writer: &mut impl Write) -> IoResult<()> {
+        for shape in self.shapes.values() {
+            shape.borrow().write(writer)?;
+        }
+        Ok(())
+    }
+}

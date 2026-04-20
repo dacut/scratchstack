@@ -27,11 +27,7 @@ use {
         },
         utils::TempDatabase,
     },
-    scratchstack_shapes::{
-        Arn,
-        iam::{CreateUserInternalRequest, Tag},
-    },
-    std::str::FromStr as _,
+    scratchstack_shapes_iam::{CreateUserInternalRequest, Tag},
 };
 
 /// Test all of the features of the database.
@@ -594,13 +590,13 @@ async fn test_create_user_simple(pool: &sqlx::PgPool) {
         .expect("Failed to create user");
     tx.commit().await.expect("Failed to commit transaction");
 
-    let user = resp.user();
-    assert_eq!(user.user_name(), "alice");
-    assert_eq!(user.path(), "/");
-    assert!(user.user_id().starts_with("AIDA"), "User ID must start with AIDA prefix");
-    assert!(user.arn().to_string().ends_with(":user/alice"), "ARN must end with :user/alice, got {}", user.arn());
-    assert!(user.permissions_boundary().is_none());
-    assert!(user.tags().is_empty());
+    let user = resp.user.expect("Response should include created user");
+    assert_eq!(user.user_name, "alice");
+    assert_eq!(user.path, "/");
+    assert!(user.user_id.starts_with("AIDA"), "User ID must start with AIDA prefix");
+    assert!(user.arn.ends_with(":user/alice"), "ARN must end with :user/alice, got {}", user.arn);
+    assert!(user.permissions_boundary.is_none());
+    assert!(user.tags.is_empty());
 }
 
 /// Create a user at a non-default path.
@@ -608,7 +604,7 @@ async fn test_create_user_with_path(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreateUserInternalRequest::builder()
         .user_name("bob".to_string())
-        .path("/engineering/".to_string())
+        .path(Some("/engineering/".to_string()))
         .account_id("123456789012".to_string())
         .build()
         .expect("Failed to build CreateUserRequestInternal")
@@ -617,9 +613,9 @@ async fn test_create_user_with_path(pool: &sqlx::PgPool) {
         .expect("Failed to create user with path");
     tx.commit().await.expect("Failed to commit transaction");
 
-    let user = resp.user();
-    assert_eq!(user.user_name(), "bob");
-    assert_eq!(user.path(), "/engineering/");
+    let user = resp.user.expect("Response should include created user");
+    assert_eq!(user.user_name, "bob");
+    assert_eq!(user.path, "/engineering/");
 }
 
 /// Create a user with tags attached.
@@ -629,8 +625,16 @@ async fn test_create_user_with_tags(pool: &sqlx::PgPool) {
         .user_name("carol".to_string())
         .account_id("210987654321".to_string())
         .tags(vec![
-            Tag::new("Environment", "Production").expect("Failed to build Environment tag"),
-            Tag::new("Team", "Engineering").expect("Failed to build Team tag"),
+            Tag::builder()
+                .key("Environment".to_string())
+                .value("Production".to_string())
+                .build()
+                .expect("Failed to build Environment tag"),
+            Tag::builder()
+                .key("Team".to_string())
+                .value("Engineering".to_string())
+                .build()
+                .expect("Failed to build Team tag"),
         ])
         .build()
         .expect("Failed to build CreateUserRequestInternal")
@@ -639,21 +643,19 @@ async fn test_create_user_with_tags(pool: &sqlx::PgPool) {
         .expect("Failed to create user with tags");
     tx.commit().await.expect("Failed to commit transaction");
 
-    let user = resp.user();
-    assert_eq!(user.user_name(), "carol");
+    let user = resp.user.expect("Response should include created user");
+    assert_eq!(user.user_name, "carol");
 }
 
 /// Create a user with an existing managed policy as the permissions boundary.
 async fn test_create_user_with_permissions_boundary(pool: &sqlx::PgPool) {
     // The test data has "Example-Managed-Policy-1" in account 123456789012 at path "/".
-    let policy_arn =
-        Arn::from_str("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1").expect("Failed to parse policy ARN");
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreateUserInternalRequest::builder()
         .user_name("dave".to_string())
         .account_id("123456789012".to_string())
-        .permissions_boundary(policy_arn.clone())
+        .permissions_boundary(Some("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string()))
         .build()
         .expect("Failed to build CreateUserRequestInternal")
         .execute(&mut tx)
@@ -661,10 +663,11 @@ async fn test_create_user_with_permissions_boundary(pool: &sqlx::PgPool) {
         .expect("Failed to create user with permissions boundary");
     tx.commit().await.expect("Failed to commit transaction");
 
-    let user = resp.user();
-    assert_eq!(user.user_name(), "dave");
-    let pb = user.permissions_boundary().expect("User should have a permissions boundary");
-    assert_eq!(pb.permissions_boundary_arn(), &policy_arn);
+    let user = resp.user.expect("Response should include created user");
+    assert_eq!(user.user_name, "dave");
+    let pb = user.permissions_boundary.expect("User should have a permissions boundary");
+    let pb_arn = pb.permissions_boundary_arn.expect("Permissions boundary should include an ARN");
+    assert_eq!(pb_arn, "arn:aws:iam::123456789012:policy/Example-Managed-Policy-1");
 }
 
 /// Attempting to create a user whose (lowercased) name already exists in the account must fail.
@@ -708,14 +711,11 @@ async fn test_create_user_nonexistent_account(pool: &sqlx::PgPool) {
 
 /// Specifying a permissions boundary that references a policy that does not exist must fail.
 async fn test_create_user_nonexistent_permissions_boundary(pool: &sqlx::PgPool) {
-    let policy_arn =
-        Arn::from_str("arn:aws:iam::123456789012:policy/NonExistentPolicy").expect("Failed to parse policy ARN");
-
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = CreateUserInternalRequest::builder()
         .user_name("frank".to_string())
         .account_id("123456789012".to_string())
-        .permissions_boundary(policy_arn)
+        .permissions_boundary(Some("arn:aws:iam::123456789012:policy/NonExistentPolicy".to_string()))
         .build()
         .expect("Failed to build CreateUserRequestInternal")
         .execute(&mut tx)

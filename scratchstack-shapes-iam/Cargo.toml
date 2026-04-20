@@ -1,6 +1,6 @@
 [package]
-name = "scratchstack-shapes"
-description = "API shapes for Scratchstack services"
+name = "scratchstack-shapes-iam"
+description = "AWS Identity and Access Management shapes for Scratchstack services"
 
 authors.workspace = true
 homepage.workspace = true
@@ -10,13 +10,19 @@ edition.workspace = true
 version.workspace = true
 
 [features]
-default = ["clap", "iam"]
+default = ["clap"]
 clap = ["dep:clap"]
-iam = ["chrono/serde"]
+
+[build-dependencies]
+anyhow.workspace = true
+scratchstack-shapegen = { path = "../scratchstack-shapegen" }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 
 [dependencies]
 anyhow.workspace = true
-chrono.workspace = true
+base64.workspace = true
+chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true, optional = true, features = ["derive"] }
 derive_builder.workspace = true
 regex.workspace = true

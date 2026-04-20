@@ -11,7 +11,8 @@ members = [
     "scratchstack-http-framework",
     "scratchstack-pagination",
     "scratchstack-service-sts",
-    "scratchstack-shapes",
+    "scratchstack-shapegen",
+    "scratchstack-shapes-iam",
 ]
 resolver = "2"
 
@@ -82,5 +83,6 @@ tokio-rustls = "0.23"
 tokio-test = "0.4"
 toml = "0.9"
 tower = "0.5"
+typed-arena = "2.0"
 uuid = "1.22"
 whoami = "2.1"

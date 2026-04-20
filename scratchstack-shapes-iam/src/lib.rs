@@ -20,9 +20,13 @@
 
 pub use scratchstack_arn::{self, Arn};
 
+/// Clap parsing utilities.
+#[cfg(feature = "clap")]
+pub mod clap_utils;
+
 /// AWS CLI shorthand notation shapes.
 pub mod shorthand;
 
 /// Identity and Access Management (IAM) API shapes.
-#[cfg(feature = "iam")]
-pub mod iam;
+pub(crate) mod iam;
+pub use iam::*;

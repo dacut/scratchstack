@@ -1,14 +1,19 @@
 //! Identity and Access Management (IAM) API shapes.
 
-use anyhow::{Result as AnyResult, bail};
+use {
+    anyhow::{Result as AnyResult, bail},
+    derive_builder::Builder,
+    serde::{Deserialize, Serialize},
+    std::{collections::HashMap, str::FromStr},
+};
 
-mod account_id;
-mod path;
-mod policy;
-mod tag;
-mod user;
+// mod account_id;
+// mod path;
+// mod policy;
+// mod tag;
+// mod user;
 
-pub use {account_id::*, path::*, policy::*, tag::*, user::*};
+// pub use {account_id::*, path::*, policy::*, tag::*, user::*};
 
 // Items that don't fit elsewhere.
 
@@ -47,4 +52,21 @@ pub fn clap_parse_max_items(max_items: &str) -> Result<usize, String> {
     let max_items = max_items.parse().map_err(|e| format!("max_items must be a valid integer: {e}"))?;
     validate_max_items(max_items).map_err(|e| format!("Invalid max_items: {e}"))?;
     Ok(max_items)
+}
+
+include!(concat!(env!("OUT_DIR"), "/iam_gen.rs"));
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test_log::test]
+    fn test_create_user_invalid_name() {
+        // Spaces and `!` are not in the allowed character set.
+        let result = CreateUserInternalRequest::builder()
+            .user_name("bad name!".to_string())
+            .account_id("123456789012".to_string())
+            .build();
+        assert!(result.is_err(), "Building a request with an invalid user name must fail");
+    }
 }

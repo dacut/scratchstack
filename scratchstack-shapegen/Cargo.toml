@@ -1,0 +1,15 @@
+[package]
+name = "scratchstack-shapegen"
+description = "API shape generation for Scratchstack services"
+
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive", "rc"] }
+serde_json.workspace = true
+typed-arena.workspace = true

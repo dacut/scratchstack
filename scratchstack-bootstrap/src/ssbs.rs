@@ -27,7 +27,7 @@ use {
     scratchstack_database::ops::iam::{
         CreateAccountRequest, GetCurrentPartitionRequest, ListAccountsRequest, SetCurrentPartitionRequest,
     },
-    scratchstack_shapes::iam::{CreateUserInternalRequest, ListUsersInternalRequest},
+    scratchstack_shapes_iam::{CreateUserInternalRequest, ListUsersInternalRequest},
     sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions},
     std::{
         ffi::OsString,
