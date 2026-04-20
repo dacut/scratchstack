@@ -967,11 +967,7 @@ fn debug_headers(headers: &HashMap<String, Vec<Vec<u8>>>) -> String {
 #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
 #[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
 fn get_content_type_and_charset(headers: &HeaderMap<HeaderValue>) -> Option<ContentTypeCharset> {
-    let content_type_opts = match headers.get(HDR_CONTENT_TYPE) {
-        Some(value) => value.as_ref(),
-        None => return None,
-    };
-
+    let content_type_opts = headers.get(HDR_CONTENT_TYPE)?.as_ref();
     let mut parts = content_type_opts.split(|c| *c == b';').map(trim_ascii);
     let content_type = latin1_to_string(parts.next().expect("split always returns at least one element"));
 

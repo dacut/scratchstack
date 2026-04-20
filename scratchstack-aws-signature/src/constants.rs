@@ -114,8 +114,7 @@ pub(crate) const HDR_X_AMZ_DECODED_CONTENT_LENGTH: &str = "x-amz-decoded-content
 pub(crate) const HDR_X_AMZ_SECURITY_TOKEN: &str = "x-amz-security-token";
 
 /// Uppercase hex digits.
-pub(crate) const HEX_DIGITS_UPPER: [u8; 16] =
-    [b'0', b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'A', b'B', b'C', b'D', b'E', b'F'];
+pub(crate) const HEX_DIGITS_UPPER: [u8; 16] = *b"0123456789ABCDEF";
 
 /// Compact ISO8601 format used for the string to sign.
 pub(crate) const ISO8601_COMPACT_FORMAT: &str = "%Y%m%dT%H%M%SZ";
