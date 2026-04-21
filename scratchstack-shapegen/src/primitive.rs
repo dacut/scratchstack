@@ -43,19 +43,14 @@ macro_rules! impl_numeric {
                 true
             }
 
-            fn get_clap_parser(&self, optional: bool) -> ::std::string::String {
+            fn get_clap_parser(&self) -> ::std::string::String {
                 let rust_typename = self.rust_typename();
-                if optional {
-                    format!("clap_parse_opt_{rust_typename}")
-                } else {
-                    format!("clap_parse_{rust_typename}")
-                }
+                format!("clap_parse_{rust_typename}")
             }
 
             fn write(&self, output: &mut dyn Write) -> IoResult<()> {
                 self.write_rust_decl(output)?;
-                self.write_clap_parser(output, false)?;
-                self.write_clap_parser(output, true)?;
+                self.write_clap_parser(output)?;
                 Ok(())
             }
 
@@ -104,16 +99,13 @@ macro_rules! impl_numeric {
             }
 
             /// Writes the clap parser for this type.
-            fn write_clap_parser(&self, output: &mut dyn Write, optional: bool) -> IoResult<()> {
+            fn write_clap_parser(&self, output: &mut dyn Write) -> IoResult<()> {
                 let smithy_typename = self.smithy_typename.as_ref().expect(concat!(stringify!($shape), " shape should have a Smithy typename after resolution"));
                 let hash_pos = smithy_typename.rfind("#").expect("Smithy typename should contain a '#' character");
                 let simple_typename = &smithy_typename[hash_pos + 1..];
                 let rust_typename = self.rust_typename();
-                let (fn_name, return_type) = if optional {
-                    (format!("clap_parse_opt_{}", rust_typename), format!("Option<{}>", stringify!($rust_type)))
-                } else {
-                    (format!("clap_parse_{}", rust_typename), stringify!($rust_type).to_string())
-                };
+                let fn_name = format!("clap_parse_{}", rust_typename);
+                let return_type = stringify!($rust_type).to_string();
 
                 writeln!(output, "#[cfg(feature = \"clap\")]")?;
                 writeln!(output, "#[allow(non_snake_case, unused)]")?;
@@ -137,12 +129,7 @@ macro_rules! impl_numeric {
                     }
                 }
 
-                if optional {
-                    writeln!(output, "    Ok(Some(value))")?;
-                } else {
-                    writeln!(output, "    Ok(value)")?;
-                }
-
+                writeln!(output, "    Ok(value)")?;
                 writeln!(output, "}}")?;
                 writeln!(output)?;
                 Ok(())
@@ -192,14 +179,13 @@ impl Typed for Blob {
         true
     }
 
-    fn get_clap_parser(&self, _optional: bool) -> ::std::string::String {
+    fn get_clap_parser(&self) -> ::std::string::String {
         unimplemented!("blob type does not have a clap parser")
     }
 
     fn write(&self, output: &mut dyn Write) -> IoResult<()> {
         self.write_rust_decl(output)?;
-        self.write_clap_parser(output, false)?;
-        self.write_clap_parser(output, true)?;
+        self.write_clap_parser(output)?;
         Ok(())
     }
 
@@ -224,26 +210,22 @@ impl Blob {
         Ok(())
     }
 
-    fn write_clap_parser(&self, output: &mut dyn Write, optional: bool) -> IoResult<()> {
+    fn write_clap_parser(&self, output: &mut dyn Write) -> IoResult<()> {
         let smithy_typename =
             self.smithy_typename.as_ref().expect("Blob shape should have a Smithy typename after resolution");
         let hash_pos = smithy_typename.rfind("#").expect("Smithy typename should contain a '#' character");
         let simple_typename = &smithy_typename[hash_pos + 1..];
         let rust_typename = self.rust_typename();
-        let (fn_name, return_type, wrap_pre, wrap_post) = if optional {
-            (format!("clap_parse_opt_{}", rust_typename), "Option<Vec<u8>>", "Some(", ")")
-        } else {
-            (format!("clap_parse_{}", rust_typename), "Vec<u8>", "", "")
-        };
+        let fn_name = format!("clap_parse_{}", rust_typename);
 
         writeln!(output, "#[cfg(feature = \"clap\")]")?;
         writeln!(output, "#[allow(non_snake_case, unused)]")?;
-        writeln!(output, "fn {fn_name}(s: &str) -> Result<{return_type}, String> {{")?;
+        writeln!(output, "fn {fn_name}(s: &str) -> Result<Vec<u8>, String> {{")?;
         writeln!(
             output,
             "    let value = ::base64::engine::Engine::decode(&::base64::engine::general_purpose::STANDARD, s).map_err(|_| \"{simple_typename} must be a valid base64 string\".to_string())?;"
         )?;
-        writeln!(output, "    Ok({wrap_pre}value{wrap_post})")?;
+        writeln!(output, "    Ok(value)")?;
         writeln!(output, "}}")?;
         writeln!(output)?;
         Ok(())
@@ -260,19 +242,14 @@ impl Typed for Boolean {
         true
     }
 
-    fn get_clap_parser(&self, optional: bool) -> ::std::string::String {
+    fn get_clap_parser(&self) -> ::std::string::String {
         let rust_typename = self.rust_typename();
-        if optional {
-            format!("clap_parse_opt_{rust_typename}")
-        } else {
-            format!("clap_parse_{rust_typename}")
-        }
+        format!("clap_parse_{rust_typename}")
     }
 
     fn write(&self, output: &mut dyn Write) -> IoResult<()> {
         self.write_rust_decl(output)?;
-        self.write_clap_parser(output, false)?;
-        self.write_clap_parser(output, true)?;
+        self.write_clap_parser(output)?;
         Ok(())
     }
 
@@ -297,32 +274,18 @@ impl Boolean {
         Ok(())
     }
 
-    fn write_clap_parser(&self, output: &mut dyn Write, optional: bool) -> IoResult<()> {
+    fn write_clap_parser(&self, output: &mut dyn Write) -> IoResult<()> {
         let smithy_typename =
             self.smithy_typename.as_ref().expect("Boolean shape should have a Smithy typename after resolution");
         let hash_pos = smithy_typename.rfind("#").expect("Smithy typename should contain a '#' character");
         let simple_typename = &smithy_typename[hash_pos + 1..];
         let rust_typename = self.rust_typename();
-        let (fn_name, return_type) = if optional {
-            (format!("clap_parse_opt_{}", rust_typename), "Option<bool>")
-        } else {
-            (format!("clap_parse_{}", rust_typename), "bool")
-        };
+        let fn_name = format!("clap_parse_{}", rust_typename);
 
         writeln!(output, "#[cfg(feature = \"clap\")]")?;
         writeln!(output, "#[allow(non_snake_case, unused)]")?;
-        writeln!(output, "fn {fn_name}(s: &str) -> Result<{return_type}, String> {{")?;
-        if optional {
-            writeln!(
-                output,
-                "    Ok(Some(s.parse().map_err(|_| format!(\"{simple_typename} must be a valid boolean: {{s}}\"))?))"
-            )?;
-        } else {
-            writeln!(
-                output,
-                "    s.parse().map_err(|_| format!(\"{simple_typename} must be a valid boolean: {{s}}\"))"
-            )?;
-        }
+        writeln!(output, "fn {fn_name}(s: &str) -> Result<bool, String> {{")?;
+        writeln!(output, "    s.parse().map_err(|_| format!(\"{simple_typename} must be a valid boolean: {{s}}\"))")?;
         writeln!(output, "}}")?;
         writeln!(output)?;
         Ok(())
@@ -339,19 +302,14 @@ impl Typed for String {
         true
     }
 
-    fn get_clap_parser(&self, optional: bool) -> ::std::string::String {
+    fn get_clap_parser(&self) -> ::std::string::String {
         let rust_typename = self.rust_typename();
-        if optional {
-            format!("clap_parse_opt_{rust_typename}")
-        } else {
-            format!("clap_parse_{rust_typename}")
-        }
+        format!("clap_parse_{rust_typename}")
     }
 
     fn write(&self, output: &mut dyn Write) -> IoResult<()> {
         self.write_rust_decl(output)?;
-        self.write_clap_parser(output, false)?;
-        self.write_clap_parser(output, true)?;
+        self.write_clap_parser(output)?;
         Ok(())
     }
 
@@ -428,22 +386,17 @@ impl String {
     }
 
     /// Writes the clap parser for this type.
-    fn write_clap_parser(&self, output: &mut dyn Write, optional: bool) -> IoResult<()> {
+    fn write_clap_parser(&self, output: &mut dyn Write) -> IoResult<()> {
         let smithy_typename =
             self.smithy_typename.as_ref().expect("String shape should have a Smithy typename after resolution");
         let hash_pos = smithy_typename.rfind("#").expect("Smithy typename should contain a '#' character");
         let simple_typename = &smithy_typename[hash_pos + 1..];
         let rust_typename = self.rust_typename();
-
-        let (fn_name, return_type) = if optional {
-            (format!("clap_parse_opt_{}", rust_typename), "Option<String>")
-        } else {
-            (format!("clap_parse_{}", rust_typename), "String")
-        };
+        let fn_name = format!("clap_parse_{}", rust_typename);
 
         writeln!(output, "#[cfg(feature = \"clap\")]")?;
         writeln!(output, "#[allow(non_snake_case, unused)]")?;
-        writeln!(output, "fn {fn_name}(s: &str) -> Result<{return_type}, String> {{")?;
+        writeln!(output, "fn {fn_name}(s: &str) -> Result<String, String> {{")?;
 
         if let Some(pat) = self.traits.get("smithy.api#pattern").and_then(|v| v.as_str()) {
             writeln!(
@@ -485,12 +438,7 @@ impl String {
             }
         }
 
-        if optional {
-            writeln!(output, "    Ok(Some(s.to_string()))")?;
-        } else {
-            writeln!(output, "    Ok(s.to_string())")?;
-        }
-
+        writeln!(output, "    Ok(s.to_string())")?;
         writeln!(output, "}}")?;
         writeln!(output)?;
 
@@ -508,20 +456,14 @@ impl Typed for Timestamp {
         true
     }
 
-    fn get_clap_parser(&self, optional: bool) -> ::std::string::String {
+    fn get_clap_parser(&self) -> ::std::string::String {
         let rust_typename = self.rust_typename();
-
-        if optional {
-            format!("Option<{rust_typename}>::try_from::<&str>")
-        } else {
-            format!("{rust_typename}::try_from::<&str>")
-        }
+        format!("{rust_typename}::try_from::<&str>")
     }
 
     fn write(&self, output: &mut dyn Write) -> IoResult<()> {
         self.write_rust_decl_body(output)?;
-        self.write_clap_parser(output, false)?;
-        self.write_clap_parser(output, true)?;
+        self.write_clap_parser(output)?;
         Ok(())
     }
 
@@ -548,32 +490,18 @@ impl Timestamp {
     }
 
     /// Writes the clap parser for this type.
-    fn write_clap_parser(&self, output: &mut dyn Write, optional: bool) -> IoResult<()> {
+    fn write_clap_parser(&self, output: &mut dyn Write) -> IoResult<()> {
         let smithy_typename =
             self.smithy_typename.as_ref().expect("Timestamp shape should have a Smithy typename after resolution");
         let hash_pos = smithy_typename.rfind("#").expect("Smithy typename should contain a '#' character");
         let simple_typename = &smithy_typename[hash_pos + 1..];
         let rust_typename = self.rust_typename();
-        let (fn_name, return_type) = if optional {
-            (format!("clap_parse_opt_{}", rust_typename), "Option<chrono::DateTime<chrono::Utc>>")
-        } else {
-            (format!("clap_parse_{}", rust_typename), "chrono::DateTime<chrono::Utc>")
-        };
+        let fn_name = format!("clap_parse_{}", rust_typename);
 
         writeln!(output, "#[cfg(feature = \"clap\")]")?;
         writeln!(output, "#[allow(non_snake_case, unused)]")?;
-        writeln!(output, "fn {fn_name}(s: &str) -> Result<{return_type}, String> {{")?;
-        writeln!(
-            output,
-            "    let value = s.parse().map_err(|_| format!(\"{simple_typename} must be a valid timestamp: {{s}}\"))?;"
-        )?;
-
-        if optional {
-            writeln!(output, "    Ok(Some(value))")?;
-        } else {
-            writeln!(output, "    Ok(value)")?;
-        }
-
+        writeln!(output, "fn {fn_name}(s: &str) -> Result<chrono::DateTime<chrono::Utc>, String> {{")?;
+        writeln!(output, "    s.parse().map_err(|_| format!(\"{simple_typename} must be a valid timestamp: {{s}}\"))")?;
         writeln!(output, "}}")?;
         writeln!(output)?;
 
@@ -591,7 +519,7 @@ impl Typed for Unit {
         true
     }
 
-    fn get_clap_parser(&self, _optional: bool) -> ::std::string::String {
+    fn get_clap_parser(&self) -> ::std::string::String {
         unimplemented!("unit type does not have a clap parser")
     }
 

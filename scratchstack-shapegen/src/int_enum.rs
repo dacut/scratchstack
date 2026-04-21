@@ -76,13 +76,9 @@ impl Typed for IntEnum {
         Ok(())
     }
 
-    fn get_clap_parser(&self, option: bool) -> String {
+    fn get_clap_parser(&self) -> String {
         let typename = self.rust_typename();
-        if option {
-            format!("{typename}::parse_opt")
-        } else {
-            format!("{typename}::parse")
-        }
+        format!("{typename}::parse")
     }
 
     fn mark_reachable_from_input(&mut self) {}

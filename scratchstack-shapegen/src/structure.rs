@@ -84,10 +84,9 @@ impl Structure {
             let is_list = member.is_list();
             if self.reachable_from_input {
                 let mut clap_args = vec!["long".to_string()];
-                if is_optional && !is_list {
-                    clap_args.push("default_value = None".to_string());
-                }
-                clap_args.push(format!("value_parser = {}", member.get_clap_parser(is_optional)));
+                // Always use the non-optional parser: Clap automatically produces None for
+                // Option<T> fields and an empty Vec for list fields when the arg is absent.
+                clap_args.push(format!("value_parser = {}", member.get_clap_parser()));
                 writeln!(output, "    #[cfg_attr(feature = \"clap\", clap({}))]", clap_args.join(", "))?;
             }
 
@@ -273,13 +272,9 @@ impl Typed for Structure {
         self.rust_typename.clone().expect("Structure type should be resolved before generating Rust code")
     }
 
-    fn get_clap_parser(&self, optional: bool) -> String {
+    fn get_clap_parser(&self) -> String {
         let typename = self.rust_typename();
-        if optional {
-            format!("{typename}::parse_opt")
-        } else {
-            format!("{typename}::from_str")
-        }
+        format!("{typename}::from_str")
     }
 
     fn mark_reachable_from_input(&mut self) {

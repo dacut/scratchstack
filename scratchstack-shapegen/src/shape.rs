@@ -249,8 +249,8 @@ impl Typed for Shape {
         self.inner().expect("Shape does not contain a typed inner shape").is_primitive()
     }
 
-    fn get_clap_parser(&self, option: bool) -> String {
-        self.inner().expect("Shape does not contain a typed inner shape").get_clap_parser(option)
+    fn get_clap_parser(&self) -> String {
+        self.inner().expect("Shape does not contain a typed inner shape").get_clap_parser()
     }
 
     fn get_derive_builder_validator(&self, var: &str) -> Option<String> {

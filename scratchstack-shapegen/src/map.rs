@@ -45,14 +45,10 @@ impl Typed for Map {
         Ok(())
     }
 
-    fn get_clap_parser(&self, option: bool) -> String {
-        let key_parser = self.key.get_clap_parser(false);
-        let value_parser = self.value.get_clap_parser(false);
-        if option {
-            format!("crate::clap_utils::parse_opt_map({key_parser}, {value_parser})")
-        } else {
-            format!("crate::clap_utils::parse_map({key_parser}, {value_parser})")
-        }
+    fn get_clap_parser(&self) -> String {
+        let key_parser = self.key.get_clap_parser();
+        let value_parser = self.value.get_clap_parser();
+        format!("crate::clap_utils::parse_map({key_parser}, {value_parser})")
     }
 
     fn mark_reachable_from_input(&mut self) {
