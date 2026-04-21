@@ -5,6 +5,7 @@ use {
     scratchstack_database::ops::RequestExecutor,
     scratchstack_shapes_iam::{
         CreateUserInternalRequest, CreateUserResponse, ListUsersInternalRequest, ListUsersResponse,
+        UpdateUserInternalRequest,
     },
     std::ffi::OsString,
 };
@@ -12,7 +13,7 @@ use {
 impl Runnable for CreateUserInternalRequest {
     type Result = CreateUserResponse;
 
-    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<CreateUserResponse>
+    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<Self::Result>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -28,7 +29,7 @@ impl Runnable for CreateUserInternalRequest {
 impl Runnable for ListUsersInternalRequest {
     type Result = ListUsersResponse;
 
-    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<ListUsersResponse>
+    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<Self::Result>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -38,5 +39,21 @@ impl Runnable for ListUsersInternalRequest {
         tx.commit().await?;
 
         Ok(response)
+    }
+}
+
+impl Runnable for UpdateUserInternalRequest {
+    type Result = ();
+
+    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<Self::Result>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let conn = args.connect(vars).await?;
+        let mut tx = conn.begin().await?;
+        self.execute(&mut tx).await?;
+        tx.commit().await?;
+
+        Ok(())
     }
 }

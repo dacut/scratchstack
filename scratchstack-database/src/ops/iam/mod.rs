@@ -15,6 +15,18 @@ mod user;
 
 pub use {account::*, partition::*, user::*};
 
+/// Validate that the account id is valid.
+///
+/// This requires that the account id be a 12-digit number or the string "aws".
+pub fn validate_account_id(account_id: impl AsRef<str>) -> AnyResult<()> {
+    let account_id = account_id.as_ref();
+    if !(account_id == "aws" || (account_id.len() == 12 && account_id.chars().all(|c| c.is_ascii_digit()))) {
+        bail!("Account ID must be a 12-digit number or the string \"aws\".");
+    }
+
+    Ok(())
+}
+
 /// Validate that the path is valid according to AWS IAM rules.
 ///
 /// Paths must be between 1 and 512 characters long, start and end with a slash, and can contain any printable
@@ -43,6 +55,43 @@ pub fn validate_path_prefix(path_prefix: impl AsRef<str>) -> AnyResult<()> {
     if !PATH_PREFIX_REGEX.is_match(path_prefix) || path_prefix.len() > 512 {
         bail!(
             "Path prefix must start with a slash, can contain any printable ASCII characters (codes 33–126), and must be at most 512 characters long."
+        );
+    }
+    Ok(())
+}
+
+/// Validate that the tag key is valid according to AWS IAM rules.
+///
+/// Note that tag key rules vary between AWS services.
+pub fn validate_tag_key(tag_key: impl AsRef<str>) -> AnyResult<()> {
+    let tag_key = tag_key.as_ref();
+    if !TAG_KEY_REGEX.is_match(tag_key) || tag_key.is_empty() || tag_key.len() > 128 {
+        bail!(
+            "Tag key must contain only alphanumeric characters or the following symbols: _.:/=+\\-@ and must be between 1 and 128 characters long."
+        );
+    }
+    Ok(())
+}
+
+/// Validate that the tag value is valid according to AWS IAM rules.
+///
+/// Note that tag value rules vary between AWS services.
+pub fn validate_tag_value(tag_value: impl AsRef<str>) -> AnyResult<()> {
+    let tag_value = tag_value.as_ref();
+    if !TAG_VALUE_REGEX.is_match(tag_value) || tag_value.len() > 256 {
+        bail!(
+            "Tag value must contain only alphanumeric characters or the following symbols: _.:/=+\\-@ and must be at most 256 characters long."
+        );
+    }
+    Ok(())
+}
+
+/// Validate that the user name is valid according to AWS IAM rules.
+pub fn validate_user_name(user_name: impl AsRef<str>) -> AnyResult<()> {
+    let user_name = user_name.as_ref();
+    if !USER_NAME_REGEX.is_match(user_name) || user_name.is_empty() || user_name.len() > 64 {
+        bail!(
+            "User name must contain only alphanumeric characters or the following symbols: =,.@- and must be between 1 and 64 characters long."
         );
     }
     Ok(())

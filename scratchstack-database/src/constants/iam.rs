@@ -56,4 +56,13 @@ pub static PARTITION_NAME_REGEX: LazyLock<regex::Regex> =
 pub static PATH_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(/|/[\x21-\x7e]+/)$").unwrap());
 
 /// Regular expression for path prefixes.
-pub static PATH_PREFIX_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^/[\x21-\x7e]+$").unwrap());
+pub static PATH_PREFIX_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^/[\x21-\x7e]*$").unwrap());
+
+/// Regular expression for tag keys.
+pub static TAG_KEY_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\p{L}\p{Z}\p{N}_.:/=+\-@]+").unwrap());
+
+/// Regular expression for tag values.
+pub static TAG_VALUE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\p{L}\p{Z}\p{N}_.:/=+\-@]*").unwrap());
+
+/// Regular expression for user names.
+pub static USER_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\w+=,.@-]+").unwrap());

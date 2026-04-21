@@ -6,7 +6,10 @@ use {
         model::iam::IamId,
         ops::{
             RequestExecutor,
-            iam::{constrain_max_items, get_current_partition_or_fail, validate_path, validate_path_prefix},
+            iam::{
+                constrain_max_items, get_current_partition_or_fail, validate_account_id, validate_path,
+                validate_path_prefix, validate_tag_key, validate_tag_value, validate_user_name,
+            },
         },
     },
     anyhow::{Result as AnyResult, anyhow, bail},
@@ -17,7 +20,7 @@ use {
     scratchstack_pagination::{OperationPaginator, ScratchstackOperationMetadata, ScratchstackServiceMetadata},
     scratchstack_shapes_iam::{
         AttachedPermissionsBoundary, CreateUserInternalRequest, CreateUserResponse, ListUsersInternalRequest,
-        ListUsersResponse, PermissionsBoundaryAttachmentType, Tag, User,
+        ListUsersResponse, PermissionsBoundaryAttachmentType, Tag, UpdateUserInternalRequest, User,
     },
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, QueryBuilder, Row as _, postgres::PgTransaction, query},
@@ -49,10 +52,23 @@ pub async fn create_user(
     permissions_boundary: Option<&str>,
     tags: &[Tag],
 ) -> AnyResult<CreateUserResponse> {
-    let partition = get_current_partition_or_fail(tx).await?;
-
+    validate_account_id(account_id)?;
+    let account_id = match account_id {
+        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
+        account_id => account_id,
+    };
     let path = path.unwrap_or("/");
     validate_path(path)?;
+    validate_user_name(user_name)?;
+
+    for tag in tags {
+        validate_tag_key(&tag.key)?;
+        validate_tag_value(&tag.value)?;
+    }
+
+    // Generate a new user id for this user.
+    let user_id = IamId::new(IamResourceType::User, account_id.parse().unwrap()).to_string();
+    let partition = get_current_partition_or_fail(tx).await?;
 
     // If a permissions boundary was specified, look it up and verify that it exists. We need the actual IAM
     // identifier for the boundary, not just the ARN.
@@ -100,12 +116,6 @@ pub async fn create_user(
     } else {
         None
     };
-
-    let account_id = match account_id {
-        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
-        account_id => account_id,
-    };
-    let user_id = IamId::new(IamResourceType::User, account_id.parse().unwrap()).to_string();
 
     let result = query(indoc! {"
             INSERT INTO iam.users(
@@ -204,9 +214,13 @@ pub async fn list_users(
     max_items: Option<i32>,
     path_prefix: Option<&str>,
 ) -> AnyResult<ListUsersResponse> {
-    let partition = get_current_partition_or_fail(tx).await?;
+    validate_account_id(account_id)?;
+    if let Some(path_prefix) = path_prefix {
+        validate_path_prefix(path_prefix)?;
+    }
+    let max_items = constrain_max_items(max_items)?;
 
-    validate_path_prefix(path_prefix.unwrap_or("/"))?;
+    let partition = get_current_partition_or_fail(tx).await?;
 
     // Create the paginator for this operation.
     let service_metadata = ScratchstackServiceMetadata::new(partition.clone(), "", SERVICE_ID_IAM);
@@ -214,8 +228,6 @@ pub async fn list_users(
     let paginator =
         OperationPaginator::new_fixed_key(&service_metadata, &operation_metadata, PAGINATION_KEY_ID, *PAGINATION_KEY)
             .map_err(|e| anyhow!("Failed to create paginator for ListUsers: {e}"))?;
-
-    let max_items = constrain_max_items(max_items)?;
 
     let mut sql = QueryBuilder::new(
         r#"
@@ -305,4 +317,62 @@ pub async fn list_users(
     }
 
     Ok(builder.build()?)
+}
+
+impl RequestExecutor for UpdateUserInternalRequest {
+    type Response = ();
+
+    async fn execute(&self, tx: &mut PgTransaction<'_>) -> AnyResult<Self::Response> {
+        update_user(tx, &self.account_id, &self.user_name, self.new_user_name.as_deref(), self.new_path.as_deref())
+            .await
+    }
+}
+
+/// Update a user on the database.
+pub async fn update_user(
+    tx: &mut PgTransaction<'_>,
+    account_id: &str,
+    user_name: &str,
+    new_user_name: Option<&str>,
+    new_path: Option<&str>,
+) -> AnyResult<()> {
+    validate_account_id(account_id)?;
+    let account_id = match account_id {
+        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
+        account_id => account_id,
+    };
+    validate_user_name(user_name)?;
+    let user_name_lower = user_name.to_lowercase();
+
+    let (new_user_name_cased, new_user_name_lower) = if let Some(new_user_name) = new_user_name {
+        validate_user_name(new_user_name)?;
+        (Some(new_user_name), Some(new_user_name.to_lowercase()))
+    } else {
+        (None, None)
+    };
+
+    if let Some(new_path) = new_path {
+        validate_path(new_path)?;
+    }
+
+    let result = query(indoc! {"
+        UPDATE iam.users
+        SET user_name_lower = COALESCE($3, user_name_lower),
+            user_name_cased = COALESCE($4, user_name_cased),
+            path = COALESCE($5, path)
+        WHERE account_id = $1 AND user_name_lower = $2
+    "})
+    .bind(account_id)
+    .bind(&user_name_lower)
+    .bind(new_user_name_lower)
+    .bind(new_user_name_cased)
+    .bind(new_path)
+    .execute(tx.as_mut())
+    .await?;
+
+    if result.rows_affected() == 0 {
+        Err(anyhow!("The user with name {user_name} cannot be found."))
+    } else {
+        Ok(())
+    }
 }

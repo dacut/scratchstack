@@ -1,7 +1,11 @@
 //! Account database level operations.
 
 use {
-    crate::{constants::iam::*, model::iam::Account, ops::RequestExecutor},
+    crate::{
+        constants::iam::*,
+        model::iam::Account,
+        ops::{RequestExecutor, iam::validate_account_id},
+    },
     anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail},
     base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
     indoc::indoc,
@@ -90,9 +94,7 @@ async fn create_account(
     email: Option<String>,
     alias: Option<String>,
 ) -> AnyResult<CreateAccountResponse> {
-    if !ACCOUNT_ID_REGEX.is_match(&account_id) {
-        bail!("Account ID must be a 12-digit number");
-    }
+    validate_account_id(&account_id)?;
 
     let alias = if let Some(alias) = alias {
         if !ACCOUNT_ALIAS_REGEX.is_match(&alias) || alias.len() < 3 || alias.len() > 63 {
