@@ -198,10 +198,10 @@ impl Cli {
             opts = opts.username(username);
         };
 
-        if let Some(pw) = password {
-            if !pw.is_empty() {
-                opts = opts.password(pw);
-            }
+        if let Some(pw) = password
+            && !pw.is_empty()
+        {
+            opts = opts.password(pw);
         }
 
         if !self.host.is_empty() {
