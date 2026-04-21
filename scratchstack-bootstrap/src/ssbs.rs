@@ -1,5 +1,4 @@
 //! Scratchstack database bootstrap utility for creating initial users
-
 #![warn(clippy::all)]
 #![allow(clippy::manual_range_contains)]
 #![deny(
@@ -28,7 +27,10 @@ use {
         CreateAccountRequest, GetCurrentPartitionRequest, ListAccountsRequest, SetCurrentPartitionRequest,
     },
     scratchstack_shapes_iam::{CreateUserInternalRequest, ListUsersInternalRequest},
-    sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions},
+    sqlx::{
+        Error as SqlxError,
+        postgres::{PgConnectOptions, PgPool, PgPoolOptions},
+    },
     std::{
         ffi::OsString,
         io::{Write, stdout},
@@ -182,45 +184,13 @@ impl Cli {
         }
     }
 
-    /// Returns the database password.
-    pub(crate) fn get_password<I>(&self, vars: I) -> AnyResult<String>
-    where
-        I: IntoIterator<Item = (OsString, String)> + Send,
-    {
-        if self.no_password {
-            return Ok(String::new());
-        }
-
-        let username = self.get_username().map(Some).unwrap_or(None);
-        if self.force_password_prompt {
-            prompt_password(username)
-        } else {
-            let mut password = None;
-            for (k, v) in vars {
-                if k == "PGPASSWORD" {
-                    password = Some(v);
-                    break;
-                }
-            }
-
-            if let Some(password) = password {
-                Ok(password)
-            } else {
-                prompt_password(username)
-            }
-        }
-    }
-
     /// Returns the database name to connect to.
     pub(crate) fn get_database(&self) -> &str {
         &self.database
     }
 
-    /// Get database connection options based on the CLI arguments and environment variables.
-    pub(crate) fn get_connection_options<I>(&self, vars: I) -> AnyResult<PgConnectOptions>
-    where
-        I: IntoIterator<Item = (OsString, String)> + Send,
-    {
+    /// Get database connection options using the given password (or no password if `None`).
+    pub(crate) fn get_connection_options(&self, password: Option<&str>) -> AnyResult<PgConnectOptions> {
         let mut opts = PgConnectOptions::new();
         opts = opts.application_name("scratchstack-bootstrap");
 
@@ -228,9 +198,10 @@ impl Cli {
             opts = opts.username(username);
         };
 
-        let password = self.get_password(vars)?;
-        if !password.is_empty() {
-            opts = opts.password(&password);
+        if let Some(pw) = password {
+            if !pw.is_empty() {
+                opts = opts.password(pw);
+            }
         }
 
         if !self.host.is_empty() {
@@ -246,9 +217,37 @@ impl Cli {
     where
         I: IntoIterator<Item = (OsString, String)> + Send,
     {
-        let pg_opts = self.get_connection_options(vars)?;
         let pool_opts = PgPoolOptions::new().max_connections(1).acquire_timeout(Duration::from_secs(5));
-        Ok(pool_opts.connect_with(pg_opts).await?)
+
+        if self.force_password_prompt {
+            // -W: always prompt before connecting
+            let username = self.get_username().map(Some).unwrap_or(None);
+            let password = prompt_password(username)?;
+            let opts = self.get_connection_options(Some(&password))?;
+            return Ok(pool_opts.connect_with(opts).await?);
+        }
+
+        if self.no_password {
+            // -w: never prompt; fail if the server requires a password
+            let opts = self.get_connection_options(None)?;
+            return Ok(pool_opts.connect_with(opts).await?);
+        }
+
+        // Default (psql-like): use PGPASSWORD if set, otherwise try without a password first.
+        // Only prompt if the server sends an auth challenge and we had nothing to offer.
+        let env_password: Option<String> = vars.into_iter().find(|(k, _)| k == "PGPASSWORD").map(|(_, v)| v);
+        let opts = self.get_connection_options(env_password.as_deref())?;
+
+        match pool_opts.clone().connect_with(opts).await {
+            Ok(pool) => Ok(pool),
+            Err(e) if env_password.is_none() && is_auth_error(&e) => {
+                let username = self.get_username().map(Some).unwrap_or(None);
+                let password = prompt_password(username)?;
+                let opts = self.get_connection_options(Some(&password))?;
+                Ok(pool_opts.connect_with(opts).await?)
+            }
+            Err(e) => Err(e.into()),
+        }
     }
 }
 
@@ -261,4 +260,19 @@ pub(crate) fn prompt_password(username: Option<impl AsRef<str>>) -> AnyResult<St
     };
 
     Ok(rpassword::prompt_password(&prompt)?)
+}
+
+/// Postgresql class 28 error codes (Invalid Authorization Specification)
+const PG_CLASS_28_CODES: &[&str] = &["28P01", "28000"];
+
+/// Returns true if the error is a Postgres authentication failure, meaning the server required
+/// a password (or the one supplied was wrong).
+fn is_auth_error(e: &SqlxError) -> bool {
+    match e {
+        SqlxError::Database(db_err) => {
+            // 28P01 = invalid_password, 28000 = invalid_authorization_specification
+            db_err.code().map(|c| PG_CLASS_28_CODES.contains(&&*c)).unwrap_or(false)
+        }
+        _ => false,
+    }
 }
