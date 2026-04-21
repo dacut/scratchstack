@@ -85,7 +85,7 @@ impl Structure {
             if self.reachable_from_input {
                 let mut clap_args = vec!["long".to_string()];
                 if is_optional && !is_list {
-                    clap_args.push("default_value = \"None\"".to_string());
+                    clap_args.push("default_value = None".to_string());
                 }
                 clap_args.push(format!("value_parser = {}", member.get_clap_parser(is_optional)));
                 writeln!(output, "    #[cfg_attr(feature = \"clap\", clap({}))]", clap_args.join(", "))?;
