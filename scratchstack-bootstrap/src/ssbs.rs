@@ -262,7 +262,7 @@ pub(crate) fn prompt_password(username: Option<impl AsRef<str>>) -> AnyResult<St
     Ok(rpassword::prompt_password(&prompt)?)
 }
 
-/// Postgresql class 28 error codes (Invalid Authorization Specification)
+/// PostgreSQL class 28 error codes (Invalid Authorization Specification)
 const PG_CLASS_28_CODES: &[&str] = &["28P01", "28000"];
 
 /// Returns true if the error is a Postgres authentication failure, meaning the server required
