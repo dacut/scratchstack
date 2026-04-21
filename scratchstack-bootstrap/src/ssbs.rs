@@ -194,9 +194,7 @@ impl Cli {
         let mut opts = PgConnectOptions::new();
         opts = opts.application_name("scratchstack-bootstrap");
 
-        if let Some(username) = &self.username {
-            opts = opts.username(username);
-        };
+        opts = opts.username(&self.get_username()?);
 
         if let Some(pw) = password
             && !pw.is_empty()
