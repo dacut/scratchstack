@@ -49,13 +49,9 @@ impl Typed for List {
         Ok(())
     }
 
-    fn get_clap_parser(&self, option: bool) -> String {
+    fn get_clap_parser(&self) -> String {
         let member_typename = self.member.rust_typename();
-        if option {
-            format!("crate::clap_utils::parse_opt_list::<{member_typename}>")
-        } else {
-            format!("crate::clap_utils::parse_list::<{member_typename}>")
-        }
+        format!("crate::clap_utils::parse_list::<{member_typename}>")
     }
 
     fn mark_reachable_from_input(&mut self) {

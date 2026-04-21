@@ -88,12 +88,8 @@ impl Typed for Member {
         self.inner().borrow().is_primitive()
     }
 
-    fn get_clap_parser(&self, option: bool) -> String {
-        self.shape
-            .as_ref()
-            .expect("Member should be resolved before generating Rust code")
-            .borrow()
-            .get_clap_parser(option)
+    fn get_clap_parser(&self) -> String {
+        self.shape.as_ref().expect("Member should be resolved before generating Rust code").borrow().get_clap_parser()
     }
 
     fn get_derive_builder_validator(&self, var: &str) -> Option<String> {

@@ -118,7 +118,7 @@ pub trait Typed {
     }
 
     /// Returns the Clap value parser to use for this shape
-    fn get_clap_parser(&self, option: bool) -> String;
+    fn get_clap_parser(&self) -> String;
 
     /// Returns the derive_builder validator, if any, to use for this shape.
     fn get_derive_builder_validator(&self, _var: &str) -> Option<String> {

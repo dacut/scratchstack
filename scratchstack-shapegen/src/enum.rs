@@ -146,18 +146,6 @@ impl Enum {
         writeln!(output)?;
         Ok(())
     }
-
-    fn write_clap_parser_opt(&self, output: &mut dyn Write) -> IoResult<()> {
-        let rust_typename = self.rust_typename();
-
-        writeln!(output, "#[cfg(feature = \"clap\")]")?;
-        writeln!(output, "#[allow(non_snake_case, unused)]")?;
-        writeln!(output, "fn clap_parse_opt_{rust_typename}(s: &str) -> Result<Option<{rust_typename}>, String> {{")?;
-        writeln!(output, "    Ok(Some({rust_typename}::from_str(s)?))")?;
-        writeln!(output, "}}")?;
-        writeln!(output)?;
-        Ok(())
-    }
 }
 
 impl Typed for Enum {
@@ -169,17 +157,12 @@ impl Typed for Enum {
         self.write_rust_decl(output)?;
         self.write_shorthand_parser(output)?;
         self.write_clap_parser(output)?;
-        self.write_clap_parser_opt(output)?;
         Ok(())
     }
 
-    fn get_clap_parser(&self, optional: bool) -> String {
+    fn get_clap_parser(&self) -> String {
         let rust_typename = self.rust_typename();
-        if optional {
-            format!("clap_parse_opt_{rust_typename}")
-        } else {
-            format!("{rust_typename}::from_str")
-        }
+        format!("{rust_typename}::from_str")
     }
 
     fn mark_reachable_from_input(&mut self) {

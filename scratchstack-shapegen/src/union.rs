@@ -77,13 +77,9 @@ impl Typed for Union {
         Ok(())
     }
 
-    fn get_clap_parser(&self, optional: bool) -> String {
+    fn get_clap_parser(&self) -> String {
         let typename = self.rust_typename();
-        if optional {
-            format!("{typename}::parse_opt")
-        } else {
-            format!("{typename}::parse")
-        }
+        format!("{typename}::parse")
     }
 
     fn mark_reachable_from_input(&mut self) {
