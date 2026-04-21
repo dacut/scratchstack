@@ -26,7 +26,7 @@ use {
     scratchstack_database::ops::iam::{
         CreateAccountRequest, GetCurrentPartitionRequest, ListAccountsRequest, SetCurrentPartitionRequest,
     },
-    scratchstack_shapes_iam::{CreateUserInternalRequest, ListUsersInternalRequest},
+    scratchstack_shapes_iam::{CreateUserInternalRequest, ListUsersInternalRequest, UpdateUserInternalRequest},
     sqlx::{
         Error as SqlxError,
         postgres::{PgConnectOptions, PgPool, PgPoolOptions},
@@ -116,6 +116,10 @@ enum Commands {
     /// separate instances of a cloud and are independent of any other partitions.
     #[command(name = "set-current-partition")]
     SetCurrentPartition(SetCurrentPartitionRequest),
+
+    /// Update an IAM user in an account.
+    #[command(name = "update-user")]
+    UpdateUser(UpdateUserInternalRequest),
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -163,6 +167,10 @@ where
         Commands::SetCurrentPartition(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response)?
+        }
+        Commands::UpdateUser(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
         }
     };
 
