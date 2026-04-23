@@ -12,6 +12,6 @@ updates:
       - "scratchstack-services/**"
     schedule:
       interval: weekly
-      days: ["tuesday"]
+      day: "tuesday"
       time: "04:23"
       timezone: "America/Los_Angeles"
