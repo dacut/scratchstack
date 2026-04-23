@@ -10,6 +10,10 @@ updates:
     directory: "/"
     exclude-paths:
       - "scratchstack-services/**"
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
     schedule:
       interval: weekly
       day: "tuesday"
