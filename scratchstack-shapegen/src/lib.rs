@@ -106,14 +106,24 @@ macro_rules! forward_shape_info {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, std::io::stdout};
+    use super::*;
 
     const IAM_MODEL: &str = include_str!("iam-2010-05-08.json");
+    struct NullWriter;
+    impl Write for NullWriter {
+        fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> IoResult<()> {
+            Ok(())
+        }
+    }
 
     #[test]
     fn test_deserialize_service_model() {
         let m: SmithyModel = serde_json::from_str(IAM_MODEL).expect("Failed to deserialize IAM service model");
         m.resolve();
-        m.generate(&mut stdout()).expect("Failed to generate Rust code for IAM service model");
+        m.generate(&mut NullWriter).expect("Failed to generate Rust code for IAM service model");
     }
 }
