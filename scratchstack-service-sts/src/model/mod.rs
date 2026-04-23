@@ -57,17 +57,15 @@ impl<'a> From<InvalidActionError<'a>> for Response {
 
 /// The message returned when an error occurs.
 #[derive(Builder, Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
 pub struct ServiceError {
     #[builder(setter(into))]
-    #[serde(rename = "$unflatten=Type")]
     pub r#type: String,
 
     #[builder(setter(into))]
-    #[serde(rename = "$unflatten=Code")]
     pub code: String,
 
     #[builder(setter(into, strip_option))]
-    #[serde(rename = "$unflatten=Message")]
     pub message: Option<String>,
 }
 
@@ -87,15 +85,12 @@ impl ServiceError {
 #[derive(Builder, Clone, Debug, Serialize, Deserialize)]
 pub struct GetCallerIdentityResult {
     #[builder(setter(into))]
-    #[serde(rename = "$unflatten=Arn")]
     pub arn: String,
 
     #[builder(setter(into))]
-    #[serde(rename = "$unflatten=UserId")]
     pub user_id: String,
 
     #[builder(setter(into))]
-    #[serde(rename = "$unflatten=Account")]
     pub account: String,
 }
 
@@ -113,7 +108,7 @@ impl GetCallerIdentityResult {
 #[derive(Builder, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ResponseMetadata {
     #[builder(setter(into, strip_option), default = "None")]
-    #[serde(rename = "$unflatten=RequestId", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub request_id: Option<RequestId>,
 }
 

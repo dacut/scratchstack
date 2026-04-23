@@ -417,6 +417,7 @@ impl XmlErrorMapper {
 #[serde(rename = "ErrorResponse")]
 pub struct XmlErrorResponse {
     /// The XML namespace for the response root element.
+    #[serde(rename = "@xmlns")]
     pub xmlns: String,
 
     /// The error details.
@@ -424,7 +425,7 @@ pub struct XmlErrorResponse {
     pub error: XmlError,
 
     /// The request ID for this request, if available.
-    #[serde(rename = "$unflatten=RequestId", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "RequestId", skip_serializing_if = "Option::is_none")]
     pub request_id: Option<RequestId>,
 }
 
@@ -433,25 +434,27 @@ pub struct XmlErrorResponse {
 pub struct XmlError {
     /// The type of error, either [`Receiver`][XmlErrorType::Receiver] or
     /// [`Sender`][XmlErrorType::Sender].
-    #[serde(rename = "$unflatten=Type")]
-    pub r#type: XmlErrorType,
+    #[serde(rename = "Type")]
+    pub r#type: XmlErrorTypeWrapper,
 
     /// The error code. In some languages, this is mapped to a class or struct.
-    #[serde(rename = "$unflatten=Code")]
+    #[serde(rename = "Code")]
     pub code: String,
 
     /// Optional human-readable message describing the error.
-    #[serde(rename = "$unflatten=Message", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "Message", skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 }
 
 impl From<&SignatureError> for XmlError {
     fn from(error: &SignatureError) -> Self {
         XmlError {
-            r#type: if error.http_status().as_u16() >= 500 {
-                XmlErrorType::Receiver
-            } else {
-                XmlErrorType::Sender
+            r#type: XmlErrorTypeWrapper {
+                error_type: if error.http_status().as_u16() >= 500 {
+                    XmlErrorType::Receiver
+                } else {
+                    XmlErrorType::Sender
+                },
             },
             code: error.error_code().to_string(),
             message: {
@@ -483,7 +486,7 @@ impl ErrorMapper for XmlErrorMapper {
             Err(any) => {
                 log::error!("Error is not a SignatureError: {any}");
                 let e = XmlError {
-                    r#type: XmlErrorType::Receiver,
+                    r#type: XmlErrorTypeWrapper::new(XmlErrorType::Receiver),
                     code: "InternalServerError".to_string(),
                     message: Some("Internal server error".to_string()),
                 };
@@ -498,6 +501,7 @@ impl ErrorMapper for XmlErrorMapper {
             }
         };
 
+        log::error!("Authentication error: {http_status} - {xml_response:?}");
         let body = Body::from(quick_xml::se::to_string(&xml_response).unwrap());
         Response::builder()
             .status(http_status)
@@ -512,6 +516,23 @@ impl ErrorMapper for XmlErrorMapper {
                 headers.insert("content-type", HeaderValue::from_static("text/plain; charset=utf-8"));
                 response
             })
+    }
+}
+
+/// Container for the type of an XML error structure, either `Receiver` or `Sender`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct XmlErrorTypeWrapper {
+    /// The type of the error, either `Receiver` or `Sender`.
+    #[serde(rename = "$value")]
+    pub error_type: XmlErrorType,
+}
+
+impl XmlErrorTypeWrapper {
+    /// Create a new `XmlErrorTypeWrapper` with the specified error type.
+    pub fn new(error_type: XmlErrorType) -> Self {
+        Self {
+            error_type,
+        }
     }
 }
 
