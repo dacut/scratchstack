@@ -15,15 +15,19 @@ use {
 };
 
 #[derive(Builder, Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
 pub struct ErrorResponse {
     #[builder(setter(into), default = "crate::constants::XML_NS_AWSFAULT.to_string()")]
+    #[serde(rename = "@xmlns")]
     pub xmlns: String,
 
-    #[serde(rename = "Error")]
+    /// The error information returned in the response.
+    #[builder(setter(into))]
     pub error: ServiceError,
 
+    /// The request ID returned in the response, if available.
     #[builder(setter(strip_option))]
-    #[serde(rename = "$unflatten=RequestId", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub request_id: Option<RequestId>,
 }
 
@@ -48,15 +52,16 @@ impl ErrorResponse {
 }
 
 #[derive(Builder, Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
 pub struct GetCallerIdentityResponse {
     #[builder(setter(into), default = "crate::constants::XML_NS_STS.to_string()")]
+    #[serde(rename = "@xmlns")]
     pub xmlns: String,
 
-    #[serde(rename = "GetCallerIdentityResult")]
+    #[builder(setter(into))]
     pub get_caller_identity_result: GetCallerIdentityResult,
 
     #[builder(setter(into), default)]
-    #[serde(rename = "ResponseMetadata")]
     pub response_metadata: ResponseMetadata,
 }
 

@@ -1,6 +1,6 @@
 use {
     crate::constants::*,
-    hmac::{Hmac, Mac},
+    hmac::{Hmac, KeyInit as _, Mac},
     sha2::{Digest, Sha256},
 };
 
