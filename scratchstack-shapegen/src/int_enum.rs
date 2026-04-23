@@ -1,9 +1,8 @@
 use {
-    super::{Member, Typed},
+    crate::{Member, ShapeBase, ShapeInfo, StrExt, forward_shape_info},
     serde::{Deserialize, Serialize},
-    serde_json::Value,
     std::{
-        collections::HashMap,
+        collections::BTreeMap,
         io::{Result as IoResult, Write},
     },
 };
@@ -12,74 +11,50 @@ use {
 /// of intEnum MUST be marked with the enumValue trait set to a unique integer value.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IntEnum {
-    /// The name of this enum in the Smithy model.
-    #[serde(skip, default)]
-    pub smithy_typename: Option<String>,
-
-    /// The Rust name of this enum.
-    #[serde(skip, default)]
-    pub rust_typename: Option<String>,
+    /// Basic shape information for the enum.
+    #[serde(flatten)]
+    pub base: ShapeBase,
 
     /// The members of the intEnum. Each member MUST be marked with the enumValue trait set to a
     /// unique integer value.
-    pub members: HashMap<String, Member>,
-
-    /// Traits to apply to the type.
-    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    pub traits: HashMap<String, Value>,
+    pub members: BTreeMap<String, Member>,
 }
 
-impl Typed for IntEnum {
-    fn rust_typename(&self) -> String {
-        self.rust_typename.clone().expect("IntEnum type should be resolved before generating Rust code")
+impl ShapeInfo for IntEnum {
+    forward_shape_info!(IntEnum, base);
+
+    fn clap_parser(&self) -> Option<String> {
+        let typename = self.rust_typename();
+        Some(format!("{typename}::parse"))
     }
 
-    fn write(&self, output: &mut dyn Write) -> IoResult<()> {
+    fn generate(&self, output: &mut dyn Write) -> IoResult<()> {
         let rust_type = self.rust_typename();
 
-        let docs = self.traits.get("smithy.api#documentation").and_then(|v| v.as_str());
-        if let Some(docs) = docs {
-            for line in docs.lines() {
-                writeln!(output, "/// {}", line.trim())?;
-            }
-        } else {
-            writeln!(output, "#[allow(missing_docs)]")?;
-        }
+        self.base.traits.write_docs(output, "")?;
 
+        writeln!(output, "#[derive(::serde::Deserialize, ::serde::Serialize,)]")?;
         writeln!(
             output,
-            "#[derive(::serde::Deserialize, ::serde::Serialize, ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::PartialEq, ::std::fmt::Debug, ::std::hash::Hash, ::std::marker::Copy)]"
+            "#[derive(::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::PartialEq, ::std::fmt::Debug, ::std::hash::Hash, ::std::marker::Copy)]"
         )?;
         writeln!(output, "#[cfg_attr(feature = \"clap\", derive(::clap::ValueEnum))]")?;
         writeln!(output, "#[non_exhaustive]")?;
         writeln!(output, "pub enum {rust_type} {{")?;
 
         for (member_name, member) in self.members.iter() {
-            let docs = member.traits.get("smithy.api#documentation").and_then(|v| v.as_str());
-            if let Some(docs) = docs {
-                for line in docs.lines() {
-                    writeln!(output, "    /// {}", line.trim())?;
-                }
-            } else {
-                writeln!(output, "    #[allow(missing_docs)]")?;
-            }
+            member.traits.write_docs(output, "    ")?;
+            let rust_member_name = member_name.to_pascal_case();
+            let value = member.traits.enum_value_as_i64().expect("enumValue trait must be an integer");
 
-            let evalue =
-                member.traits.get("smithy.api#enumValue").expect("intEnum members must have an enumValue trait");
-            let value = evalue.as_i64().expect("enumValue trait must be an integer");
-            writeln!(output, "    #[serde(rename = \"{member_name}\")]")?;
-            writeln!(output, "    {member_name} = {value},")?;
+            if &rust_member_name != member_name {
+                writeln!(output, "    #[serde(rename = \"{member_name}\")]")?;
+            }
+            writeln!(output, "    {rust_member_name} = {value},")?;
         }
 
         writeln!(output, "}}")?;
 
         Ok(())
     }
-
-    fn get_clap_parser(&self) -> String {
-        let typename = self.rust_typename();
-        format!("{typename}::parse")
-    }
-
-    fn mark_reachable_from_input(&mut self) {}
 }

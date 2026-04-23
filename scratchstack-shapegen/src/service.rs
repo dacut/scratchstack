@@ -1,7 +1,6 @@
 use {
-    super::ShapeRef,
+    super::{ShapeBase, ShapeInfo, ShapeRef, forward_shape_info},
     serde::{Deserialize, Serialize},
-    serde_json::Value,
     std::collections::HashMap,
 };
 
@@ -9,6 +8,10 @@ use {
 /// The resources and operations of an API are bound within the closure of a service.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Service {
+    /// Basic shape information for this service.
+    #[serde(flatten)]
+    pub base: ShapeBase,
+
     /// Defines the version of the service. The version can be provided in any format (e.g.,
     /// `2017-02-11`, `2.0`, etc).
     #[serde(default)]
@@ -28,11 +31,19 @@ pub struct Service {
     #[serde(default)]
     pub errors: Vec<ShapeRef>,
 
-    /// Traits to apply to the service
-    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    pub traits: HashMap<String, Value>,
-
     /// Disambiguates shape name conflicts in the service closure.
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     pub rename: HashMap<String, String>,
+}
+
+impl ShapeInfo for Service {
+    forward_shape_info!(Service, base);
+
+    fn clap_parser(&self) -> Option<String> {
+        unimplemented!("clap_parser cannot be called on Service types")
+    }
+
+    fn derive_builder_validator(&self, _: &str, _: &str) -> Option<String> {
+        unimplemented!("derive_builder_validator cannot be called on Service types")
+    }
 }

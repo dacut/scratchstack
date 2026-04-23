@@ -1,78 +1,428 @@
 use {
-    crate::{Primitive, Typed},
+    crate::{ShapeBase, ShapeInfo, TraitMap, forward_shape_info},
+    indoc::formatdoc,
     serde::{Deserialize, Serialize},
-    serde_json::Value,
     std::io::{Result as IoResult, Write},
 };
 
-macro_rules! decl {
-    ($shape:ident, $rust_type:ty) => {
-        #[allow(missing_docs)]
-        #[derive(Clone, Debug, Deserialize, Serialize)]
-        pub struct $shape {
-            /// The name of this type in the Smithy model.
-            ///
-            /// This is resolved during a call to `SmithyModel::resolve`.
-            #[serde(skip, default)]
-            pub smithy_typename: ::std::option::Option<::std::string::String>,
+/// The `unit` type in Smithy is similar to `Void` and `None` in other languages. It is used
+/// when the input or output of an operation has no meaningful value or if a union member has no
+/// meaningful value.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SmithyUnit {
+    /// Basic shape information for the `unit` type.
+    #[serde(flatten)]
+    pub base: ShapeBase,
+}
 
-            /// The Rust name of this type.
-            ///
-            /// This is resolved during a call to `SmithyModel::resolve`.
-            #[serde(skip, default)]
-            pub rust_typename: ::std::option::Option<::std::string::String>,
+/// A `boolean` is a Boolean value type.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SmithyBoolean {
+    /// Basic shape information for the `boolean` type.
+    #[serde(flatten)]
+    pub base: ShapeBase,
+}
 
-            /// Traits to apply to the type.
-            #[serde(skip_serializing_if = "::std::collections::HashMap::is_empty", default)]
-            pub traits: ::std::collections::HashMap<::std::string::String, Value>,
+/// A `blob` is uninterpreted binary data.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SmithyBlob {
+    /// Basic shape information for the `blob` type.
+    #[serde(flatten)]
+    pub base: ShapeBase,
+}
+
+/// A `string` is a UTF-8 encoded string.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SmithyString {
+    /// Basic shape information for the `string` type.
+    #[serde(flatten)]
+    pub base: ShapeBase,
+}
+
+/// A `bigInteger` is an arbitrarily large signed integer.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SmithyBigInteger {
+    /// Basic shape information for the `bigInteger` type.
+    #[serde(flatten)]
+    pub base: ShapeBase,
+}
+
+/// A `bigDecimal` is an arbitrary precision signed decimal number.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SmithyBigDecimal {
+    /// Basic shape information for the `bigDecimal` type.
+    #[serde(flatten)]
+    pub base: ShapeBase,
+}
+
+/// A `timestamp` represents an instant in time in the proleptic Gregorian calendar, independent
+/// of local times or timezones. Timestamps support an allowable date range between midnight
+/// January 1, 0001 CE to 23:59:59.999 on December 31, 9999 CE, with a temporal resolution of
+/// 1 millisecond. This resolution and range ensures broad support across programming languages
+/// and guarantees compatibility with RFC 3339.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SmithyTimestamp {
+    /// Basic shape information for the `timestamp` type.
+    #[serde(flatten)]
+    pub base: ShapeBase,
+}
+
+/// A `document` represents protocol-agnostic open content that functions as a kind of "any"
+/// type. Document types are represented by a JSON-like data model and can contain UTF-8
+/// strings, arbitrary precision numbers, booleans, nulls, a list of these values, and a map of
+/// UTF-8 strings to these values. Open content is useful for modeling unstructured data that
+/// has no schema, data that can't be modeled using rigid types, or data that has a schema that
+/// evolves outside of the purview of a model. The serialization format of a document is an
+/// implementation detail of a protocol and MUST NOT have any effect on the types exposed by
+/// tooling to represent a document value.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SmithyDocument {
+    /// Basic shape information for the `document` type.
+    #[serde(flatten)]
+    pub base: ShapeBase,
+}
+
+/// A `byte` is an 8-bit signed integer ranging from -128 to 127 (inclusive).
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SmithyByte {
+    /// Basic shape information for the `byte` type.
+    #[serde(flatten)]
+    pub base: ShapeBase,
+}
+
+/// A `short` is a 16-bit signed integer ranging from -32,768 to 32,767 (inclusive).
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SmithyShort {
+    /// Basic shape information for the `short` type.
+    #[serde(flatten)]
+    pub base: ShapeBase,
+}
+
+/// An `integer` is a 32-bit signed integer ranging from -2^31 to (2^31)-1 (inclusive).
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SmithyInteger {
+    /// Basic shape information for the `integer` type.
+    #[serde(flatten)]
+    pub base: ShapeBase,
+}
+
+/// A `long` is a 64-bit signed integer ranging from -2^63 to (2^63)-1 (inclusive).
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SmithyLong {
+    /// Basic shape information for the `long` type.
+    #[serde(flatten)]
+    pub base: ShapeBase,
+}
+
+/// A `float` is a single precision IEEE-754 floating point number.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SmithyFloat {
+    /// Basic shape information for the `float` type.
+    #[serde(flatten)]
+    pub base: ShapeBase,
+}
+
+/// A `double` is a double precision IEEE-754 floating point number.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SmithyDouble {
+    /// Basic shape information for the `double` type.
+    #[serde(flatten)]
+    pub base: ShapeBase,
+}
+
+impl ShapeInfo for SmithyUnit {
+    forward_shape_info!(SmithyUnit, base);
+
+    fn clap_parser(&self) -> Option<String> {
+        None
+    }
+
+    fn generate(&self, output: &mut dyn Write) -> IoResult<()> {
+        if !self.is_builtin() {
+            self.base.traits.write_docs(output, "")?;
+            writeln!(output, "pub type {} = ();", self.rust_typename())?;
+        }
+        Ok(())
+    }
+}
+
+impl SmithyUnit {
+    /// Create a new `SmithyUnit` instance with the given Smithy name.
+    pub fn new(smithy_name: impl Into<String>) -> Self {
+        let base = ShapeBase {
+            smithy_name: Some(smithy_name.into()),
+            rust_typename: Some("()".to_string()),
+            traits: TraitMap::new(),
+        };
+        Self {
+            base,
+        }
+    }
+}
+
+impl ShapeInfo for SmithyBoolean {
+    forward_shape_info!(SmithyBoolean, base);
+
+    fn clap_parser(&self) -> Option<String> {
+        None
+    }
+
+    fn generate(&self, output: &mut dyn Write) -> IoResult<()> {
+        if !self.is_builtin() {
+            // Declaration
+            let rust_typename = self.rust_typename();
+            self.base.traits.write_docs(output, "")?;
+            writeln!(output, "pub type {rust_typename} = bool;")?;
+            writeln!(output)?;
+        }
+        Ok(())
+    }
+}
+
+impl ShapeInfo for SmithyBlob {
+    forward_shape_info!(SmithyBlob, base);
+
+    fn clap_parser(&self) -> Option<String> {
+        // TODO: Determine how we want to handle blobs on the command line.
+        todo!("Determine how to handle blobs on the CLI")
+    }
+
+    fn generate(&self, output: &mut dyn Write) -> IoResult<()> {
+        if !self.is_builtin() {
+            // Declaration
+            let rust_typename = self.rust_typename();
+            self.base.traits.write_docs(output, "")?;
+            writeln!(output, "pub type {rust_typename} = Vec<u8>;")?;
+            writeln!(output)?;
+
+            // Clap parser
+            let simple_name = self.simple_name();
+            writeln!(output, "#[cfg(feature = \"clap\")]")?;
+            writeln!(output, "#[allow(non_snake_case, unused)]")?;
+            writeln!(output, "fn clap_parse_{rust_typename}(s: &str) -> Result<Vec<u8>, String> {{")?;
+            writeln!(output, "    let value = ::base64::engine::Engine::decode(")?;
+            writeln!(output, "        &::base64::engine::general_purpose::STANDARD, s)")?;
+            writeln!(output, "        .map_err(|_| \"{simple_name} must be a valid base64 string\".to_string())?;")?;
+            writeln!(output, "    Ok(value)")?;
+            writeln!(output, "}}")?;
+            writeln!(output)?;
+        }
+        Ok(())
+    }
+}
+
+impl ShapeInfo for SmithyString {
+    forward_shape_info!(SmithyString, base);
+
+    #[inline(always)]
+    fn clap_parser(&self) -> Option<String> {
+        if self.is_builtin() {
+            None
+        } else {
+            Some(format!("clap_parse_{}", self.rust_typename()))
+        }
+    }
+
+    #[inline(always)]
+    fn derive_builder_validator(&self, var: &str, field_name: &str) -> Option<String> {
+        if self.is_builtin() {
+            return None;
         }
 
-        impl Primitive for $shape {}
-    };
+        let simple_name = self.simple_name(); // Used in error messages
+        let mut output = String::with_capacity(1024);
+
+        if let Some(pat) = self.base.traits.pattern() {
+            let escaped_pat = pat.replace("\\", "\\\\").replace("\"", "\\\"").replace("{", "{{").replace("}", "}}");
+            output += &formatdoc!("
+                static PAT: ::std::sync::LazyLock<::regex::Regex> = ::std::sync::LazyLock::new(||::regex::Regex::new(r\"{pat}\").expect(\"Invalid regex pattern in Smithy model\"));
+                if !PAT.is_match({var}) {{
+                    return Err(format!(\"{field_name} must match the regex {escaped_pat} for {simple_name}: {{{var}}}\"));
+                }}
+            ");
+        }
+
+        if let Some(lc) = self.base.traits.length_constraint() {
+            if let Some(min) = lc.min
+                && min > 0
+            {
+                let cond = if min > 1 {
+                    format!("{var}.len() < {min}")
+                } else {
+                    format!("{var}.is_empty()")
+                };
+
+                output += &formatdoc!("
+                    if {cond} {{
+                        return Err(format!(\"{field_name} must be at least {min} characters long for {simple_name}: {{{var}}}\"));
+                    }}
+                ");
+            }
+
+            if let Some(max) = lc.max {
+                output += &formatdoc!("
+                    if {var}.len() > {max} {{
+                        return Err(format!(\"{field_name} must be at most {max} characters long for {simple_name}: {{{var}}}\")); 
+                    }}
+                ");
+            }
+        }
+
+        if !output.is_empty() {
+            Some(output)
+        } else {
+            None
+        }
+    }
+
+    fn generate(&self, output: &mut dyn Write) -> IoResult<()> {
+        if !self.is_builtin() {
+            // Declaration
+            let rust_typename = self.rust_typename();
+            self.base.traits.write_docs(output, "")?;
+            writeln!(output, "pub type {} = ::std::string::String;", rust_typename)?;
+            writeln!(output)?;
+
+            // Clap parser
+            let rust_typename = self.rust_typename();
+            let simple_name = self.simple_name();
+            writeln!(output, "#[cfg(feature = \"clap\")]")?;
+            writeln!(output, "#[allow(non_snake_case, unused)]")?;
+            writeln!(output, "fn clap_parse_{rust_typename}(s: &str) -> Result<String, String> {{")?;
+
+            if let Some(pat) = self.base.traits.pattern() {
+                writeln!(
+                    output,
+                    "    static PAT: ::std::sync::LazyLock<::regex::Regex> = ::std::sync::LazyLock::new(||::regex::Regex::new(r\"{pat}\").expect(\"Invalid regex pattern in Smithy model\"));"
+                )?;
+                writeln!(output, "    if !PAT.is_match(s) {{")?;
+                writeln!(output, "        return Err(r##\"{simple_name} must match the regex {pat}\"##.to_string());")?;
+                writeln!(output, "    }}")?;
+            }
+
+            if let Some(lc) = self.base.traits.length_constraint() {
+                if let Some(min) = lc.min
+                    && min > 0
+                {
+                    if min == 1 {
+                        writeln!(output, "    if s.is_empty() {{")?;
+                    } else {
+                        writeln!(output, "    if s.len() < {min} {{")?;
+                    }
+                    writeln!(
+                        output,
+                        "        return Err(\"{simple_name} must be at least {min} characters long\".to_string());"
+                    )?;
+                    writeln!(output, "    }}")?;
+                }
+
+                if let Some(max) = lc.max {
+                    writeln!(output, "    if s.len() > {max} {{")?;
+                    writeln!(
+                        output,
+                        "        return Err(\"{simple_name} must be at most {max} characters long\".to_string());"
+                    )?;
+                    writeln!(output, "    }}")?;
+                }
+            }
+
+            writeln!(output, "    Ok(s.to_string())")?;
+            writeln!(output, "}}")?;
+            writeln!(output)?;
+        }
+        Ok(())
+    }
+}
+
+impl ShapeInfo for SmithyBigInteger {
+    forward_shape_info!(SmithyBigInteger, base);
+
+    fn clap_parser(&self) -> Option<String> {
+        todo!("Determine how to handle BigInteger arguments on the CLI")
+    }
+}
+
+impl ShapeInfo for SmithyBigDecimal {
+    forward_shape_info!(SmithyBigDecimal, base);
+
+    fn clap_parser(&self) -> Option<String> {
+        todo!("Determine how to handle BigDecimal arguments on the CLI")
+    }
+}
+
+impl ShapeInfo for SmithyTimestamp {
+    forward_shape_info!(SmithyTimestamp, base);
+
+    fn clap_parser(&self) -> Option<String> {
+        let rust_typename = self.rust_typename();
+        Some(format!("{rust_typename}::try_from::<&str>"))
+    }
+
+    fn generate(&self, output: &mut dyn Write) -> IoResult<()> {
+        if !self.is_builtin() {
+            // Declaration
+            let rust_typename = self.rust_typename();
+            self.base.traits.write_docs(output, "")?;
+            writeln!(output, "pub type {} = ::chrono::DateTime<chrono::Utc>;", rust_typename)?;
+            writeln!(output)?;
+
+            // Clap parser
+            let simple_name = self.simple_name();
+
+            writeln!(output, "#[cfg(feature = \"clap\")]")?;
+            writeln!(output, "#[allow(non_snake_case, unused)]")?;
+            writeln!(
+                output,
+                "fn clap_parse_{rust_typename}(s: &str) -> Result<::chrono::DateTime<chrono::Utc>, String> {{"
+            )?;
+            writeln!(output, "    s.parse().map_err(|_| format!(\"{simple_name} must be a valid timestamp: {{s}}\"))")?;
+            writeln!(output, "}}")?;
+            writeln!(output)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl ShapeInfo for SmithyDocument {
+    forward_shape_info!(SmithyDocument, base);
+
+    fn clap_parser(&self) -> Option<String> {
+        todo!("Figure out how to implement clap_parser for Document")
+    }
 }
 
 macro_rules! impl_numeric {
     ($shape:ident, $rust_type:ty, $range_json:ident) => {
-        impl Typed for $shape {
-            fn rust_typename(&self) -> ::std::string::String {
-                self.rust_typename.clone().expect(concat!(stringify!($shape), " shape should have a Rust typename after resolution"))
+        impl ShapeInfo for $shape {
+            forward_shape_info!($shape, base);
+
+            fn clap_parser(&self) -> Option<String> {
+                if self.is_builtin() {
+                    None
+                } else {
+                    Some(format!("clap_parse_{}", self.rust_typename()))
+                }
             }
 
-            #[inline(always)]
-            fn is_primitive(&self) -> bool {
-                true
-            }
-
-            fn get_clap_parser(&self) -> ::std::string::String {
-                let rust_typename = self.rust_typename();
-                format!("clap_parse_{rust_typename}")
-            }
-
-            fn write(&self, output: &mut dyn Write) -> IoResult<()> {
-                self.write_rust_decl(output)?;
-                self.write_clap_parser(output)?;
+            fn generate(&self, output: &mut dyn Write) -> IoResult<()> {
+                if !self.is_builtin() {
+                    self.write_rust_decl(output)?;
+                    self.write_clap_parser(output)?;
+                }
                 Ok(())
             }
 
-            #[inline(always)]
-            fn mark_reachable_from_input(&mut self) {}
+            fn derive_builder_validator(&self, var: &str, field_name: &str) -> Option<String> {
+                let simple_name = self.simple_name();
+                let mut output = String::new();
 
-            fn get_derive_builder_validator(&self, var: &str) -> ::std::option::Option<::std::string::String> {
-                let mut output = ::std::string::String::new();
-                let smithy_typename = self.smithy_typename.as_ref().expect(concat!(stringify!($shape), " shape should have a Smithy typename after resolution"));
-                let hash_pos = smithy_typename.rfind("#").expect("Smithy typename should contain a '#' character");
-                let simple_typename = &smithy_typename[hash_pos + 1..];
-
-                if let Some(rc) = self.traits.get("smithy.api#range") {
-                    let rc = rc.as_object().expect("Range trait should be an object");
-                    let min = rc.get("min").and_then(|v| v.$range_json());
-                    let max = rc.get("max").and_then(|v| v.$range_json());
-
-                    if let Some(min) = min {
-                        output += &format!("if *{var} < {min} {{ return Err(format!(\"{simple_typename} must be >= {min}: {{{var}}}\")); }}\n");
+                if let Some(rc) = self.base.traits.range_constraint() {
+                    if let Some(min) = rc.min {
+                        output += &format!("if *{var} < {min} {{ return Err(format!(\"{field_name} for {simple_name} must be >= {min}: {{{var}}}\")); }}\n");
                     }
-                    if let Some(max) = max {
-                        output += &format!("if *{var} > {max} {{ return Err(format!(\"{simple_typename} must be <= {max}: {{{var}}}\")); }}\n");
+                    if let Some(max) = rc.max {
+                        output += &format!("if *{var} > {max} {{ return Err(format!(\"{field_name} for {simple_name} must be <= {max}: {{{var}}}\")); }}\n");
                     }
                 }
 
@@ -83,48 +433,35 @@ macro_rules! impl_numeric {
         impl $shape {
             /// Writes the Rust declaration for the type alias.
             fn write_rust_decl(&self, output: &mut dyn Write) -> IoResult<()> {
-                let rust_typename = self.rust_typename();
-                let docs = self.traits.get("smithy.api#documentation").and_then(|v| v.as_str());
-                if let Some(docs) = docs {
-                    for line in docs.lines() {
-                        writeln!(output, "/// {}", line.trim())?;
-                    }
-                } else {
-                    writeln!(output, "#[allow(missing_docs)]")?;
+                if !self.is_builtin() {
+                    self.base.traits.write_docs(output, "")?;
+                    let rust_typename = self.rust_typename();
+                    writeln!(output, "pub type {} = {};", rust_typename, stringify!($rust_type))?;
+                    writeln!(output)?;
                 }
-                writeln!(output, "pub type {} = {};", rust_typename, stringify!($rust_type))?;
-                writeln!(output)?;
-
                 Ok(())
             }
 
             /// Writes the clap parser for this type.
             fn write_clap_parser(&self, output: &mut dyn Write) -> IoResult<()> {
-                let smithy_typename = self.smithy_typename.as_ref().expect(concat!(stringify!($shape), " shape should have a Smithy typename after resolution"));
-                let hash_pos = smithy_typename.rfind("#").expect("Smithy typename should contain a '#' character");
-                let simple_typename = &smithy_typename[hash_pos + 1..];
                 let rust_typename = self.rust_typename();
-                let fn_name = format!("clap_parse_{}", rust_typename);
+                let simple_name = self.simple_name();
                 let return_type = stringify!($rust_type).to_string();
 
                 writeln!(output, "#[cfg(feature = \"clap\")]")?;
                 writeln!(output, "#[allow(non_snake_case, unused)]")?;
-                writeln!(output, "fn {fn_name}(s: &str) -> Result<{return_type}, String> {{")?;
-                writeln!(output, "    let value = s.parse().map_err(|_| format!(\"Invalid {simple_typename}: {{s}}\"))?;")?;
+                writeln!(output, "fn clap_parse_{rust_typename}(s: &str) -> Result<{return_type}, String> {{")?;
+                writeln!(output, "    let value = s.parse().map_err(|_| format!(\"Invalid {simple_name}: {{s}}\"))?;")?;
 
-                if let Some(rc) = self.traits.get("smithy.api#range") {
-                    let rc = rc.as_object().expect("Range trait should be an object");
-                    let min = rc.get("min").and_then(|v| v.$range_json());
-                    let max = rc.get("max").and_then(|v| v.$range_json());
-
-                    if let Some(min) = min {
+                if let Some(rc) = self.base.traits.range_constraint() {
+                    if let Some(min) = rc.min {
                         writeln!(output, "    if value < {min} {{")?;
-                        writeln!(output, "        return Err(format!(\"{simple_typename} must be >= {min}: {{s}}\"));")?;
+                        writeln!(output, "        return Err(format!(\"{simple_name} must be >= {min}: {{s}}\"));")?;
                         writeln!(output, "    }}")?;
                     }
-                    if let Some(max) = max {
+                    if let Some(max) = rc.max {
                         writeln!(output, "    if value > {max} {{")?;
-                        writeln!(output, "        return Err(format!(\"{simple_typename} must be <= {max}: {{s}}\"));")?;
+                        writeln!(output, "        return Err(format!(\"{simple_name} must be <= {max}: {{s}}\"));")?;
                         writeln!(output, "    }}")?;
                     }
                 }
@@ -138,412 +475,9 @@ macro_rules! impl_numeric {
     }
 }
 
-macro_rules! make_int_type {
-    ($shape:ident, $rust_type:ty) => {
-        decl!($shape, $rust_type);
-        impl_numeric!($shape, $rust_type, as_i64);
-    };
-}
-
-macro_rules! make_float_type {
-    ($shape:ident, $rust_type:ty) => {
-        decl!($shape, $rust_type);
-        impl_numeric!($shape, $rust_type, as_f64);
-    };
-}
-
-make_int_type!(Byte, i8);
-make_int_type!(Short, i16);
-make_int_type!(Integer, i32);
-make_int_type!(Long, i64);
-
-make_int_type!(BigInteger, ::num_bigint::BigInt);
-
-make_float_type!(Float, f32);
-make_float_type!(Double, f64);
-make_float_type!(BigDecimal, ::bigdecimal::BigDecimal);
-
-decl!(Blob, Vec<u8>);
-decl!(Boolean, bool);
-decl!(String, ::std::string::String);
-decl!(Timestamp, ::chrono::DateTime<::chrono::Utc>);
-decl!(Unit, ());
-
-impl Typed for Blob {
-    fn rust_typename(&self) -> ::std::string::String {
-        self.rust_typename.clone().expect("Blob shape should have a Rust typename after resolution")
-    }
-
-    #[inline(always)]
-    fn is_primitive(&self) -> bool {
-        true
-    }
-
-    fn get_clap_parser(&self) -> ::std::string::String {
-        unimplemented!("blob type does not have a clap parser")
-    }
-
-    fn write(&self, output: &mut dyn Write) -> IoResult<()> {
-        self.write_rust_decl(output)?;
-        self.write_clap_parser(output)?;
-        Ok(())
-    }
-
-    #[inline(always)]
-    fn mark_reachable_from_input(&mut self) {}
-}
-
-impl Blob {
-    fn write_rust_decl(&self, output: &mut dyn Write) -> IoResult<()> {
-        let rust_typename = self.rust_typename();
-        let docs = self.traits.get("smithy.api#documentation").and_then(|v| v.as_str());
-        if let Some(docs) = docs {
-            for line in docs.lines() {
-                writeln!(output, "/// {}", line.trim())?;
-            }
-        } else {
-            writeln!(output, "#[allow(missing_docs)]")?;
-        }
-
-        writeln!(output, "pub type {} = Vec<u8>;", rust_typename)?;
-        writeln!(output)?;
-        Ok(())
-    }
-
-    fn write_clap_parser(&self, output: &mut dyn Write) -> IoResult<()> {
-        let smithy_typename =
-            self.smithy_typename.as_ref().expect("Blob shape should have a Smithy typename after resolution");
-        let hash_pos = smithy_typename.rfind("#").expect("Smithy typename should contain a '#' character");
-        let simple_typename = &smithy_typename[hash_pos + 1..];
-        let rust_typename = self.rust_typename();
-        let fn_name = format!("clap_parse_{}", rust_typename);
-
-        writeln!(output, "#[cfg(feature = \"clap\")]")?;
-        writeln!(output, "#[allow(non_snake_case, unused)]")?;
-        writeln!(output, "fn {fn_name}(s: &str) -> Result<Vec<u8>, String> {{")?;
-        writeln!(
-            output,
-            "    let value = ::base64::engine::Engine::decode(&::base64::engine::general_purpose::STANDARD, s).map_err(|_| \"{simple_typename} must be a valid base64 string\".to_string())?;"
-        )?;
-        writeln!(output, "    Ok(value)")?;
-        writeln!(output, "}}")?;
-        writeln!(output)?;
-        Ok(())
-    }
-}
-
-impl Typed for Boolean {
-    fn rust_typename(&self) -> ::std::string::String {
-        self.rust_typename.clone().expect("Boolean shape should have a Rust typename after resolution")
-    }
-
-    #[inline(always)]
-    fn is_primitive(&self) -> bool {
-        true
-    }
-
-    fn get_clap_parser(&self) -> ::std::string::String {
-        let rust_typename = self.rust_typename();
-        format!("clap_parse_{rust_typename}")
-    }
-
-    fn write(&self, output: &mut dyn Write) -> IoResult<()> {
-        self.write_rust_decl(output)?;
-        self.write_clap_parser(output)?;
-        Ok(())
-    }
-
-    #[inline(always)]
-    fn mark_reachable_from_input(&mut self) {}
-}
-
-impl Boolean {
-    fn write_rust_decl(&self, output: &mut dyn Write) -> IoResult<()> {
-        let rust_typename = self.rust_typename();
-        let docs = self.traits.get("smithy.api#documentation").and_then(|v| v.as_str());
-        if let Some(docs) = docs {
-            for line in docs.lines() {
-                writeln!(output, "/// {}", line.trim())?;
-            }
-        } else {
-            writeln!(output, "#[allow(missing_docs)]")?;
-        }
-        writeln!(output, "pub type {} = bool;", rust_typename)?;
-        writeln!(output)?;
-
-        Ok(())
-    }
-
-    fn write_clap_parser(&self, output: &mut dyn Write) -> IoResult<()> {
-        let smithy_typename =
-            self.smithy_typename.as_ref().expect("Boolean shape should have a Smithy typename after resolution");
-        let hash_pos = smithy_typename.rfind("#").expect("Smithy typename should contain a '#' character");
-        let simple_typename = &smithy_typename[hash_pos + 1..];
-        let rust_typename = self.rust_typename();
-        let fn_name = format!("clap_parse_{}", rust_typename);
-
-        writeln!(output, "#[cfg(feature = \"clap\")]")?;
-        writeln!(output, "#[allow(non_snake_case, unused)]")?;
-        writeln!(output, "fn {fn_name}(s: &str) -> Result<bool, String> {{")?;
-        writeln!(output, "    s.parse().map_err(|_| format!(\"{simple_typename} must be a valid boolean: {{s}}\"))")?;
-        writeln!(output, "}}")?;
-        writeln!(output)?;
-        Ok(())
-    }
-}
-
-impl Typed for String {
-    fn rust_typename(&self) -> ::std::string::String {
-        self.rust_typename.clone().expect("String shape should have a Rust typename after resolution")
-    }
-
-    #[inline(always)]
-    fn is_primitive(&self) -> bool {
-        true
-    }
-
-    fn get_clap_parser(&self) -> ::std::string::String {
-        let rust_typename = self.rust_typename();
-        format!("clap_parse_{rust_typename}")
-    }
-
-    fn write(&self, output: &mut dyn Write) -> IoResult<()> {
-        self.write_rust_decl(output)?;
-        self.write_clap_parser(output)?;
-        Ok(())
-    }
-
-    #[inline(always)]
-    fn mark_reachable_from_input(&mut self) {}
-
-    fn get_derive_builder_validator(&self, field: &str) -> ::std::option::Option<::std::string::String> {
-        let mut output = ::std::string::String::new();
-        let smithy_typename =
-            self.smithy_typename.as_ref().expect("String shape should have a Smithy typename after resolution");
-        let hash_pos = smithy_typename.rfind("#").expect("Smithy typename should contain a '#' character");
-        let simple_typename = &smithy_typename[hash_pos + 1..];
-
-        if let Some(pat) = self.traits.get("smithy.api#pattern").and_then(|v| v.as_str()) {
-            let escaped_pat = pat.replace("\\", "\\\\").replace("\"", "\\\"").replace("{", "{{").replace("}", "}}");
-            output += &format!(
-                "static PAT: ::std::sync::LazyLock<::regex::Regex> = ::std::sync::LazyLock::new(||::regex::Regex::new(r\"{pat}\").expect(\"Invalid regex pattern in Smithy model\"));\n"
-            );
-            output += &format!(
-                "if !PAT.is_match({field}) {{ return Err(format!(\"{simple_typename} must match the regex {escaped_pat}: {{{field}}}\")); }}\n"
-            );
-        }
-
-        if let Some(lc) = self.traits.get("smithy.api#length") {
-            let lc = lc.as_object().expect("Length trait should be an object");
-            let min = lc.get("min").and_then(|v| v.as_u64());
-            let max = lc.get("max").and_then(|v| v.as_u64());
-
-            if let Some(min) = min
-                && min > 0
-            {
-                if min > 1 {
-                    output += &format!("if {field}.len() < {min} ");
-                } else {
-                    output += &format!("if {field}.is_empty() ");
-                }
-
-                output += &format!(
-                    "{{ return Err(format!(\"{simple_typename} must be at least {min} characters long: {{{field}}}\")); }}\n"
-                );
-            }
-
-            if let Some(max) = max {
-                output += &format!(
-                    "if {field}.len() > {max} {{ return Err(format!(\"{simple_typename} must be at most {max} characters long: {{{field}}}\")); }}\n"
-                );
-            }
-        }
-
-        if !output.is_empty() {
-            Some(output)
-        } else {
-            None
-        }
-    }
-}
-
-impl String {
-    /// Writes the Rust declaration for the type alias.
-    fn write_rust_decl(&self, output: &mut dyn Write) -> IoResult<()> {
-        let rust_typename = self.rust_typename();
-        let docs = self.traits.get("smithy.api#documentation").and_then(|v| v.as_str());
-        if let Some(docs) = docs {
-            for line in docs.lines() {
-                writeln!(output, "/// {}", line.trim())?;
-            }
-        } else {
-            writeln!(output, "#[allow(missing_docs)]")?;
-        }
-        writeln!(output, "pub type {} = String;", rust_typename)?;
-        writeln!(output)?;
-
-        Ok(())
-    }
-
-    /// Writes the clap parser for this type.
-    fn write_clap_parser(&self, output: &mut dyn Write) -> IoResult<()> {
-        let smithy_typename =
-            self.smithy_typename.as_ref().expect("String shape should have a Smithy typename after resolution");
-        let hash_pos = smithy_typename.rfind("#").expect("Smithy typename should contain a '#' character");
-        let simple_typename = &smithy_typename[hash_pos + 1..];
-        let rust_typename = self.rust_typename();
-        let fn_name = format!("clap_parse_{}", rust_typename);
-
-        writeln!(output, "#[cfg(feature = \"clap\")]")?;
-        writeln!(output, "#[allow(non_snake_case, unused)]")?;
-        writeln!(output, "fn {fn_name}(s: &str) -> Result<String, String> {{")?;
-
-        if let Some(pat) = self.traits.get("smithy.api#pattern").and_then(|v| v.as_str()) {
-            writeln!(
-                output,
-                "    static PAT: ::std::sync::LazyLock<::regex::Regex> = ::std::sync::LazyLock::new(||::regex::Regex::new(r\"{pat}\").expect(\"Invalid regex pattern in Smithy model\"));"
-            )?;
-            writeln!(output, "    if !PAT.is_match(s) {{")?;
-            writeln!(output, "        return Err(r##\"{simple_typename} must match the regex {pat}\"##.to_string());")?;
-            writeln!(output, "    }}")?;
-        }
-
-        if let Some(lc) = self.traits.get("smithy.api#length") {
-            let lc = lc.as_object().expect("Length trait should be an object");
-            let min = lc.get("min").and_then(|v| v.as_u64());
-            let max = lc.get("max").and_then(|v| v.as_u64());
-
-            if let Some(min) = min
-                && min > 0
-            {
-                if min == 1 {
-                    writeln!(output, "    if s.is_empty() {{")?;
-                } else {
-                    writeln!(output, "    if s.len() < {min} {{")?;
-                }
-                writeln!(
-                    output,
-                    "        return Err(\"{simple_typename} must be at least {min} characters long\".to_string());"
-                )?;
-                writeln!(output, "    }}")?;
-            }
-
-            if let Some(max) = max {
-                writeln!(output, "    if s.len() > {max} {{")?;
-                writeln!(
-                    output,
-                    "        return Err(\"{simple_typename} must be at most {max} characters long\".to_string());"
-                )?;
-                writeln!(output, "    }}")?;
-            }
-        }
-
-        writeln!(output, "    Ok(s.to_string())")?;
-        writeln!(output, "}}")?;
-        writeln!(output)?;
-
-        Ok(())
-    }
-}
-
-impl Typed for Timestamp {
-    fn rust_typename(&self) -> ::std::string::String {
-        self.rust_typename.clone().expect("Timestamp shape should have a Rust typename after resolution")
-    }
-
-    #[inline(always)]
-    fn is_primitive(&self) -> bool {
-        true
-    }
-
-    fn get_clap_parser(&self) -> ::std::string::String {
-        let rust_typename = self.rust_typename();
-        format!("{rust_typename}::try_from::<&str>")
-    }
-
-    fn write(&self, output: &mut dyn Write) -> IoResult<()> {
-        self.write_rust_decl_body(output)?;
-        self.write_clap_parser(output)?;
-        Ok(())
-    }
-
-    #[inline(always)]
-    fn mark_reachable_from_input(&mut self) {}
-}
-
-impl Timestamp {
-    /// Writes the Rust declaration for the type alias.
-    fn write_rust_decl_body(&self, output: &mut dyn Write) -> IoResult<()> {
-        let rust_typename = self.rust_typename();
-        let docs = self.traits.get("smithy.api#documentation").and_then(|v| v.as_str());
-        if let Some(docs) = docs {
-            for line in docs.lines() {
-                writeln!(output, "/// {}", line.trim())?;
-            }
-        } else {
-            writeln!(output, "#[allow(missing_docs)]")?;
-        }
-        writeln!(output, "pub type {} = chrono::DateTime<chrono::Utc>;", rust_typename)?;
-        writeln!(output)?;
-
-        Ok(())
-    }
-
-    /// Writes the clap parser for this type.
-    fn write_clap_parser(&self, output: &mut dyn Write) -> IoResult<()> {
-        let smithy_typename =
-            self.smithy_typename.as_ref().expect("Timestamp shape should have a Smithy typename after resolution");
-        let hash_pos = smithy_typename.rfind("#").expect("Smithy typename should contain a '#' character");
-        let simple_typename = &smithy_typename[hash_pos + 1..];
-        let rust_typename = self.rust_typename();
-        let fn_name = format!("clap_parse_{}", rust_typename);
-
-        writeln!(output, "#[cfg(feature = \"clap\")]")?;
-        writeln!(output, "#[allow(non_snake_case, unused)]")?;
-        writeln!(output, "fn {fn_name}(s: &str) -> Result<chrono::DateTime<chrono::Utc>, String> {{")?;
-        writeln!(output, "    s.parse().map_err(|_| format!(\"{simple_typename} must be a valid timestamp: {{s}}\"))")?;
-        writeln!(output, "}}")?;
-        writeln!(output)?;
-
-        Ok(())
-    }
-}
-
-impl Typed for Unit {
-    fn rust_typename(&self) -> ::std::string::String {
-        self.rust_typename.clone().expect("Unit shape should have a Rust typename after resolution")
-    }
-
-    #[inline(always)]
-    fn is_primitive(&self) -> bool {
-        true
-    }
-
-    fn get_clap_parser(&self) -> ::std::string::String {
-        unimplemented!("unit type does not have a clap parser")
-    }
-
-    #[inline(always)]
-    fn mark_reachable_from_input(&mut self) {}
-
-    fn write(&self, output: &mut dyn Write) -> IoResult<()> {
-        self.write_rust_decl(output)
-    }
-}
-
-impl Unit {
-    fn write_rust_decl(&self, output: &mut dyn Write) -> IoResult<()> {
-        let docs = self.traits.get("smithy.api#documentation").and_then(|v| v.as_str());
-        if let Some(docs) = docs {
-            for line in docs.lines() {
-                writeln!(output, "/// {}", line.trim())?;
-            }
-        } else {
-            writeln!(output, "#[allow(missing_docs)]")?;
-        }
-        writeln!(output, "pub type {} = ();", self.rust_typename())?;
-        writeln!(output)?;
-
-        Ok(())
-    }
-}
+impl_numeric!(SmithyByte, i8, as_i64);
+impl_numeric!(SmithyShort, i16, as_i64);
+impl_numeric!(SmithyInteger, i32, as_i64);
+impl_numeric!(SmithyLong, i64, as_i64);
+impl_numeric!(SmithyFloat, f32, as_f64);
+impl_numeric!(SmithyDouble, f64, as_f64);

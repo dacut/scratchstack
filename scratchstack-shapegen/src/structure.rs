@@ -1,9 +1,8 @@
 use {
-    super::{Member, Typed, to_snake_case},
+    super::{Member, ShapeBase, ShapeInfo, SmithyModel, StrExt},
     serde::{Deserialize, Serialize},
-    serde_json::Value,
     std::{
-        collections::HashMap,
+        collections::BTreeMap,
         io::{Result as IoResult, Write},
     },
 };
@@ -13,17 +12,13 @@ use {
 /// member definition.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Structure {
-    /// The name of this structure in the Smithy model.
-    ///
-    /// This is resolved during a call to `SmithyModel::resolve`.
-    #[serde(skip, default)]
-    pub smithy_typename: Option<String>,
+    /// Basic shape information for the `structure` type.
+    #[serde(flatten)]
+    pub base: ShapeBase,
 
-    /// The Rust name of this structure.
-    ///
-    /// This is resolved during a call to `SmithyModel::resolve`.
-    #[serde(skip, default)]
-    pub rust_typename: Option<String>,
+    /// The members of the structure. Each member name maps to exactly one member definition.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    pub members: BTreeMap<String, Member>,
 
     /// Whether this struct is reachable from an API input shape. This is used to determine
     /// whether to generate Clap parsers for this struct.
@@ -31,32 +26,74 @@ pub struct Structure {
     /// This is resolved during a call to `SmithyModel::resolve`.
     #[serde(skip, default)]
     pub reachable_from_input: bool,
+}
 
-    /// The members of the structure. Each member name maps to exactly one member definition.
-    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    pub members: HashMap<String, Member>,
+impl ShapeInfo for Structure {
+    fn smithy_name(&self) -> String {
+        self.base.smithy_name()
+    }
 
-    /// Traits to apply to the type.
-    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    pub traits: HashMap<String, Value>,
+    fn rust_typename(&self) -> String {
+        self.base.rust_typename()
+    }
+
+    fn resolve(&mut self, shape_name: &str, model: &SmithyModel) {
+        self.base.resolve(shape_name);
+        for member in self.members.values_mut() {
+            member.resolve(shape_name, model);
+        }
+    }
+
+    /// Returns the Clap parser for this structure, if it is reachable from an API input shape.
+    fn clap_parser(&self) -> Option<String> {
+        // TODO: Do we need this, or can it be elided? Or do we need shorthand magic?
+        let typename = self.rust_typename();
+        Some(format!("{typename}::from_str"))
+    }
+
+    fn mark_reachable_from_input(&mut self) {
+        if self.reachable_from_input {
+            return;
+        }
+
+        self.reachable_from_input = true;
+
+        self.members.values_mut().for_each(|member| {
+            member.mark_reachable_from_input();
+        });
+    }
+
+    fn generate(&self, output: &mut dyn Write) -> IoResult<()> {
+        self.write_rust_decl(output)?;
+        self.write_rust_impl(output)?;
+        if self.reachable_from_input {
+            self.write_rust_from_str_impl(output)?;
+            self.write_rust_try_from_shorthand_value_impl(output)?;
+        }
+
+        if self.base.traits.is_aws_query_error() {
+            self.write_rust_aws_query_error_impl(output)?;
+        }
+
+        self.write_builder_validate(output)?;
+        Ok(())
+    }
 }
 
 impl Structure {
     /// Writes the Rust declaration for the main body of this structure.
     fn write_rust_decl(&self, output: &mut dyn Write) -> IoResult<()> {
         let rust_typename = self.rust_typename();
-        let docs = self.traits.get("smithy.api#documentation").and_then(|v| v.as_str());
-        if let Some(docs) = docs {
-            for line in docs.lines() {
-                writeln!(output, "/// {}", line.trim())?;
-            }
-        } else {
-            writeln!(output, "#[allow(missing_docs)]")?;
-        }
+        let is_error = self.base.traits.is_error();
 
-        writeln!(output, "#[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]")?;
-        writeln!(output, "#[builder(pattern = \"owned\", build_fn(validate = \"Self::validate\"))]")?;
+        // Write the documentation comments for the structure, if any.
+        self.base.traits.write_docs(output, "")?;
 
+        // Attributes for the structure.
+        writeln!(output, "#[derive(::derive_builder::Builder)]")?;
+        writeln!(output, "#[derive(::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::PartialEq, ::std::fmt::Debug)]")?;
+        writeln!(output, "#[derive(::serde::Deserialize, ::serde::Serialize)]")?;
+        writeln!(output, "#[builder(pattern = \"owned\", build_fn(validate = \"Self::validate\"), setter(into))]")?;
         if self.reachable_from_input {
             writeln!(output, "#[cfg_attr(feature = \"clap\", derive(::clap::Parser))]")?;
         }
@@ -71,27 +108,19 @@ impl Structure {
                 is_first = false;
             }
 
-            let docs = member.traits.get("smithy.api#documentation").and_then(|v| v.as_str());
-            if let Some(docs) = docs {
-                for line in docs.lines() {
-                    writeln!(output, "    /// {}", line.trim())?;
-                }
-            } else {
-                writeln!(output, "    #[allow(missing_docs)]")?;
-            }
-
-            let is_optional = member.is_optional();
+            member.traits.write_docs(output, "    ")?;
+            let is_optional = !member.traits.is_required();
             let is_list = member.is_list();
             if self.reachable_from_input {
                 let mut clap_args = vec!["long".to_string()];
-                // Always use the non-optional parser: Clap automatically produces None for
-                // Option<T> fields and an empty Vec for list fields when the arg is absent.
-                clap_args.push(format!("value_parser = {}", member.get_clap_parser()));
+                if let Some(clap_parser) = member.clap_parser() {
+                    clap_args.push(format!("value_parser = {clap_parser}"))
+                }
                 writeln!(output, "    #[cfg_attr(feature = \"clap\", clap({}))]", clap_args.join(", "))?;
             }
 
             let mut member_type = member.rust_typename();
-            let rust_member_name = to_snake_case(member_name);
+            let rust_member_name = member_name.to_snake_case();
 
             if is_optional && !is_list {
                 member_type = format!("Option<{}>", member_type);
@@ -102,6 +131,14 @@ impl Structure {
                 writeln!(output, "    #[builder(default)]")?;
             }
             writeln!(output, "    pub {rust_member_name}: {member_type},")?;
+        }
+
+        // If this is an error type, add metadata to the structure for error handling.
+        if is_error {
+            writeln!(output)?;
+            writeln!(output, "    /// Metadata about the error")?;
+            writeln!(output, "    #[serde(skip)]")?;
+            writeln!(output, "    pub meta: ::aws_smithy_types::error::ErrorMetadata,")?;
         }
 
         writeln!(output, "}}")?;
@@ -133,7 +170,7 @@ impl Structure {
         writeln!(output, "    fn from_str(s: &str) -> Result<Self, Self::Err> {{")?;
         writeln!(
             output,
-            "        let value = crate::shorthand::parse(s).map_err(|e| format!(\"Failed to parse {rust_typename} from '{{s}}': {{e}}\"))?;"
+            "        let value = ::scratchstack_cli_utils::parse_shorthand(s).map_err(|e| format!(\"Failed to parse {rust_typename} from '{{s}}': {{e}}\"))?;"
         )?;
         writeln!(
             output,
@@ -144,10 +181,14 @@ impl Structure {
             writeln!(output, "        let mut builder = {rust_typename}Builder::default();")?;
             writeln!(output, "        for (key, value) in map {{")?;
             writeln!(output, "            match key.as_str() {{")?;
-            for member_name in self.members.keys() {
-                let rust_member_name = to_snake_case(member_name);
+            for (member_name, member) in self.members.iter() {
+                let rust_member_name = member_name.to_snake_case();
+                let rust_member_type = member.rust_typename();
                 writeln!(output, "                \"{member_name}\" => {{")?;
-                writeln!(output, "                    builder = builder.{rust_member_name}(value.try_into()?);")?;
+                writeln!(
+                    output,
+                    "                    builder = builder.{rust_member_name}(::std::convert::TryInto::<{rust_member_type}>::try_into(value)?);"
+                )?;
                 writeln!(output, "                }}")?;
             }
             writeln!(
@@ -175,12 +216,20 @@ impl Structure {
         Ok(())
     }
 
+    /// Write a rust implemenation of `TryFrom<&ShorthandValue>` for this structure.
+    ///
+    /// This allows the structure to be created from a `ShorthandValue`, used to parse parameters
+    /// provided on the CLI in a shorthand format, e.g. `--tag Key=key,Value=value` instead of the
+    /// more verbose JSON syntax `--tag [{"Key":"key","Value":"value"}]`.
     fn write_rust_try_from_shorthand_value_impl(&self, output: &mut dyn Write) -> IoResult<()> {
         let rust_typename = self.rust_typename();
         writeln!(output, "#[cfg(feature = \"clap\")]")?;
-        writeln!(output, "impl TryFrom<&crate::shorthand::Value> for {rust_typename} {{")?;
+        writeln!(output, "impl TryFrom<&::scratchstack_cli_utils::ShorthandValue> for {rust_typename} {{")?;
         writeln!(output, "    type Error = String;")?;
-        writeln!(output, "    fn try_from(value: &crate::shorthand::Value) -> Result<Self, Self::Error> {{")?;
+        writeln!(
+            output,
+            "    fn try_from(value: &::scratchstack_cli_utils::ShorthandValue) -> Result<Self, Self::Error> {{"
+        )?;
         writeln!(
             output,
             "        let map = value.as_map().ok_or(format!(\"Expected a map/object to convert to {rust_typename}, but got '{{value:?}}'\"))?;"
@@ -190,10 +239,14 @@ impl Structure {
             writeln!(output, "        let mut builder = {rust_typename}Builder::default();")?;
             writeln!(output, "        for (key, value) in map {{")?;
             writeln!(output, "            match key.as_str() {{")?;
-            for member_name in self.members.keys() {
-                let rust_member_name = to_snake_case(member_name);
+            for (member_name, member) in self.members.iter() {
+                let rust_member_name = member_name.to_snake_case();
+                let rust_member_type = member.rust_typename();
                 writeln!(output, "                \"{member_name}\" => {{")?;
-                writeln!(output, "                    builder = builder.{rust_member_name}(value.try_into()?);")?;
+                writeln!(
+                    output,
+                    "                    builder = builder.{rust_member_name}(::std::convert::TryInto::<{rust_member_type}>::try_into(value)?);"
+                )?;
                 writeln!(output, "                }}")?;
             }
             writeln!(
@@ -222,17 +275,75 @@ impl Structure {
         Ok(())
     }
 
+    /// Writes implementations of the `Error`, `Display`, `RequestId`, `ProvideErrorKind`, and
+    /// `ProvideErrorMetadata` traits for this structure.
+    fn write_rust_aws_query_error_impl(&self, output: &mut dyn Write) -> IoResult<()> {
+        let rust_typename = self.rust_typename();
+        let qe_any = self.base.traits.aws_query_error().unwrap();
+        let qe_map = qe_any.as_object().unwrap();
+        let code = qe_map.get("code").unwrap().as_str().unwrap();
+        let error_type = self.base.traits.error().unwrap();
+
+        writeln!(output, "impl ::std::fmt::Display for {rust_typename} {{")?;
+        writeln!(output, "    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {{")?;
+        writeln!(output, "        f.write_str(\"{rust_typename}\")?;")?;
+        writeln!(output, "        if let ::std::option::Option::Some(message) = &self.message {{")?;
+        writeln!(output, "            ::std::write!(f, \": {{message}}\")?;")?;
+        writeln!(output, "        }}")?;
+        writeln!(output, "        ::std::result::Result::Ok(())")?;
+        writeln!(output, "    }}")?;
+        writeln!(output, "}}")?;
+        writeln!(output)?;
+        writeln!(output, "impl ::std::error::Error for {rust_typename} {{}}")?;
+        writeln!(output)?;
+        writeln!(output, "impl ::aws_types::request_id::RequestId for {rust_typename} {{")?;
+        writeln!(output, "    #[inline(always)]")?;
+        writeln!(output, "    fn request_id(&self) -> ::std::option::Option<&str> {{")?;
+        writeln!(output, "        ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(self).request_id()")?;
+        writeln!(output, "    }}")?;
+        writeln!(output, "}}")?;
+
+        writeln!(output)?;
+        writeln!(output, "impl ::aws_smithy_types::retry::ProvideErrorKind for {rust_typename} {{")?;
+        writeln!(output, "    #[inline(always)]")?;
+        writeln!(
+            output,
+            "    fn retryable_error_kind(&self) -> ::std::option::Option<::aws_smithy_types::retry::ErrorKind> {{"
+        )?;
+        if error_type == "client" {
+            writeln!(output, "        ::std::option::Option::Some(::aws_smithy_types::retry::ErrorKind::ClientError)")?;
+        } else {
+            writeln!(output, "        ::std::option::Option::Some(::aws_smithy_types::retry::ErrorKind::ServerError)")?;
+        }
+        writeln!(output, "    }}")?;
+        writeln!(output)?;
+        writeln!(output, "    #[inline(always)]")?;
+        writeln!(output, "    fn code(&self) -> ::std::option::Option<&str> {{")?;
+        writeln!(output, "        ::std::option::Option::Some(\"{code}\")")?;
+        writeln!(output, "    }}")?;
+        writeln!(output, "}}")?;
+        writeln!(output)?;
+        writeln!(output, "impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for {rust_typename} {{")?;
+        writeln!(output, "    #[inline(always)]")?;
+        writeln!(output, "    fn meta(&self) -> &::aws_smithy_types::error::metadata::ErrorMetadata {{")?;
+        writeln!(output, "        &self.meta")?;
+        writeln!(output, "    }}")?;
+        writeln!(output, "}}")?;
+
+        Ok(())
+    }
+
     fn write_builder_validate(&self, output: &mut dyn Write) -> IoResult<()> {
         let rust_typename = self.rust_typename();
         writeln!(output, "impl {rust_typename}Builder {{")?;
         writeln!(output, "    #[allow(clippy::collapsible_if)]")?;
         writeln!(output, "    fn validate(&self) -> Result<(), String> {{")?;
         for (member_name, member) in &self.members {
-            let rust_member_name = to_snake_case(member_name);
-            let is_optional = member.is_optional();
+            let rust_member_name = member_name.to_snake_case();
+            let is_required = member.is_required();
             let is_list = member.is_list();
 
-            if !is_optional && !is_list {
+            if is_required && !is_list {
                 writeln!(output, "        if self.{rust_member_name}.is_none() {{")?;
                 writeln!(
                     output,
@@ -241,20 +352,20 @@ impl Structure {
                 writeln!(output, "        }}")?;
             }
 
-            let member_validator = member.get_derive_builder_validator("value");
+            let member_validator = member.derive_builder_validator("value", &rust_typename);
             if let Some(mut validator) = member_validator
                 && !validator.trim().is_empty()
             {
                 validator = validator.trim().replace("\n", "\n            ");
-                if is_optional {
+                if is_required || is_list {
+                    writeln!(output, "        if let Some(value) = &self.{rust_member_name} {{")?;
+                    writeln!(output, "            {validator}")?;
+                    writeln!(output, "        }}")?;
+                } else {
                     writeln!(
                         output,
                         "        if let Some(value_opt) = &self.{rust_member_name} && let Some(value) = value_opt {{"
                     )?;
-                    writeln!(output, "            {validator}")?;
-                    writeln!(output, "        }}")?;
-                } else {
-                    writeln!(output, "        if let Some(value) = &self.{rust_member_name} {{")?;
                     writeln!(output, "            {validator}")?;
                     writeln!(output, "        }}")?;
                 }
@@ -263,40 +374,6 @@ impl Structure {
         writeln!(output, "        Ok(())")?;
         writeln!(output, "    }}")?;
         writeln!(output, "}}")?;
-        Ok(())
-    }
-}
-
-impl Typed for Structure {
-    fn rust_typename(&self) -> String {
-        self.rust_typename.clone().expect("Structure type should be resolved before generating Rust code")
-    }
-
-    fn get_clap_parser(&self) -> String {
-        let typename = self.rust_typename();
-        format!("{typename}::from_str")
-    }
-
-    fn mark_reachable_from_input(&mut self) {
-        if self.reachable_from_input {
-            return;
-        }
-
-        self.reachable_from_input = true;
-
-        self.members.values_mut().for_each(|member| {
-            member.mark_reachable_from_input();
-        });
-    }
-
-    fn write(&self, output: &mut dyn Write) -> IoResult<()> {
-        self.write_rust_decl(output)?;
-        self.write_rust_impl(output)?;
-        if self.reachable_from_input {
-            self.write_rust_from_str_impl(output)?;
-            self.write_rust_try_from_shorthand_value_impl(output)?;
-        }
-        self.write_builder_validate(output)?;
         Ok(())
     }
 }

@@ -1,8 +1,7 @@
 use {
     anyhow::{Result as AnyResult, bail},
-    scratchstack_shapegen::{Member, Shape, SmithyModel},
-    serde_json::{Value as JsonValue, json},
-    std::{cell::RefCell, collections::HashMap, env::var, fs::File, io::BufReader, path::Path, rc::Rc},
+    scratchstack_shapegen::{LengthConstraint, Member, Shape, SmithyModel, TraitMap},
+    std::{cell::RefCell, env::var, fs::File, io::BufReader, path::Path, rc::Rc},
 };
 
 /// The IAM APIs to exclude from internal request generation.
@@ -48,18 +47,6 @@ const IAM_PROBLEMATIC_REGEX_1: &str = r"^[a-z0-9]([a-z0-9]|-(?!-)){1,61}[a-z0-9]
 /// The replacement regex pattern to use for the problematic regex pattern in the IAM model.
 const IAM_PROBLEMATIC_REGEX_1_REPLACEMENT: &str = r"^[a-z0-9]([-a-z0-9]){1,61}[a-z0-9]$";
 
-/// Smithy trait id for documentation.
-const TRAIT_ID_DOCUMENTATION: &str = "smithy.api#documentation";
-
-/// Smithy trait id for a length constraint.
-const TRAIT_ID_LENGTH: &str = "smithy.api#length";
-
-/// Smithy trait id for a regular expression pattern.
-const TRAIT_ID_PATTERN: &str = "smithy.api#pattern";
-
-/// Smithy trait id for a required member.
-const TRAIT_ID_REQUIRED: &str = "smithy.api#required";
-
 fn main() {
     generate_iam_shapes().expect("Failed to generate IAM shapes");
 }
@@ -70,26 +57,22 @@ fn generate_iam_shapes() -> AnyResult<()> {
     let file = File::open("iam-2010-05-08.json")?;
     let reader = BufReader::new(file);
     let mut model: SmithyModel = serde_json::from_reader(reader)?;
+    model.add_default_shapes();
+
     let mut new_requests = Vec::with_capacity(128);
 
     // Fix unsupported regular expressions on various types.
     for shape in model.shapes.values_mut() {
         let mut shape = shape.borrow_mut();
-        let Some(traits) = shape.traits_mut() else {
+        let traits = shape.traits_mut();
+
+        let Some(pattern) = traits.pattern() else {
             continue;
         };
 
-        let Some(pattern) = traits.get_mut(TRAIT_ID_PATTERN) else {
-            continue;
-        };
-
-        let JsonValue::String(pattern_str) = pattern else {
-            continue;
-        };
-
-        if pattern_str == IAM_PROBLEMATIC_REGEX_1 {
-            *pattern = json!(IAM_PROBLEMATIC_REGEX_1_REPLACEMENT);
-            traits.insert(TRAIT_ID_LENGTH.to_string(), json!({"min": 3, "max": 63}));
+        if pattern == IAM_PROBLEMATIC_REGEX_1 {
+            traits.set_pattern(IAM_PROBLEMATIC_REGEX_1_REPLACEMENT);
+            traits.set_length_constraint(LengthConstraint::new(Some(3), Some(63)));
         }
     }
 
@@ -98,15 +81,14 @@ fn generate_iam_shapes() -> AnyResult<()> {
         let shape = model.shapes.get_mut(*shape_id).unwrap();
         let mut shape = shape.borrow_mut();
         for member in shape.members_mut().unwrap().values_mut() {
-            let Some(doc) = member.traits.get_mut(TRAIT_ID_DOCUMENTATION) else {
+            let Some(doc) = member.traits.documentation() else {
                 continue;
             };
-            let doc_str = doc.as_str().unwrap();
-            let replacement = doc_str
+            let replacement = doc
                 .replace("<service-principal-name>", "<i>service-principal-name</i>")
                 .replace("<role-name>", "<i>role-name</i>")
                 .replace("<task-uuid>", "<i>task-uuid</i>");
-            *doc = json!(replacement);
+            member.traits.set_documentation(replacement);
         }
     }
 
@@ -137,9 +119,9 @@ fn generate_iam_shapes() -> AnyResult<()> {
         let internal_request_shape_name = format!("{}InternalRequest", base_api_name);
 
         // Add the account_id field to the internal request.
-        let mut traits = HashMap::new();
-        traits.insert(TRAIT_ID_REQUIRED.to_string(), json!(true));
-        traits.insert(TRAIT_ID_DOCUMENTATION.to_string(), json!(ACCOUNT_ID_DOCUMENTATION));
+        let mut traits = TraitMap::new();
+        traits.set_required(true);
+        traits.set_documentation(ACCOUNT_ID_DOCUMENTATION);
         let account_id_member = Member {
             shape: None,
             target: ACCOUNT_ID_SHAPE_ID.to_string(),

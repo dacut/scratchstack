@@ -1,10 +1,8 @@
 use {
-    super::{List, Shape, Typed},
+    crate::{List, Shape, ShapeInfo, SmithyModel, TraitMap},
     serde::{Deserialize, Serialize},
-    serde_json::Value,
     std::{
         cell::{Ref, RefCell},
-        collections::HashMap,
         rc::Rc,
     },
 };
@@ -25,29 +23,61 @@ pub struct Member {
     pub target: String,
 
     /// A map of absolute shape IDs to trait values.
-    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    pub traits: HashMap<String, Value>,
+    #[serde(skip_serializing_if = "TraitMap::is_empty", default)]
+    pub traits: TraitMap,
+}
+
+impl ShapeInfo for Member {
+    fn resolve(&mut self, _: &str, model: &SmithyModel) {
+        assert!(self.shape.is_none());
+
+        let Some(shape) = model.shapes.get(&self.target) else {
+            panic!("Member {} does not exist in SmithyModel", self.target);
+        };
+        self.shape = Some(shape.clone());
+    }
+
+    fn smithy_name(&self) -> String {
+        self.shape.as_ref().expect("Member should be resolved before generating Rust code").borrow().smithy_name()
+    }
+
+    #[inline(always)]
+    fn rust_typename(&self) -> String {
+        self.inner().borrow().rust_typename()
+    }
+
+    #[inline(always)]
+    fn clap_parser(&self) -> Option<String> {
+        self.inner().borrow().clap_parser()
+    }
+
+    #[inline(always)]
+    fn derive_builder_validator(&self, var: &str, field_name: &str) -> Option<String> {
+        self.inner().borrow().derive_builder_validator(var, field_name)
+    }
+
+    fn mark_reachable_from_input(&mut self) {
+        self.inner().borrow_mut().mark_reachable_from_input();
+    }
 }
 
 impl Member {
-    /// Returns the inner shape of this member; panics if the member is not resolved or if the inner shape is not a [`Typed`] shape.
+    /// Returns the inner shape of this member.
+    ///
+    /// Panics if the member is not resolved.
     pub fn inner(&self) -> Rc<RefCell<Shape>> {
         self.shape.clone().expect("Member should be resolved before generating Rust code")
     }
 
-    /// Indicates whether this is an optional member.
-    pub fn is_optional(&self) -> bool {
-        !self.traits.contains_key("smithy.api#required")
+    /// Indicates whether this is a required member.
+    #[inline(always)]
+    pub fn is_required(&self) -> bool {
+        self.traits.is_required()
     }
 
-    /// Indicates whether this member is a primitive type.
-    pub fn is_primitive(&self) -> bool {
-        self.inner().borrow().is_primitive()
-    }
-
-    /// Indicates whether this member is a list type.
+    /// Indicates whether the inner shape is a list type.
     pub fn is_list(&self) -> bool {
-        matches!(&*self.inner().borrow(), Shape::List(_))
+        self.as_list().is_some()
     }
 
     /// Returns this as a list member if it is a list type; otherwise returns `None`.
@@ -60,49 +90,6 @@ impl Member {
             }))
         } else {
             None
-        }
-    }
-
-    /// Returns the bare Rust type of this member without any wrappers like `Option`.
-    pub fn bare_rust_type(&self) -> String {
-        let shape = self.shape.as_ref().expect("Member should be resolved before generating Rust code");
-        shape.borrow().rust_typename()
-    }
-}
-
-impl Typed for Member {
-    fn rust_typename(&self) -> String {
-        self.bare_rust_type()
-    }
-
-    fn write(&self, _output: &mut dyn std::io::Write) -> std::io::Result<()> {
-        // No declaration to write for members
-        Ok(())
-    }
-
-    fn has_decl(&self, _model: &super::SmithyModel) -> bool {
-        false
-    }
-
-    fn is_primitive(&self) -> bool {
-        self.inner().borrow().is_primitive()
-    }
-
-    fn get_clap_parser(&self) -> String {
-        self.shape.as_ref().expect("Member should be resolved before generating Rust code").borrow().get_clap_parser()
-    }
-
-    fn get_derive_builder_validator(&self, var: &str) -> Option<String> {
-        self.shape
-            .as_ref()
-            .expect("Member should be resolved before generating Rust code")
-            .borrow()
-            .get_derive_builder_validator(var)
-    }
-
-    fn mark_reachable_from_input(&mut self) {
-        if let Some(shape) = &self.shape {
-            shape.borrow_mut().mark_reachable_from_input();
         }
     }
 }

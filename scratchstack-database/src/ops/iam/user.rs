@@ -20,7 +20,8 @@ use {
     scratchstack_pagination::{OperationPaginator, ScratchstackOperationMetadata, ScratchstackServiceMetadata},
     scratchstack_shapes_iam::{
         AttachedPermissionsBoundary, CreateUserInternalRequest, CreateUserResponse, ListUsersInternalRequest,
-        ListUsersResponse, PermissionsBoundaryAttachmentType, Tag, UpdateUserInternalRequest, User,
+        ListUsersResponse, NoSuchEntityException, PermissionsBoundaryAttachmentType, Tag, UpdateUserInternalRequest,
+        User,
     },
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, QueryBuilder, Row as _, postgres::PgTransaction, query},
@@ -371,7 +372,10 @@ pub async fn update_user(
     .await?;
 
     if result.rows_affected() == 0 {
-        Err(anyhow!("The user with name {user_name} cannot be found."))
+        let e = NoSuchEntityException::builder()
+            .message(format!("The user with name {user_name} cannot be found."))
+            .build()?;
+        Err(e.into())
     } else {
         Ok(())
     }

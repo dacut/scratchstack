@@ -35,6 +35,7 @@ regex.workspace = true
 scratchstack-arn = { path = "../scratchstack-arn", optional = true }
 scratchstack-aws-principal.path = "../scratchstack-aws-principal"
 scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features = ["unstable"] }
+scratchstack-cli-utils.path = "../scratchstack-cli-utils"
 scratchstack-errors.path = "../scratchstack-errors"
 scratchstack-pagination.path = "../scratchstack-pagination"
 scratchstack-shapes-iam = { path = "../scratchstack-shapes-iam", optional = true }

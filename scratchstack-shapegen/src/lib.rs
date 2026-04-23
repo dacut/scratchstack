@@ -1,137 +1,108 @@
+//! Rust code generation library for Smithy shape models.
 use std::io::{Result as IoResult, Write};
 
+/// Primitive Smithy types.
 pub mod primitive;
 
 mod r#enum;
 mod int_enum;
+mod length_constraint;
 mod list;
 mod map;
 mod member;
 mod operation;
+mod range_constraint;
 mod resource;
 mod service;
 mod shape;
+mod shape_base;
 mod shape_ref;
 mod smithy_model;
+mod str_ext;
 mod structure;
+mod trait_id;
+mod trait_map;
 mod r#union;
 
 #[allow(unused_imports)]
 pub use {
-    r#enum::*, int_enum::*, list::*, map::*, member::*, operation::*, resource::*, service::*, shape::*, shape_ref::*,
-    smithy_model::*, structure::*, r#union::*,
+    r#enum::*, int_enum::*, length_constraint::*, list::*, map::*, member::*, operation::*, range_constraint::*,
+    resource::*, service::*, shape::*, shape_base::*, shape_ref::*, smithy_model::*, str_ext::*, structure::*,
+    trait_id::*, trait_map::*, r#union::*,
 };
 
-/// Rust keywords that cannot be used as identifiers. These are used to determine when to use raw
-/// identifiers in the generated code.
-const RUST_IDENTS: &[&str] = &[
-    "abstract", "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern",
-    "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
-    "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where", "while",
-];
+/// Trait for all named shapes.
+pub trait ShapeInfo {
+    /// Resolve this shape, setting the Smithy name internally.
+    fn resolve(&mut self, smithy_name: &str, model: &SmithyModel);
 
-/// Convert an identifier to snake case. This is used to convert Smithy member names to Rust field names.
-pub fn to_snake_case(s: &str) -> String {
-    let mut result = String::new();
-    let mut prev_char_was_uppercase = false;
+    /// Returns the Smithy name of this shape.
+    fn smithy_name(&self) -> String;
 
-    for (i, c) in s.chars().enumerate() {
-        if c.is_uppercase() {
-            if i > 0 && !prev_char_was_uppercase {
-                result.push('_');
-            }
-            result.push(c.to_ascii_lowercase());
-            prev_char_was_uppercase = true;
+    /// Indicates whether this shape is a built-in Smithy type.
+    fn is_builtin(&self) -> bool {
+        self.smithy_name().starts_with("smithy.api#")
+    }
+
+    /// Returns the simple name of this shape.
+    ///
+    /// This is the portion of the Smithy name after the '#' character.
+    fn simple_name(&self) -> String {
+        let rpos = self.smithy_name().rfind('#');
+        if let Some(pos) = rpos {
+            self.smithy_name()[pos + 1..].to_string()
         } else {
-            result.push(c);
-            prev_char_was_uppercase = false;
+            self.smithy_name()
         }
     }
 
-    if RUST_IDENTS.contains(&result.as_str()) {
-        result = format!("r#{result}");
-    }
-
-    result
-}
-
-/// Indicates whether this identifier is a SCREAMING_SNAKE_CASE constant.
-pub fn is_screaming_snake_case(s: &str) -> bool {
-    s.chars().all(|c| c.is_ascii_uppercase() || c == '_')
-}
-
-/// Convert an identifier to Pascal case. This is used to convert Smithy shape names to Rust type names.
-pub fn to_pascal_case(s: &str) -> String {
-    let mut result = String::new();
-    let mut capitalize_next = true;
-
-    if is_screaming_snake_case(s) {
-        // Change SCREAMING_SNAKE_CASE to ScreamingSnakeCase.
-        for c in s.chars() {
-            if c == '_' {
-                capitalize_next = true;
-            } else if capitalize_next {
-                result.push(c.to_ascii_uppercase());
-                capitalize_next = false;
-            } else {
-                result.push(c.to_ascii_lowercase());
-            }
-        }
-    } else {
-        for c in s.chars() {
-            if c == '_' {
-                capitalize_next = true;
-            } else if capitalize_next {
-                result.push(c.to_ascii_uppercase());
-                capitalize_next = false;
-            } else {
-                result.push(c);
-            }
-        }
-    }
-
-    if RUST_IDENTS.contains(&result.as_str()) {
-        result = format!("r#{result}");
-    }
-
-    result
-}
-
-/// The `Typed` trait indicates that a shape is a Smithy type.
-pub trait Typed {
-    /// Returns the Rust type to use when referring to an instance of this shape.
+    /// Returns the Rust type name of this shape.
     fn rust_typename(&self) -> String;
 
-    /// Writes the implementation details of this shape to the given output.
-    fn write(&self, _output: &mut dyn Write) -> IoResult<()>;
+    /// If this shape has a function or method to parse a Clap argument, returns it. Otherwise
+    /// returns `None`.
+    fn clap_parser(&self) -> Option<String>;
 
-    /// Indicates whether this shape has a declaration in the generated code.
-    #[inline(always)]
-    fn has_decl(&self, _model: &SmithyModel) -> bool {
-        false
-    }
-
-    /// Indicates whether this shape is a primitive type.
-    #[inline(always)]
-    fn is_primitive(&self) -> bool {
-        false
-    }
-
-    /// Returns the Clap value parser to use for this shape
-    fn get_clap_parser(&self) -> String;
-
-    /// Returns the derive_builder validator, if any, to use for this shape.
-    fn get_derive_builder_validator(&self, _var: &str) -> Option<String> {
+    /// If this shape has custom code to validate its value from a builder type, returns it.
+    /// Otherwise returns `None`.
+    ///
+    /// # Parameters
+    /// * `var` — the variable holding the value to be validated.
+    /// * `field_name` — the name of the field being evaluated (for use in error messages).
+    #[allow(unused)]
+    fn derive_builder_validator(&self, var: &str, field_name: &str) -> Option<String> {
         None
     }
 
-    /// Marks this type as reachable from the input, and recursively marks any shapes targeted by this type as
-    /// reachable from the input as well.
-    fn mark_reachable_from_input(&mut self);
+    /// Mark this shape as being reachable from an input structure.
+    fn mark_reachable_from_input(&mut self) {}
+
+    /// Generate all code needed for this shape.
+    #[allow(unused)]
+    fn generate(&self, w: &mut dyn Write) -> IoResult<()> {
+        Ok(())
+    }
 }
 
-/// The `Primitive` trait indicates that a shape is a primitive Smithy type.
-pub trait Primitive: Typed {}
+/// Macro that forwards the implementation of the `ShapeInfo` trait to a contained `ShapeBase` field.
+#[macro_export]
+macro_rules! forward_shape_info {
+    ($ty:ty, $field:ident) => {
+        fn resolve(&mut self, smithy_name: &str, _: &$crate::SmithyModel) {
+            self.$field.resolve(smithy_name)
+        }
+
+        #[inline(always)]
+        fn smithy_name(&self) -> String {
+            self.$field.smithy_name()
+        }
+
+        #[inline(always)]
+        fn rust_typename(&self) -> String {
+            self.$field.rust_typename()
+        }
+    };
+}
 
 #[cfg(test)]
 mod tests {
