@@ -9,7 +9,7 @@ updates:
   - package-ecosystem: "cargo"
     directory: "/"
     exclude-paths:
-      - "/scratchstack-services/**"
+      - "scratchstack-services/**"
     schedule:
       interval: weekly
       days: ["tuesday"]
