@@ -10,7 +10,7 @@ use {
     base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
     indoc::indoc,
     rand::random_range,
-    scratchstack_shapes_iam::shorthand::Value as ShorthandValue,
+    scratchstack_cli_utils::ShorthandValue,
     serde::{Deserialize, Serialize},
     sqlx::{
         Acquire as _, Row as _,

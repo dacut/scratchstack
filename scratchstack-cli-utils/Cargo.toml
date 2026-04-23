@@ -1,0 +1,24 @@
+[package]
+name = "scratchstack-cli-utils"
+description = "CLI argument handling utilities for Scratchstack services"
+
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+derive_builder.workspace = true
+regex.workspace = true
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+chrono = { workspace = true, features = ["clock"] }
+env_logger.workspace = true
+pretty_assertions.workspace = true
+regex.workspace = true
+test-log.workspace = true

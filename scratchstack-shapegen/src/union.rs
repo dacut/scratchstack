@@ -1,9 +1,8 @@
 use {
-    super::{Member, Typed, to_pascal_case},
+    super::{Member, ShapeBase, ShapeInfo, StrExt as _, forward_shape_info},
     serde::{Deserialize, Serialize},
-    serde_json::Value,
     std::{
-        collections::HashMap,
+        collections::BTreeMap,
         io::{Result as IoResult, Write},
     },
 };
@@ -15,17 +14,15 @@ use {
 /// of each variant.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Union {
-    /// The name of this union in the Smithy model.
-    ///
-    /// This is resolved during a call to `SmithyModel::resolve`.
-    #[serde(skip, default)]
-    pub smithy_typename: Option<String>,
+    /// Basic shape information for the `union` type.
+    #[serde(flatten)]
+    pub base: ShapeBase,
 
-    /// The Rust name of this union.
-    ///
-    /// This is resolved during a call to `SmithyModel::resolve`.
-    #[serde(skip, default)]
-    pub rust_typename: Option<String>,
+    /// The members of the union. Each member is a variant of the tagged union, where member names
+    /// are the tags of each variant, and the shapes targeted by members are the values of each
+    /// variant.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    pub members: BTreeMap<String, Member>,
 
     /// Whether this union is reachable from an API input shape. This is used to determine
     /// whether to generate Clap parsers for this union.
@@ -33,53 +30,14 @@ pub struct Union {
     /// This is resolved during a call to `SmithyModel::resolve`.
     #[serde(skip, default)]
     pub reachable_from_input: bool,
-
-    /// The members of the union. Each member is a variant of the tagged union, where member names
-    /// are the tags of each variant, and the shapes targeted by members are the values of each
-    /// variant.
-    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    pub members: HashMap<String, Member>,
-
-    /// Traits to apply to the type.
-    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    pub traits: HashMap<String, Value>,
 }
 
-impl Typed for Union {
-    fn rust_typename(&self) -> String {
-        self.rust_typename.clone().expect("Union type should be resolved before generating Rust code")
-    }
+impl ShapeInfo for Union {
+    forward_shape_info!(Union, base);
 
-    fn write(&self, output: &mut dyn Write) -> IoResult<()> {
-        let rust_typename = self.rust_typename();
-
-        let docs = self.traits.get("smithy.api#documentation").and_then(|v| v.as_str());
-        if let Some(docs) = docs {
-            for line in docs.lines() {
-                writeln!(output, "/// {}", line.trim())?;
-            }
-        } else {
-            writeln!(output, "#[allow(missing_docs)]")?;
-        }
-
-        writeln!(output, "#[derive(Debug, ::serde::Deserialize, ::serde::Serialize)]")?;
-        writeln!(output, "#[non_exhaustive]")?;
-        writeln!(output, "pub enum {rust_typename} {{")?;
-
-        for (member_name, member) in &self.members {
-            let rust_member_name = to_pascal_case(member_name);
-            let member_type = member.rust_typename();
-            writeln!(output, "    #[serde(tag = \"{member_name}\")]")?;
-            writeln!(output, "    {rust_member_name}({member_type}),")?;
-        }
-
-        writeln!(output, "}}")?;
-        Ok(())
-    }
-
-    fn get_clap_parser(&self) -> String {
+    fn clap_parser(&self) -> Option<String> {
         let typename = self.rust_typename();
-        format!("{typename}::parse")
+        Some(format!("{typename}::parse"))
     }
 
     fn mark_reachable_from_input(&mut self) {
@@ -90,5 +48,24 @@ impl Typed for Union {
         for member in self.members.values_mut() {
             member.mark_reachable_from_input();
         }
+    }
+
+    fn generate(&self, output: &mut dyn Write) -> IoResult<()> {
+        let rust_typename = self.rust_typename();
+        self.base.traits.write_docs(output, "")?;
+
+        writeln!(output, "#[derive(Debug, ::serde::Deserialize, ::serde::Serialize)]")?;
+        writeln!(output, "#[non_exhaustive]")?;
+        writeln!(output, "pub enum {rust_typename} {{")?;
+
+        for (member_name, member) in &self.members {
+            let rust_member_name = member_name.to_pascal_case();
+            let member_type = member.rust_typename();
+            writeln!(output, "    #[serde(tag = \"{member_name}\")]")?;
+            writeln!(output, "    {rust_member_name}({member_type}),")?;
+        }
+
+        writeln!(output, "}}")?;
+        Ok(())
     }
 }

@@ -126,7 +126,11 @@ enum Commands {
 async fn main() -> AnyResult<()> {
     env_logger::init();
     let vars = std::env::vars().map(|(k, v)| (k.into(), v)).collect::<Vec<(OsString, String)>>();
-    run(std::env::args_os(), vars, &mut stdout()).await
+    if let Err(e) = run(std::env::args_os(), vars, &mut stdout()).await {
+        Err(e)
+    } else {
+        Ok(())
+    }
 }
 
 /// Execute the CLI with the given arguments, environment variables, and stdout writer. This is

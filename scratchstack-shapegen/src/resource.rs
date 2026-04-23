@@ -1,7 +1,6 @@
 use {
-    super::ShapeRef,
+    super::{ShapeBase, ShapeInfo, ShapeRef, forward_shape_info},
     serde::{Deserialize, Serialize},
-    serde_json::Value,
     std::collections::HashMap,
 };
 
@@ -9,6 +8,10 @@ use {
 /// resource shape is defined in the IDL using a resource_statement.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Resource {
+    /// Basic shape information for this resource.
+    #[serde(flatten)]
+    pub base: ShapeBase,
+
     /// Defines identifier names and shape IDs used to identify the resource.
     #[serde(default)]
     pub identifiers: HashMap<String, ShapeRef>,
@@ -60,8 +63,16 @@ pub struct Resource {
     /// reference MUST target a resource.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub resources: Vec<ShapeRef>,
+}
 
-    /// Traits to apply to the resource.
-    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    pub traits: HashMap<String, Value>,
+impl ShapeInfo for Resource {
+    forward_shape_info!(Resource, base);
+
+    fn clap_parser(&self) -> Option<String> {
+        unimplemented!("clap_parser cannot be called on Resource types")
+    }
+
+    fn derive_builder_validator(&self, _: &str, _: &str) -> Option<String> {
+        unimplemented!("derive_builder_validator cannot be called on Resource types")
+    }
 }

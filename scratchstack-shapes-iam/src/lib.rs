@@ -24,9 +24,33 @@ pub use scratchstack_arn::{self, Arn};
 #[cfg(feature = "clap")]
 pub mod clap_utils;
 
-/// AWS CLI shorthand notation shapes.
-pub mod shorthand;
-
 /// Identity and Access Management (IAM) API shapes.
 pub(crate) mod iam;
 pub use iam::*;
+
+/// Error types for shapes.
+pub mod error {
+    pub(crate) mod sealed_unhandled {
+        /// This struct is not intended to be used.
+        ///
+        /// This struct holds information about an unhandled error,
+        /// but that information should be obtained by using the
+        /// [`ProvideErrorMetadata`](::aws_smithy_types::error::metadata::ProvideErrorMetadata) trait
+        /// on the error type.
+        ///
+        /// This struct intentionally doesn't yield any useful information itself.
+        #[deprecated(note = "Matching `Unhandled` directly is not forwards compatible. Instead, match using a \
+        variable wildcard pattern and check `.code()`:
+        \
+        &nbsp;&nbsp;&nbsp;`err if err.code() == Some(\"SpecificExceptionCode\") => { /* handle the error */ }`
+        \
+        See [`ProvideErrorMetadata`](::aws_smithy_types::error::metadata::ProvideErrorMetadata) for what information is available for the error.")]
+        #[derive(Debug)]
+        pub struct Unhandled {
+            #[allow(dead_code)]
+            pub(crate) source: ::aws_smithy_runtime_api::box_error::BoxError,
+            #[allow(dead_code)]
+            pub(crate) meta: ::aws_smithy_types::error::metadata::ErrorMetadata,
+        }
+    }
+}

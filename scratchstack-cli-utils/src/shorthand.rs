@@ -131,168 +131,170 @@ impl Error for ParseError {}
 /// - Lists (explicit `[a,b]` or implicit csv `a,b`)
 /// - Maps (top-level `Key=Val,...` or nested `{Key=Val,...}`)
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Value {
+pub enum ShorthandValue {
     /// A single scalar value.
     Scalar(String),
 
     /// A list of values.
-    List(Vec<Value>),
+    List(Vec<ShorthandValue>),
 
     /// A map of string keys to values.
-    Map(HashMap<String, Value>),
+    Map(HashMap<String, ShorthandValue>),
 }
 
-impl<T> TryFrom<&Value> for HashMap<String, T>
+impl<T> TryFrom<&ShorthandValue> for HashMap<String, T>
 where
-    T: for<'a> TryFrom<&'a Value, Error = String>,
+    T: for<'a> TryFrom<&'a ShorthandValue, Error = String>,
 {
     type Error = String;
 
-    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+    fn try_from(value: &ShorthandValue) -> Result<Self, Self::Error> {
         match value {
-            Value::Map(m) => m.iter().map(|(k, v)| Ok((k.clone(), T::try_from(v)?))).collect(),
+            ShorthandValue::Map(m) => m.iter().map(|(k, v)| Ok((k.clone(), T::try_from(v)?))).collect(),
             other => Err(format!("Expected a map/object, but got {other:?}")),
         }
     }
 }
 
-impl<T> TryFrom<&Value> for Option<T>
+impl<T> TryFrom<&ShorthandValue> for Option<T>
 where
-    T: for<'a> TryFrom<&'a Value, Error = String>,
+    T: for<'a> TryFrom<&'a ShorthandValue, Error = String>,
 {
     type Error = String;
 
-    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+    fn try_from(value: &ShorthandValue) -> Result<Self, Self::Error> {
         T::try_from(value).map(Some)
     }
 }
 
-impl<T> TryFrom<&Value> for Vec<T>
+impl<T> TryFrom<&ShorthandValue> for Vec<T>
 where
-    T: for<'a> TryFrom<&'a Value, Error = String>,
+    T: for<'a> TryFrom<&'a ShorthandValue, Error = String>,
 {
     type Error = String;
 
-    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+    fn try_from(value: &ShorthandValue) -> Result<Self, Self::Error> {
         match value {
-            Value::List(l) => l.iter().map(|v| T::try_from(v)).collect(),
+            ShorthandValue::List(l) => l.iter().map(|v| T::try_from(v)).collect(),
             other => Err(format!("Expected a list/array, but got {other:?}")),
         }
     }
 }
 
-impl TryFrom<&Value> for DateTime<Utc> {
+impl TryFrom<&ShorthandValue> for DateTime<Utc> {
     type Error = String;
 
-    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+    fn try_from(value: &ShorthandValue) -> Result<Self, Self::Error> {
         match value {
-            Value::Scalar(s) => s.parse::<DateTime<Utc>>().map_err(|e| format!("Failed to parse DateTime: {}", e)),
+            ShorthandValue::Scalar(s) => {
+                s.parse::<DateTime<Utc>>().map_err(|e| format!("Failed to parse DateTime: {}", e))
+            }
             other => Err(format!("Expected a scalar value, but got {other:?}")),
         }
     }
 }
 
-impl TryFrom<&Value> for String {
+impl TryFrom<&ShorthandValue> for String {
     type Error = String;
 
-    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+    fn try_from(value: &ShorthandValue) -> Result<Self, Self::Error> {
         match value {
-            Value::Scalar(s) => Ok(s.clone()),
+            ShorthandValue::Scalar(s) => Ok(s.clone()),
             other => Err(format!("Expected a scalar value, but got {other:?}")),
         }
     }
 }
 
-impl TryFrom<&Value> for bool {
+impl TryFrom<&ShorthandValue> for bool {
     type Error = String;
 
-    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+    fn try_from(value: &ShorthandValue) -> Result<Self, Self::Error> {
         match value {
-            Value::Scalar(s) => s.parse::<bool>().map_err(|e| format!("Failed to parse bool: {}", e)),
+            ShorthandValue::Scalar(s) => s.parse::<bool>().map_err(|e| format!("Failed to parse bool: {}", e)),
             other => Err(format!("Expected a scalar value, but got {other:?}")),
         }
     }
 }
 
-impl TryFrom<&Value> for i8 {
+impl TryFrom<&ShorthandValue> for i8 {
     type Error = String;
 
-    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+    fn try_from(value: &ShorthandValue) -> Result<Self, Self::Error> {
         match value {
-            Value::Scalar(s) => s.parse::<i8>().map_err(|e| format!("Failed to parse i8: {}", e)),
+            ShorthandValue::Scalar(s) => s.parse::<i8>().map_err(|e| format!("Failed to parse i8: {}", e)),
             other => Err(format!("Expected a scalar value, but got {other:?}")),
         }
     }
 }
 
-impl TryFrom<&Value> for i16 {
+impl TryFrom<&ShorthandValue> for i16 {
     type Error = String;
 
-    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+    fn try_from(value: &ShorthandValue) -> Result<Self, Self::Error> {
         match value {
-            Value::Scalar(s) => s.parse::<i16>().map_err(|e| format!("Failed to parse i16: {}", e)),
+            ShorthandValue::Scalar(s) => s.parse::<i16>().map_err(|e| format!("Failed to parse i16: {}", e)),
             other => Err(format!("Expected a scalar value, but got {other:?}")),
         }
     }
 }
 
-impl TryFrom<&Value> for i32 {
+impl TryFrom<&ShorthandValue> for i32 {
     type Error = String;
 
-    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+    fn try_from(value: &ShorthandValue) -> Result<Self, Self::Error> {
         match value {
-            Value::Scalar(s) => s.parse::<i32>().map_err(|e| format!("Failed to parse i32: {}", e)),
+            ShorthandValue::Scalar(s) => s.parse::<i32>().map_err(|e| format!("Failed to parse i32: {}", e)),
             other => Err(format!("Expected a scalar value, but got {other:?}")),
         }
     }
 }
 
-impl TryFrom<&Value> for i64 {
+impl TryFrom<&ShorthandValue> for i64 {
     type Error = String;
 
-    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+    fn try_from(value: &ShorthandValue) -> Result<Self, Self::Error> {
         match value {
-            Value::Scalar(s) => s.parse::<i64>().map_err(|e| format!("Failed to parse i64: {}", e)),
+            ShorthandValue::Scalar(s) => s.parse::<i64>().map_err(|e| format!("Failed to parse i64: {}", e)),
             other => Err(format!("Expected a scalar value, but got {other:?}")),
         }
     }
 }
 
-impl Value {
+impl ShorthandValue {
     /// Convenience: get a scalar string reference.
     pub fn as_str(&self) -> Option<&str> {
         match self {
-            Value::Scalar(s) => Some(s),
+            ShorthandValue::Scalar(s) => Some(s),
             _ => None,
         }
     }
 
     /// Convenience: get a list reference.
-    pub fn as_list(&self) -> Option<&[Value]> {
+    pub fn as_list(&self) -> Option<&[ShorthandValue]> {
         match self {
-            Value::List(v) => Some(v),
+            ShorthandValue::List(v) => Some(v),
             _ => None,
         }
     }
 
     /// Convenience: get a map reference.
-    pub fn as_map(&self) -> Option<&HashMap<String, Value>> {
+    pub fn as_map(&self) -> Option<&HashMap<String, ShorthandValue>> {
         match self {
-            Value::Map(v) => Some(v),
+            ShorthandValue::Map(v) => Some(v),
             _ => None,
         }
     }
 
     /// Look up a key in a Map value.
-    pub fn get(&self, key: &str) -> Option<&Value> {
+    pub fn get(&self, key: &str) -> Option<&ShorthandValue> {
         match self {
-            Value::Map(entries) => entries.get(key),
+            ShorthandValue::Map(entries) => entries.get(key),
             _ => None,
         }
     }
 }
 
-impl FromStr for Value {
+impl FromStr for ShorthandValue {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -353,10 +355,10 @@ impl<'a> ShorthandParser<'a> {
     /// Parse the input and return the top-level map.
     ///
     /// ```
-    /// use scratchstack_shapes_iam::shorthand::ShorthandParser;
+    /// use scratchstack_cli_utils::ShorthandParser;
     /// let result = ShorthandParser::new("Key=Value,Foo=Bar").parse().unwrap();
     /// ```
-    pub fn parse(mut self) -> Result<Value, ParseError> {
+    pub fn parse(mut self) -> Result<ShorthandValue, ParseError> {
         let result = self.parameter()?;
         Ok(result)
     }
@@ -427,7 +429,7 @@ impl<'a> ShorthandParser<'a> {
     // -- Grammar productions ------------------------------------------------
 
     /// `parameter = keyval *("," keyval)`
-    fn parameter(&mut self) -> Result<Value, ParseError> {
+    fn parameter(&mut self) -> Result<ShorthandValue, ParseError> {
         let mut entries = HashMap::new();
         let (key, val) = self.keyval()?;
         entries.insert(key, val);
@@ -450,11 +452,11 @@ impl<'a> ShorthandParser<'a> {
             last_index = self.index;
         }
 
-        Ok(Value::Map(entries))
+        Ok(ShorthandValue::Map(entries))
     }
 
     /// `keyval = key ("=" / "@=") [values]`
-    fn keyval(&mut self) -> Result<(String, Value), ParseError> {
+    fn keyval(&mut self) -> Result<(String, ShorthandValue), ParseError> {
         let key = self.key()?;
         let mut is_paramfile = false;
 
@@ -489,9 +491,9 @@ impl<'a> ShorthandParser<'a> {
     }
 
     /// `values = csv-list / explicit-list / hash-literal`
-    fn values(&mut self, _is_paramfile: bool) -> Result<Value, ParseError> {
+    fn values(&mut self, _is_paramfile: bool) -> Result<ShorthandValue, ParseError> {
         if self.at_eof() {
-            return Ok(Value::Scalar(String::new()));
+            return Ok(ShorthandValue::Scalar(String::new()));
         }
         match self.current() {
             Some('[') => self.explicit_list(),
@@ -508,12 +510,12 @@ impl<'a> ShorthandParser<'a> {
     /// foo=a,b,c=d   -> Scalar("a")  (b,c=d backtracks — the , after a is
     ///                                part of the top-level parameter separator)
     /// ```
-    fn csv_value(&mut self) -> Result<Value, ParseError> {
+    fn csv_value(&mut self) -> Result<ShorthandValue, ParseError> {
         let first = self.first_value()?;
         self.consume_whitespace();
 
         if self.at_eof() || self.current_byte() != Some(b',') {
-            return Ok(Value::Scalar(first));
+            return Ok(ShorthandValue::Scalar(first));
         }
 
         // Speculatively consume the comma.
@@ -555,14 +557,14 @@ impl<'a> ShorthandParser<'a> {
 
         if csv_list.len() == 1 {
             // foo=bar,  then backtracked: return the scalar.
-            Ok(Value::Scalar(first))
+            Ok(ShorthandValue::Scalar(first))
         } else {
-            Ok(Value::List(csv_list.into_iter().map(Value::Scalar).collect()))
+            Ok(ShorthandValue::List(csv_list.into_iter().map(ShorthandValue::Scalar).collect()))
         }
     }
 
     /// `explicit-list = "[" [value *("," value)] "]"`
-    fn explicit_list(&mut self) -> Result<Value, ParseError> {
+    fn explicit_list(&mut self) -> Result<ShorthandValue, ParseError> {
         self.expect('[', true)?;
         let mut values = Vec::new();
         while self.current() != Some(']') {
@@ -575,23 +577,23 @@ impl<'a> ShorthandParser<'a> {
             }
         }
         self.expect(']', false)?;
-        Ok(Value::List(values))
+        Ok(ShorthandValue::List(values))
     }
 
     /// Values inside `[...]` — same as top-level values but no csv ambiguity.
-    fn explicit_values(&mut self) -> Result<Value, ParseError> {
+    fn explicit_values(&mut self) -> Result<ShorthandValue, ParseError> {
         match self.current() {
             Some('[') => self.explicit_list(),
             Some('{') => self.hash_literal(),
             _ => {
                 let v = self.first_value()?;
-                Ok(Value::Scalar(v))
+                Ok(ShorthandValue::Scalar(v))
             }
         }
     }
 
     /// `hash-literal = "{" keyval *("," keyval) "}"`
-    fn hash_literal(&mut self) -> Result<Value, ParseError> {
+    fn hash_literal(&mut self) -> Result<ShorthandValue, ParseError> {
         self.expect('{', true)?;
         let mut entries = HashMap::new();
         while self.current() != Some('}') {
@@ -617,7 +619,7 @@ impl<'a> ShorthandParser<'a> {
             entries.insert(key, val);
         }
         self.expect('}', false)?;
-        Ok(Value::Map(entries))
+        Ok(ShorthandValue::Map(entries))
     }
 
     // -- Value terminals ----------------------------------------------------
@@ -768,13 +770,13 @@ impl<'a> ShorthandParser<'a> {
 /// Parse a shorthand expression, returning the top-level value.
 ///
 /// ```
-/// use scratchstack_shapes_iam::shorthand::{parse, Value};
+/// use scratchstack_cli_utils::{parse_shorthand, ShorthandValue};
 ///
-/// let val = parse("Key=Hello,Foo=Bar").unwrap();
+/// let val = parse_shorthand("Key=Hello,Foo=Bar").unwrap();
 /// assert_eq!(val.get("Key").unwrap().as_str(), Some("Hello"));
 /// assert_eq!(val.get("Foo").unwrap().as_str(), Some("Bar"));
 /// ```
-pub fn parse(input: &str) -> Result<Value, ParseError> {
+pub fn parse_shorthand(input: &str) -> Result<ShorthandValue, ParseError> {
     ShorthandParser::new(input).parse()
 }
 
@@ -787,54 +789,54 @@ mod tests {
     use super::*;
 
     // Helpers for building expected values concisely.
-    fn s(v: &str) -> Value {
-        Value::Scalar(v.to_string())
+    fn s(v: &str) -> ShorthandValue {
+        ShorthandValue::Scalar(v.to_string())
     }
-    fn list(vs: Vec<Value>) -> Value {
-        Value::List(vs)
+    fn list(vs: Vec<ShorthandValue>) -> ShorthandValue {
+        ShorthandValue::List(vs)
     }
-    fn map(pairs: Vec<(&str, Value)>) -> Value {
-        Value::Map(pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+    fn map(pairs: Vec<(&str, ShorthandValue)>) -> ShorthandValue {
+        ShorthandValue::Map(pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
     }
 
     // -- Basic key=value pairs ----------------------------------------------
 
     #[test]
     fn single_keyval() {
-        assert_eq!(parse("foo=bar").unwrap(), map(vec![("foo", s("bar"))]));
+        assert_eq!(parse_shorthand("foo=bar").unwrap(), map(vec![("foo", s("bar"))]));
     }
 
     #[test]
     fn multiple_keyvals() {
-        assert_eq!(parse("foo=bar,baz=qux").unwrap(), map(vec![("foo", s("bar")), ("baz", s("qux"))]));
+        assert_eq!(parse_shorthand("foo=bar,baz=qux").unwrap(), map(vec![("foo", s("bar")), ("baz", s("qux"))]));
     }
 
     #[test]
     fn three_keyvals() {
-        assert_eq!(parse("a=b,c=d,e=f").unwrap(), map(vec![("a", s("b")), ("c", s("d")), ("e", s("f"))]));
+        assert_eq!(parse_shorthand("a=b,c=d,e=f").unwrap(), map(vec![("a", s("b")), ("c", s("d")), ("e", s("f"))]));
     }
 
     #[test]
     fn empty_value() {
-        assert_eq!(parse("foo=").unwrap(), map(vec![("foo", s(""))]));
+        assert_eq!(parse_shorthand("foo=").unwrap(), map(vec![("foo", s(""))]));
     }
 
     // -- Quoting ------------------------------------------------------------
 
     #[test]
     fn double_quoted_value() {
-        assert_eq!(parse("foo=\"bar\"").unwrap(), map(vec![("foo", s("bar"))]));
+        assert_eq!(parse_shorthand("foo=\"bar\"").unwrap(), map(vec![("foo", s("bar"))]));
     }
 
     #[test]
     fn single_quoted_value() {
-        assert_eq!(parse("foo='bar'").unwrap(), map(vec![("foo", s("bar"))]));
+        assert_eq!(parse_shorthand("foo='bar'").unwrap(), map(vec![("foo", s("bar"))]));
     }
 
     #[test]
     fn quoted_value_with_comma() {
         assert_eq!(
-            parse("Key=\"hello, world\",Value=test").unwrap(),
+            parse_shorthand("Key=\"hello, world\",Value=test").unwrap(),
             map(vec![("Key", s("hello, world")), ("Value", s("test"))])
         );
     }
@@ -842,19 +844,19 @@ mod tests {
     #[test]
     fn quoted_value_with_spaces() {
         assert_eq!(
-            parse("Key=\"Hello\",Value=\"World 1 2 3\"").unwrap(),
+            parse_shorthand("Key=\"Hello\",Value=\"World 1 2 3\"").unwrap(),
             map(vec![("Key", s("Hello")), ("Value", s("World 1 2 3"))])
         );
     }
 
     #[test]
     fn escaped_quote_inside_double_quoted() {
-        assert_eq!(parse(r#"foo="say \"hi\"""#).unwrap(), map(vec![("foo", s("say \"hi\""))]));
+        assert_eq!(parse_shorthand(r#"foo="say \"hi\"""#).unwrap(), map(vec![("foo", s("say \"hi\""))]));
     }
 
     #[test]
     fn escaped_quote_inside_single_quoted() {
-        assert_eq!(parse(r"foo='it\'s'").unwrap(), map(vec![("foo", s("it's"))]));
+        assert_eq!(parse_shorthand(r"foo='it\'s'").unwrap(), map(vec![("foo", s("it's"))]));
     }
 
     // -- CSV values (implicit lists) ----------------------------------------
@@ -872,7 +874,7 @@ mod tests {
         //   foo="a", c="d"  (b is part of the backtrack)
         //
         // But foo=a,b (no more keyvals) -> foo=["a","b"]
-        let result = parse("foo=a,b").unwrap();
+        let result = parse_shorthand("foo=a,b").unwrap();
         // The parser sees a,b — first value "a", comma, tries second value "b".
         // "b" is valid but then there's no "=" after, so at top level this is
         // actually foo=["a","b"] since it's only two values with no = in sight.
@@ -883,19 +885,22 @@ mod tests {
 
     #[test]
     fn explicit_list_simple() {
-        assert_eq!(parse("foo=[a,b,c]").unwrap(), map(vec![("foo", list(vec![s("a"), s("b"), s("c")]))]));
+        assert_eq!(parse_shorthand("foo=[a,b,c]").unwrap(), map(vec![("foo", list(vec![s("a"), s("b"), s("c")]))]));
     }
 
     #[test]
     fn explicit_list_with_quotes() {
-        assert_eq!(parse("foo=[\"a b\",c]").unwrap(), map(vec![("foo", list(vec![s("a b"), s("c")]))]));
+        assert_eq!(parse_shorthand("foo=[\"a b\",c]").unwrap(), map(vec![("foo", list(vec![s("a b"), s("c")]))]));
     }
 
     // -- Hash literals ------------------------------------------------------
 
     #[test]
     fn hash_literal() {
-        assert_eq!(parse("foo={a=1,b=2}").unwrap(), map(vec![("foo", map(vec![("a", s("1")), ("b", s("2"))]))]));
+        assert_eq!(
+            parse_shorthand("foo={a=1,b=2}").unwrap(),
+            map(vec![("foo", map(vec![("a", s("1")), ("b", s("2"))]))])
+        );
     }
 
     // -- Nested structures --------------------------------------------------
@@ -903,7 +908,7 @@ mod tests {
     #[test]
     fn nested_list_in_hash() {
         assert_eq!(
-            parse("foo={a=[1,2],b=3}").unwrap(),
+            parse_shorthand("foo={a=[1,2],b=3}").unwrap(),
             map(vec![("foo", map(vec![("a", list(vec![s("1"), s("2")])), ("b", s("3")),]))])
         );
     }
@@ -912,14 +917,14 @@ mod tests {
 
     #[test]
     fn escaped_comma_in_value() {
-        assert_eq!(parse("foo=a\\,b").unwrap(), map(vec![("foo", s("a,b"))]));
+        assert_eq!(parse_shorthand("foo=a\\,b").unwrap(), map(vec![("foo", s("a,b"))]));
     }
 
     // -- Duplicate key detection --------------------------------------------
 
     #[test]
     fn duplicate_key_error() {
-        let err = parse("Key=a,Key=b").unwrap_err();
+        let err = parse_shorthand("Key=a,Key=b").unwrap_err();
         assert!(matches!(err, ParseError::DuplicateKey { .. }));
     }
 
@@ -927,7 +932,7 @@ mod tests {
 
     #[test]
     fn key_with_dots_and_colons() {
-        assert_eq!(parse("aws:tag/Name=hello").unwrap(), map(vec![("aws:tag/Name", s("hello"))]));
+        assert_eq!(parse_shorthand("aws:tag/Name=hello").unwrap(), map(vec![("aws:tag/Name", s("hello"))]));
     }
 
     // -- Paramfile syntax (@=) ---------------------------------------------
@@ -935,7 +940,7 @@ mod tests {
     #[test]
     fn paramfile_marker_parsed() {
         // We parse @= but don't resolve files — just pass through the value.
-        assert_eq!(parse("data@=file://config.json").unwrap(), map(vec![("data", s("file://config.json"))]));
+        assert_eq!(parse_shorthand("data@=file://config.json").unwrap(), map(vec![("data", s("file://config.json"))]));
     }
 
     // -- Value with equals sign in it ---------------------------------------
@@ -943,6 +948,6 @@ mod tests {
     #[test]
     fn value_containing_equals() {
         // First value can contain `=`.
-        assert_eq!(parse("foo=a=b").unwrap(), map(vec![("foo", s("a=b"))]));
+        assert_eq!(parse_shorthand("foo=a=b").unwrap(), map(vec![("foo", s("a=b"))]));
     }
 }
