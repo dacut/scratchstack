@@ -1374,7 +1374,7 @@ mod tests {
             assert_eq!(e.error_code(), "InvalidURIPath");
             assert_eq!(e.http_status(), 400);
         } else {
-            panic!("Expected InvalidURIPath; got {:#?}", &e);
+            panic!("Expected InvalidURIPath; got {e:#?}");
         }
 
         let e = canonicalize_uri_path("/hello/%2E%2E/%2E%2E/world", false).unwrap_err();
@@ -1383,7 +1383,7 @@ mod tests {
             assert_eq!(e.error_code(), "InvalidURIPath");
             assert_eq!(e.http_status(), 400);
         } else {
-            panic!("Expected InvalidURIPath; got {:#?}", &e);
+            panic!("Expected InvalidURIPath; got {e:#?}");
         }
     }
 

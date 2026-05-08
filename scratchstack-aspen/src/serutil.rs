@@ -557,7 +557,7 @@ mod tests {
         assert_eq!(el1b[0].value, 42);
         let e = catch_unwind(|| {
             let new_el: MapList<SimpleMap> = map1.clone().into();
-            println!("This won't print: {:?}", &new_el[1]);
+            println!("This won't print: {:?}", new_el[1]);
         })
         .unwrap_err();
         assert_eq!(*e.downcast::<String>().unwrap(), "index out of bounds: the len is 1 but the index is 1");

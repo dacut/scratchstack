@@ -650,7 +650,7 @@ impl Service<Uuid> for InMemoryKeyService {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, chrono::Utc, std::num::NonZeroUsize, uuid::Uuid};
+    use {super::*, chrono::Utc, pretty_assertions::assert_eq, std::num::NonZeroUsize, uuid::Uuid};
 
     fn make_key(key_id: Uuid, valid_from: DateTime<Utc>, expires_at: Option<DateTime<Utc>>) -> Key {
         Key {
