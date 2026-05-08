@@ -1,5 +1,4 @@
 //! Scratchstack database schema and models
-
 #![warn(clippy::all)]
 #![allow(clippy::manual_range_contains)]
 #![deny(

@@ -15,13 +15,6 @@ pub struct List {
 
     /// The inner type of the list.
     pub member: Member,
-
-    /// Whether this struct is reachable from an API input shape. This is used to determine
-    /// whether to generate Clap parsers for this struct.
-    ///
-    /// This is resolved during a call to `SmithyModel::resolve`.
-    #[serde(skip, default)]
-    pub reachable_from_input: bool,
 }
 
 impl ShapeInfo for List {
@@ -35,16 +28,7 @@ impl ShapeInfo for List {
     }
 
     fn rust_typename(&self) -> String {
-        if self.is_builtin() {
-            format!("::std::vec::Vec<{}>", self.member.rust_typename())
-        } else {
-            self.base.rust_typename().to_string()
-        }
-    }
-
-    fn clap_parser(&self) -> Option<String> {
-        let member_typename = self.member.rust_typename();
-        Some(format!("crate::clap_utils::parse_list::<{member_typename}>"))
+        format!("::std::vec::Vec::<{}>", self.member.rust_typename())
     }
 
     fn derive_builder_validator(&self, var: &str, field_name: &str) -> Option<String> {
@@ -104,25 +88,6 @@ impl ShapeInfo for List {
         } else {
             Some(output)
         }
-    }
-
-    fn mark_reachable_from_input(&mut self) {
-        if self.reachable_from_input {
-            return;
-        }
-        self.reachable_from_input = true;
-        self.member.mark_reachable_from_input();
-    }
-
-    fn generate(&self, output: &mut dyn std::io::Write) -> std::io::Result<()> {
-        if self.is_builtin() {
-            return Ok(());
-        }
-
-        self.base.traits.write_docs(output, "")?;
-        writeln!(output, "pub type {} = ::std::vec::Vec<{}>;", self.base.rust_typename(), self.member.rust_typename())?;
-        writeln!(output)?;
-        Ok(())
     }
 }
 

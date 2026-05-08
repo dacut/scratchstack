@@ -1,5 +1,5 @@
 use {
-    super::{Member, ShapeBase, ShapeInfo, StrExt as _, forward_shape_info},
+    super::{Member, ShapeBase, ShapeInfo, SmithyModel, StrExt as _, Writers},
     serde::{Deserialize, Serialize},
     std::{
         collections::BTreeMap,
@@ -23,49 +23,40 @@ pub struct Union {
     /// variant.
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub members: BTreeMap<String, Member>,
-
-    /// Whether this union is reachable from an API input shape. This is used to determine
-    /// whether to generate Clap parsers for this union.
-    ///
-    /// This is resolved during a call to `SmithyModel::resolve`.
-    #[serde(skip, default)]
-    pub reachable_from_input: bool,
 }
 
 impl ShapeInfo for Union {
-    forward_shape_info!(Union, base);
-
-    fn clap_parser(&self) -> Option<String> {
-        let typename = self.rust_typename();
-        Some(format!("{typename}::parse"))
+    fn smithy_name(&self) -> String {
+        self.base.smithy_name()
     }
 
-    fn mark_reachable_from_input(&mut self) {
-        if self.reachable_from_input {
-            return;
-        }
-        self.reachable_from_input = true;
+    fn rust_typename(&self) -> String {
+        format!("crate::types::{}", self.base.rust_typename())
+    }
+
+    fn resolve(&mut self, shape_name: &str, model: &SmithyModel) {
+        self.base.resolve(shape_name);
         for member in self.members.values_mut() {
-            member.mark_reachable_from_input();
+            member.resolve(shape_name, model);
         }
     }
 
-    fn generate(&self, output: &mut dyn Write) -> IoResult<()> {
-        let rust_typename = self.rust_typename();
-        self.base.traits.write_docs(output, "")?;
+    fn generate<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
+        let rust_typename = self.base.rust_typename();
+        self.base.traits.write_docs(&mut w.types, "")?;
 
-        writeln!(output, "#[derive(Debug, ::serde::Deserialize, ::serde::Serialize)]")?;
-        writeln!(output, "#[non_exhaustive]")?;
-        writeln!(output, "pub enum {rust_typename} {{")?;
+        writeln!(w.types, "#[derive(Debug, ::serde::Deserialize, ::serde::Serialize)]")?;
+        writeln!(w.types, "#[non_exhaustive]")?;
+        writeln!(w.types, "pub enum {rust_typename} {{")?;
 
         for (member_name, member) in &self.members {
             let rust_member_name = member_name.to_pascal_case();
             let member_type = member.rust_typename();
-            writeln!(output, "    #[serde(tag = \"{member_name}\")]")?;
-            writeln!(output, "    {rust_member_name}({member_type}),")?;
+            writeln!(w.types, "    #[serde(tag = \"{member_name}\")]")?;
+            writeln!(w.types, "    {rust_member_name}({member_type}),")?;
         }
 
-        writeln!(output, "}}")?;
+        writeln!(w.types, "}}")?;
         Ok(())
     }
 }

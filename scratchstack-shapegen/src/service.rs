@@ -39,10 +39,6 @@ pub struct Service {
 impl ShapeInfo for Service {
     forward_shape_info!(Service, base);
 
-    fn clap_parser(&self) -> Option<String> {
-        unimplemented!("clap_parser cannot be called on Service types")
-    }
-
     fn derive_builder_validator(&self, _: &str, _: &str) -> Option<String> {
         unimplemented!("derive_builder_validator cannot be called on Service types")
     }
