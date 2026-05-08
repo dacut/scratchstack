@@ -1,8 +1,7 @@
 use {
-    crate::{ShapeBase, ShapeInfo, TraitMap, forward_shape_info},
+    crate::{ShapeBase, ShapeInfo, SmithyModel, TraitMap},
     indoc::formatdoc,
     serde::{Deserialize, Serialize},
-    std::io::{Result as IoResult, Write},
 };
 
 /// The `unit` type in Smithy is similar to `Void` and `None` in other languages. It is used
@@ -131,18 +130,20 @@ pub struct SmithyDouble {
 }
 
 impl ShapeInfo for SmithyUnit {
-    forward_shape_info!(SmithyUnit, base);
-
-    fn clap_parser(&self) -> Option<String> {
-        None
+    fn smithy_name(&self) -> String {
+        self.base.smithy_name()
     }
 
-    fn generate(&self, output: &mut dyn Write) -> IoResult<()> {
-        if !self.is_builtin() {
-            self.base.traits.write_docs(output, "")?;
-            writeln!(output, "pub type {} = ();", self.rust_typename())?;
-        }
-        Ok(())
+    fn rust_typename(&self) -> String {
+        "()".to_string()
+    }
+
+    fn resolve(&mut self, shape_name: &str, _model: &SmithyModel) {
+        self.base.resolve(shape_name);
+    }
+
+    fn is_primitive(&self) -> bool {
+        true
     }
 }
 
@@ -161,69 +162,54 @@ impl SmithyUnit {
 }
 
 impl ShapeInfo for SmithyBoolean {
-    forward_shape_info!(SmithyBoolean, base);
-
-    fn clap_parser(&self) -> Option<String> {
-        None
+    fn smithy_name(&self) -> String {
+        self.base.smithy_name()
     }
 
-    fn generate(&self, output: &mut dyn Write) -> IoResult<()> {
-        if !self.is_builtin() {
-            // Declaration
-            let rust_typename = self.rust_typename();
-            self.base.traits.write_docs(output, "")?;
-            writeln!(output, "pub type {rust_typename} = bool;")?;
-            writeln!(output)?;
-        }
-        Ok(())
+    fn rust_typename(&self) -> String {
+        "bool".to_string()
+    }
+
+    fn resolve(&mut self, shape_name: &str, _model: &SmithyModel) {
+        self.base.resolve(shape_name);
+    }
+
+    fn is_primitive(&self) -> bool {
+        true
     }
 }
 
 impl ShapeInfo for SmithyBlob {
-    forward_shape_info!(SmithyBlob, base);
-
-    fn clap_parser(&self) -> Option<String> {
-        // TODO: Determine how we want to handle blobs on the command line.
-        todo!("Determine how to handle blobs on the CLI")
+    fn smithy_name(&self) -> String {
+        self.base.smithy_name()
     }
 
-    fn generate(&self, output: &mut dyn Write) -> IoResult<()> {
-        if !self.is_builtin() {
-            // Declaration
-            let rust_typename = self.rust_typename();
-            self.base.traits.write_docs(output, "")?;
-            writeln!(output, "pub type {rust_typename} = Vec<u8>;")?;
-            writeln!(output)?;
+    fn rust_typename(&self) -> String {
+        "::std::vec::Vec<u8>".to_string()
+    }
 
-            // Clap parser
-            let simple_name = self.simple_name();
-            writeln!(output, "#[cfg(feature = \"clap\")]")?;
-            writeln!(output, "#[allow(non_snake_case, unused)]")?;
-            writeln!(output, "fn clap_parse_{rust_typename}(s: &str) -> Result<Vec<u8>, String> {{")?;
-            writeln!(output, "    let value = ::base64::engine::Engine::decode(")?;
-            writeln!(output, "        &::base64::engine::general_purpose::STANDARD, s)")?;
-            writeln!(output, "        .map_err(|_| \"{simple_name} must be a valid base64 string\".to_string())?;")?;
-            writeln!(output, "    Ok(value)")?;
-            writeln!(output, "}}")?;
-            writeln!(output)?;
-        }
-        Ok(())
+    fn resolve(&mut self, shape_name: &str, _model: &SmithyModel) {
+        self.base.resolve(shape_name);
+    }
+
+    fn is_primitive(&self) -> bool {
+        true
     }
 }
 
 impl ShapeInfo for SmithyString {
-    forward_shape_info!(SmithyString, base);
-
-    #[inline(always)]
-    fn clap_parser(&self) -> Option<String> {
-        if self.is_builtin() {
-            None
-        } else {
-            Some(format!("clap_parse_{}", self.rust_typename()))
-        }
+    fn smithy_name(&self) -> String {
+        self.base.smithy_name()
     }
 
-    #[inline(always)]
+    fn rust_typename(&self) -> String {
+        "::std::string::String".to_string()
+    }
+
+    fn resolve(&mut self, shape_name: &str, _model: &SmithyModel) {
+        self.base.resolve(shape_name);
+    }
+
     fn derive_builder_validator(&self, var: &str, field_name: &str) -> Option<String> {
         if self.is_builtin() {
             return None;
@@ -275,142 +261,120 @@ impl ShapeInfo for SmithyString {
         }
     }
 
-    fn generate(&self, output: &mut dyn Write) -> IoResult<()> {
-        if !self.is_builtin() {
-            // Declaration
-            let rust_typename = self.rust_typename();
-            self.base.traits.write_docs(output, "")?;
-            writeln!(output, "pub type {} = ::std::string::String;", rust_typename)?;
-            writeln!(output)?;
-
-            // Clap parser
-            let rust_typename = self.rust_typename();
-            let simple_name = self.simple_name();
-            writeln!(output, "#[cfg(feature = \"clap\")]")?;
-            writeln!(output, "#[allow(non_snake_case, unused)]")?;
-            writeln!(output, "fn clap_parse_{rust_typename}(s: &str) -> Result<String, String> {{")?;
-
-            if let Some(pat) = self.base.traits.pattern() {
-                writeln!(
-                    output,
-                    "    static PAT: ::std::sync::LazyLock<::regex::Regex> = ::std::sync::LazyLock::new(||::regex::Regex::new(r\"{pat}\").expect(\"Invalid regex pattern in Smithy model\"));"
-                )?;
-                writeln!(output, "    if !PAT.is_match(s) {{")?;
-                writeln!(output, "        return Err(r##\"{simple_name} must match the regex {pat}\"##.to_string());")?;
-                writeln!(output, "    }}")?;
-            }
-
-            if let Some(lc) = self.base.traits.length_constraint() {
-                if let Some(min) = lc.min
-                    && min > 0
-                {
-                    if min == 1 {
-                        writeln!(output, "    if s.is_empty() {{")?;
-                    } else {
-                        writeln!(output, "    if s.len() < {min} {{")?;
-                    }
-                    writeln!(
-                        output,
-                        "        return Err(\"{simple_name} must be at least {min} characters long\".to_string());"
-                    )?;
-                    writeln!(output, "    }}")?;
-                }
-
-                if let Some(max) = lc.max {
-                    writeln!(output, "    if s.len() > {max} {{")?;
-                    writeln!(
-                        output,
-                        "        return Err(\"{simple_name} must be at most {max} characters long\".to_string());"
-                    )?;
-                    writeln!(output, "    }}")?;
-                }
-            }
-
-            writeln!(output, "    Ok(s.to_string())")?;
-            writeln!(output, "}}")?;
-            writeln!(output)?;
-        }
-        Ok(())
+    fn is_primitive(&self) -> bool {
+        true
     }
 }
 
 impl ShapeInfo for SmithyBigInteger {
-    forward_shape_info!(SmithyBigInteger, base);
+    fn smithy_name(&self) -> String {
+        self.base.smithy_name()
+    }
 
-    fn clap_parser(&self) -> Option<String> {
-        todo!("Determine how to handle BigInteger arguments on the CLI")
+    fn rust_typename(&self) -> String {
+        "::aws_smithy_types::BigInteger".to_string()
+    }
+
+    fn resolve(&mut self, shape_name: &str, _model: &SmithyModel) {
+        self.base.resolve(shape_name);
+    }
+
+    fn is_primitive(&self) -> bool {
+        true
     }
 }
 
 impl ShapeInfo for SmithyBigDecimal {
-    forward_shape_info!(SmithyBigDecimal, base);
+    fn smithy_name(&self) -> String {
+        self.base.smithy_name()
+    }
 
-    fn clap_parser(&self) -> Option<String> {
-        todo!("Determine how to handle BigDecimal arguments on the CLI")
+    fn rust_typename(&self) -> String {
+        "::aws_smithy_types::BigDecimal".to_string()
+    }
+
+    fn resolve(&mut self, shape_name: &str, _model: &SmithyModel) {
+        self.base.resolve(shape_name);
+    }
+
+    fn derive_builder_validator(&self, var: &str, field_name: &str) -> Option<String> {
+        if self.is_builtin() {
+            return None;
+        }
+
+        let simple_name = self.simple_name(); // Used in error messages
+        let mut output = String::with_capacity(1024);
+
+        if let Some(rc) = self.base.traits.range_constraint() {
+            if let Some(min) = rc.min {
+                output += &format!(
+                    "if *{var} < {min} {{ return Err(format!(\"{field_name} for {simple_name} must be >= {min}: {{{var}}}\")); }}\n"
+                );
+            }
+            if let Some(max) = rc.max {
+                output += &format!(
+                    "if *{var} > {max} {{ return Err(format!(\"{field_name} for {simple_name} must be <= {max}: {{{var}}}\")); }}\n"
+                );
+            }
+        }
+
+        if !output.is_empty() {
+            Some(output)
+        } else {
+            None
+        }
+    }
+
+    fn is_primitive(&self) -> bool {
+        true
     }
 }
 
 impl ShapeInfo for SmithyTimestamp {
-    forward_shape_info!(SmithyTimestamp, base);
-
-    fn clap_parser(&self) -> Option<String> {
-        let rust_typename = self.rust_typename();
-        Some(format!("{rust_typename}::try_from::<&str>"))
+    fn smithy_name(&self) -> String {
+        self.base.smithy_name()
     }
 
-    fn generate(&self, output: &mut dyn Write) -> IoResult<()> {
-        if !self.is_builtin() {
-            // Declaration
-            let rust_typename = self.rust_typename();
-            self.base.traits.write_docs(output, "")?;
-            writeln!(output, "pub type {} = ::chrono::DateTime<chrono::Utc>;", rust_typename)?;
-            writeln!(output)?;
+    fn rust_typename(&self) -> String {
+        "::chrono::DateTime<::chrono::Utc>".to_string()
+    }
 
-            // Clap parser
-            let simple_name = self.simple_name();
+    fn resolve(&mut self, shape_name: &str, _model: &SmithyModel) {
+        self.base.resolve(shape_name);
+    }
 
-            writeln!(output, "#[cfg(feature = \"clap\")]")?;
-            writeln!(output, "#[allow(non_snake_case, unused)]")?;
-            writeln!(
-                output,
-                "fn clap_parse_{rust_typename}(s: &str) -> Result<::chrono::DateTime<chrono::Utc>, String> {{"
-            )?;
-            writeln!(output, "    s.parse().map_err(|_| format!(\"{simple_name} must be a valid timestamp: {{s}}\"))")?;
-            writeln!(output, "}}")?;
-            writeln!(output)?;
-        }
-
-        Ok(())
+    fn is_primitive(&self) -> bool {
+        true
     }
 }
 
 impl ShapeInfo for SmithyDocument {
-    forward_shape_info!(SmithyDocument, base);
+    fn smithy_name(&self) -> String {
+        self.base.smithy_name()
+    }
 
-    fn clap_parser(&self) -> Option<String> {
-        todo!("Figure out how to implement clap_parser for Document")
+    fn rust_typename(&self) -> String {
+        "::aws_smithy_types::Document".to_string()
+    }
+
+    fn resolve(&mut self, shape_name: &str, _model: &SmithyModel) {
+        self.base.resolve(shape_name);
     }
 }
 
 macro_rules! impl_numeric {
     ($shape:ident, $rust_type:ty, $range_json:ident) => {
         impl ShapeInfo for $shape {
-            forward_shape_info!($shape, base);
-
-            fn clap_parser(&self) -> Option<String> {
-                if self.is_builtin() {
-                    None
-                } else {
-                    Some(format!("clap_parse_{}", self.rust_typename()))
-                }
+            fn smithy_name(&self) -> String {
+                self.base.smithy_name()
             }
 
-            fn generate(&self, output: &mut dyn Write) -> IoResult<()> {
-                if !self.is_builtin() {
-                    self.write_rust_decl(output)?;
-                    self.write_clap_parser(output)?;
-                }
-                Ok(())
+            fn rust_typename(&self) -> String {
+                stringify!($rust_type).to_string()
+            }
+
+            fn resolve(&mut self, shape_name: &str, _model: &SmithyModel) {
+                self.base.resolve(shape_name);
             }
 
             fn derive_builder_validator(&self, var: &str, field_name: &str) -> Option<String> {
@@ -428,48 +392,9 @@ macro_rules! impl_numeric {
 
                 Some(output)
             }
-        }
 
-        impl $shape {
-            /// Writes the Rust declaration for the type alias.
-            fn write_rust_decl(&self, output: &mut dyn Write) -> IoResult<()> {
-                if !self.is_builtin() {
-                    self.base.traits.write_docs(output, "")?;
-                    let rust_typename = self.rust_typename();
-                    writeln!(output, "pub type {} = {};", rust_typename, stringify!($rust_type))?;
-                    writeln!(output)?;
-                }
-                Ok(())
-            }
-
-            /// Writes the clap parser for this type.
-            fn write_clap_parser(&self, output: &mut dyn Write) -> IoResult<()> {
-                let rust_typename = self.rust_typename();
-                let simple_name = self.simple_name();
-                let return_type = stringify!($rust_type).to_string();
-
-                writeln!(output, "#[cfg(feature = \"clap\")]")?;
-                writeln!(output, "#[allow(non_snake_case, unused)]")?;
-                writeln!(output, "fn clap_parse_{rust_typename}(s: &str) -> Result<{return_type}, String> {{")?;
-                writeln!(output, "    let value = s.parse().map_err(|_| format!(\"Invalid {simple_name}: {{s}}\"))?;")?;
-
-                if let Some(rc) = self.base.traits.range_constraint() {
-                    if let Some(min) = rc.min {
-                        writeln!(output, "    if value < {min} {{")?;
-                        writeln!(output, "        return Err(format!(\"{simple_name} must be >= {min}: {{s}}\"));")?;
-                        writeln!(output, "    }}")?;
-                    }
-                    if let Some(max) = rc.max {
-                        writeln!(output, "    if value > {max} {{")?;
-                        writeln!(output, "        return Err(format!(\"{simple_name} must be <= {max}: {{s}}\"));")?;
-                        writeln!(output, "    }}")?;
-                    }
-                }
-
-                writeln!(output, "    Ok(value)")?;
-                writeln!(output, "}}")?;
-                writeln!(output)?;
-                Ok(())
+            fn is_primitive(&self) -> bool {
+                true
             }
         }
     }

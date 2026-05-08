@@ -120,16 +120,15 @@ impl Display for ParseError {
 
 impl Error for ParseError {}
 
-// ---------------------------------------------------------------------------
-// Parsed value type
-// ---------------------------------------------------------------------------
-
 /// Represents a parsed shorthand value.
 ///
 /// The AWS CLI shorthand parser produces:
-/// - Scalars (strings — type coercion to int/bool happens in BackCompatVisitor)
-/// - Lists (explicit `[a,b]` or implicit csv `a,b`)
-/// - Maps (top-level `Key=Val,...` or nested `{Key=Val,...}`)
+/// * Scalars (strings — type coercion to int/bool happens in BackCompatVisitor)
+/// * Lists (explicit `[a,b]` or implicit csv `a,b`)
+/// * Maps (top-level `Key=Val,...` or nested `{Key=Val,...}`)
+///
+/// It might be tempting to replace this with `serde_json::Value`, but JSON scalars have more type
+/// information (string vs. number) than the AWS CLI syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ShorthandValue {
     /// A single scalar value.
@@ -176,6 +175,7 @@ where
     fn try_from(value: &ShorthandValue) -> Result<Self, Self::Error> {
         match value {
             ShorthandValue::List(l) => l.iter().map(|v| T::try_from(v)).collect(),
+            ShorthandValue::Scalar(_) => Ok(vec![T::try_from(value)?]),
             other => Err(format!("Expected a list/array, but got {other:?}")),
         }
     }

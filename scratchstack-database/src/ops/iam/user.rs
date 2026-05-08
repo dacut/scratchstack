@@ -1,5 +1,4 @@
 //! User database level operations.
-
 use {
     crate::{
         constants::iam::*,
@@ -7,31 +6,37 @@ use {
         ops::{
             RequestExecutor,
             iam::{
-                constrain_max_items, get_current_partition_or_fail, validate_account_id, validate_path,
-                validate_path_prefix, validate_tag_key, validate_tag_value, validate_user_name,
+                constrain_max_items, get_current_partition_or_fail, get_permissions_boundary_id, validate_account_id,
+                validate_path, validate_path_prefix, validate_tag_key, validate_tag_value, validate_user_name,
             },
         },
     },
-    anyhow::{Result as AnyResult, anyhow, bail},
+    anyhow::{Result as AnyResult, anyhow},
     chrono::{DateTime, Utc},
     indoc::indoc,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
     scratchstack_pagination::{OperationPaginator, ScratchstackOperationMetadata, ScratchstackServiceMetadata},
     scratchstack_shapes_iam::{
-        AttachedPermissionsBoundary, CreateUserInternalRequest, CreateUserResponse, ListUsersInternalRequest,
-        ListUsersResponse, NoSuchEntityException, PermissionsBoundaryAttachmentType, Tag, UpdateUserInternalRequest,
-        User,
+        error_meta::Error as IamError,
+        operation::{
+            CreateUserInternalRequest, CreateUserResponse, ListUsersInternalRequest, ListUsersResponse,
+            UpdateUserInternalRequest,
+        },
+        types::{
+            AttachedPermissionsBoundary, PermissionsBoundaryAttachmentType, Tag, User,
+            error::{InternalFailure, NoSuchEntityException},
+        },
     },
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, QueryBuilder, Row as _, postgres::PgTransaction, query},
-    std::str::FromStr as _,
 };
 
 impl RequestExecutor for CreateUserInternalRequest {
     type Response = CreateUserResponse;
+    type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> AnyResult<Self::Response> {
+    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
         create_user(
             tx,
             &self.account_id,
@@ -52,7 +57,7 @@ pub async fn create_user(
     path: Option<&str>,
     permissions_boundary: Option<&str>,
     tags: &[Tag],
-) -> AnyResult<CreateUserResponse> {
+) -> Result<CreateUserResponse, IamError> {
     validate_account_id(account_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
@@ -74,51 +79,12 @@ pub async fn create_user(
     // If a permissions boundary was specified, look it up and verify that it exists. We need the actual IAM
     // identifier for the boundary, not just the ARN.
     let permissions_boundary_id = if let Some(permissions_boundary) = permissions_boundary {
-        let permissions_boundary = Arn::from_str(permissions_boundary)?;
-        let resource = permissions_boundary.resource();
-        if !resource.starts_with(ARN_RESOURCE_PREFIX_POLICY) {
-            bail!("Permissions boundary ARN must have a resource that starts with \"policy/\"");
-        }
-
-        let pb_account_id = permissions_boundary.account_id();
-        let pb_account_id = if pb_account_id == AWS_ACCOUNT_ID {
-            AWS_ACCOUNT_ID_NUMERIC
-        } else if pb_account_id == account_id {
-            account_id
-        } else {
-            bail!("Permissions boundary ARN must have an account ID that matches the request's account ID or 'aws'");
-        };
-
-        let policy_path_and_name = &resource[6..];
-        let name_start = policy_path_and_name.rfind('/').map(|i| i + 1).unwrap_or(0);
-        let policy_path = &policy_path_and_name[..name_start];
-        let policy_name = policy_path_and_name[name_start..].to_ascii_lowercase();
-        let results = query(indoc! {"
-                SELECT managed_policy_id
-                FROM iam.managed_policies
-                WHERE account_id = $1 AND path = $2 AND managed_policy_name_lower = $3
-            "})
-        .bind(pb_account_id)
-        .bind(policy_path)
-        .bind(policy_name)
-        .fetch_all(tx.as_mut())
-        .await?;
-        if results.is_empty() {
-            bail!("Permissions boundary policy does not exist");
-        }
-        if results.len() > 1 {
-            bail!(
-                "Multiple permissions boundary policies found with the same name and path; this is a database integrity error"
-            );
-        }
-
-        let mp_id: &str = results[0].try_get(0)?;
-        Some(mp_id.to_string())
+        Some(get_permissions_boundary_id(tx, account_id, permissions_boundary).await?)
     } else {
         None
     };
 
-    let result = query(indoc! {"
+    let result = match query(indoc! {"
             INSERT INTO iam.users(
                 account_id, user_id, path, user_name_lower, user_name_cased,
                 permissions_boundary_managed_policy_id)
@@ -132,15 +98,28 @@ pub async fn create_user(
     .bind(user_name)
     .bind(permissions_boundary_id)
     .fetch_one(tx.as_mut())
-    .await?;
-    let created_at: chrono::DateTime<chrono::Utc> = result.try_get(0)?;
+    .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            log::error!("Failed to insert user into database: {e}");
+            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+        }
+    };
+    let created_at: chrono::DateTime<chrono::Utc> = match result.try_get(0) {
+        Ok(created_at) => created_at,
+        Err(e) => {
+            log::error!("Failed to get created_at from database row: {e}");
+            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+        }
+    };
 
     for tag in tags {
         let key_cased = &tag.key;
         let key_lower = key_cased.to_ascii_lowercase();
         let value = &tag.value;
 
-        query(indoc! {"
+        if let Err(e) = query(indoc! {"
                 INSERT INTO iam.user_tags(user_id, key_lower, key_cased, value)
                 VALUES($1, $2, $3, $4)
             "})
@@ -149,22 +128,37 @@ pub async fn create_user(
         .bind(key_cased)
         .bind(value)
         .execute(tx.as_mut())
-        .await?;
+        .await
+        {
+            log::error!("Failed to insert user tag into database: {e}");
+            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+        }
     }
 
-    let arn = Arn::builder()
+    let arn = match Arn::builder()
         .partition(partition)
         .service(SERVICE_KEY_IAM)
         .account_id(account_id)
         .resource(format!("{ARN_RESOURCE_PREFIX_USER}{user_name}"))
-        .build()?;
+        .build()
+    {
+        Ok(arn) => arn,
+        Err(e) => {
+            log::error!("Failed to construct ARN for new user: {e}");
+            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+        }
+    };
 
     let permissions_boundary = if let Some(pb) = permissions_boundary {
         Some(
             AttachedPermissionsBoundary::builder()
                 .permissions_boundary_arn(Some(pb.to_string()))
                 .permissions_boundary_type(Some(PermissionsBoundaryAttachmentType::Policy))
-                .build()?,
+                .build()
+                .map_err(|e| {
+                    log::error!("Failed to construct permissions boundary for new user: {e}");
+                    InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+                })?,
         )
     } else {
         None
@@ -177,13 +171,18 @@ pub async fn create_user(
         .user_id(user_id)
         .user_name(user_name.to_string())
         .permissions_boundary(permissions_boundary)
-        .build()?;
+        .build()
+        .map_err(|e| {
+            log::error!("Failed to construct user object for new user: {e}");
+            InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+        })?;
 
-    Ok(CreateUserResponse::builder().user(Some(user)).build()?)
+    Ok(CreateUserResponse::builder().user(Some(user)).build().unwrap())
 }
 
 impl RequestExecutor for ListUsersInternalRequest {
     type Response = ListUsersResponse;
+    type Error = anyhow::Error; // FIXME
 
     async fn execute(&self, tx: &mut PgTransaction<'_>) -> AnyResult<Self::Response> {
         list_users(tx, &self.account_id, self.marker.as_deref(), self.max_items, self.path_prefix.as_deref()).await
@@ -259,11 +258,11 @@ pub async fn list_users(
     sql.push_bind(max_items as i32 + 1);
 
     let rows = sql.build_query_as::<ListUsersRow>().fetch_all(tx.as_mut()).await?;
-    let mut results = Vec::with_capacity(rows.len().min(max_items as usize));
+    let mut results = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
 
     for row in rows.into_iter() {
-        if results.len() == max_items as usize {
+        if results.len() == max_items {
             next_marker = Some(
                 paginator
                     .encrypt_token(&ListUsersMarker {
@@ -322,6 +321,7 @@ pub async fn list_users(
 
 impl RequestExecutor for UpdateUserInternalRequest {
     type Response = ();
+    type Error = anyhow::Error;
 
     async fn execute(&self, tx: &mut PgTransaction<'_>) -> AnyResult<Self::Response> {
         update_user(tx, &self.account_id, &self.user_name, self.new_user_name.as_deref(), self.new_path.as_deref())
@@ -372,10 +372,10 @@ pub async fn update_user(
     .await?;
 
     if result.rows_affected() == 0 {
-        let e = NoSuchEntityException::builder()
+        Err(NoSuchEntityException::builder()
             .message(format!("The user with name {user_name} cannot be found."))
-            .build()?;
-        Err(e.into())
+            .build()
+            .into())
     } else {
         Ok(())
     }

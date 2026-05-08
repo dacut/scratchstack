@@ -25,6 +25,11 @@ impl TraitMap {
         self.0.get(&TraitId::AwsProtocolsAwsQueryError).cloned()
     }
 
+    /// Sets the AwsQueryError information for these traits.
+    pub fn set_aws_query_error(&mut self, error_info: JsonValue) {
+        self.0.insert(TraitId::AwsProtocolsAwsQueryError, error_info);
+    }
+
     /// Returns the enum value, if any, from these traits.
     #[inline(always)]
     pub fn enum_value(&self) -> Option<JsonValue> {
@@ -52,6 +57,21 @@ impl TraitMap {
     #[inline(always)]
     pub fn error(&self) -> Option<String> {
         self.0.get(&TraitId::SmithyApiError).map(|value| value.as_str().unwrap().to_string())
+    }
+
+    /// Sets the error marker for these traits.
+    pub fn set_error(&mut self, error: impl Into<String>) {
+        self.0.insert(TraitId::SmithyApiError, JsonValue::String(error.into()));
+    }
+
+    /// Returns the HTTP error code, if any, from these traits.
+    pub fn http_error(&self) -> Option<u16> {
+        Some(self.0.get(&TraitId::SmithyApiHttpError)?.as_u64()? as u16)
+    }
+
+    /// Sets the HTTP error code for these traits.
+    pub fn set_http_error(&mut self, code: u16) {
+        self.0.insert(TraitId::SmithyApiHttpError, JsonValue::Number(JsonNumber::from_u128(code as u128).unwrap()));
     }
 
     /// Indicates whether the trait map has a required constraint.
@@ -124,15 +144,15 @@ impl TraitMap {
     }
 
     /// Writes documentation comments for this shape to the given output.
-    pub fn write_docs(&self, output: &mut dyn Write, indent: &str) -> IoResult<()> {
+    pub fn write_docs(&self, w: &mut dyn Write, indent: &str) -> IoResult<()> {
         if let Some(doc_any) = self.0.get(&TraitId::SmithyApiDocumentation)
             && let Some(doc) = doc_any.as_str()
         {
             for line in doc.lines() {
-                writeln!(output, "{}/// {}", indent, line.trim())?;
+                writeln!(w, "{}/// {}", indent, line.trim())?;
             }
         } else {
-            writeln!(output, "{}#[allow(missing_docs)]", indent)?;
+            writeln!(w, "{}#[allow(missing_docs)]", indent)?;
         }
 
         Ok(())
@@ -160,5 +180,11 @@ impl TraitMap {
     #[inline(always)]
     pub fn is_input(&self) -> bool {
         self.0.contains_key(&TraitId::SmithyApiInput)
+    }
+
+    /// Indicates whether the trait map has an output marker.
+    #[inline(always)]
+    pub fn is_output(&self) -> bool {
+        self.0.contains_key(&TraitId::SmithyApiOutput)
     }
 }

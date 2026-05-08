@@ -1,0 +1,320 @@
+{
+    "smithy": "2.0",
+    "shapes": {
+        "com.amazonaws.iam#CreateAccount": {
+            "type": "operation",
+            "input": {
+                "target": "com.amazonaws.iam#CreateAccountRequest"
+            },
+            "output": {
+                "target": "com.amazonaws.iam#CreateAccountResponse"
+            },
+            "traits": {
+                "smithy.api#documentation": "Creates a new AWS account."
+            }
+        },
+        "com.amazonaws.iam#GetCurrentPartition": {
+            "type": "operation",
+            "input": {
+                "target": "smithy.api#Unit"
+            },
+            "output": {
+                "target": "com.amazonaws.iam#GetCurrentPartitionResponse"
+            },
+            "traits": {
+                "smithy.api#documentation": "Returns the partition configured for the service."
+            }
+        },
+        "com.amazonaws.iam#ListAccounts": {
+            "type": "operation",
+            "input": {
+                "target": "com.amazonaws.iam#ListAccountsRequest"
+            },
+            "output": {
+                "target": "com.amazonaws.iam#ListAccountsResponse"
+            },
+            "traits": {
+                "smithy.api#documentation": "List known AWS accounts."
+            }
+        },
+        "com.amazonaws.iam#SetCurrentPartition": {
+            "type": "operation",
+            "input": {
+                "target": "com.amazonaws.iam#SetCurrentPartitionRequest"
+            },
+            "output": {
+                "target": "com.amazonaws.iam#SetCurrentPartitionResponse"
+            },
+            "traits": {
+                "smithy.api#documentation": "Sets the partition for the service. This is used to support other partitions beyond standard AWS, such as AWS China and AWS GovCloud."
+            }
+        },
+        "com.amazonaws.iam#CreateAccountRequest": {
+            "type": "structure",
+            "members": {
+                "OrganizationId": {
+                    "target": "com.amazonaws.iam#OrganizationIdType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>The unique identifier of the organization to create the account in.</p>"
+                    }
+                },
+                "AccountId": {
+                    "target": "com.amazonaws.iam#accountIdType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>The unique identifier for this account. This is usually omitted; the service will select a random unused account id, but this can be used to specify a particular account id to create.</p><p>The account id must be a 12-digit number.</p>"
+                    }
+                },
+                "Email": {
+                    "target": "com.amazonaws.iam#emailType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>Email address associated with the account.</p>"
+                    }
+                },
+                "AccountAlias": {
+                    "target": "com.amazonaws.iam#accountAliasType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>The account alias to assign to the account.</p>\n         <p>This parameter allows (through its <a href=\"http://wikipedia.org/wiki/regex\">regex pattern</a>) a string of characters consisting of \n    lowercase letters, digits, and dashes. You cannot start or finish with a dash, nor can you have \n    two dashes in a row.</p>"
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#input": {}
+            }
+        },
+        "com.amazonaws.iam#CreateAccountResponse": {
+            "type": "structure",
+            "members": {
+                "Account": {
+                    "target": "com.amazonaws.iam#account",
+                    "traits": {
+                        "smithy.api#documentation": "<p>Contains details about the newly created account.</p>",
+                        "smithy.api#required": {}
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#output": {}
+            }
+        },
+        "com.amazonaws.iam#GetCurrentPartitionRequest": {
+            "type": "structure",
+            "members": {},
+            "traits": {
+                "smithy.api#input": {}
+            }
+        },
+        "com.amazonaws.iam#GetCurrentPartitionResponse": {
+            "type": "structure",
+            "members": {
+                "Partition": {
+                    "target": "com.amazonaws.iam#partitionType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>The partition configured for the service.</p>"
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#output": {}
+            }
+        },
+        "com.amazonaws.iam#ListAccountsRequest": {
+            "type": "structure",
+            "members": {
+                "Filters": {
+                    "target": "com.amazonaws.iam#listAccountsFilterType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>Filters to apply when listing accounts.</p>"
+                    }
+                },
+                "MaxItems": {
+                    "target": "com.amazonaws.iam#maxItemsType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>Use this when paginating results to indicate the maximum number of items you want in the response. If additional items exist beyond the maximum you specify, the <code>IsTruncated</code> response element is <code>true</code> and <code>Marker</code> contains a value to include in the subsequent call that tells the service where to continue.</p><p>If you do not include this parameter, the number of items defaults to 100. Note that IAM might return fewer results, even when there are more results available.</p>"
+                    }
+                },
+                "Marker": {
+                    "target": "com.amazonaws.iam#markerType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>Use this when paginating results when you receive a response indicating that the results are truncated. Set it to the value of the <code>Marker</code> element in the response that you received to indicate where the next call should start.</p>"
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#input": {}
+            }
+        },
+        "com.amazonaws.iam#ListAccountsResponse": {
+            "type": "structure",
+            "members": {
+                "Accounts": {
+                    "target": "com.amazonaws.iam#accountListType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>The accounts matching the filters specified.</p>"
+                    }
+                },
+                "IsTruncated": {
+                    "target": "com.amazonaws.iam#booleanType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>A flag that indicates whether there are more items to return. If your results were truncated, you can make a subsequent pagination request using the <code>Marker</code> request parameter to retrieve more items. Note that IAM might return fewer results, even when there are more results available.</p>",
+                        "smithy.api#required": {}
+                    }
+                },
+                "Marker": {
+                    "target": "com.amazonaws.iam#markerType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>If <code>IsTruncated</code> is <code>true</code>, this element is present and contains the value to use for the <code>Marker</code> parameter in a subsequent pagination request.</p>"
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#output": {}
+            }
+        },
+        "com.amazonaws.iam#SetCurrentPartitionRequest": {
+            "type": "structure",
+            "members": {
+                "Partition": {
+                    "target": "com.amazonaws.iam#partitionType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>The partition to use for the service.</p>",
+                        "smithy.api#required": {}
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#input": {}
+            }
+        },
+        "com.amazonaws.iam#SetCurrentPartitionResponse": {
+            "type": "structure",
+            "members": {
+                "Partition": {
+                    "target": "com.amazonaws.iam#partitionType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>The partition configured for the service.</p>",
+                        "smithy.api#required": {}
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#output": {}
+            }
+        },
+        "com.amazonaws.iam#accountListType": {
+            "type": "list",
+            "member": {
+                "target": "com.amazonaws.iam#account"
+            }
+        },
+        "com.amazonaws.iam#account": {
+            "type": "structure",
+            "members": {
+                "OrganizationId": {
+                    "target": "com.amazonaws.iam#OrganizationIdType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>The unique identifier of the organization containing the account, if any.</p>"
+                    }
+                },
+                "AccountId": {
+                    "target": "com.amazonaws.iam#accountIdType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>The account id of the account.</p>",
+                        "smithy.api#required": {}
+                    }
+                },
+                "Email": {
+                    "target": "com.amazonaws.iam#emailType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>Email address associated with the account.</p>"
+                    }
+                },
+                "AccountAlias": {
+                    "target": "com.amazonaws.iam#accountAliasType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>The account alias associated with the account.</p>"
+                    }
+                },
+                "CreatedAt": {
+                    "target": "com.amazonaws.iam#dateType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>The date and time when the account was created.</p>"
+                    }
+                }
+            }
+        },
+        "com.amazonaws.iam#emailType": {
+            "type": "string",
+            "traits": {
+                "smithy.api#pattern": "^.+@.+\\..+$"
+            }
+        },
+        "com.amazonaws.iam#listAccountsFilterType": {
+            "type": "list",
+            "member": {
+                "target": "com.amazonaws.iam#listAccountsFilter"
+            }
+        },
+        "com.amazonaws.iam#listAccountsFilter": {
+            "type": "structure",
+            "members": {
+                "Name": {
+                    "target": "com.amazonaws.iam#listAccountsFilterName",
+                    "traits": {
+                        "smithy.api#documentation": "<p>The name of the filter. Valid values are <code>account-id</code>, <code>email</code>, and <code>account-alias</code>.</p>",
+                        "smithy.api#required": {}
+                    }
+                },
+                "Values": {
+                    "target": "com.amazonaws.iam#listAccountsFilterValueListType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>The filter values. Filter values are case-sensitive. The returned values are will match any value provided here.</p>",
+                        "smithy.api#required": {}
+                    }
+                }
+            }
+        },
+        "com.amazonaws.iam#listAccountsFilterName": {
+            "type": "enum",
+            "members": {
+                "AccountId": {
+                    "target": "smithy.api#Unit",
+                    "traits": {
+                        "smithy.api#enumValue": "account-id"
+                    }
+                },
+                "Email": {
+                    "target": "smithy.api#Unit",
+                    "traits": {
+                        "smithy.api#enumValue": "email"
+                    }
+                },
+                "AccountAlias": {
+                    "target": "smithy.api#Unit",
+                    "traits": {
+                        "smithy.api#enumValue": "account-alias"
+                    }
+                }
+            }
+        },
+        "com.amazonaws.iam#listAccountsFilterValueListType": {
+            "type": "list",
+            "member": {
+                "target": "com.amazonaws.iam#listAccountsFilterValueType"
+            },
+            "traits": {
+                "smithy.api#length": {
+                    "min": 1
+                }
+            }
+        },
+        "com.amazonaws.iam#listAccountsFilterValueType": {
+            "type": "string"
+        },
+        "com.amazonaws.iam#partitionType": {
+            "type": "string",
+            "traits": {
+                "smithy.api#pattern": "^[a-z][-a-z0-9]+[a-z0-9]$"
+            }
+        }
+    }
+}

@@ -21,12 +21,13 @@ mod user;
 mod tests;
 
 use {
+    crate::{
+        account::{CreateAccountCommand, ListAccountsCommand},
+        partition::{GetCurrentPartitionCommand, SetCurrentPartitionCommand},
+        user::{CreateUserInternalCommand, ListUsersInternalCommand, UpdateUserInternalCommand},
+    },
     anyhow::{Error as AnyError, Result as AnyResult},
     clap::{Parser, Subcommand},
-    scratchstack_database::ops::iam::{
-        CreateAccountRequest, GetCurrentPartitionRequest, ListAccountsRequest, SetCurrentPartitionRequest,
-    },
-    scratchstack_shapes_iam::{CreateUserInternalRequest, ListUsersInternalRequest, UpdateUserInternalRequest},
     sqlx::{
         Error as SqlxError,
         postgres::{PgConnectOptions, PgPool, PgPoolOptions},
@@ -88,23 +89,23 @@ struct Cli {
 enum Commands {
     /// Create an IAM account.
     #[command(name = "create-account")]
-    CreateAccount(CreateAccountRequest),
+    CreateAccount(CreateAccountCommand),
 
     /// Create an IAM user in an account.
     #[command(name = "create-user")]
-    CreateUser(CreateUserInternalRequest),
+    CreateUser(CreateUserInternalCommand),
 
     /// Get the current partition of the database.
     #[command(name = "get-current-partition")]
-    GetCurrentPartition(GetCurrentPartitionRequest),
+    GetCurrentPartition(GetCurrentPartitionCommand),
 
     /// List IAM accounts.
     #[command(name = "list-accounts")]
-    ListAccounts(ListAccountsRequest),
+    ListAccounts(ListAccountsCommand),
 
     /// List IAM users in an account.
     #[command(name = "list-users")]
-    ListUsers(ListUsersInternalRequest),
+    ListUsers(ListUsersInternalCommand),
 
     /// Migrate the database to the latest version or a specified version.
     #[command(name = "migrate")]
@@ -115,11 +116,11 @@ enum Commands {
     /// This is required to be set before using any other features of the database. Partitions are
     /// separate instances of a cloud and are independent of any other partitions.
     #[command(name = "set-current-partition")]
-    SetCurrentPartition(SetCurrentPartitionRequest),
+    SetCurrentPartition(SetCurrentPartitionCommand),
 
     /// Update an IAM user in an account.
     #[command(name = "update-user")]
-    UpdateUser(UpdateUserInternalRequest),
+    UpdateUser(UpdateUserInternalCommand),
 }
 
 #[tokio::main(flavor = "current_thread")]

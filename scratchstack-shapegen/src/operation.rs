@@ -1,11 +1,7 @@
 use {
     crate::{Shape, ShapeBase, ShapeInfo, ShapeRef, SmithyModel},
     serde::{Deserialize, Serialize},
-    std::{
-        cell::RefCell,
-        io::{Result as IoResult, Write},
-        rc::Rc,
-    },
+    std::{cell::RefCell, rc::Rc},
 };
 
 /// The operation type represents the input, output, and possible errors of an API operation.
@@ -55,7 +51,7 @@ impl ShapeInfo for Operation {
     }
 
     fn rust_typename(&self) -> String {
-        self.base.rust_typename()
+        format!("crate::operation::{}", self.base.rust_typename())
     }
 
     fn resolve(&mut self, shape_name: &str, model: &SmithyModel) {
@@ -76,46 +72,7 @@ impl ShapeInfo for Operation {
         }
     }
 
-    fn clap_parser(&self) -> Option<String> {
-        unimplemented!("clap_parser cannot be called on Operation types")
-    }
-
     fn derive_builder_validator(&self, _: &str, _: &str) -> Option<String> {
         unimplemented!("derive_builder_validator cannot be called on Operation types")
-    }
-
-    /// Writes Rust code representing this operation's error types.
-    fn generate(&self, output: &mut dyn Write) -> IoResult<()> {
-        let rust_typename = self.rust_typename();
-        let error_typename = format!("{rust_typename}Error");
-
-        // Write the error type declaration for this operation
-        writeln!(output, "/// Error type for the `{rust_typename}` operation")?;
-        writeln!(output, "#[derive(::std::fmt::Debug)]")?;
-        writeln!(output, "#[non_exhaustive]")?;
-        writeln!(output, "pub enum {error_typename} {{")?;
-
-        for error_shape in &self.error_shapes {
-            let Shape::Structure(error_struct) = &*error_shape.borrow() else {
-                panic!("Error shape must be a structure");
-            };
-
-            let error_rust_name = error_struct.rust_typename();
-            error_struct.base.traits.write_docs(output, "    ")?;
-            writeln!(output, "    {error_rust_name}({error_rust_name}),")?;
-        }
-        writeln!(
-            output,
-            "    /// An unexpected error occurred (e.g., invalid JSON returned by the service or an unknown error code)."
-        )?;
-        writeln!(output, "    #[allow(deprecated)]")?;
-        writeln!(
-            output,
-            "    #[deprecated(note = \"Matching `Unhandled` directly is not forwards compatible. Instead, match using a variable wildcard pattern and check `.code()`: `if err.code() == Some(\\\"SpecificiExceptionCode\\\") => {{ /* handle the error */ }}\")]"
-        )?;
-        writeln!(output, "    Unhandled(crate::error::sealed_unhandled::Unhandled),")?;
-
-        writeln!(output, "}}")?;
-        Ok(())
     }
 }

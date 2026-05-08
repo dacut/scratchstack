@@ -1,5 +1,5 @@
 use {
-    crate::{List, Shape, ShapeInfo, SmithyModel, TraitMap},
+    crate::{Enum, List, Shape, ShapeInfo, SmithyModel, TraitMap},
     serde::{Deserialize, Serialize},
     std::{
         cell::{Ref, RefCell},
@@ -41,55 +41,97 @@ impl ShapeInfo for Member {
         self.shape.as_ref().expect("Member should be resolved before generating Rust code").borrow().smithy_name()
     }
 
-    #[inline(always)]
     fn rust_typename(&self) -> String {
         self.inner().borrow().rust_typename()
-    }
-
-    #[inline(always)]
-    fn clap_parser(&self) -> Option<String> {
-        self.inner().borrow().clap_parser()
     }
 
     #[inline(always)]
     fn derive_builder_validator(&self, var: &str, field_name: &str) -> Option<String> {
         self.inner().borrow().derive_builder_validator(var, field_name)
     }
-
-    fn mark_reachable_from_input(&mut self) {
-        self.inner().borrow_mut().mark_reachable_from_input();
-    }
 }
 
 impl Member {
-    /// Returns the inner shape of this member.
-    ///
-    /// Panics if the member is not resolved.
-    pub fn inner(&self) -> Rc<RefCell<Shape>> {
-        self.shape.clone().expect("Member should be resolved before generating Rust code")
-    }
-
-    /// Indicates whether this is a required member.
-    #[inline(always)]
-    pub fn is_required(&self) -> bool {
-        self.traits.is_required()
-    }
-
-    /// Indicates whether the inner shape is a list type.
-    pub fn is_list(&self) -> bool {
-        self.as_list().is_some()
+    /// Returns this as an enum member if it is an enum type; otherwise returns `None`.
+    #[must_use]
+    pub(crate) fn as_enum<'a>(&'a self) -> Option<Ref<'a, Enum>> {
+        let borrowed = self.shape.as_ref()?.borrow();
+        Ref::filter_map(borrowed, |s| match s {
+            Shape::Enum(e) => Some(e),
+            _ => None,
+        })
+        .ok()
     }
 
     /// Returns this as a list member if it is a list type; otherwise returns `None`.
-    pub fn as_list<'a>(&'a self) -> Option<Ref<'a, List>> {
+    #[must_use]
+    pub(crate) fn as_list<'a>(&'a self) -> Option<Ref<'a, List>> {
         let borrowed = self.shape.as_ref()?.borrow();
-        if matches!(&*borrowed, Shape::List(_)) {
-            Some(Ref::map(borrowed, |s| match s {
-                Shape::List(l) => l,
-                _ => unreachable!(),
-            }))
-        } else {
-            None
-        }
+        Ref::filter_map(borrowed, |s| match s {
+            Shape::List(l) => Some(l),
+            _ => None,
+        })
+        .ok()
+    }
+
+    /// Returns the inner shape of this member.
+    ///
+    /// Panics if the member is not resolved.
+    #[must_use]
+    pub(crate) fn inner(&self) -> Rc<RefCell<Shape>> {
+        self.shape.clone().expect("Member should be resolved before generating Rust code")
+    }
+
+    /// Indicates whether this member is an enum.
+    #[must_use]
+    pub(crate) fn is_enum(&self) -> bool {
+        self.as_enum().is_some()
+    }
+
+    /// Indicates whether the inner shape is a list type.
+    #[must_use]
+    pub(crate) fn is_list(&self) -> bool {
+        self.as_list().is_some()
+    }
+
+    /// Indicates whether this structure member is eligible for CLI shorthand parsing.
+    ///
+    /// To be eligible, this member must be a primitive type, an enum, a list of a primitive type,
+    /// or a list of an enum type.
+    #[must_use]
+    pub(crate) fn is_struct_member_cli_shorthand_parseable(&self) -> bool {
+        self.is_primitive() || self.is_enum() || self.is_list_of_primitives() || self.is_list_of_enums()
+    }
+
+    /// Indicates whether this member is a list of enums.
+    #[must_use]
+    pub(crate) fn is_list_of_enums(&self) -> bool {
+        let Some(list) = self.as_list() else {
+            return false;
+        };
+
+        list.member.is_enum()
+    }
+
+    /// Indicates whether this member is a list of primitive members.
+    #[must_use]
+    pub(crate) fn is_list_of_primitives(&self) -> bool {
+        let Some(list) = self.as_list() else {
+            return false;
+        };
+
+        list.member.is_primitive()
+    }
+
+    /// Indicates whether this is a primitive member.
+    #[must_use]
+    pub(crate) fn is_primitive(&self) -> bool {
+        self.inner().borrow().is_primitive()
+    }
+
+    /// Indicates whether this is a required member.
+    #[must_use]
+    pub(crate) fn is_required(&self) -> bool {
+        self.traits.is_required()
     }
 }

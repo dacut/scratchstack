@@ -22,8 +22,9 @@ log.workspace = true
 rand = { workspace = true, features = ["thread_rng"] }
 regex.workspace = true
 rpassword.workspace = true
+scratchstack-cli-utils = { path = "../scratchstack-cli-utils" }
 scratchstack-database = { path = "../scratchstack-database", features = ["clap", "iam", "utils"] }
-scratchstack-shapes-iam = { path = "../scratchstack-shapes-iam", features = ["clap"] }
+scratchstack-shapes-iam = { path = "../scratchstack-shapes-iam" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sqlx = { workspace = true, features = ["chrono", "macros", "migrate", "postgres", "runtime-tokio-rustls" ] }

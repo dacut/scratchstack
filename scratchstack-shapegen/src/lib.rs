@@ -1,5 +1,8 @@
 //! Rust code generation library for Smithy shape models.
-use std::io::{Result as IoResult, Write};
+use {
+    derive_builder::Builder,
+    std::io::{Result as IoResult, Write},
+};
 
 /// Primitive Smithy types.
 pub mod primitive;
@@ -31,6 +34,22 @@ pub use {
     trait_id::*, trait_map::*, r#union::*,
 };
 
+/// Writers that will write generated code into the appropriate module.
+#[derive(Builder, Debug)]
+#[builder(pattern = "owned")]
+pub struct Writers<W: Write> {
+    pub error_meta: W,
+    pub operation: W,
+    pub types: W,
+    pub types_error: W,
+}
+
+impl<W: Write> Writers<W> {
+    pub fn builder() -> WritersBuilder<W> {
+        WritersBuilder::default()
+    }
+}
+
 /// Trait for all named shapes.
 pub trait ShapeInfo {
     /// Resolve this shape, setting the Smithy name internally.
@@ -42,6 +61,11 @@ pub trait ShapeInfo {
     /// Indicates whether this shape is a built-in Smithy type.
     fn is_builtin(&self) -> bool {
         self.smithy_name().starts_with("smithy.api#")
+    }
+
+    /// Indicates whether this shape is a primitive type.
+    fn is_primitive(&self) -> bool {
+        false
     }
 
     /// Returns the simple name of this shape.
@@ -59,10 +83,6 @@ pub trait ShapeInfo {
     /// Returns the Rust type name of this shape.
     fn rust_typename(&self) -> String;
 
-    /// If this shape has a function or method to parse a Clap argument, returns it. Otherwise
-    /// returns `None`.
-    fn clap_parser(&self) -> Option<String>;
-
     /// If this shape has custom code to validate its value from a builder type, returns it.
     /// Otherwise returns `None`.
     ///
@@ -74,12 +94,9 @@ pub trait ShapeInfo {
         None
     }
 
-    /// Mark this shape as being reachable from an input structure.
-    fn mark_reachable_from_input(&mut self) {}
-
-    /// Generate all code needed for this shape.
-    #[allow(unused)]
-    fn generate(&self, w: &mut dyn Write) -> IoResult<()> {
+    /// Generate Rust code for this shape, writing it to the appropriate module in `w`.
+    #[allow(unused_variables)] // Makes code completion show `w` instead of `_w`.
+    fn generate<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
         Ok(())
     }
 }
@@ -106,7 +123,10 @@ macro_rules! forward_shape_info {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {
+        super::*,
+        std::io::{Result as IoResult, Write},
+    };
 
     const IAM_MODEL: &str = include_str!("iam-2010-05-08.json");
     struct NullWriter;
@@ -124,6 +144,13 @@ mod tests {
     fn test_deserialize_service_model() {
         let m: SmithyModel = serde_json::from_str(IAM_MODEL).expect("Failed to deserialize IAM service model");
         m.resolve();
-        m.generate(&mut NullWriter).expect("Failed to generate Rust code for IAM service model");
+        let mut w = Writers::builder()
+            .error_meta(NullWriter)
+            .operation(NullWriter)
+            .types(NullWriter)
+            .types_error(NullWriter)
+            .build()
+            .unwrap();
+        m.generate(&mut w).expect("Failed to generate Rust code for IAM service model");
     }
 }
