@@ -54,7 +54,6 @@ tower.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-aws-sigv4 = { workspace = true, features = ["sign-http"] }
 env_logger.workspace = true
 pretty_assertions.workspace = true
 rand = { workspace = true, features = ["thread_rng"] }

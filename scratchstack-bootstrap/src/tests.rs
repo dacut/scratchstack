@@ -1,6 +1,7 @@
 use {
     crate::run,
     anyhow::Result as AnyResult,
+    pretty_assertions::assert_eq,
     scratchstack_database::utils::TempDatabase,
     serde_json::Value as JsonValue,
     std::{collections::HashSet, ffi::OsString, future::Future},

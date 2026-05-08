@@ -2,6 +2,7 @@ use {
     crate::{ShorthandValue, parse_shorthand},
     anyhow::{Result as AnyResult, anyhow},
     clap::Parser,
+    pretty_assertions::assert_eq,
     serde::{Deserialize, Serialize},
     std::{ffi::OsString, str::FromStr},
 };
