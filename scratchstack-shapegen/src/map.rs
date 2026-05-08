@@ -1,5 +1,5 @@
 use {
-    crate::{Member, ShapeBase, ShapeInfo, SmithyModel},
+    crate::{Member, ShapeBase, ShapeInfo, SmithyModel, Writers},
     serde::{Deserialize, Serialize},
     std::io::{Result as IoResult, Write},
 };
@@ -21,13 +21,6 @@ pub struct Map {
     ///
     /// This is resolved during a call to `SmithyModel::resolve`.
     pub value: Member,
-
-    /// Whether this map is reachable from an API input shape. This is used to determine
-    /// whether to generate Clap parsers for this map.
-    ///
-    /// This is resolved during a call to `SmithyModel::resolve`.
-    #[serde(skip, default)]
-    pub reachable_from_input: bool,
 }
 
 impl ShapeInfo for Map {
@@ -36,7 +29,7 @@ impl ShapeInfo for Map {
     }
 
     fn rust_typename(&self) -> String {
-        self.base.rust_typename()
+        format!("::std::collections::HashMap<{}, {}>", self.key.rust_typename(), self.value.rust_typename())
     }
 
     fn resolve(&mut self, shape_name: &str, model: &SmithyModel) {
@@ -45,28 +38,20 @@ impl ShapeInfo for Map {
         self.value.resolve(shape_name, model);
     }
 
-    fn clap_parser(&self) -> Option<String> {
-        let key_parser = self.key.clap_parser().unwrap();
-        let value_parser = self.value.clap_parser().unwrap();
-        Some(format!("crate::clap_utils::parse_map({key_parser}, {value_parser})"))
+    fn generate<W: Write>(&self, _: &mut Writers<W>) -> IoResult<()> {
+        Ok(())
     }
+}
 
-    fn mark_reachable_from_input(&mut self) {
-        if self.reachable_from_input {
-            return;
-        }
-        self.reachable_from_input = true;
-        self.key.mark_reachable_from_input();
-        self.value.mark_reachable_from_input();
-    }
-
-    fn generate(&self, output: &mut dyn Write) -> IoResult<()> {
+impl Map {
+    /// Generates code that belogs in `crate::types` for this map.
+    pub fn generate_types(&self, w: &mut dyn Write) -> IoResult<()> {
         if !self.is_builtin() {
             // Declaration
             let rust_typename = self.rust_typename();
-            self.base.traits.write_docs(output, "")?;
+            self.base.traits.write_docs(w, "")?;
             writeln!(
-                output,
+                w,
                 "pub type {rust_typename} = ::std::collections::HashMap<{}, {}>;",
                 self.key.rust_typename(),
                 self.value.rust_typename()

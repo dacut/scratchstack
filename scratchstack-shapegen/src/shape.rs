@@ -1,7 +1,7 @@
 use {
     crate::{
         Enum, IntEnum, List, Map, Member, Operation, Resource, Service, ShapeInfo, SmithyModel, Structure, TraitMap,
-        Union, primitive,
+        Union, Writers, primitive,
     },
     serde::{Deserialize, Serialize},
     std::{
@@ -189,6 +189,34 @@ macro_rules! unwrap_inner {
         }
     };
 
+    ($self:ident => & $($suffix:tt)+) => {
+        match $self {
+            Self::Unit(u) => &u.$($suffix)+,
+            Self::Blob(b) => &b.$($suffix)+,
+            Self::Boolean(b) => &b.$($suffix)+,
+            Self::String(s) => &s.$($suffix)+,
+            Self::Byte(b) => &b.$($suffix)+,
+            Self::Short(s) => &s.$($suffix)+,
+            Self::Integer(i) => &i.$($suffix)+,
+            Self::Long(l) => &l.$($suffix)+,
+            Self::Float(f) => &f.$($suffix)+,
+            Self::Double(d) => &d.$($suffix)+,
+            Self::BigInteger(b) => &b.$($suffix)+,
+            Self::BigDecimal(b) => &b.$($suffix)+,
+            Self::Document(d) => &d.$($suffix)+,
+            Self::Timestamp(t) => &t.$($suffix)+,
+            Self::Enum(e) => &e.$($suffix)+,
+            Self::IntEnum(i) => &i.$($suffix)+,
+            Self::List(l) => &l.$($suffix)+,
+            Self::Map(m) => &m.$($suffix)+,
+            Self::Structure(s) => &s.$($suffix)+,
+            Self::Union(u) => &u.$($suffix)+,
+            Self::Service(s) => &s.$($suffix)+,
+            Self::Operation(o) => &o.$($suffix)+,
+            Self::Resource(r) => &r.$($suffix)+,
+        }
+    };
+
     ($self:ident => $($suffix:tt)+) => {
         match $self {
             Self::Unit(u) => u.$($suffix)+,
@@ -218,56 +246,49 @@ macro_rules! unwrap_inner {
     };
 }
 
-impl Shape {
-    /// Returns the inner type as a reference to a `dyn ShapeInfo`.
-    pub fn as_shape_info(&self) -> &dyn ShapeInfo {
-        unwrap_inner!(self)
-    }
-
-    /// Returns the inner type as a mutable reference to a `dyn ShapeInfo`.
-    pub fn as_shape_info_mut(&mut self) -> &mut dyn ShapeInfo {
-        unwrap_inner!(self)
-    }
-}
-
 impl ShapeInfo for Shape {
     fn resolve(&mut self, smithy_name: &str, model: &SmithyModel) {
-        self.as_shape_info_mut().resolve(smithy_name, model)
+        unwrap_inner!(self => resolve(smithy_name, model))
     }
 
     #[inline(always)]
     fn smithy_name(&self) -> String {
-        self.as_shape_info().smithy_name()
+        unwrap_inner!(self => smithy_name())
     }
 
     #[inline(always)]
     fn rust_typename(&self) -> String {
-        self.as_shape_info().rust_typename()
-    }
-
-    #[inline(always)]
-    fn clap_parser(&self) -> Option<String> {
-        self.as_shape_info().clap_parser()
-    }
-
-    #[inline(always)]
-    fn mark_reachable_from_input(&mut self) {
-        self.as_shape_info_mut().mark_reachable_from_input()
+        unwrap_inner!(self => rust_typename())
     }
 
     #[inline(always)]
     fn derive_builder_validator(&self, var: &str, field_name: &str) -> Option<String> {
-        self.as_shape_info().derive_builder_validator(var, field_name)
+        unwrap_inner!(self => derive_builder_validator(var, field_name))
     }
 
     #[inline(always)]
-    fn generate(&self, w: &mut dyn Write) -> IoResult<()> {
-        self.as_shape_info().generate(w)
+    fn generate<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
+        unwrap_inner!(self => generate(w))
+    }
+
+    #[inline(always)]
+    fn is_primitive(&self) -> bool {
+        unwrap_inner!(self => is_primitive())
     }
 }
 
 impl Shape {
+    /// If this shape is an enum, returns a reference to the underlying enum.
+    #[must_use]
+    pub fn as_enum(&self) -> Option<&Enum> {
+        match self {
+            Self::Enum(e) => Some(e),
+            _ => None,
+        }
+    }
+
     /// If this shape is a list, returns a reference to the underlying list.
+    #[must_use]
     pub fn as_list(&self) -> Option<&List> {
         match self {
             Self::List(l) => Some(l),
@@ -275,7 +296,35 @@ impl Shape {
         }
     }
 
+    /// If this shape is an operation, returns a mutable reference to it.
+    #[must_use]
+    pub fn as_mut_operation(&mut self) -> Option<&mut Operation> {
+        match self {
+            Self::Operation(o) => Some(o),
+            _ => None,
+        }
+    }
+
+    /// If this shape is a structure, returns a reference to it.
+    #[must_use]
+    pub fn as_structure(&self) -> Option<&Structure> {
+        match self {
+            Self::Structure(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// If this shape is a structure, returns a mutable reference to it.
+    #[must_use]
+    pub fn as_mut_structure(&mut self) -> Option<&mut Structure> {
+        match self {
+            Self::Structure(s) => Some(s),
+            _ => None,
+        }
+    }
+
     /// If this shape has members, returns a mutable reference to the members map. Otherwise, returns None.
+    #[must_use]
     pub fn members_mut(&mut self) -> Option<&mut BTreeMap<String, Member>> {
         match self {
             Self::Enum(e) => Some(&mut e.members),
@@ -286,7 +335,44 @@ impl Shape {
         }
     }
 
-    /// If this type has traits, returns a mutable reference to the traits map. Otherwise, returns None.
+    /// Indicates whether this shape is an enum.
+    #[must_use]
+    pub fn is_enum(&self) -> bool {
+        matches!(self, Self::Enum(_))
+    }
+
+    /// Indicates whether this shape can have CLI shorthand parsing implemented for it.
+    ///
+    /// This must be called after the model has been resolved, and it is only meaningful to call
+    /// this on shapes that are listed as a parameter type on an input shape.
+    ///
+    /// This is true for shapes that meet one of the following criteria:
+    /// * Is an enum.
+    /// * Is a structure whose members are all primitive types, enums, list of primitive types, or
+    ///   list of enums.
+    /// * Is a list of a primitive types or enums.
+    #[must_use]
+    pub fn is_cli_shorthand_parsable(&self) -> bool {
+        match self {
+            Self::Enum(_) => true,
+            Self::Structure(s) => s.is_cli_shorthand_parsable(),
+            Self::List(l) => {
+                let inner = l.member.inner();
+                let inner_ref = inner.borrow();
+                inner_ref.is_primitive() || inner_ref.is_enum()
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns a reference to the traits map for this shape.
+    #[must_use]
+    pub fn traits(&self) -> &TraitMap {
+        unwrap_inner!(self => &base.traits)
+    }
+
+    /// Returns a mutable reference to the traits map for this shape.
+    #[must_use]
     pub fn traits_mut(&mut self) -> &mut TraitMap {
         unwrap_inner!(self => &mut base.traits)
     }

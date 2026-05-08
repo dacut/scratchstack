@@ -68,10 +68,6 @@ pub struct Resource {
 impl ShapeInfo for Resource {
     forward_shape_info!(Resource, base);
 
-    fn clap_parser(&self) -> Option<String> {
-        unimplemented!("clap_parser cannot be called on Resource types")
-    }
-
     fn derive_builder_validator(&self, _: &str, _: &str) -> Option<String> {
         unimplemented!("derive_builder_validator cannot be called on Resource types")
     }

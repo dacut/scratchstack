@@ -22,6 +22,9 @@ pub(crate) const IAM_API_VERSION: &str = "2010-05-08";
 /// Error message: `"The AWS access key provided does not exist in our records."`
 pub const MSG_ACCESS_KEY_PROVIDED_DOES_NOT_EXIST: &str = "The AWS access key provided does not exist in our records.";
 
+/// Error message: `"Internal failure"`.
+pub(crate) const MSG_INTERNAL_FAILURE: &str = "Internal failure";
+
 /// Operation name for ListUsers
 pub(crate) const OP_LIST_USERS: &str = "ListUsers";
 

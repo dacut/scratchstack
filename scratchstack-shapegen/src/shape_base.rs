@@ -52,7 +52,7 @@ impl ShapeBase {
 
     /// Writes documentation for this shape to the provided writer.
     #[inline(always)]
-    pub fn write_docs(&self, writer: &mut impl Write, indent: &str) -> IoResult<()> {
-        self.traits.write_docs(writer, indent)
+    pub fn write_docs(&self, w: &mut impl Write, indent: &str) -> IoResult<()> {
+        self.traits.write_docs(w, indent)
     }
 }

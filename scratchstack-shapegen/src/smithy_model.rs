@@ -1,10 +1,10 @@
 use {
-    crate::{Shape, ShapeInfo as _, primitive::SmithyUnit},
+    crate::{Shape, ShapeInfo as _, Writers, primitive::SmithyUnit},
     serde::{Deserialize, Serialize},
     serde_json::Value,
     std::{
         cell::RefCell,
-        collections::BTreeMap,
+        collections::{BTreeMap, HashSet},
         io::{Result as IoResult, Write},
         rc::Rc,
     },
@@ -25,6 +25,11 @@ pub struct SmithyModel {
     /// A map of absolute shape IDs to shape definitions.
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub shapes: BTreeMap<String, Rc<RefCell<Shape>>>,
+
+    /// A set of shape IDs that are reachable from the service's input shapes. This is used to
+    /// generate try_from implementations from CLI input.
+    #[serde(skip, default)]
+    pub input_reachable_shapes: HashSet<String>,
 }
 
 impl SmithyModel {
@@ -46,188 +51,149 @@ impl SmithyModel {
             let mut shape = shape.borrow_mut();
             shape.resolve(shape_name, self);
         }
-
-        // Mark all input structures as reachable from the input.
-        for shape in self.shapes.values() {
-            let mut shape = shape.borrow_mut();
-            if let Shape::Structure(s) = &mut *shape
-                && s.base.traits.is_input()
-            {
-                s.mark_reachable_from_input();
-            }
-        }
     }
 
-    //         let hash_pos = shape_name.find('#').expect("Shape ID should contain a '#' character");
-    //         let simple_typename = &shape_name[hash_pos + 1..];
-    //         let rust_typename = simple_typename.to_pascal_case();
-
-    //         match &mut *shape {
-    //             Shape::Unit(u) => {
-    //                 assert!(u.smithy_typename.is_none());
-    //                 assert!(u.rust_typename.is_none());
-    //                 u.smithy_typename = Some(shape_name.clone());
-    //                 u.rust_typename = Some(rust_typename);
-    //             }
-    //             Shape::Blob(b) => {
-    //                 assert!(b.smithy_typename.is_none());
-    //                 assert!(b.rust_typename.is_none());
-    //                 b.smithy_typename = Some(shape_name.clone());
-    //                 b.rust_typename = Some(rust_typename);
-    //             }
-    //             Shape::Boolean(b) => {
-    //                 assert!(b.smithy_typename.is_none());
-    //                 assert!(b.rust_typename.is_none());
-    //                 b.smithy_typename = Some(shape_name.clone());
-    //                 b.rust_typename = Some(rust_typename);
-    //             }
-    //             Shape::String(s) => {
-    //                 assert!(s.smithy_typename.is_none());
-    //                 assert!(s.rust_typename.is_none());
-    //                 s.smithy_typename = Some(shape_name.clone());
-    //                 s.rust_typename = Some(rust_typename);
-    //             }
-    //             Shape::Byte(b) => {
-    //                 assert!(b.smithy_typename.is_none());
-    //                 assert!(b.rust_typename.is_none());
-    //                 b.smithy_typename = Some(shape_name.clone());
-    //                 b.rust_typename = Some(rust_typename);
-    //             }
-    //             Shape::Short(s) => {
-    //                 assert!(s.smithy_typename.is_none());
-    //                 assert!(s.rust_typename.is_none());
-    //                 s.smithy_typename = Some(shape_name.clone());
-    //                 s.rust_typename = Some(rust_typename);
-    //             }
-    //             Shape::Integer(i) => {
-    //                 assert!(i.smithy_typename.is_none());
-    //                 assert!(i.rust_typename.is_none());
-    //                 i.smithy_typename = Some(shape_name.clone());
-    //                 i.rust_typename = Some(rust_typename);
-    //             }
-    //             Shape::Long(l) => {
-    //                 assert!(l.smithy_typename.is_none());
-    //                 assert!(l.rust_typename.is_none());
-    //                 l.smithy_typename = Some(shape_name.clone());
-    //                 l.rust_typename = Some(rust_typename);
-    //             }
-    //             Shape::Float(f) => {
-    //                 assert!(f.smithy_typename.is_none());
-    //                 assert!(f.rust_typename.is_none());
-    //                 f.smithy_typename = Some(shape_name.clone());
-    //                 f.rust_typename = Some(rust_typename);
-    //             }
-    //             Shape::Double(d) => {
-    //                 assert!(d.smithy_typename.is_none());
-    //                 assert!(d.rust_typename.is_none());
-    //                 d.smithy_typename = Some(shape_name.clone());
-    //                 d.rust_typename = Some(rust_typename);
-    //             }
-    //             Shape::BigInteger(b) => {
-    //                 assert!(b.smithy_typename.is_none());
-    //                 assert!(b.rust_typename.is_none());
-    //                 b.smithy_typename = Some(shape_name.clone());
-    //                 b.rust_typename = Some(rust_typename);
-    //             }
-    //             Shape::BigDecimal(b) => {
-    //                 assert!(b.smithy_typename.is_none());
-    //                 assert!(b.rust_typename.is_none());
-    //                 b.smithy_typename = Some(shape_name.clone());
-    //                 b.rust_typename = Some(rust_typename);
-    //             }
-    //             Shape::Document(_) => {
-    //                 unimplemented!("Document type is not supported yet");
-    //             }
-    //             Shape::Timestamp(t) => {
-    //                 assert!(t.smithy_typename.is_none());
-    //                 assert!(t.rust_typename.is_none());
-    //                 t.smithy_typename = Some(shape_name.clone());
-    //                 t.rust_typename = Some(rust_typename);
-    //             }
-    //             Shape::Enum(e) => {
-    //                 assert!(e.smithy_typename.is_none());
-    //                 assert!(e.rust_typename.is_none());
-    //                 e.smithy_typename = Some(shape_name.clone());
-    //                 e.rust_typename = Some(rust_typename);
-    //             }
-    //             Shape::IntEnum(e) => {
-    //                 assert!(e.smithy_typename.is_none());
-    //                 assert!(e.rust_typename.is_none());
-    //                 e.smithy_typename = Some(shape_name.clone());
-    //                 e.rust_typename = Some(rust_typename);
-    //             }
-    //             Shape::List(l) => {
-    //                 let member_shape =
-    //                     self.shapes.get(&l.member.target).expect("List member should exist in model").clone();
-    //                 l.member.shape = Some(member_shape);
-    //             }
-    //             Shape::Map(m) => {
-    //                 let key_shape = self.shapes.get(&m.key.target).expect("Map key should exist in model").clone();
-    //                 let value_shape =
-    //                     self.shapes.get(&m.value.target).expect("Map value should exist in model").clone();
-    //                 m.key.shape = Some(key_shape);
-    //                 m.value.shape = Some(value_shape);
-    //             }
-    //             Shape::Structure(s) => {
-    //                 assert!(s.smithy_typename.is_none());
-    //                 assert!(s.rust_typename.is_none());
-    //                 s.smithy_typename = Some(shape_name.clone());
-    //                 s.rust_typename = Some(rust_typename);
-
-    //                 for member in &mut s.members.values_mut() {
-    //                     let member_shape =
-    //                         self.shapes.get(&member.target).expect("Structure member should exist in model").clone();
-    //                     member.shape = Some(member_shape);
-    //                 }
-    //             }
-    //             Shape::Union(u) => {
-    //                 assert!(u.smithy_typename.is_none());
-    //                 assert!(u.rust_typename.is_none());
-    //                 u.smithy_typename = Some(shape_name.clone());
-    //                 u.rust_typename = Some(rust_typename);
-    //             }
-    //             Shape::Operation(o) => {
-    //                 assert!(o.smithy_name.is_none());
-    //                 assert!(o.rust_typename.is_none());
-    //                 assert!(o.input_shape.is_none());
-    //                 assert!(o.output_shape.is_none());
-    //                 assert!(o.error_shapes.is_empty());
-
-    //                 let Some(input_target) = self.shapes.get(&o.input.target) else {
-    //                     panic!("Input shape {} should exist in model", o.input.target);
-    //                 };
-    //                 let Some(output_target) = self.shapes.get(&o.output.target) else {
-    //                     panic!("Output shape {} should exist in model", o.output.target);
-    //                 };
-
-    //                 o.smithy_name = Some(shape_name.clone());
-    //                 o.rust_typename = Some(rust_typename);
-    //                 o.input_shape = Some(input_target.clone());
-    //                 o.output_shape = Some(output_target.clone());
-    //                 o.error_shapes = o
-    //                     .errors
-    //                     .iter()
-    //                     .filter_map(|r| {
-    //                         Some(self.shapes.get(&r.target).expect("Error shape should exist in model").clone())
-    //                     })
-    //                     .collect();
-    //             }
-    //             _ => {}
-    //         }
-    //     }
-
-    // }
-
     /// Gets a shape by its shape ID.
+    #[must_use]
     pub fn get_shape(&self, shape_id: &str) -> Option<Rc<RefCell<Shape>>> {
         self.shapes.get(shape_id).cloned()
     }
 
     /// Generates Rust code for the Smithy model.
-    pub fn generate(&self, writer: &mut impl Write) -> IoResult<()> {
+    ///
+    /// This must have been resolved before calling this method.
+    pub fn generate<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
         for shape in self.shapes.values() {
-            shape.borrow().generate(writer)?;
+            let shape = shape.borrow();
+            shape.generate(w)?;
         }
+
+        self.generate_error_meta(w)?;
+        Ok(())
+    }
+
+    /// Generates code that belongs in `crate::error_meta` for all shapes in the model.
+    fn generate_error_meta<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
+        // Error enum definition.
+        writeln!(w.error_meta, "/// All possible error types for this service.")?;
+        writeln!(w.error_meta, "#[derive(::std::fmt::Debug)]")?;
+        writeln!(w.error_meta, "#[non_exhaustive]")?;
+        writeln!(w.error_meta, "pub enum Error {{")?;
+        for shape in self.shapes.values() {
+            let shape = shape.borrow();
+            if let Shape::Structure(s) = &*shape
+                && s.base.traits.is_error()
+            {
+                s.base.traits.write_docs(&mut w.error_meta, "    ")?;
+                writeln!(
+                    w.error_meta,
+                    "    {}(crate::types::error::{}),",
+                    s.base.rust_typename(),
+                    s.base.rust_typename()
+                )?;
+            }
+        }
+
+        writeln!(w.error_meta, "    /// An unexpected error occurred")?;
+        writeln!(w.error_meta, "    #[allow(deprecated)]")?;
+        writeln!(w.error_meta, "    Unhandled(crate::types::error::sealed_unhandled::Unhandled)")?;
+        writeln!(w.error_meta, "}}")?;
+        writeln!(w.error_meta)?;
+
+        // Display implementation for Error.
+        writeln!(w.error_meta, "impl ::std::fmt::Display for Error {{")?;
+        writeln!(w.error_meta, "    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {{")?;
+        writeln!(w.error_meta, "        match self {{")?;
+        for shape in self.shapes.values() {
+            let shape = shape.borrow();
+            if let Shape::Structure(s) = &*shape
+                && s.base.traits.is_error()
+            {
+                writeln!(w.error_meta, "            Self::{}(inner) => inner.fmt(f),", s.base.rust_typename())?;
+            }
+        }
+        writeln!(w.error_meta, "            Self::Unhandled(_) => {{")?;
+        writeln!(
+            w.error_meta,
+            "                if let ::std::option::Option::Some(code) = ::aws_smithy_types::error::metadata::ProvideErrorMetadata::code(self) {{"
+        )?;
+        writeln!(w.error_meta, "                    write!(f, \"unhandled error ({{code}})\")")?;
+        writeln!(w.error_meta, "                }} else {{")?;
+        writeln!(w.error_meta, "                    f.write_str(\"unhandled error\")")?;
+        writeln!(w.error_meta, "                }}")?;
+        writeln!(w.error_meta, "            }}")?;
+        writeln!(w.error_meta, "        }}")?;
+        writeln!(w.error_meta, "    }}")?;
+        writeln!(w.error_meta, "}}")?;
+        writeln!(w.error_meta)?;
+
+        // ProvideErrorMetadata implementation
+        writeln!(w.error_meta, "impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for Error {{")?;
+        writeln!(w.error_meta, "    fn meta(&self) -> &::aws_smithy_types::error::metadata::ErrorMetadata {{")?;
+        writeln!(w.error_meta, "        match self {{")?;
+        for shape in self.shapes.values() {
+            let shape = shape.borrow();
+            if let Shape::Structure(s) = &*shape
+                && s.base.traits.is_error()
+            {
+                writeln!(w.error_meta, "            Self::{}(inner) => inner.meta(),", s.base.rust_typename())?;
+            }
+        }
+        writeln!(w.error_meta, "            #[allow(deprecated)]")?;
+        writeln!(w.error_meta, "            Self::Unhandled(inner) => &inner.meta,")?;
+        writeln!(w.error_meta, "        }}")?;
+        writeln!(w.error_meta, "    }}")?;
+        writeln!(w.error_meta, "}}")?;
+        writeln!(w.error_meta)?;
+
+        // std::error::Error implementation for Error.
+        writeln!(w.error_meta, "impl ::std::error::Error for Error {{")?;
+        writeln!(
+            w.error_meta,
+            "    fn source(&self) -> ::std::option::Option<&(dyn ::std::error::Error + 'static)> {{"
+        )?;
+        writeln!(w.error_meta, "        match self {{")?;
+        for shape in self.shapes.values() {
+            let shape = shape.borrow();
+            if let Shape::Structure(s) = &*shape
+                && s.base.traits.is_error()
+            {
+                writeln!(
+                    w.error_meta,
+                    "            Self::{}(inner) => ::std::option::Option::Some(inner),",
+                    s.base.rust_typename()
+                )?;
+            }
+        }
+        writeln!(w.error_meta, "            #[allow(deprecated)]")?;
+        writeln!(w.error_meta, "            Self::Unhandled(inner) => ::std::option::Option::Some(&*inner.source),")?;
+        writeln!(w.error_meta, "        }}")?;
+        writeln!(w.error_meta, "    }}")?;
+        writeln!(w.error_meta, "}}")?;
+        writeln!(w.error_meta)?;
+
+        // From implementations
+        for shape in self.shapes.values() {
+            let shape = shape.borrow();
+            if let Shape::Structure(s) = &*shape
+                && s.base.traits.is_error()
+            {
+                writeln!(
+                    w.error_meta,
+                    "impl ::std::convert::From<crate::types::error::{}> for Error {{",
+                    s.base.rust_typename()
+                )?;
+                writeln!(
+                    w.error_meta,
+                    "    fn from(inner: crate::types::error::{}) -> Self {{",
+                    s.base.rust_typename()
+                )?;
+                writeln!(w.error_meta, "        Self::{}(inner)", s.base.rust_typename())?;
+                writeln!(w.error_meta, "    }}")?;
+                writeln!(w.error_meta, "}}")?;
+            }
+        }
+
         Ok(())
     }
 }

@@ -18,6 +18,8 @@ serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 chrono = { workspace = true, features = ["clock"] }
+clap = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 env_logger.workspace = true
 pretty_assertions.workspace = true
 regex.workspace = true

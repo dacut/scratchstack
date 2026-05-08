@@ -15,19 +15,14 @@
 
 use {
     pretty_assertions::{assert_eq, assert_ne},
-    scratchstack_database::{
-        Loadable,
-        model::iam,
-        ops::{
-            RequestExecutor,
-            iam::{
-                CreateAccountRequest, GetCurrentPartitionRequest, ListAccountsFilter, ListAccountsFilterKey,
-                ListAccountsRequest, SetCurrentPartitionRequest,
-            },
+    scratchstack_database::{Loadable, model::iam, ops::RequestExecutor, utils::TempDatabase},
+    scratchstack_shapes_iam::{
+        operation::{
+            CreateAccountRequest, CreateUserInternalRequest, GetCurrentPartitionRequest, ListAccountsRequest,
+            SetCurrentPartitionRequest,
         },
-        utils::TempDatabase,
+        types::{ListAccountsFilter, ListAccountsFilterName, Tag},
     },
-    scratchstack_shapes_iam::{CreateUserInternalRequest, Tag},
 };
 
 /// Test all of the features of the database.
@@ -98,28 +93,26 @@ async fn test_set_current_partition(pool: &sqlx::PgPool) {
         .partition("test-partition")
         .build()
         .expect("Failed to build SetCurrentPartitionRequest");
-    assert_eq!(req.partition(), "test-partition");
+    assert_eq!(req.partition, "test-partition");
 
     let resp = req.execute(&mut tx).await.expect("Failed to set current partition");
-    assert_eq!(resp.partition(), "test-partition");
+    assert_eq!(resp.partition, "test-partition");
     tx.commit().await.expect("Failed to commit transaction");
 }
 
 async fn test_invalid_set_current_partition(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
-    let req = SetCurrentPartitionRequest::builder()
-        .partition("")
-        .build()
-        .expect("Failed to build SetCurrentPartitionRequest with empty partition ID");
+    let req = SetCurrentPartitionRequest {
+        partition: "".to_string(),
+    };
     let result = req.execute(&mut tx).await;
     assert!(result.is_err(), "Setting an invalid partition ID should fail");
     tx.rollback().await.expect("Failed to rollback transaction");
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
-    let req = SetCurrentPartitionRequest::builder()
-        .partition("-")
-        .build()
-        .expect("Failed to build SetCurrentPartitionRequest with invalid partition ID");
+    let req = SetCurrentPartitionRequest {
+        partition: "-".to_string(),
+    };
     let result = req.execute(&mut tx).await;
     assert!(result.is_err(), "Setting an invalid partition ID should fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -128,10 +121,15 @@ async fn test_invalid_set_current_partition(pool: &sqlx::PgPool) {
 async fn test_get_current_partition(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
 
-    let resp = GetCurrentPartitionRequest::default().execute(&mut tx).await.expect("Failed to get current partition");
+    let resp = GetCurrentPartitionRequest::builder()
+        .build()
+        .unwrap()
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get current partition");
     tx.commit().await.expect("Failed to commit transaction");
 
-    assert_eq!(resp.partition(), Some("test-partition"));
+    assert_eq!(resp.partition.as_deref(), Some("test-partition"));
 }
 
 async fn test_create_account_specific_id(pool: &sqlx::PgPool) {
@@ -140,17 +138,18 @@ async fn test_create_account_specific_id(pool: &sqlx::PgPool) {
         organization_id: None,
         account_id: Some("100000000001".to_string()),
         email: None,
-        alias: None,
+        account_alias: None,
     }
     .execute(&mut tx)
     .await
     .expect("Failed to create account with specific ID");
     tx.commit().await.expect("Failed to commit transaction");
 
-    assert_eq!(resp.account_id, "100000000001");
-    assert_eq!(resp.organization_id, None);
-    assert_eq!(resp.email, None);
-    assert_eq!(resp.alias, None);
+    let account = resp.account;
+    assert_eq!(account.account_id, "100000000001");
+    assert_eq!(account.organization_id, None);
+    assert_eq!(account.email, None);
+    assert_eq!(account.account_alias, None);
 }
 
 async fn test_create_account_with_email_and_alias(pool: &sqlx::PgPool) {
@@ -159,16 +158,16 @@ async fn test_create_account_with_email_and_alias(pool: &sqlx::PgPool) {
         organization_id: None,
         account_id: Some("100000000002".to_string()),
         email: Some("admin@example.com".to_string()),
-        alias: Some("example-corp".to_string()),
+        account_alias: Some("example-corp".to_string()),
     }
     .execute(&mut tx)
     .await
     .expect("Failed to create account with email and alias");
     tx.commit().await.expect("Failed to commit transaction");
 
-    assert_eq!(resp.account_id, "100000000002");
-    assert_eq!(resp.email.as_deref(), Some("admin@example.com"));
-    assert_eq!(resp.alias.as_deref(), Some("example-corp"));
+    assert_eq!(resp.account.account_id, "100000000002");
+    assert_eq!(resp.account.email.as_deref(), Some("admin@example.com"));
+    assert_eq!(resp.account.account_alias.as_deref(), Some("example-corp"));
 }
 
 async fn test_create_account_random_id(pool: &sqlx::PgPool) {
@@ -177,7 +176,7 @@ async fn test_create_account_random_id(pool: &sqlx::PgPool) {
         organization_id: None,
         account_id: None,
         email: None,
-        alias: None,
+        account_alias: None,
     }
     .execute(&mut tx)
     .await
@@ -185,18 +184,18 @@ async fn test_create_account_random_id(pool: &sqlx::PgPool) {
     tx.commit().await.expect("Failed to commit transaction");
 
     // The returned account ID must be a 12-digit string.
-    assert_eq!(resp.account_id.len(), 12, "Random account ID must be 12 digits");
-    assert!(resp.account_id.chars().all(|c| c.is_ascii_digit()), "Random account ID must be all digits");
+    assert_eq!(resp.account.account_id.len(), 12, "Random account ID must be 12 digits");
+    assert!(resp.account.account_id.chars().all(|c| c.is_ascii_digit()), "Random account ID must be all digits");
 
     // Verify the account appears in ListAccounts.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let list_resp = ListAccountsRequest {
         filters: vec![ListAccountsFilter {
-            name: ListAccountsFilterKey::AccountId,
-            values: vec![resp.account_id.clone()],
+            name: ListAccountsFilterName::AccountId,
+            values: vec![resp.account.account_id.clone()],
         }],
         max_items: None,
-        next_token: None,
+        marker: None,
     }
     .execute(&mut tx)
     .await
@@ -204,7 +203,7 @@ async fn test_create_account_random_id(pool: &sqlx::PgPool) {
     tx.rollback().await.expect("Failed to rollback transaction");
 
     assert_eq!(list_resp.accounts.len(), 1);
-    assert_eq!(list_resp.accounts[0].account_id, resp.account_id);
+    assert_eq!(list_resp.accounts[0].account_id, resp.account.account_id);
 }
 
 async fn test_create_account_duplicate_id(pool: &sqlx::PgPool) {
@@ -213,7 +212,7 @@ async fn test_create_account_duplicate_id(pool: &sqlx::PgPool) {
         organization_id: None,
         account_id: Some("100000000001".to_string()),
         email: None,
-        alias: None,
+        account_alias: None,
     }
     .execute(&mut tx)
     .await;
@@ -227,7 +226,7 @@ async fn test_create_account_invalid_id(pool: &sqlx::PgPool) {
         organization_id: None,
         account_id: Some("12345".to_string()),
         email: None,
-        alias: None,
+        account_alias: None,
     }
     .execute(&mut tx)
     .await;
@@ -241,7 +240,7 @@ async fn test_create_account_invalid_alias_leading_dash(pool: &sqlx::PgPool) {
         organization_id: None,
         account_id: Some("100000000003".to_string()),
         email: None,
-        alias: Some("-bad-alias".to_string()),
+        account_alias: Some("-bad-alias".to_string()),
     }
     .execute(&mut tx)
     .await;
@@ -255,7 +254,7 @@ async fn test_create_account_alias_too_short(pool: &sqlx::PgPool) {
         organization_id: None,
         account_id: Some("100000000003".to_string()),
         email: None,
-        alias: Some("ab".to_string()),
+        account_alias: Some("ab".to_string()),
     }
     .execute(&mut tx)
     .await;
@@ -269,7 +268,7 @@ async fn test_create_account_organization_id_unsupported(pool: &sqlx::PgPool) {
         organization_id: Some("o-12345".to_string()),
         account_id: Some("100000000003".to_string()),
         email: None,
-        alias: None,
+        account_alias: None,
     }
     .execute(&mut tx)
     .await;
@@ -281,11 +280,11 @@ async fn test_list_accounts_explicit(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let list_resp = ListAccountsRequest {
         filters: vec![ListAccountsFilter {
-            name: ListAccountsFilterKey::AccountId,
+            name: ListAccountsFilterName::AccountId,
             values: vec!["100000000001".to_string(), "100000000002".to_string()],
         }],
         max_items: None,
-        next_token: None,
+        marker: None,
     }
     .execute(&mut tx)
     .await
@@ -296,8 +295,8 @@ async fn test_list_accounts_explicit(pool: &sqlx::PgPool) {
     assert_eq!(list_resp.accounts[0].account_id, "100000000001");
     assert_eq!(list_resp.accounts[1].account_id, "100000000002");
     assert_eq!(list_resp.accounts[1].email.as_deref(), Some("admin@example.com"));
-    assert_eq!(list_resp.accounts[1].alias.as_deref(), Some("example-corp"));
-    assert_eq!(list_resp.next_token, None);
+    assert_eq!(list_resp.accounts[1].account_alias.as_deref(), Some("example-corp"));
+    assert_eq!(list_resp.marker, None);
 }
 
 const BASE_ACCOUNT_ID: u64 = 876_543_210_000;
@@ -315,23 +314,23 @@ async fn test_create_350_accounts(pool: &sqlx::PgPool) {
             organization_id: None,
             account_id: Some(account_id.clone()),
             email: Some(email.clone()),
-            alias: Some(alias.clone()),
+            account_alias: Some(alias.clone()),
         }
         .execute(&mut tx)
         .await
         .unwrap_or_else(|e| panic!("Failed to create account {account_id}: {e}"));
         tx.commit().await.expect("Failed to commit transaction");
 
-        assert_eq!(resp.account_id, account_id);
-        assert_eq!(resp.email.as_deref(), Some(email.as_str()));
-        assert_eq!(resp.alias.as_deref(), Some(alias.as_str()));
+        assert_eq!(resp.account.account_id, account_id);
+        assert_eq!(resp.account.email.as_deref(), Some(email.as_str()));
+        assert_eq!(resp.account.account_alias.as_deref(), Some(alias.as_str()));
     }
 }
 
 async fn test_list_350_accounts(pool: &sqlx::PgPool) {
     // Paginate through all accounts, collecting every account in the bulk range.
     let mut all_bulk_accounts = Vec::new();
-    let mut next_token: Option<String> = None;
+    let mut marker: Option<String> = None;
     let mut page_count = 0u32;
 
     loop {
@@ -339,7 +338,7 @@ async fn test_list_350_accounts(pool: &sqlx::PgPool) {
         let resp = ListAccountsRequest {
             filters: vec![],
             max_items: Some(100),
-            next_token: next_token.clone(),
+            marker: marker.clone(),
         }
         .execute(&mut tx)
         .await
@@ -354,8 +353,8 @@ async fn test_list_350_accounts(pool: &sqlx::PgPool) {
             }
         }
 
-        next_token = resp.next_token;
-        if next_token.is_none() {
+        marker = resp.marker;
+        if marker.is_none() {
             break;
         }
     }
@@ -380,7 +379,7 @@ async fn test_list_350_accounts(pool: &sqlx::PgPool) {
             .unwrap_or_else(|| panic!("Account {expected_id} not found in paginated results"));
 
         assert_eq!(account.email.as_deref(), Some(expected_email.as_str()), "Email mismatch for {expected_id}");
-        assert_eq!(account.alias.as_deref(), Some(expected_alias.as_str()), "Alias mismatch for {expected_id}");
+        assert_eq!(account.account_alias.as_deref(), Some(expected_alias.as_str()), "Alias mismatch for {expected_id}");
     }
 }
 
@@ -398,11 +397,11 @@ async fn test_list_accounts_filter_single_account_id(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAccountsRequest {
         filters: vec![ListAccountsFilter {
-            name: ListAccountsFilterKey::AccountId,
+            name: ListAccountsFilterName::AccountId,
             values: vec![id.clone()],
         }],
         max_items: None,
-        next_token: None,
+        marker: None,
     }
     .execute(&mut tx)
     .await
@@ -412,8 +411,8 @@ async fn test_list_accounts_filter_single_account_id(pool: &sqlx::PgPool) {
     assert_eq!(resp.accounts.len(), 1, "Expected exactly one account for id {id}");
     assert_eq!(resp.accounts[0].account_id, id);
     assert_eq!(resp.accounts[0].email.as_deref(), Some(expected_email.as_str()));
-    assert_eq!(resp.accounts[0].alias.as_deref(), Some(expected_alias.as_str()));
-    assert_eq!(resp.next_token, None);
+    assert_eq!(resp.accounts[0].account_alias.as_deref(), Some(expected_alias.as_str()));
+    assert_eq!(resp.marker, None);
 }
 
 async fn test_list_accounts_filter_multiple_account_ids(pool: &sqlx::PgPool) {
@@ -423,11 +422,11 @@ async fn test_list_accounts_filter_multiple_account_ids(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAccountsRequest {
         filters: vec![ListAccountsFilter {
-            name: ListAccountsFilterKey::AccountId,
+            name: ListAccountsFilterName::AccountId,
             values: ids.clone(),
         }],
         max_items: None,
-        next_token: None,
+        marker: None,
     }
     .execute(&mut tx)
     .await
@@ -440,9 +439,9 @@ async fn test_list_accounts_filter_multiple_account_ids(pool: &sqlx::PgPool) {
         let (expected_id, expected_email, expected_alias) = bulk_account(offset);
         assert_eq!(account.account_id, expected_id);
         assert_eq!(account.email.as_deref(), Some(expected_email.as_str()));
-        assert_eq!(account.alias.as_deref(), Some(expected_alias.as_str()));
+        assert_eq!(account.account_alias.as_deref(), Some(expected_alias.as_str()));
     }
-    assert_eq!(resp.next_token, None);
+    assert_eq!(resp.marker, None);
 }
 
 async fn test_list_accounts_filter_by_email(pool: &sqlx::PgPool) {
@@ -451,11 +450,11 @@ async fn test_list_accounts_filter_by_email(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAccountsRequest {
         filters: vec![ListAccountsFilter {
-            name: ListAccountsFilterKey::Email,
+            name: ListAccountsFilterName::Email,
             values: vec![email.clone()],
         }],
         max_items: None,
-        next_token: None,
+        marker: None,
     }
     .execute(&mut tx)
     .await
@@ -465,8 +464,8 @@ async fn test_list_accounts_filter_by_email(pool: &sqlx::PgPool) {
     assert_eq!(resp.accounts.len(), 1, "Expected exactly one account for email {email}");
     assert_eq!(resp.accounts[0].account_id, expected_id);
     assert_eq!(resp.accounts[0].email.as_deref(), Some(email.as_str()));
-    assert_eq!(resp.accounts[0].alias.as_deref(), Some(expected_alias.as_str()));
-    assert_eq!(resp.next_token, None);
+    assert_eq!(resp.accounts[0].account_alias.as_deref(), Some(expected_alias.as_str()));
+    assert_eq!(resp.marker, None);
 }
 
 async fn test_list_accounts_filter_by_alias(pool: &sqlx::PgPool) {
@@ -475,11 +474,11 @@ async fn test_list_accounts_filter_by_alias(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAccountsRequest {
         filters: vec![ListAccountsFilter {
-            name: ListAccountsFilterKey::Alias,
+            name: ListAccountsFilterName::AccountAlias,
             values: vec![alias.clone()],
         }],
         max_items: None,
-        next_token: None,
+        marker: None,
     }
     .execute(&mut tx)
     .await
@@ -489,8 +488,8 @@ async fn test_list_accounts_filter_by_alias(pool: &sqlx::PgPool) {
     assert_eq!(resp.accounts.len(), 1, "Expected exactly one account for alias {alias}");
     assert_eq!(resp.accounts[0].account_id, expected_id);
     assert_eq!(resp.accounts[0].email.as_deref(), Some(expected_email.as_str()));
-    assert_eq!(resp.accounts[0].alias.as_deref(), Some(alias.as_str()));
-    assert_eq!(resp.next_token, None);
+    assert_eq!(resp.accounts[0].account_alias.as_deref(), Some(alias.as_str()));
+    assert_eq!(resp.marker, None);
 }
 
 async fn test_list_accounts_filter_combined_match(pool: &sqlx::PgPool) {
@@ -501,16 +500,16 @@ async fn test_list_accounts_filter_combined_match(pool: &sqlx::PgPool) {
     let resp = ListAccountsRequest {
         filters: vec![
             ListAccountsFilter {
-                name: ListAccountsFilterKey::AccountId,
+                name: ListAccountsFilterName::AccountId,
                 values: vec![id.clone()],
             },
             ListAccountsFilter {
-                name: ListAccountsFilterKey::Email,
+                name: ListAccountsFilterName::Email,
                 values: vec![email.clone()],
             },
         ],
         max_items: None,
-        next_token: None,
+        marker: None,
     }
     .execute(&mut tx)
     .await
@@ -520,8 +519,8 @@ async fn test_list_accounts_filter_combined_match(pool: &sqlx::PgPool) {
     assert_eq!(resp.accounts.len(), 1, "Expected exactly one account when AccountId and Email both match");
     assert_eq!(resp.accounts[0].account_id, id);
     assert_eq!(resp.accounts[0].email.as_deref(), Some(email.as_str()));
-    assert_eq!(resp.accounts[0].alias.as_deref(), Some(expected_alias.as_str()));
-    assert_eq!(resp.next_token, None);
+    assert_eq!(resp.accounts[0].account_alias.as_deref(), Some(expected_alias.as_str()));
+    assert_eq!(resp.marker, None);
 }
 
 async fn test_list_accounts_filter_combined_no_match(pool: &sqlx::PgPool) {
@@ -533,16 +532,16 @@ async fn test_list_accounts_filter_combined_no_match(pool: &sqlx::PgPool) {
     let resp = ListAccountsRequest {
         filters: vec![
             ListAccountsFilter {
-                name: ListAccountsFilterKey::AccountId,
+                name: ListAccountsFilterName::AccountId,
                 values: vec![id_a.clone()],
             },
             ListAccountsFilter {
-                name: ListAccountsFilterKey::Email,
+                name: ListAccountsFilterName::Email,
                 values: vec![email_b.clone()],
             },
         ],
         max_items: None,
-        next_token: None,
+        marker: None,
     }
     .execute(&mut tx)
     .await
@@ -554,7 +553,7 @@ async fn test_list_accounts_filter_combined_no_match(pool: &sqlx::PgPool) {
         0,
         "Expected no accounts when AccountId ({id_a}) and Email ({email_b}) refer to different accounts",
     );
-    assert_eq!(resp.next_token, None);
+    assert_eq!(resp.marker, None);
 }
 
 async fn test_list_accounts_filter_nonexistent(pool: &sqlx::PgPool) {
@@ -562,11 +561,11 @@ async fn test_list_accounts_filter_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAccountsRequest {
         filters: vec![ListAccountsFilter {
-            name: ListAccountsFilterKey::AccountId,
+            name: ListAccountsFilterName::AccountId,
             values: vec!["999999999999".to_string()],
         }],
         max_items: None,
-        next_token: None,
+        marker: None,
     }
     .execute(&mut tx)
     .await
@@ -574,7 +573,7 @@ async fn test_list_accounts_filter_nonexistent(pool: &sqlx::PgPool) {
     tx.rollback().await.expect("Failed to rollback transaction");
 
     assert_eq!(resp.accounts.len(), 0, "Expected no accounts for a nonexistent account ID");
-    assert_eq!(resp.next_token, None);
+    assert_eq!(resp.marker, None);
 }
 
 /// Create a user with only a name and account — all other fields take defaults.
