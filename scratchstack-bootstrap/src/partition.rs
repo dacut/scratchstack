@@ -1,12 +1,14 @@
 //! Scratchstack bootsrap partition subcommands
 use {
-    crate::{Cli, Runnable},
-    anyhow::Result as AnyResult,
+    crate::{Cli, MSG_INTERNAL_FAILURE, Runnable, execute_in_transaction},
     clap::Parser,
-    scratchstack_database::ops::RequestExecutor as _,
-    scratchstack_shapes_iam::operation::{
-        GetCurrentPartitionRequest, GetCurrentPartitionResponse, SetCurrentPartitionRequest,
-        SetCurrentPartitionResponse,
+    scratchstack_shapes_iam::{
+        error_meta::Error as IamError,
+        operation::{
+            GetCurrentPartitionRequest, GetCurrentPartitionResponse, SetCurrentPartitionRequest,
+            SetCurrentPartitionResponse,
+        },
+        types::error::InternalFailure,
     },
     std::ffi::OsString,
 };
@@ -26,56 +28,25 @@ pub(crate) struct SetCurrentPartitionCommand {
 impl Runnable for GetCurrentPartitionCommand {
     type Result = GetCurrentPartitionResponse;
 
-    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<GetCurrentPartitionResponse>
-    where
-        I: IntoIterator<Item = (std::ffi::OsString, String)> + Clone + Send,
-    {
-        let conn = args.connect(vars).await?;
-        let mut tx = conn.begin().await?;
-        let result = GetCurrentPartitionRequest {}.execute(&mut tx).await?;
-        tx.commit().await?;
-        Ok(result)
-    }
-}
-
-impl Runnable for GetCurrentPartitionRequest {
-    type Result = GetCurrentPartitionResponse;
-
-    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<GetCurrentPartitionResponse>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<GetCurrentPartitionResponse, IamError>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let conn = args.connect(vars).await?;
-        let mut tx = conn.begin().await?;
-        let result = self.execute(&mut tx).await?;
-        tx.commit().await?;
-        Ok(result)
+        execute_in_transaction(cli, vars, &GetCurrentPartitionRequest {}).await
     }
 }
 
 impl Runnable for SetCurrentPartitionCommand {
     type Result = SetCurrentPartitionResponse;
 
-    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<SetCurrentPartitionResponse>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<SetCurrentPartitionResponse, IamError>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let request = SetCurrentPartitionRequest::builder().partition(self.partition.clone()).build()?;
-        request.run(args, vars).await
-    }
-}
-
-impl Runnable for SetCurrentPartitionRequest {
-    type Result = SetCurrentPartitionResponse;
-
-    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<SetCurrentPartitionResponse>
-    where
-        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
-    {
-        let conn = args.connect(vars).await?;
-        let mut tx = conn.begin().await?;
-        let result = self.execute(&mut tx).await?;
-        tx.commit().await?;
-        Ok(result)
+        let request = SetCurrentPartitionRequest::builder().partition(self.partition.clone()).build().map_err(|e| {
+            log::error!("Failed to build SetCurrentPartitionRequest: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })?;
+        execute_in_transaction(cli, vars, &request).await
     }
 }

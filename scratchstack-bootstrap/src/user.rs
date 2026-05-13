@@ -1,16 +1,16 @@
 //! Scratchstack bootsrap create-user subcommand
 use {
-    crate::{Cli, Runnable},
-    anyhow::{Result as AnyResult, anyhow, bail},
+    crate::{Cli, MSG_INTERNAL_FAILURE, Runnable, execute_in_transaction},
     clap::Parser,
     scratchstack_cli_utils::{ShorthandValue, parse_shorthand},
-    scratchstack_database::ops::RequestExecutor,
     scratchstack_shapes_iam::{
+        error_meta::Error as IamError,
         operation::{
-            CreateUserInternalRequest, CreateUserResponse, ListUsersInternalRequest, ListUsersResponse,
-            UpdateUserInternalRequest,
+            CreateUserInternalRequest, CreateUserResponse, DeleteUserInternalRequest, ListUsersInternalRequest,
+            ListUsersResponse, UpdateUserInternalRequest,
         },
         types::Tag,
+        types::error::{InternalFailure, ValidationError},
     },
     std::{collections::HashMap, ffi::OsString},
 };
@@ -39,6 +39,18 @@ pub(crate) struct CreateUserInternalCommand {
     /// `Key1=Value1,Key2=Value2`.
     #[clap(long, num_args = 1..)]
     pub tags: Vec<String>,
+}
+
+/// Delete a user from the given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct DeleteUserInternalCommand {
+    /// The unique identifier for the account to delete the user from.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the user to delete.
+    #[clap(long)]
+    pub user_name: String,
 }
 
 /// List users in a given account in the Scratchstack IAM service.
@@ -87,7 +99,7 @@ pub(crate) struct UpdateUserInternalCommand {
 impl Runnable for CreateUserInternalCommand {
     type Result = CreateUserResponse;
 
-    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<Self::Result>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -99,13 +111,23 @@ impl Runnable for CreateUserInternalCommand {
         let mut tags = Vec::with_capacity(self.tags.len());
 
         for tag in &self.tags {
-            match parse_shorthand(tag)? {
+            let parsed = parse_shorthand(tag).map_err(|e| {
+                IamError::from(
+                    ValidationError::builder()
+                        .message(format!("Invalid tag format: {tag}: {e}"))
+                        .build(),
+                )
+            })?;
+            match parsed {
                 ShorthandValue::List(values) => {
                     for value in values {
                         let ShorthandValue::Map(map) = value else {
-                            bail!(
-                                "Invalid tag format: {tag}. Tags must be in the format 'Key=k,Value=v' or a JSON object with 'Key' and 'Value' fields"
-                            );
+                            return Err(ValidationError::builder()
+                                .message(format!(
+                                    "Invalid tag format: {tag}. Tags must be in the format 'Key=k,Value=v' or a JSON object with 'Key' and 'Value' fields"
+                                ))
+                                .build()
+                                .into());
                         };
                         tags = tags_from_shorthand(&map)?;
                     }
@@ -113,39 +135,46 @@ impl Runnable for CreateUserInternalCommand {
                 ShorthandValue::Map(value) => {
                     tags.extend(tags_from_shorthand(&value)?);
                 }
-                _ => bail!(
-                    "Invalid tag format: {tag}. Tags must be in the format 'Key=k,Value=v' or a JSON object with 'Key' and 'Value' fields"
-                ),
+                _ => {
+                    return Err(ValidationError::builder()
+                        .message(format!(
+                            "Invalid tag format: {tag}. Tags must be in the format 'Key=k,Value=v' or a JSON object with 'Key' and 'Value' fields"
+                        ))
+                        .build()
+                        .into());
+                }
             }
         }
 
         builder = builder.tags(tags);
 
-        let request = builder.build()?;
-        request.run(args, vars).await
+        let request = builder.build().map_err(|e| {
+            log::error!("Failed to build CreateUserInternalRequest: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })?;
+        execute_in_transaction(cli, vars, &request).await
     }
 }
 
-impl Runnable for CreateUserInternalRequest {
-    type Result = CreateUserResponse;
+impl Runnable for DeleteUserInternalCommand {
+    type Result = ();
 
-    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<Self::Result>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let conn = args.connect(vars).await?;
-        let mut tx = conn.begin().await?;
-        let response = self.execute(&mut tx).await?;
-        tx.commit().await?;
-
-        Ok(response)
+        let request = DeleteUserInternalRequest {
+            account_id: self.account_id.clone(),
+            user_name: self.user_name.clone(),
+        };
+        execute_in_transaction(cli, vars, &request).await
     }
 }
 
 impl Runnable for ListUsersInternalCommand {
     type Result = ListUsersResponse;
 
-    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<Self::Result>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -155,30 +184,14 @@ impl Runnable for ListUsersInternalCommand {
             max_items: self.max_items,
             marker: self.marker.clone(),
         };
-        request.run(args, vars).await
-    }
-}
-
-impl Runnable for ListUsersInternalRequest {
-    type Result = ListUsersResponse;
-
-    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<Self::Result>
-    where
-        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
-    {
-        let conn = args.connect(vars).await?;
-        let mut tx = conn.begin().await?;
-        let response = self.execute(&mut tx).await?;
-        tx.commit().await?;
-
-        Ok(response)
+        execute_in_transaction(cli, vars, &request).await
     }
 }
 
 impl Runnable for UpdateUserInternalCommand {
     type Result = ();
 
-    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<Self::Result>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -188,37 +201,42 @@ impl Runnable for UpdateUserInternalCommand {
             new_path: self.new_path.clone(),
             new_user_name: self.new_user_name.clone(),
         };
-        request.run(args, vars).await
+        execute_in_transaction(cli, vars, &request).await
     }
 }
 
-impl Runnable for UpdateUserInternalRequest {
-    type Result = ();
-
-    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<Self::Result>
-    where
-        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
-    {
-        let conn = args.connect(vars).await?;
-        let mut tx = conn.begin().await?;
-        self.execute(&mut tx).await?;
-        tx.commit().await?;
-
-        Ok(())
-    }
-}
-
-fn tags_from_shorthand(map: &HashMap<String, ShorthandValue>) -> AnyResult<Vec<Tag>> {
+fn tags_from_shorthand(map: &HashMap<String, ShorthandValue>) -> Result<Vec<Tag>, IamError> {
     let mut result = Vec::new();
     for (key, value) in map {
         let key = match key.as_str() {
-            "Key" => value.as_str().ok_or_else(|| anyhow!("Invalid tag format: {map:?}. 'Key' must be a string"))?,
-            "Value" => {
-                value.as_str().ok_or_else(|| anyhow!("Invalid tag format: {map:?}. 'Value' must be a string"))?
+            "Key" => value.as_str().ok_or_else(|| {
+                IamError::from(
+                    ValidationError::builder()
+                        .message(format!("Invalid tag format: {map:?}. 'Key' must be a string"))
+                        .build(),
+                )
+            })?,
+            "Value" => value.as_str().ok_or_else(|| {
+                IamError::from(
+                    ValidationError::builder()
+                        .message(format!("Invalid tag format: {map:?}. 'Value' must be a string"))
+                        .build(),
+                )
+            })?,
+            _ => {
+                return Err(ValidationError::builder()
+                    .message(format!("Invalid tag format: {map:?}. Tags must only contain 'Key' and 'Value' fields"))
+                    .build()
+                    .into());
             }
-            _ => bail!("Invalid tag format: {map:?}. Tags must only contain 'Key' and 'Value' fields"),
         };
-        let value = value.as_str().ok_or_else(|| anyhow!("Invalid tag format: {map:?}. 'Value' must be a string"))?;
+        let value = value.as_str().ok_or_else(|| {
+            IamError::from(
+                ValidationError::builder()
+                    .message(format!("Invalid tag format: {map:?}. 'Value' must be a string"))
+                    .build(),
+            )
+        })?;
         result.push(Tag {
             key: key.to_string(),
             value: value.to_string(),

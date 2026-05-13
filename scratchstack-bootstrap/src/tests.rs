@@ -1,8 +1,9 @@
 use {
     crate::run,
-    anyhow::Result as AnyResult,
+    aws_smithy_types::error::metadata::ProvideErrorMetadata,
     pretty_assertions::assert_eq,
     scratchstack_database::utils::TempDatabase,
+    scratchstack_shapes_iam::error_meta::Error as IamError,
     serde_json::Value as JsonValue,
     std::{collections::HashSet, ffi::OsString, future::Future},
 };
@@ -163,7 +164,7 @@ async fn test_accounts(database: &TempDatabase) {
 async fn test_users(database: &TempDatabase) {
     let port = database.port_str();
 
-    // Just test that the command runs successfully for now, we'll add more assertions as we implement more user operations.
+    // Create a user and verify the output.
     let result = database
         .run([
             "ssbs",
@@ -188,6 +189,67 @@ async fn test_users(database: &TempDatabase) {
     assert_eq!(user_name, "test-user");
     let arn = user.get("Arn").expect("Arn should be present").as_str().expect("Arn should be a string");
     assert_eq!(arn, "arn:test-partition:iam::555566667777:user/test-user");
+
+    // Delete the user.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "test-user",
+        ])
+        .await
+        .expect("Failed to run delete-user for 555566667777/test-user");
+
+    // Deleting the same user again should fail with a NoSuchEntity error.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "test-user",
+        ])
+        .await
+        .expect_err("Deleting a non-existent user should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+    assert!(
+        err.message().unwrap_or_default().contains("cannot be found"),
+        "Expected 'cannot be found' in error message, got: {err}"
+    );
+
+    // Deleting a user that never existed should also fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "no-such-user",
+        ])
+        .await
+        .expect_err("Deleting a user that never existed should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+    assert!(
+        err.message().unwrap_or_default().contains("cannot be found"),
+        "Expected 'cannot be found' in error message, got: {err}"
+    );
 }
 
 /// Convert a Vec<String-like> to a Vec<OsString>.
@@ -209,7 +271,7 @@ trait TestHarness {
     fn port_str(&self) -> String;
 
     /// Runs the given CLI in a harness with the fake environment and stdout captured to a string.
-    fn run<I, S>(&self, args: I) -> impl Future<Output = AnyResult<String>> + Send
+    fn run<I, S>(&self, args: I) -> impl Future<Output = Result<String, IamError>> + Send
     where
         I: IntoIterator<Item = S>,
         S: Into<OsString>;
@@ -229,7 +291,7 @@ impl TestHarness for TempDatabase {
         self.settings().port.to_string()
     }
 
-    fn run<I, S>(&self, args: I) -> impl Future<Output = AnyResult<String>> + Send
+    fn run<I, S>(&self, args: I) -> impl Future<Output = Result<String, IamError>> + Send
     where
         I: IntoIterator<Item = S>,
         S: Into<OsString>,
@@ -239,7 +301,14 @@ impl TestHarness for TempDatabase {
         async move {
             let mut result: Vec<u8> = Vec::with_capacity(1024);
             run(args, vars, &mut result).await?;
-            Ok(String::from_utf8(result)?)
+            String::from_utf8(result).map_err(|e| {
+                log::error!("Failed to convert output to UTF-8: {e}");
+                IamError::from(
+                    scratchstack_shapes_iam::types::error::InternalFailure::builder()
+                        .message("An internal error has occurred.")
+                        .build(),
+                )
+            })
         }
     }
 }

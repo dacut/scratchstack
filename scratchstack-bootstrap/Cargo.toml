@@ -14,13 +14,10 @@ name = "ssbs"
 path = "src/ssbs.rs"
 
 [dependencies]
-anyhow.workspace = true
+aws-smithy-types.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 env_logger.workspace = true
-indoc.workspace = true
 log.workspace = true
-rand = { workspace = true, features = ["thread_rng"] }
-regex.workspace = true
 rpassword.workspace = true
 scratchstack-cli-utils = { path = "../scratchstack-cli-utils" }
 scratchstack-database = { path = "../scratchstack-database", features = ["clap", "iam", "utils"] }

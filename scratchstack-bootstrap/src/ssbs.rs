@@ -24,10 +24,11 @@ use {
     crate::{
         account::{CreateAccountCommand, ListAccountsCommand},
         partition::{GetCurrentPartitionCommand, SetCurrentPartitionCommand},
-        user::{CreateUserInternalCommand, ListUsersInternalCommand, UpdateUserInternalCommand},
+        user::{CreateUserInternalCommand, DeleteUserInternalCommand, ListUsersInternalCommand, UpdateUserInternalCommand},
     },
-    anyhow::{Error as AnyError, Result as AnyResult},
+    aws_smithy_types::error::metadata::ProvideErrorMetadata,
     clap::{Parser, Subcommand},
+    scratchstack_shapes_iam::{error_meta::Error as IamError, types::error::InternalFailure},
     sqlx::{
         Error as SqlxError,
         postgres::{PgConnectOptions, PgPool, PgPoolOptions},
@@ -44,7 +45,7 @@ trait Runnable {
     type Result;
 
     /// Execute the subcommand.
-    fn run<I>(&self, cli: &Cli, vars: I) -> impl Future<Output = Result<Self::Result, AnyError>> + Send
+    fn run<I>(&self, cli: &Cli, vars: I) -> impl Future<Output = Result<Self::Result, IamError>> + Send
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send;
 }
@@ -95,6 +96,10 @@ enum Commands {
     #[command(name = "create-user")]
     CreateUser(CreateUserInternalCommand),
 
+    /// Delete an IAM user from an account.
+    #[command(name = "delete-user")]
+    DeleteUser(DeleteUserInternalCommand),
+
     /// Get the current partition of the database.
     #[command(name = "get-current-partition")]
     GetCurrentPartition(GetCurrentPartitionCommand),
@@ -123,20 +128,49 @@ enum Commands {
     UpdateUser(UpdateUserInternalCommand),
 }
 
+impl Commands {
+    /// Return the AWS-style operation name for this command.
+    fn operation_name(&self) -> &'static str {
+        match self {
+            Commands::CreateAccount(_) => "CreateAccount",
+            Commands::CreateUser(_) => "CreateUser",
+            Commands::DeleteUser(_) => "DeleteUser",
+            Commands::GetCurrentPartition(_) => "GetCurrentPartition",
+            Commands::ListAccounts(_) => "ListAccounts",
+            Commands::ListUsers(_) => "ListUsers",
+            Commands::Migrate(_) => "Migrate",
+            Commands::SetCurrentPartition(_) => "SetCurrentPartition",
+            Commands::UpdateUser(_) => "UpdateUser",
+        }
+    }
+}
+
+/// Format an IamError in the AWS CLI style.
+pub(crate) fn format_iam_error(error: &IamError, operation: &str) -> String {
+    let code = error.code().unwrap_or("Unknown");
+    let message = error.message().unwrap_or_default();
+    format!("An error occurred ({code}) when calling the {operation} operation: {message}")
+}
+
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> AnyResult<()> {
+async fn main() {
     env_logger::init();
+    let args: Vec<OsString> = std::env::args_os().collect();
     let vars = std::env::vars().map(|(k, v)| (k.into(), v)).collect::<Vec<(OsString, String)>>();
-    if let Err(e) = run(std::env::args_os(), vars, &mut stdout()).await {
-        Err(e)
-    } else {
-        Ok(())
+
+    // Pre-parse just to extract the operation name for error formatting.
+    let cli = Cli::parse_from(&args);
+    let operation = cli.command.operation_name();
+
+    if let Err(e) = run(args, vars, &mut stdout()).await {
+        eprintln!("{}", format_iam_error(&e, operation));
+        std::process::exit(1);
     }
 }
 
 /// Execute the CLI with the given arguments, environment variables, and stdout writer. This is
 /// separated from the `main` function to allow for easier testing.
-pub(crate) async fn run<I, T, I2, W>(args: I, vars: I2, out: &mut W) -> AnyResult<()>
+pub(crate) async fn run<I, T, I2, W>(args: I, vars: I2, out: &mut W) -> Result<(), IamError>
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
@@ -144,26 +178,45 @@ where
     W: Write + Send,
 {
     let cli = Cli::parse_from(args);
-    let output = match &cli.command {
+    let result = match &cli.command {
         Commands::CreateAccount(sub) => {
             let response = sub.run(&cli, vars).await?;
-            serde_json::to_string_pretty(&response)?
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
         }
         Commands::CreateUser(sub) => {
             let response = sub.run(&cli, vars).await?;
-            serde_json::to_string_pretty(&response)?
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::DeleteUser(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
         }
         Commands::GetCurrentPartition(sub) => {
             let response = sub.run(&cli, vars).await?;
-            serde_json::to_string_pretty(&response)?
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
         }
         Commands::ListAccounts(sub) => {
             let response = sub.run(&cli, vars).await?;
-            serde_json::to_string_pretty(&response)?
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
         }
         Commands::ListUsers(sub) => {
             let response = sub.run(&cli, vars).await?;
-            serde_json::to_string_pretty(&response)?
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
         }
         Commands::Migrate(sub) => {
             sub.run(&cli, vars).await?;
@@ -171,7 +224,10 @@ where
         }
         Commands::SetCurrentPartition(sub) => {
             let response = sub.run(&cli, vars).await?;
-            serde_json::to_string_pretty(&response)?
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
         }
         Commands::UpdateUser(sub) => {
             sub.run(&cli, vars).await?;
@@ -179,8 +235,49 @@ where
         }
     };
 
-    writeln!(out, "{output}")?;
+    writeln!(out, "{result}").map_err(|e| {
+        log::error!("Failed to write output: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
     Ok(())
+}
+
+/// Internal failure message constant.
+const MSG_INTERNAL_FAILURE: &str = "An internal error has occurred.";
+
+/// Connect to the database, run a [`RequestExecutor`] inside a transaction, and commit.
+///
+/// On error the transaction is explicitly rolled back before the pool is dropped, avoiding
+/// PostgreSQL "unexpected EOF on client connection with an open transaction" warnings.
+pub(crate) async fn execute_in_transaction<R>(
+    cli: &Cli,
+    vars: impl IntoIterator<Item = (OsString, String)> + Send,
+    request: &R,
+) -> Result<R::Response, IamError>
+where
+    R: scratchstack_database::ops::RequestExecutor<Error = IamError> + Sync,
+{
+    let conn = cli.connect(vars).await?;
+    let mut tx = conn.begin().await.map_err(|e| {
+        log::error!("Failed to begin transaction: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
+
+    match request.execute(&mut tx).await {
+        Ok(response) => {
+            tx.commit().await.map_err(|e| {
+                log::error!("Failed to commit transaction: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?;
+            Ok(response)
+        }
+        Err(e) => {
+            if let Err(rollback_err) = tx.rollback().await {
+                log::error!("Failed to rollback transaction: {rollback_err}");
+            }
+            Err(e)
+        }
+    }
 }
 
 impl Cli {
@@ -189,11 +286,14 @@ impl Cli {
     /// 1. The `username` field in this configuration, if specified.
     /// 2. The `PGUSER` environment variable, if set.
     /// 3. The current system user, as returned by the `whoami` crate.
-    pub(crate) fn get_username(&self) -> AnyResult<String> {
+    pub(crate) fn get_username(&self) -> Result<String, IamError> {
         if let Some(username) = &self.username {
             Ok(username.clone())
         } else {
-            Ok(whoami::username()?)
+            whoami::username().map_err(|e| {
+                log::error!("Failed to determine current username: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })
         }
     }
 
@@ -203,7 +303,7 @@ impl Cli {
     }
 
     /// Get database connection options using the given password (or no password if `None`).
-    pub(crate) fn get_connection_options(&self, password: Option<&str>) -> AnyResult<PgConnectOptions> {
+    pub(crate) fn get_connection_options(&self, password: Option<&str>) -> Result<PgConnectOptions, IamError> {
         let mut opts = PgConnectOptions::new();
         opts = opts.application_name("scratchstack-bootstrap");
 
@@ -224,7 +324,7 @@ impl Cli {
         Ok(opts)
     }
 
-    pub(crate) async fn connect<I>(&self, vars: I) -> AnyResult<PgPool>
+    pub(crate) async fn connect<I>(&self, vars: I) -> Result<PgPool, IamError>
     where
         I: IntoIterator<Item = (OsString, String)> + Send,
     {
@@ -235,13 +335,19 @@ impl Cli {
             let username = self.get_username().map(Some).unwrap_or(None);
             let password = prompt_password(username)?;
             let opts = self.get_connection_options(Some(&password))?;
-            return Ok(pool_opts.connect_with(opts).await?);
+            return pool_opts.connect_with(opts).await.map_err(|e| {
+                log::error!("Failed to connect to database: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            });
         }
 
         if self.no_password {
             // -w: never prompt; fail if the server requires a password
             let opts = self.get_connection_options(None)?;
-            return Ok(pool_opts.connect_with(opts).await?);
+            return pool_opts.connect_with(opts).await.map_err(|e| {
+                log::error!("Failed to connect to database: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            });
         }
 
         // Default (psql-like): use PGPASSWORD if set, otherwise try without a password first.
@@ -255,22 +361,31 @@ impl Cli {
                 let username = self.get_username().map(Some).unwrap_or(None);
                 let password = prompt_password(username)?;
                 let opts = self.get_connection_options(Some(&password))?;
-                Ok(pool_opts.connect_with(opts).await?)
+                pool_opts.connect_with(opts).await.map_err(|e| {
+                    log::error!("Failed to connect to database: {e}");
+                    IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                })
             }
-            Err(e) => Err(e.into()),
+            Err(e) => {
+                log::error!("Failed to connect to database: {e}");
+                Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            }
         }
     }
 }
 
 /// Prompt for a password for the given username.
-pub(crate) fn prompt_password(username: Option<impl AsRef<str>>) -> AnyResult<String> {
+pub(crate) fn prompt_password(username: Option<impl AsRef<str>>) -> Result<String, IamError> {
     let prompt = if let Some(username) = &username {
         format!("Password for {}: ", username.as_ref())
     } else {
         "Password: ".to_string()
     };
 
-    Ok(rpassword::prompt_password(&prompt)?)
+    rpassword::prompt_password(&prompt).map_err(|e| {
+        log::error!("Failed to prompt for password: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })
 }
 
 /// PostgreSQL class 28 error codes (Invalid Authorization Specification)

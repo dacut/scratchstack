@@ -11,7 +11,6 @@ use {
             },
         },
     },
-    anyhow::{Result as AnyResult, anyhow},
     chrono::{DateTime, Utc},
     indoc::indoc,
     scratchstack_arn::Arn,
@@ -20,8 +19,8 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
-            CreateUserInternalRequest, CreateUserResponse, ListUsersInternalRequest, ListUsersResponse,
-            UpdateUserInternalRequest,
+            CreateUserInternalRequest, CreateUserResponse, DeleteUserInternalRequest, ListUsersInternalRequest,
+            ListUsersResponse, UpdateUserInternalRequest,
         },
         types::{
             AttachedPermissionsBoundary, PermissionsBoundaryAttachmentType, Tag, User,
@@ -115,9 +114,9 @@ pub async fn create_user(
     };
 
     for tag in tags {
-        let key_cased = &tag.key;
+        let key_cased = tag.key.as_str();
         let key_lower = key_cased.to_ascii_lowercase();
-        let value = &tag.value;
+        let value = tag.value.as_str();
 
         if let Err(e) = query(indoc! {"
                 INSERT INTO iam.user_tags(user_id, key_lower, key_cased, value)
@@ -180,11 +179,55 @@ pub async fn create_user(
     Ok(CreateUserResponse::builder().user(Some(user)).build().unwrap())
 }
 
+impl RequestExecutor for DeleteUserInternalRequest {
+    type Response = ();
+    type Error = IamError;
+
+    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
+        delete_user(tx, &self.account_id, &self.user_name).await
+    }
+}
+
+/// Delete a user from the database.
+pub async fn delete_user(tx: &mut PgTransaction<'_>, account_id: &str, user_name: &str) -> Result<(), IamError> {
+    validate_account_id(account_id)?;
+    let account_id = match account_id {
+        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
+        account_id => account_id,
+    };
+    validate_user_name(user_name)?;
+
+    let result = match query(indoc! {"
+            DELETE FROM iam.users
+            WHERE account_id = $1 AND user_name_lower = $2
+        "})
+    .bind(account_id)
+    .bind(user_name.to_lowercase())
+    .execute(tx.as_mut())
+    .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            log::error!("Failed to delete user from database: {e}");
+            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+        }
+    };
+
+    if result.rows_affected() == 0 {
+        Err(NoSuchEntityException::builder()
+            .message(format!("The user with name {user_name} cannot be found."))
+            .build()
+            .into())
+    } else {
+        Ok(())
+    }
+}
+
 impl RequestExecutor for ListUsersInternalRequest {
     type Response = ListUsersResponse;
-    type Error = anyhow::Error; // FIXME
+    type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> AnyResult<Self::Response> {
+    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
         list_users(tx, &self.account_id, self.marker.as_deref(), self.max_items, self.path_prefix.as_deref()).await
     }
 }
@@ -213,7 +256,7 @@ pub async fn list_users(
     marker: Option<&str>,
     max_items: Option<i32>,
     path_prefix: Option<&str>,
-) -> AnyResult<ListUsersResponse> {
+) -> Result<ListUsersResponse, IamError> {
     validate_account_id(account_id)?;
     if let Some(path_prefix) = path_prefix {
         validate_path_prefix(path_prefix)?;
@@ -227,12 +270,15 @@ pub async fn list_users(
     let operation_metadata = ScratchstackOperationMetadata::new(IAM_API_VERSION, OP_LIST_USERS);
     let paginator =
         OperationPaginator::new_fixed_key(&service_metadata, &operation_metadata, PAGINATION_KEY_ID, *PAGINATION_KEY)
-            .map_err(|e| anyhow!("Failed to create paginator for ListUsers: {e}"))?;
+            .map_err(|e| {
+                log::error!("Failed to create paginator for ListUsers: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?;
 
     let mut sql = QueryBuilder::new(
         r#"
         SELECT user_id, user_name_lower, user_name_cased, path,
-        permissions_boundary_managed_policy_id, created_at 
+        permissions_boundary_managed_policy_id, created_at
         FROM iam.users
         WHERE account_id =
     "#,
@@ -245,10 +291,10 @@ pub async fn list_users(
     }
 
     if let Some(marker) = marker {
-        let info: ListUsersMarker = paginator
-            .decrypt_token(marker)
-            .await
-            .map_err(|e| anyhow!("Failed to decrypt pagination token for ListUsers: {e}"))?;
+        let info: ListUsersMarker = paginator.decrypt_token(marker).await.map_err(|e| {
+            log::error!("Failed to decrypt pagination token for ListUsers: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })?;
         sql.push(" AND user_name_lower >= ");
         sql.push_bind(info.next_user_name);
     }
@@ -257,20 +303,24 @@ pub async fn list_users(
     sql.push(" ORDER BY user_name_lower ASC LIMIT ");
     sql.push_bind(max_items as i32 + 1);
 
-    let rows = sql.build_query_as::<ListUsersRow>().fetch_all(tx.as_mut()).await?;
+    let rows = sql.build_query_as::<ListUsersRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
+        log::error!("Failed to fetch users from database: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
     let mut results = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
 
     for row in rows.into_iter() {
         if results.len() == max_items {
-            next_marker = Some(
-                paginator
-                    .encrypt_token(&ListUsersMarker {
-                        next_user_name: row.user_name_lower,
-                    })
-                    .await
-                    .map_err(|e| anyhow!("Failed to encrypt pagination token for ListUsers: {e}"))?,
-            );
+            next_marker = Some(paginator
+                .encrypt_token(&ListUsersMarker {
+                    next_user_name: row.user_name_lower,
+                })
+                .await
+                .map_err(|e| {
+                    log::error!("Failed to encrypt pagination token for ListUsers: {e}");
+                    IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                })?);
             break;
         }
 
@@ -279,7 +329,11 @@ pub async fn list_users(
             .service("iam")
             .account_id(account_id)
             .resource(format!("user/{}", row.user_name_cased))
-            .build()?;
+            .build()
+            .map_err(|e| {
+                log::error!("Failed to construct ARN for user: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?;
 
         let permissions_boundary = if let Some(pb_id) = row.permissions_boundary_managed_policy_id {
             // FIXME: The ARN here is incorrect; we need to translate the managed policy ID back into
@@ -292,7 +346,11 @@ pub async fn list_users(
                 AttachedPermissionsBoundary::builder()
                     .permissions_boundary_arn(Some(arn))
                     .permissions_boundary_type(Some(PermissionsBoundaryAttachmentType::Policy))
-                    .build()?,
+                    .build()
+                    .map_err(|e| {
+                        log::error!("Failed to construct permissions boundary for user: {e}");
+                        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                    })?,
             )
         } else {
             None
@@ -306,7 +364,11 @@ pub async fn list_users(
                 .user_id(format!("{}{}", IamResourceType::User.as_str(), row.user_id))
                 .user_name(row.user_name_cased)
                 .permissions_boundary(permissions_boundary)
-                .build()?,
+                .build()
+                .map_err(|e| {
+                    log::error!("Failed to construct user object: {e}");
+                    IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                })?,
         );
     }
 
@@ -316,14 +378,17 @@ pub async fn list_users(
         builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
     }
 
-    Ok(builder.build()?)
+    builder.build().map_err(|e| {
+        log::error!("Failed to build ListUsersResponse: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })
 }
 
 impl RequestExecutor for UpdateUserInternalRequest {
     type Response = ();
-    type Error = anyhow::Error;
+    type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> AnyResult<Self::Response> {
+    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
         update_user(tx, &self.account_id, &self.user_name, self.new_user_name.as_deref(), self.new_path.as_deref())
             .await
     }
@@ -336,7 +401,7 @@ pub async fn update_user(
     user_name: &str,
     new_user_name: Option<&str>,
     new_path: Option<&str>,
-) -> AnyResult<()> {
+) -> Result<(), IamError> {
     validate_account_id(account_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
@@ -356,7 +421,7 @@ pub async fn update_user(
         validate_path(new_path)?;
     }
 
-    let result = query(indoc! {"
+    let result = match query(indoc! {"
         UPDATE iam.users
         SET user_name_lower = COALESCE($3, user_name_lower),
             user_name_cased = COALESCE($4, user_name_cased),
@@ -369,7 +434,14 @@ pub async fn update_user(
     .bind(new_user_name_cased)
     .bind(new_path)
     .execute(tx.as_mut())
-    .await?;
+    .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            log::error!("Failed to update user in database: {e}");
+            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+        }
+    };
 
     if result.rows_affected() == 0 {
         Err(NoSuchEntityException::builder()
