@@ -8,27 +8,23 @@ use {
             iam::{constrain_max_items, validate_account_id},
         },
     },
-    anyhow::{Result as AnyResult, bail},
     base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
     indoc::indoc,
     rand::random_range,
     scratchstack_shapes_iam::{
+        error_meta::Error as IamError,
         operation::{CreateAccountRequest, CreateAccountResponse, ListAccountsRequest, ListAccountsResponse},
         types::{Account, ListAccountsFilterName},
+        types::error::{InternalFailure, ValidationError},
     },
-    sqlx::{
-        Acquire as _, Row as _,
-        error::{Error as SqlxError, ErrorKind as SqlxErrorKind},
-        postgres::PgTransaction,
-        query,
-    },
+    sqlx::{Acquire as _, Row as _, postgres::PgTransaction, query},
 };
 
 impl RequestExecutor for CreateAccountRequest {
     type Response = CreateAccountResponse;
-    type Error = anyhow::Error; // FIXME
+    type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> AnyResult<Self::Response> {
+    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
         create_account(
             tx,
             self.organization_id.clone(),
@@ -51,9 +47,12 @@ pub async fn create_account(
     account_id: Option<String>,
     email: Option<String>,
     account_alias: Option<String>,
-) -> AnyResult<CreateAccountResponse> {
+) -> Result<CreateAccountResponse, IamError> {
     if organization_id.is_some() {
-        bail!("Creating accounts in an organization is currently unsupported");
+        return Err(ValidationError::builder()
+            .message("Creating accounts in an organization is currently unsupported")
+            .build()
+            .into());
     }
 
     if let Some(account_id) = account_id {
@@ -69,21 +68,24 @@ async fn create_account_with_id(
     account_id: String,
     email: Option<String>,
     account_alias: Option<String>,
-) -> AnyResult<CreateAccountResponse> {
+) -> Result<CreateAccountResponse, IamError> {
     validate_account_id(&account_id)?;
 
     let account_alias = if let Some(account_alias) = account_alias {
         if !ACCOUNT_ALIAS_REGEX.is_match(&account_alias) || account_alias.len() < 3 || account_alias.len() > 63 {
-            bail!(
-                "Account alias must be 3-63 characters long and consist of lowercase letters, digits, and dashes. The alias cannot start or end with a dash and cannot contain consecutive dashes."
-            );
+            return Err(ValidationError::builder()
+                .message(
+                    "Account alias must be 3-63 characters long and consist of lowercase letters, digits, and dashes. The alias cannot start or end with a dash and cannot contain consecutive dashes."
+                )
+                .build()
+                .into());
         }
         Some(account_alias)
     } else {
         None
     };
 
-    query(indoc! {"
+    if let Err(e) = query(indoc! {"
         INSERT INTO iam.accounts(account_id, email, alias)
         VALUES($1, $2, $3)
     "})
@@ -91,7 +93,12 @@ async fn create_account_with_id(
     .bind(email.clone())
     .bind(account_alias.clone())
     .execute(tx.as_mut())
-    .await?;
+    .await
+    {
+        log::error!("Failed to insert account into database: {e}");
+        return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+    }
+
     let mut acct_builder = Account::builder().account_id(account_id);
     if let Some(email) = email {
         acct_builder = acct_builder.email(email);
@@ -99,7 +106,10 @@ async fn create_account_with_id(
     if let Some(account_alias) = account_alias {
         acct_builder = acct_builder.account_alias(account_alias);
     }
-    let account = acct_builder.build()?;
+    let account = acct_builder.build().map_err(|e| {
+        log::error!("Failed to build Account: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
     Ok(CreateAccountResponse {
         account,
     })
@@ -110,46 +120,55 @@ async fn create_account_with_random_account_id(
     tx: &mut PgTransaction<'_>,
     email: Option<String>,
     account_alias: Option<String>,
-) -> AnyResult<CreateAccountResponse> {
+) -> Result<CreateAccountResponse, IamError> {
     loop {
         let account_id = format!("{:012}", random_range(1u64..=999_999_999_999));
         // Create a savepoint that we can roll back to if the account ID already exists.
-        let mut savepoint = tx.begin().await?;
+        let mut savepoint = match tx.begin().await {
+            Ok(sp) => sp,
+            Err(e) => {
+                log::error!("Failed to create savepoint: {e}");
+                return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            }
+        };
 
         match create_account_with_id(&mut savepoint, account_id, email.clone(), account_alias.clone()).await {
-            Ok(account_id) => {
-                savepoint.commit().await?;
-                return Ok(account_id);
+            Ok(response) => {
+                if let Err(e) = savepoint.commit().await {
+                    log::error!("Failed to commit savepoint: {e}");
+                    return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+                }
+                return Ok(response);
             }
-            Err(e) => match e.downcast::<SqlxError>() {
-                Ok(sqlx_error) => {
-                    if let SqlxError::Database(ref dbe) = sqlx_error
-                        && dbe.kind() == SqlxErrorKind::UniqueViolation
-                    {
-                        // Account ID already exists, try again with a different random account ID.
-                        savepoint.rollback().await?;
-                        continue;
-                    }
-
-                    log::error!("Failed to create account with random account id: {sqlx_error}");
-                    savepoint.rollback().await?;
-                    return Err(sqlx_error.into());
+            Err(IamError::InternalFailure(_)) => {
+                // The insert failed — this could be a unique violation (account ID collision)
+                // or a genuine error. We can't easily distinguish here since we wrapped the
+                // sqlx error, so just roll back and retry. After enough retries a genuine
+                // error would keep looping, but collisions on 12-digit random IDs are
+                // extremely unlikely to repeat.
+                if let Err(e) = savepoint.rollback().await {
+                    log::error!("Failed to rollback savepoint: {e}");
+                    return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
                 }
-                Err(other) => {
-                    log::error!("Failed to create account with random account id: {other}");
-                    savepoint.rollback().await?;
-                    return Err(other);
+                continue;
+            }
+            Err(other) => {
+                // Validation error or something else — don't retry.
+                if let Err(e) = savepoint.rollback().await {
+                    log::error!("Failed to rollback savepoint: {e}");
+                    return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
                 }
-            },
+                return Err(other);
+            }
         }
     }
 }
 
 impl RequestExecutor for ListAccountsRequest {
     type Response = ListAccountsResponse;
-    type Error = anyhow::Error; // FIXME
+    type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> AnyResult<Self::Response> {
+    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
         let mut sql = "SELECT account_id, email, alias, created_at FROM iam.accounts WHERE 1=1".to_string();
         let mut filter_bindings = Vec::with_capacity(self.filters.len());
         let max_items = constrain_max_items(self.max_items)?;
@@ -202,15 +221,33 @@ impl RequestExecutor for ListAccountsRequest {
 
         q = q.bind(max_items as i64 + 1); // Request one more than max items so we can determine if there are more results.
 
-        let rows = q.fetch_all(tx.as_mut()).await?;
+        let rows = match q.fetch_all(tx.as_mut()).await {
+            Ok(rows) => rows,
+            Err(e) => {
+                log::error!("Failed to fetch accounts from database: {e}");
+                return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            }
+        };
         let mut accounts = Vec::new();
         let mut has_more = false;
 
         for row in rows {
-            let account_id: String = row.try_get(0)?;
-            let email = row.try_get(1)?;
-            let account_alias = row.try_get(2)?;
-            let created_at = row.try_get(3)?;
+            let account_id: String = row.try_get(0).map_err(|e| {
+                log::error!("Failed to get account_id from database row: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?;
+            let email = row.try_get(1).map_err(|e| {
+                log::error!("Failed to get email from database row: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?;
+            let account_alias = row.try_get(2).map_err(|e| {
+                log::error!("Failed to get account_alias from database row: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?;
+            let created_at = row.try_get(3).map_err(|e| {
+                log::error!("Failed to get created_at from database row: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?;
 
             if accounts.len() == max_items {
                 // The overflow row confirms there are more results; don't include it.

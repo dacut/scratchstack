@@ -1,13 +1,13 @@
 //! Scratchstack bootsrap account subcommands
 use {
-    crate::{Cli, Runnable},
-    anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail},
+    crate::{Cli, MSG_INTERNAL_FAILURE, Runnable, execute_in_transaction},
     clap::Parser,
     scratchstack_cli_utils::{ShorthandValue, parse_shorthand},
-    scratchstack_database::ops::RequestExecutor,
     scratchstack_shapes_iam::{
+        error_meta::Error as IamError,
         operation::{CreateAccountRequest, CreateAccountResponse, ListAccountsRequest, ListAccountsResponse},
         types::{ListAccountsFilter, ListAccountsFilterName},
+        types::error::{InternalFailure, ValidationError},
     },
     std::{collections::HashMap, ffi::OsString, str::FromStr as _},
 };
@@ -58,7 +58,7 @@ pub(crate) struct ListAccountsCommand {
 impl Runnable for CreateAccountCommand {
     type Result = CreateAccountResponse;
 
-    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<CreateAccountResponse>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<CreateAccountResponse, IamError>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -71,31 +71,18 @@ impl Runnable for CreateAccountCommand {
             builder = builder.account_id(account_id.clone());
         }
 
-        let request = builder.build()?;
-        request.run(args, vars).await
-    }
-}
-
-impl Runnable for CreateAccountRequest {
-    type Result = CreateAccountResponse;
-
-    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<Self::Result>
-    where
-        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
-    {
-        let conn = args.connect(vars).await?;
-        let mut tx = conn.begin().await?;
-        let response = self.execute(&mut tx).await?;
-        tx.commit().await?;
-
-        Ok(response)
+        let request = builder.build().map_err(|e| {
+            log::error!("Failed to build CreateAccountRequest: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })?;
+        execute_in_transaction(cli, vars, &request).await
     }
 }
 
 impl Runnable for ListAccountsCommand {
     type Result = ListAccountsResponse;
 
-    async fn run<I>(&self, args: &Cli, vars: I) -> AnyResult<ListAccountsResponse>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<ListAccountsResponse, IamError>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -103,13 +90,23 @@ impl Runnable for ListAccountsCommand {
         let mut filters = Vec::with_capacity(self.filters.len());
 
         for filter in &self.filters {
-            match parse_shorthand(filter)? {
+            let parsed = parse_shorthand(filter).map_err(|e| {
+                IamError::from(
+                    ValidationError::builder()
+                        .message(format!("Invalid filter format: {filter}: {e}"))
+                        .build(),
+                )
+            })?;
+            match parsed {
                 ShorthandValue::List(values) => {
                     for value in values {
                         let ShorthandValue::Map(value) = value else {
-                            bail!(
-                                "Invalid filter format: {filter}. Filters must be in the format 'key=value' or 'key=value1,value2,...'"
-                            );
+                            return Err(ValidationError::builder()
+                                .message(format!(
+                                    "Invalid filter format: {filter}. Filters must be in the format 'key=value' or 'key=value1,value2,...'"
+                                ))
+                                .build()
+                                .into());
                         };
                         filters = list_accounts_filter_from_shorthand(&value)?;
                     }
@@ -117,9 +114,14 @@ impl Runnable for ListAccountsCommand {
                 ShorthandValue::Map(value) => {
                     filters.extend(list_accounts_filter_from_shorthand(&value)?);
                 }
-                _ => bail!(
-                    "Invalid filter format: {filter}. Filters must be in the format 'key=value' or 'key=value1,value2,...'"
-                ),
+                _ => {
+                    return Err(ValidationError::builder()
+                        .message(format!(
+                            "Invalid filter format: {filter}. Filters must be in the format 'key=value' or 'key=value1,value2,...'"
+                        ))
+                        .build()
+                        .into());
+                }
             }
         }
 
@@ -131,15 +133,26 @@ impl Runnable for ListAccountsCommand {
             builder = builder.marker(marker.clone());
         }
 
-        let request = builder.build()?;
-        request.run(args, vars).await
+        let request = builder.build().map_err(|e| {
+            log::error!("Failed to build ListAccountsRequest: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })?;
+        execute_in_transaction(cli, vars, &request).await
     }
 }
 
-fn list_accounts_filter_from_shorthand(map: &HashMap<String, ShorthandValue>) -> AnyResult<Vec<ListAccountsFilter>> {
+fn list_accounts_filter_from_shorthand(
+    map: &HashMap<String, ShorthandValue>,
+) -> Result<Vec<ListAccountsFilter>, IamError> {
     let mut result = Vec::new();
     for (name, values) in map {
-        let name = ListAccountsFilterName::from_str(name).map_err(|e| anyhow!("Invalid filter key: {name}: {e}"))?;
+        let name = ListAccountsFilterName::from_str(name).map_err(|e| {
+            IamError::from(
+                ValidationError::builder()
+                    .message(format!("Invalid filter key: {name}: {e}"))
+                    .build(),
+            )
+        })?;
         let values = match values {
             ShorthandValue::Scalar(s) => vec![s.clone()],
             ShorthandValue::List(l) => l
@@ -148,11 +161,24 @@ fn list_accounts_filter_from_shorthand(map: &HashMap<String, ShorthandValue>) ->
                     if let ShorthandValue::Scalar(s) = v {
                         Ok(s.clone())
                     } else {
-                        bail!("Invalid filter value: {v:?}. Filter values must be strings or lists of strings")
+                        Err(IamError::from(
+                            ValidationError::builder()
+                                .message(format!(
+                                    "Invalid filter value: {v:?}. Filter values must be strings or lists of strings"
+                                ))
+                                .build(),
+                        ))
                     }
                 })
-                .collect::<AnyResult<Vec<String>>>()?,
-            _ => bail!("Invalid filter value: {values:?}. Filter values must be strings or lists of strings"),
+                .collect::<Result<Vec<String>, IamError>>()?,
+            _ => {
+                return Err(ValidationError::builder()
+                    .message(format!(
+                        "Invalid filter value: {values:?}. Filter values must be strings or lists of strings"
+                    ))
+                    .build()
+                    .into());
+            }
         };
         result.push(ListAccountsFilter {
             name,
@@ -161,20 +187,4 @@ fn list_accounts_filter_from_shorthand(map: &HashMap<String, ShorthandValue>) ->
     }
 
     Ok(result)
-}
-
-impl Runnable for ListAccountsRequest {
-    type Result = ListAccountsResponse;
-
-    async fn run<I>(&self, args: &Cli, vars: I) -> Result<Self::Result, AnyError>
-    where
-        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
-    {
-        let conn = args.connect(vars).await?;
-        let mut tx = conn.begin().await?;
-        let response = self.execute(&mut tx).await?;
-        tx.commit().await?;
-
-        Ok(response)
-    }
 }
