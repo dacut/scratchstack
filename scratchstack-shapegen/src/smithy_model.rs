@@ -192,7 +192,7 @@ impl SmithyModel {
                 writeln!(w.error_meta, "    }}")?;
                 writeln!(w.error_meta, "}}")?;
                 writeln!(w.error_meta)?;
-                
+
                 writeln!(
                     w.error_meta,
                     "impl ::std::convert::From<::std::boxed::Box<crate::types::error::{}>> for Error {{",

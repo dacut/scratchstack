@@ -271,9 +271,9 @@ pub async fn list_users(
     let paginator =
         OperationPaginator::new_fixed_key(&service_metadata, &operation_metadata, PAGINATION_KEY_ID, *PAGINATION_KEY)
             .map_err(|e| {
-                log::error!("Failed to create paginator for ListUsers: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?;
+            log::error!("Failed to create paginator for ListUsers: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })?;
 
     let mut sql = QueryBuilder::new(
         r#"
@@ -312,15 +312,17 @@ pub async fn list_users(
 
     for row in rows.into_iter() {
         if results.len() == max_items {
-            next_marker = Some(paginator
-                .encrypt_token(&ListUsersMarker {
-                    next_user_name: row.user_name_lower,
-                })
-                .await
-                .map_err(|e| {
-                    log::error!("Failed to encrypt pagination token for ListUsers: {e}");
-                    IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-                })?);
+            next_marker = Some(
+                paginator
+                    .encrypt_token(&ListUsersMarker {
+                        next_user_name: row.user_name_lower,
+                    })
+                    .await
+                    .map_err(|e| {
+                        log::error!("Failed to encrypt pagination token for ListUsers: {e}");
+                        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                    })?,
+            );
             break;
         }
 
