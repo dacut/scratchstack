@@ -64,7 +64,7 @@ postgresql_commands = "0.20"
 postgresql_embedded = { version = "0.20", default-features = false }
 pretty_assertions = "1.4"
 qualifier_attr = "0.2.2"
-quick-xml = "0.39"
+quick-xml = "0.40"
 rand = "0.10"
 regex = "1.11"
 rpassword = "7.4"
