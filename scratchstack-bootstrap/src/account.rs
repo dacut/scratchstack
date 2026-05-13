@@ -6,8 +6,10 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{CreateAccountRequest, CreateAccountResponse, ListAccountsRequest, ListAccountsResponse},
-        types::{ListAccountsFilter, ListAccountsFilterName},
-        types::error::{InternalFailure, ValidationError},
+        types::{
+            ListAccountsFilter, ListAccountsFilterName,
+            error::{InternalFailure, ValidationError},
+        },
     },
     std::{collections::HashMap, ffi::OsString, str::FromStr as _},
 };
@@ -92,9 +94,7 @@ impl Runnable for ListAccountsCommand {
         for filter in &self.filters {
             let parsed = parse_shorthand(filter).map_err(|e| {
                 IamError::from(
-                    ValidationError::builder()
-                        .message(format!("Invalid filter format: {filter}: {e}"))
-                        .build(),
+                    ValidationError::builder().message(format!("Invalid filter format: {filter}: {e}")).build(),
                 )
             })?;
             match parsed {
@@ -147,11 +147,7 @@ fn list_accounts_filter_from_shorthand(
     let mut result = Vec::new();
     for (name, values) in map {
         let name = ListAccountsFilterName::from_str(name).map_err(|e| {
-            IamError::from(
-                ValidationError::builder()
-                    .message(format!("Invalid filter key: {name}: {e}"))
-                    .build(),
-            )
+            IamError::from(ValidationError::builder().message(format!("Invalid filter key: {name}: {e}")).build())
         })?;
         let values = match values {
             ShorthandValue::Scalar(s) => vec![s.clone()],

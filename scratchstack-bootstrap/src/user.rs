@@ -9,8 +9,10 @@ use {
             CreateUserInternalRequest, CreateUserResponse, DeleteUserInternalRequest, ListUsersInternalRequest,
             ListUsersResponse, UpdateUserInternalRequest,
         },
-        types::Tag,
-        types::error::{InternalFailure, ValidationError},
+        types::{
+            Tag,
+            error::{InternalFailure, ValidationError},
+        },
     },
     std::{collections::HashMap, ffi::OsString},
 };
@@ -112,11 +114,7 @@ impl Runnable for CreateUserInternalCommand {
 
         for tag in &self.tags {
             let parsed = parse_shorthand(tag).map_err(|e| {
-                IamError::from(
-                    ValidationError::builder()
-                        .message(format!("Invalid tag format: {tag}: {e}"))
-                        .build(),
-                )
+                IamError::from(ValidationError::builder().message(format!("Invalid tag format: {tag}: {e}")).build())
             })?;
             match parsed {
                 ShorthandValue::List(values) => {

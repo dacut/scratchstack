@@ -24,12 +24,14 @@ use {
     crate::{
         account::{CreateAccountCommand, ListAccountsCommand},
         partition::{GetCurrentPartitionCommand, SetCurrentPartitionCommand},
-        user::{CreateUserInternalCommand, DeleteUserInternalCommand, ListUsersInternalCommand, UpdateUserInternalCommand},
+        user::{
+            CreateUserInternalCommand, DeleteUserInternalCommand, ListUsersInternalCommand, UpdateUserInternalCommand,
+        },
     },
     aws_smithy_types::error::metadata::ProvideErrorMetadata,
     clap::{Parser, Subcommand},
-    scratchstack_shapes_iam::{error_meta::Error as IamError, types::error::InternalFailure},
     scratchstack_database::ops::RequestExecutor,
+    scratchstack_shapes_iam::{error_meta::Error as IamError, types::error::InternalFailure},
     sqlx::{
         Error as SqlxError,
         postgres::{PgConnectOptions, PgPool, PgPoolOptions},

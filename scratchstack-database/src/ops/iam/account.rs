@@ -14,8 +14,10 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{CreateAccountRequest, CreateAccountResponse, ListAccountsRequest, ListAccountsResponse},
-        types::{Account, ListAccountsFilterName},
-        types::error::{InternalFailure, ValidationError},
+        types::{
+            Account, ListAccountsFilterName,
+            error::{InternalFailure, ValidationError},
+        },
     },
     sqlx::{Acquire as _, Row as _, postgres::PgTransaction, query},
 };
