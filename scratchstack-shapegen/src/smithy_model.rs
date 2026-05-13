@@ -87,7 +87,7 @@ impl SmithyModel {
                 s.base.traits.write_docs(&mut w.error_meta, "    ")?;
                 writeln!(
                     w.error_meta,
-                    "    {}(crate::types::error::{}),",
+                    "    {}(::std::boxed::Box<crate::types::error::{}>),",
                     s.base.rust_typename(),
                     s.base.rust_typename()
                 )?;
@@ -96,7 +96,7 @@ impl SmithyModel {
 
         writeln!(w.error_meta, "    /// An unexpected error occurred")?;
         writeln!(w.error_meta, "    #[allow(deprecated)]")?;
-        writeln!(w.error_meta, "    Unhandled(crate::types::error::sealed_unhandled::Unhandled)")?;
+        writeln!(w.error_meta, "    Unhandled(::std::boxed::Box<crate::types::error::sealed_unhandled::Unhandled>)")?;
         writeln!(w.error_meta, "}}")?;
         writeln!(w.error_meta)?;
 
@@ -188,9 +188,25 @@ impl SmithyModel {
                     "    fn from(inner: crate::types::error::{}) -> Self {{",
                     s.base.rust_typename()
                 )?;
+                writeln!(w.error_meta, "        Self::{}(::std::boxed::Box::new(inner))", s.base.rust_typename())?;
+                writeln!(w.error_meta, "    }}")?;
+                writeln!(w.error_meta, "}}")?;
+                writeln!(w.error_meta)?;
+                
+                writeln!(
+                    w.error_meta,
+                    "impl ::std::convert::From<::std::boxed::Box<crate::types::error::{}>> for Error {{",
+                    s.base.rust_typename()
+                )?;
+                writeln!(
+                    w.error_meta,
+                    "    fn from(inner: ::std::boxed::Box<crate::types::error::{}>) -> Self {{",
+                    s.base.rust_typename()
+                )?;
                 writeln!(w.error_meta, "        Self::{}(inner)", s.base.rust_typename())?;
                 writeln!(w.error_meta, "    }}")?;
                 writeln!(w.error_meta, "}}")?;
+                writeln!(w.error_meta)?;
             }
         }
 

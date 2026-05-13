@@ -29,6 +29,7 @@ use {
     aws_smithy_types::error::metadata::ProvideErrorMetadata,
     clap::{Parser, Subcommand},
     scratchstack_shapes_iam::{error_meta::Error as IamError, types::error::InternalFailure},
+    scratchstack_database::ops::RequestExecutor,
     sqlx::{
         Error as SqlxError,
         postgres::{PgConnectOptions, PgPool, PgPoolOptions},
@@ -255,7 +256,7 @@ pub(crate) async fn execute_in_transaction<R>(
     request: &R,
 ) -> Result<R::Response, IamError>
 where
-    R: scratchstack_database::ops::RequestExecutor<Error = IamError> + Sync,
+    R: RequestExecutor<Error = IamError> + Sync,
 {
     let conn = cli.connect(vars).await?;
     let mut tx = conn.begin().await.map_err(|e| {

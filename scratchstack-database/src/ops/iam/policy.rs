@@ -24,7 +24,7 @@ pub async fn get_permissions_boundary_id(
             log::info!("Failed to parse permissions boundary ARN: {e}");
             let message = "Invalid permissions boundary ARN".to_string();
 
-            return Err(IamError::ValidationError(ValidationError::builder().message(message).build()));
+            return Err(ValidationError::builder().message(message).build().into());
         }
     };
 
