@@ -89,13 +89,13 @@ pub(crate) struct ListUserTagsInternalCommand {
     #[clap(long)]
     pub user_name: String,
 
-    /// The maximum number of users to include in the response.
+    /// The maximum number of tags to include in the response.
     #[clap(long)]
     pub max_items: Option<i32>,
 
-    /// A marker for paginating the list of users. If the response from a previous ListUsers
+    /// A marker for paginating the list of tags. If the response from a previous ListUserTags
     /// request was truncated, the response will include a marker that you can use in a subsequent
-    /// ListUsers request to retrieve the next set of users.
+    /// ListUserTags request to retrieve the next set of tags.
     #[clap(long)]
     pub marker: Option<String>,
 }
