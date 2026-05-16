@@ -430,6 +430,27 @@ pub async fn list_user_tags(
     let max_items = constrain_max_items(max_items)?;
     let partition = get_current_partition_or_fail(tx).await?;
 
+    let user_exists = query(indoc! {"
+        SELECT 1
+        FROM iam.users
+        WHERE account_id = $1 AND user_name_lower = $2
+        LIMIT 1
+    "})
+    .bind(account_id)
+    .bind(&user_name_lower)
+    .fetch_optional(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to check if user exists in database: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
+    if user_exists.is_none() {
+        return Err(NoSuchEntityException::builder()
+            .message(format!("The user with name {user_name} cannot be found."))
+            .build()
+            .into());
+    }
+
     // Create the paginator for this operation.
     let service_metadata = ScratchstackServiceMetadata::new(partition.clone(), "", SERVICE_ID_IAM);
     let operation_metadata = ScratchstackOperationMetadata::new(IAM_API_VERSION, OP_LIST_USER_TAGS);
