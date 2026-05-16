@@ -18,9 +18,10 @@ use {
     scratchstack_database::{Loadable, model::iam, ops::RequestExecutor, utils::TempDatabase},
     scratchstack_shapes_iam::{
         operation::{
-            CreateAccountRequest, CreateUserInternalRequest, GetCurrentPartitionRequest, GetUserInternalRequest,
-            ListAccountsRequest, ListUserTagsInternalRequest, SetCurrentPartitionRequest, TagUserInternalRequest,
-            UntagUserInternalRequest,
+            CreateAccountRequest, CreateGroupInternalRequest, CreateUserInternalRequest, DeleteGroupInternalRequest,
+            GetCurrentPartitionRequest, GetGroupInternalRequest, GetUserInternalRequest, ListAccountsRequest,
+            ListGroupsInternalRequest, ListUserTagsInternalRequest, SetCurrentPartitionRequest, TagUserInternalRequest,
+            UntagUserInternalRequest, UpdateGroupInternalRequest,
         },
         types::{ListAccountsFilter, ListAccountsFilterName, Tag},
     },
@@ -100,6 +101,30 @@ async fn test_database() {
     test_get_user_with_tags(&pool).await;
     test_get_user_nonexistent(&pool).await;
     test_get_user_no_user_name(&pool).await;
+
+    // -- CreateGroupInternalRequest -------------------------------------------
+    test_create_group_simple(&pool).await;
+    test_create_group_with_path(&pool).await;
+    test_create_group_duplicate_name(&pool).await;
+    test_create_group_nonexistent_account(&pool).await;
+
+    // -- GetGroupInternalRequest ----------------------------------------------
+    test_get_group_simple(&pool).await;
+    test_get_group_with_path(&pool).await;
+    test_get_group_nonexistent(&pool).await;
+
+    // -- ListGroupsInternalRequest --------------------------------------------
+    test_list_groups(&pool).await;
+    test_list_groups_with_path_prefix(&pool).await;
+
+    // -- UpdateGroupInternalRequest -------------------------------------------
+    test_update_group_rename(&pool).await;
+    test_update_group_change_path(&pool).await;
+    test_update_group_nonexistent(&pool).await;
+
+    // -- DeleteGroupInternalRequest -------------------------------------------
+    test_delete_group(&pool).await;
+    test_delete_group_nonexistent(&pool).await;
 
     iam::MIGRATOR.undo(&mut *c, 0).await.expect("Failed to undo database migrations");
 }
@@ -1008,6 +1033,282 @@ async fn test_get_user_no_user_name(pool: &sqlx::PgPool) {
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Getting a user without a user name must fail");
+}
+
+// -- Group tests -------------------------------------------------------------
+
+/// Create a group with only a name and account — all other fields take defaults.
+async fn test_create_group_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = CreateGroupInternalRequest::builder()
+        .group_name("Admins".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreateGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create group");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    assert_eq!(resp.group.group_name, "Admins");
+    assert_eq!(resp.group.path, "/");
+    assert!(resp.group.group_id.starts_with("AGPA"), "Group ID must start with AGPA prefix");
+    assert!(resp.group.arn.ends_with(":group/Admins"), "ARN must end with :group/Admins, got {}", resp.group.arn);
+}
+
+/// Create a group at a non-default path.
+async fn test_create_group_with_path(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = CreateGroupInternalRequest::builder()
+        .group_name("Developers".to_string())
+        .path(Some("/engineering/".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreateGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create group with path");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    assert_eq!(resp.group.group_name, "Developers");
+    assert_eq!(resp.group.path, "/engineering/");
+    assert!(
+        resp.group.arn.ends_with(":group/engineering/Developers"),
+        "ARN must end with :group/engineering/Developers, got {}",
+        resp.group.arn
+    );
+}
+
+/// Attempting to create a group whose (lowercased) name already exists in the account must fail.
+async fn test_create_group_duplicate_name(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = CreateGroupInternalRequest::builder()
+        .group_name("Admins".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreateGroupInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Creating a duplicate group name must fail");
+}
+
+/// Creating a group in an account that does not exist must fail.
+async fn test_create_group_nonexistent_account(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = CreateGroupInternalRequest::builder()
+        .group_name("TestGroup".to_string())
+        .account_id("999999999999".to_string())
+        .build()
+        .expect("Failed to build CreateGroupInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Creating a group in a nonexistent account must fail");
+}
+
+/// Get a group that exists with default path.
+async fn test_get_group_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetGroupInternalRequest::builder()
+        .group_name("Admins".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build GetGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get group");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.group.group_name, "Admins");
+    assert_eq!(resp.group.path, "/");
+    assert!(resp.group.group_id.starts_with("AGPA"), "Group ID must start with AGPA prefix");
+    assert!(resp.group.arn.ends_with(":group/Admins"), "ARN must end with :group/Admins, got {}", resp.group.arn);
+}
+
+/// Get a group at a non-default path.
+async fn test_get_group_with_path(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetGroupInternalRequest::builder()
+        .group_name("Developers".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build GetGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get group");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.group.group_name, "Developers");
+    assert_eq!(resp.group.path, "/engineering/");
+    assert!(
+        resp.group.arn.ends_with(":group/engineering/Developers"),
+        "ARN must end with :group/engineering/Developers, got {}",
+        resp.group.arn
+    );
+}
+
+/// Getting a nonexistent group must fail.
+async fn test_get_group_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = GetGroupInternalRequest::builder()
+        .group_name("NonexistentGroup".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build GetGroupInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Getting a nonexistent group must fail");
+}
+
+/// List groups in an account.
+async fn test_list_groups(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListGroupsInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListGroupsInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list groups");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert!(resp.groups.len() >= 2, "Expected at least 2 groups, got {}", resp.groups.len());
+    // Groups are sorted by name (lowercased).
+    let names: Vec<&str> = resp.groups.iter().map(|g| g.group_name.as_str()).collect();
+    assert!(names.contains(&"Admins"), "Expected Admins in group list");
+    assert!(names.contains(&"Developers"), "Expected Developers in group list");
+}
+
+/// List groups with a path prefix filter.
+async fn test_list_groups_with_path_prefix(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListGroupsInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .path_prefix(Some("/engineering/".to_string()))
+        .build()
+        .expect("Failed to build ListGroupsInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list groups with path prefix");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.groups.len(), 1, "Expected exactly 1 group under /engineering/");
+    assert_eq!(resp.groups[0].group_name, "Developers");
+}
+
+/// Rename a group.
+async fn test_update_group_rename(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UpdateGroupInternalRequest::builder()
+        .group_name("Admins".to_string())
+        .new_group_name(Some("Administrators".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build UpdateGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to rename group");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Verify the rename took effect.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetGroupInternalRequest::builder()
+        .group_name("Administrators".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build GetGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get renamed group");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.group.group_name, "Administrators");
+}
+
+/// Change the path of a group.
+async fn test_update_group_change_path(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UpdateGroupInternalRequest::builder()
+        .group_name("Administrators".to_string())
+        .new_path(Some("/admin/".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build UpdateGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to update group path");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Verify the path change took effect.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetGroupInternalRequest::builder()
+        .group_name("Administrators".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build GetGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get group after path change");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.group.path, "/admin/");
+}
+
+/// Updating a nonexistent group must fail.
+async fn test_update_group_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = UpdateGroupInternalRequest::builder()
+        .group_name("NonexistentGroup".to_string())
+        .new_group_name(Some("NewName".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build UpdateGroupInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Updating a nonexistent group must fail");
+}
+
+/// Delete a group that exists.
+async fn test_delete_group(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeleteGroupInternalRequest::builder()
+        .group_name("Developers".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete group");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Verify the group is gone.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = GetGroupInternalRequest::builder()
+        .group_name("Developers".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build GetGroupInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Getting a deleted group must fail");
+}
+
+/// Deleting a nonexistent group must fail.
+async fn test_delete_group_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = DeleteGroupInternalRequest::builder()
+        .group_name("NonexistentGroup".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteGroupInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Deleting a nonexistent group must fail");
 }
 
 const TEST_DATA: &str = include_str!("iam_database.json");

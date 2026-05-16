@@ -13,6 +13,7 @@
 #![cfg_attr(doc, feature(doc_cfg))]
 
 mod account;
+mod group;
 mod migrate;
 mod partition;
 mod user;
@@ -23,6 +24,10 @@ mod tests;
 use {
     crate::{
         account::{CreateAccountCommand, ListAccountsCommand},
+        group::{
+            CreateGroupInternalCommand, DeleteGroupInternalCommand, GetGroupInternalCommand, ListGroupsInternalCommand,
+            UpdateGroupInternalCommand,
+        },
         partition::{GetCurrentPartitionCommand, SetCurrentPartitionCommand},
         user::{
             CreateUserInternalCommand, DeleteUserInternalCommand, GetUserInternalCommand, ListUserTagsInternalCommand,
@@ -96,9 +101,17 @@ enum Commands {
     #[command(name = "create-account")]
     CreateAccount(CreateAccountCommand),
 
+    /// Create an IAM group in an account.
+    #[command(name = "create-group")]
+    CreateGroup(CreateGroupInternalCommand),
+
     /// Create an IAM user in an account.
     #[command(name = "create-user")]
     CreateUser(CreateUserInternalCommand),
+
+    /// Delete an IAM group from an account.
+    #[command(name = "delete-group")]
+    DeleteGroup(DeleteGroupInternalCommand),
 
     /// Delete an IAM user from an account.
     #[command(name = "delete-user")]
@@ -108,6 +121,10 @@ enum Commands {
     #[command(name = "get-current-partition")]
     GetCurrentPartition(GetCurrentPartitionCommand),
 
+    /// Get information about an IAM group in an account.
+    #[command(name = "get-group")]
+    GetGroup(GetGroupInternalCommand),
+
     /// Get information about an IAM user in an account.
     #[command(name = "get-user")]
     GetUser(GetUserInternalCommand),
@@ -115,6 +132,10 @@ enum Commands {
     /// List IAM accounts.
     #[command(name = "list-accounts")]
     ListAccounts(ListAccountsCommand),
+
+    /// List IAM groups in an account.
+    #[command(name = "list-groups")]
+    ListGroups(ListGroupsInternalCommand),
 
     /// List IAM users in an account.
     #[command(name = "list-users")]
@@ -139,6 +160,10 @@ enum Commands {
     #[command(name = "tag-user")]
     TagUser(TagUserInternalCommand),
 
+    /// Update an IAM group in an account.
+    #[command(name = "update-group")]
+    UpdateGroup(UpdateGroupInternalCommand),
+
     /// Update an IAM user in an account.
     #[command(name = "update-user")]
     UpdateUser(UpdateUserInternalCommand),
@@ -153,17 +178,22 @@ impl Commands {
     fn operation_name(&self) -> &'static str {
         match self {
             Commands::CreateAccount(_) => "CreateAccount",
+            Commands::CreateGroup(_) => "CreateGroup",
             Commands::CreateUser(_) => "CreateUser",
+            Commands::DeleteGroup(_) => "DeleteGroup",
             Commands::DeleteUser(_) => "DeleteUser",
             Commands::GetCurrentPartition(_) => "GetCurrentPartition",
+            Commands::GetGroup(_) => "GetGroup",
             Commands::GetUser(_) => "GetUser",
             Commands::ListAccounts(_) => "ListAccounts",
+            Commands::ListGroups(_) => "ListGroups",
             Commands::ListUsers(_) => "ListUsers",
             Commands::ListUserTags(_) => "ListUserTags",
             Commands::Migrate(_) => "Migrate",
             Commands::SetCurrentPartition(_) => "SetCurrentPartition",
             Commands::TagUser(_) => "TagUser",
             Commands::UntagUser(_) => "UntagUser",
+            Commands::UpdateGroup(_) => "UpdateGroup",
             Commands::UpdateUser(_) => "UpdateUser",
         }
     }
@@ -210,6 +240,13 @@ where
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
+        Commands::CreateGroup(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
         Commands::CreateUser(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
@@ -217,11 +254,22 @@ where
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
+        Commands::DeleteGroup(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
         Commands::DeleteUser(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
         }
         Commands::GetCurrentPartition(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::GetGroup(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
@@ -236,6 +284,13 @@ where
             })?
         }
         Commands::ListAccounts(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::ListGroups(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
@@ -268,6 +323,10 @@ where
             })?
         }
         Commands::TagUser(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::UpdateGroup(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
         }

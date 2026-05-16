@@ -21,6 +21,7 @@ async fn test_ssdb_ops() {
     test_partition(&database).await;
     test_accounts(&database).await;
     test_users(&database).await;
+    test_groups(&database).await;
 }
 
 async fn test_migrate_database(database: &TempDatabase) {
@@ -494,6 +495,276 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("Deleting a user that never existed should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+    assert!(
+        err.message().unwrap_or_default().contains("cannot be found"),
+        "Expected 'cannot be found' in error message, got: {err}"
+    );
+}
+
+async fn test_groups(database: &TempDatabase) {
+    let port = database.port_str();
+
+    // Create a group and verify the output.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "Admins",
+        ])
+        .await
+        .expect("Failed to run create-group for 555566667777/Admins");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse create-group output as JSON");
+    let group = json.get("Group").expect("Group should be present");
+    let path = group.get("Path").expect("Path should be present").as_str().expect("Path should be a string");
+    assert_eq!(path, "/");
+    let group_name =
+        group.get("GroupName").expect("GroupName should be present").as_str().expect("GroupName should be a string");
+    assert_eq!(group_name, "Admins");
+    let arn = group.get("Arn").expect("Arn should be present").as_str().expect("Arn should be a string");
+    assert_eq!(arn, "arn:test-partition:iam::555566667777:group/Admins");
+    let group_id =
+        group.get("GroupId").expect("GroupId should be present").as_str().expect("GroupId should be a string");
+    assert!(group_id.starts_with("AGPA"), "GroupId should start with AGPA, got {group_id}");
+
+    // Create a group with a custom path.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "Developers",
+            "--path",
+            "/engineering/",
+        ])
+        .await
+        .expect("Failed to run create-group for 555566667777/Developers");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse create-group output as JSON");
+    let group = json.get("Group").expect("Group should be present");
+    let path = group.get("Path").expect("Path should be present").as_str().expect("Path should be a string");
+    assert_eq!(path, "/engineering/");
+    let arn = group.get("Arn").expect("Arn should be present").as_str().expect("Arn should be a string");
+    assert_eq!(arn, "arn:test-partition:iam::555566667777:group/engineering/Developers");
+
+    // Creating a duplicate group should fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "Admins",
+        ])
+        .await
+        .expect_err("Creating a duplicate group should fail");
+    assert!(err.code().is_some(), "Expected an error code, got: {err}");
+
+    // Get the group and verify the output.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "Admins",
+        ])
+        .await
+        .expect("Failed to run get-group for 555566667777/Admins");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse get-group output as JSON");
+    let group = json.get("Group").expect("Group should be present");
+    let group_name =
+        group.get("GroupName").expect("GroupName should be present").as_str().expect("GroupName should be a string");
+    assert_eq!(group_name, "Admins");
+    let path = group.get("Path").expect("Path should be present").as_str().expect("Path should be a string");
+    assert_eq!(path, "/");
+    let group_id =
+        group.get("GroupId").expect("GroupId should be present").as_str().expect("GroupId should be a string");
+    assert!(group_id.starts_with("AGPA"), "GroupId should start with AGPA, got {group_id}");
+
+    // Getting a nonexistent group should fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "NoSuchGroup",
+        ])
+        .await
+        .expect_err("Getting a nonexistent group should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+
+    // List groups and verify both are present.
+    let result = database
+        .run(["ssbs", "--port", &port, "--username", "scratchstack", "list-groups", "--account-id", "555566667777"])
+        .await
+        .expect("Failed to run list-groups for 555566667777");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-groups output as JSON");
+    let groups = json.get("Groups").expect("Groups should be present").as_array().expect("Groups should be an array");
+    assert!(groups.len() >= 2, "Expected at least 2 groups, got {}", groups.len());
+    let names: Vec<&str> = groups.iter().map(|g| g.get("GroupName").unwrap().as_str().unwrap()).collect();
+    assert!(names.contains(&"Admins"), "Expected Admins in group list");
+    assert!(names.contains(&"Developers"), "Expected Developers in group list");
+
+    // List groups with path prefix filter.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-groups",
+            "--account-id",
+            "555566667777",
+            "--path-prefix",
+            "/engineering/",
+        ])
+        .await
+        .expect("Failed to run list-groups with path prefix");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-groups output as JSON");
+    let groups = json.get("Groups").expect("Groups should be present").as_array().expect("Groups should be an array");
+    assert_eq!(groups.len(), 1, "Expected exactly 1 group under /engineering/");
+    assert_eq!(groups[0].get("GroupName").unwrap().as_str().unwrap(), "Developers");
+
+    // Update/rename a group.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "Admins",
+            "--new-group-name",
+            "Administrators",
+        ])
+        .await
+        .expect("Failed to run update-group to rename Admins to Administrators");
+
+    // Verify the rename took effect.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "Administrators",
+        ])
+        .await
+        .expect("Failed to get renamed group Administrators");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse get-group output as JSON");
+    let group = json.get("Group").expect("Group should be present");
+    assert_eq!(group.get("GroupName").unwrap().as_str().unwrap(), "Administrators");
+
+    // The old name should no longer exist.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "Admins",
+        ])
+        .await
+        .expect_err("Old group name should no longer exist after rename");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+
+    // Update a nonexistent group should fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "NoSuchGroup",
+            "--new-group-name",
+            "Whatever",
+        ])
+        .await
+        .expect_err("Updating a nonexistent group should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+
+    // Delete a group.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "Developers",
+        ])
+        .await
+        .expect("Failed to run delete-group for 555566667777/Developers");
+
+    // Deleting the same group again should fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "Developers",
+        ])
+        .await
+        .expect_err("Deleting a non-existent group should fail");
     assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
     assert!(
         err.message().unwrap_or_default().contains("cannot be found"),
