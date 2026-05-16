@@ -112,9 +112,13 @@ pub(crate) struct TagUserInternalCommand {
     #[clap(long)]
     pub user_name: String,
 
-    /// A list of tags to associate with the user. Each tag is a key-value pair separated by an
-    /// equals sign (`=`), and multiple tags are separated by commas (`,`). For example:
-    /// `Key1=Value1,Key2=Value2`.
+    /// A list of tags to associate with the user. Each tag must use AWS CLI-style shorthand,
+    /// for example: `Key=Environment,Value=Production`.
+    /// Multiple tags may be passed as multiple `--tags` arguments and/or as a bracketed list,
+    /// for example:
+    /// `--tags Key=Environment,Value=Production --tags Key=Team,Value=Platform`
+    /// or
+    /// `--tags "[{Key=Environment,Value=Production},{Key=Team,Value=Platform}]"`.
     #[clap(long, num_args = 1..)]
     pub tags: Vec<String>,
 }
