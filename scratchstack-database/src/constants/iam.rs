@@ -4,6 +4,9 @@ use {regex::Regex, scratchstack_pagination::PAGINATION_KEY_SIZE, std::sync::Lazy
 
 // True constants
 
+/// The resource prefix for IAM groups in an ARN.
+pub(crate) const ARN_RESOURCE_PREFIX_GROUP: &str = "group/";
+
 /// The resource prefix for IAM policies in an ARN.
 pub(crate) const ARN_RESOURCE_PREFIX_POLICY: &str = "policy/";
 
@@ -24,6 +27,9 @@ pub const MSG_ACCESS_KEY_PROVIDED_DOES_NOT_EXIST: &str = "The AWS access key pro
 
 /// Error message: `"Internal failure"`.
 pub(crate) const MSG_INTERNAL_FAILURE: &str = "Internal failure";
+
+/// Operation name for ListGroups
+pub(crate) const OP_LIST_GROUPS: &str = "ListGroups";
 
 /// Operation name for ListUsers
 pub(crate) const OP_LIST_USERS: &str = "ListUsers";
@@ -57,6 +63,9 @@ pub static ACCOUNT_ALIAS_REGEX: LazyLock<Regex> =
 /// Regular expression for partition names.
 pub static PARTITION_NAME_REGEX: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"^[a-z][-a-z0-9]+[a-z0-9]$").unwrap());
+
+/// Regular expression for group names.
+pub static GROUP_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\w+=,.@-]+").unwrap());
 
 /// Regular expression for paths.
 pub static PATH_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(/|/[\x21-\x7e]+/)$").unwrap());

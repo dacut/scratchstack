@@ -7,11 +7,12 @@
 use {crate::constants::iam::*, scratchstack_shapes_iam::types::error::ValidationError};
 
 mod account;
+mod group;
 mod partition;
 mod policy;
 mod user;
 
-pub use {partition::*, policy::*, user::*};
+pub use {account::*, group::*, partition::*, policy::*, user::*};
 
 /// Validate that the account id is valid.
 ///
@@ -20,6 +21,17 @@ pub fn validate_account_id(account_id: impl AsRef<str>) -> Result<(), Validation
     let account_id = account_id.as_ref();
     if !(account_id == "aws" || (account_id.len() == 12 && account_id.chars().all(|c| c.is_ascii_digit()))) {
         let message = "Account ID must be a 12-digit number or the string \"aws\".".to_string();
+        Err(ValidationError::builder().message(message).build())
+    } else {
+        Ok(())
+    }
+}
+
+/// Validate that the group name is valid according to AWS IAM rules.
+pub fn validate_group_name(group_name: impl AsRef<str>) -> Result<(), ValidationError> {
+    let group_name = group_name.as_ref();
+    if !GROUP_NAME_REGEX.is_match(group_name) || group_name.is_empty() || group_name.len() > 128 {
+        let message = "Group name must contain only alphanumeric characters or the following symbols: =,.@- and must be between 1 and 128 characters long.".to_string();
         Err(ValidationError::builder().message(message).build())
     } else {
         Ok(())
