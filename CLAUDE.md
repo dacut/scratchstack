@@ -13,7 +13,7 @@ that takes the additional account_id field. The return types are the same as the
 counterparts, so GetUserInteralRequest's response is still GetUserResponse.
 
 When implementing code, make sure it passes formatting and clippy checks: `cargo fmt --check` (or
-just run `cargo fmt`) and `cargo clippy --all-targets` are used in GitHub Actions.
+just run `cargo fmt`) and `cargo clippy -- -Dwarnings` are used in GitHub Actions.
 
 This project uses an embedded PostgreSQL database to execute tests, so unit tests can be a bit
 more comprehensive and feel a bit more like integration tests, but still do not require off-host
