@@ -207,6 +207,58 @@ async fn test_users(database: &TempDatabase) {
     assert_eq!(tag2_key, "Team");
     assert_eq!(tag2_value, "Engineering");
 
+    // Get the user and verify the output.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "test-user",
+        ])
+        .await
+        .expect("Failed to run get-user for 555566667777/test-user");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse get-user output as JSON");
+    let user = json.get("User").expect("User should be present");
+    let path = user.get("Path").expect("Path should be present").as_str().expect("Path should be a string");
+    assert_eq!(path, "/");
+    let user_name =
+        user.get("UserName").expect("UserName should be present").as_str().expect("UserName should be a string");
+    assert_eq!(user_name, "test-user");
+    let arn = user.get("Arn").expect("Arn should be present").as_str().expect("Arn should be a string");
+    assert_eq!(arn, "arn:test-partition:iam::555566667777:user/test-user");
+    let user_id = user.get("UserId").expect("UserId should be present").as_str().expect("UserId should be a string");
+    assert!(user_id.starts_with("AIDA"), "UserId should start with AIDA, got {user_id}");
+    let tags = user.get("Tags").expect("Tags should be present").as_array().expect("Tags should be an array");
+    assert_eq!(tags.len(), 2);
+    assert_eq!(tags[0].get("Key").unwrap().as_str().unwrap(), "Environment");
+    assert_eq!(tags[0].get("Value").unwrap().as_str().unwrap(), "Production");
+    assert_eq!(tags[1].get("Key").unwrap().as_str().unwrap(), "Team");
+    assert_eq!(tags[1].get("Value").unwrap().as_str().unwrap(), "Engineering");
+
+    // Getting a nonexistent user should fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "no-such-user",
+        ])
+        .await
+        .expect_err("Getting a nonexistent user should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+
     // List the user's tags and verify them.
     let result = database
         .run([

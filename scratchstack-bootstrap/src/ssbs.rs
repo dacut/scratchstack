@@ -25,7 +25,7 @@ use {
         account::{CreateAccountCommand, ListAccountsCommand},
         partition::{GetCurrentPartitionCommand, SetCurrentPartitionCommand},
         user::{
-            CreateUserInternalCommand, DeleteUserInternalCommand, ListUserTagsInternalCommand,
+            CreateUserInternalCommand, DeleteUserInternalCommand, GetUserInternalCommand, ListUserTagsInternalCommand,
             ListUsersInternalCommand, TagUserInternalCommand, UntagUserInternalCommand, UpdateUserInternalCommand,
         },
     },
@@ -108,6 +108,10 @@ enum Commands {
     #[command(name = "get-current-partition")]
     GetCurrentPartition(GetCurrentPartitionCommand),
 
+    /// Get information about an IAM user in an account.
+    #[command(name = "get-user")]
+    GetUser(GetUserInternalCommand),
+
     /// List IAM accounts.
     #[command(name = "list-accounts")]
     ListAccounts(ListAccountsCommand),
@@ -152,6 +156,7 @@ impl Commands {
             Commands::CreateUser(_) => "CreateUser",
             Commands::DeleteUser(_) => "DeleteUser",
             Commands::GetCurrentPartition(_) => "GetCurrentPartition",
+            Commands::GetUser(_) => "GetUser",
             Commands::ListAccounts(_) => "ListAccounts",
             Commands::ListUsers(_) => "ListUsers",
             Commands::ListUserTags(_) => "ListUserTags",
@@ -217,6 +222,13 @@ where
             "".to_string()
         }
         Commands::GetCurrentPartition(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::GetUser(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
