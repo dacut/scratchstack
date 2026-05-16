@@ -25,7 +25,7 @@ use {
         },
         types::{
             AttachedPermissionsBoundary, PermissionsBoundaryAttachmentType, Tag, User,
-            error::{InternalFailure, NoSuchEntityException},
+            error::{InternalFailure, NoSuchEntityException, ValidationError},
         },
     },
     serde::{Deserialize, Serialize},
@@ -545,6 +545,10 @@ pub async fn tag_user(
     user_name: &str,
     tags: &[Tag],
 ) -> Result<(), IamError> {
+    if tags.is_empty() {
+        return Err(ValidationError::builder().message("At least one tag must be provided.").build().into());
+    }
+
     validate_account_id(account_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,

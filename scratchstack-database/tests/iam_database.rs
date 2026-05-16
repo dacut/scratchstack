@@ -87,6 +87,7 @@ async fn test_database() {
     // -- TagUserInternalRequest / UntagUserInternalRequest --------------------
     test_tag_user(&pool).await;
     test_tag_user_upsert(&pool).await;
+    test_tag_user_empty_tags(&pool).await;
     test_tag_user_nonexistent_user(&pool).await;
     test_untag_user(&pool).await;
     test_untag_user_nonexistent_key(&pool).await;
@@ -833,6 +834,21 @@ async fn test_tag_user_nonexistent_user(pool: &sqlx::PgPool) {
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Tagging a nonexistent user must fail");
+}
+
+/// Tagging with an empty tag list must fail.
+async fn test_tag_user_empty_tags(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = TagUserInternalRequest::builder()
+        .user_name("alice".to_string())
+        .account_id("123456789012".to_string())
+        .tags(vec![])
+        .build()
+        .expect("Failed to build TagUserInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Tagging with an empty tag list must fail");
 }
 
 /// Untag an existing user and verify the tag is removed.
