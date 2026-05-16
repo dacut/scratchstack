@@ -6,9 +6,9 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
-            CreateUserInternalRequest, CreateUserResponse, DeleteUserInternalRequest, ListUserTagsInternalRequest,
-            ListUserTagsResponse, ListUsersInternalRequest, ListUsersResponse, TagUserInternalRequest,
-            UntagUserInternalRequest, UpdateUserInternalRequest,
+            CreateUserInternalRequest, CreateUserResponse, DeleteUserInternalRequest, GetUserInternalRequest,
+            GetUserResponse, ListUserTagsInternalRequest, ListUserTagsResponse, ListUsersInternalRequest,
+            ListUsersResponse, TagUserInternalRequest, UntagUserInternalRequest, UpdateUserInternalRequest,
         },
         types::{
             Tag,
@@ -52,6 +52,18 @@ pub(crate) struct DeleteUserInternalCommand {
     pub account_id: String,
 
     /// The name of the user to delete.
+    #[clap(long)]
+    pub user_name: String,
+}
+
+/// Get information about an IAM user in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct GetUserInternalCommand {
+    /// The unique identifier for the account the user belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the user to get information about.
     #[clap(long)]
     pub user_name: String,
 }
@@ -193,6 +205,25 @@ impl Runnable for DeleteUserInternalCommand {
             account_id: self.account_id.clone(),
             user_name: self.user_name.clone(),
         };
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for GetUserInternalCommand {
+    type Result = GetUserResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = GetUserInternalRequest::builder()
+            .user_name(Some(self.user_name.clone()))
+            .account_id(self.account_id.clone())
+            .build()
+            .map_err(|e| {
+                log::error!("Failed to build GetUserInternalRequest: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
