@@ -239,6 +239,154 @@ async fn test_users(database: &TempDatabase) {
     assert_eq!(tag2_key, "Team");
     assert_eq!(tag2_value, "Engineering");
 
+    // Tag the user with a new tag and update an existing tag.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "tag-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "test-user",
+            "--tags",
+            "Key=Environment,Value=Staging",
+            "Key=Project,Value=Apollo",
+        ])
+        .await
+        .expect("Failed to run tag-user for 555566667777/test-user");
+
+    // Verify the tags were updated/added.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-user-tags",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "test-user",
+        ])
+        .await
+        .expect("Failed to run list-user-tags after tag-user");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-user-tags output as JSON");
+    let tags = json.get("Tags").expect("Tags should be present").as_array().expect("Tags should be an array");
+    assert_eq!(tags.len(), 3, "Expected 3 tags after tag-user (Environment updated, Project added, Team unchanged)");
+    // Tags are sorted by key_lower: Environment, Project, Team
+    assert_eq!(tags[0].get("Key").unwrap().as_str().unwrap(), "Environment");
+    assert_eq!(tags[0].get("Value").unwrap().as_str().unwrap(), "Staging");
+    assert_eq!(tags[1].get("Key").unwrap().as_str().unwrap(), "Project");
+    assert_eq!(tags[1].get("Value").unwrap().as_str().unwrap(), "Apollo");
+    assert_eq!(tags[2].get("Key").unwrap().as_str().unwrap(), "Team");
+    assert_eq!(tags[2].get("Value").unwrap().as_str().unwrap(), "Engineering");
+
+    // Untag the user — remove Environment and Project.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "untag-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "test-user",
+            "--tag-keys",
+            "Environment",
+            "Project",
+        ])
+        .await
+        .expect("Failed to run untag-user for 555566667777/test-user");
+
+    // Verify only Team remains.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-user-tags",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "test-user",
+        ])
+        .await
+        .expect("Failed to run list-user-tags after untag-user");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-user-tags output as JSON");
+    let tags = json.get("Tags").expect("Tags should be present").as_array().expect("Tags should be an array");
+    assert_eq!(tags.len(), 1, "Expected 1 tag after untag-user");
+    assert_eq!(tags[0].get("Key").unwrap().as_str().unwrap(), "Team");
+    assert_eq!(tags[0].get("Value").unwrap().as_str().unwrap(), "Engineering");
+
+    // Untagging a nonexistent key should succeed silently.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "untag-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "test-user",
+            "--tag-keys",
+            "NoSuchKey",
+        ])
+        .await
+        .expect("Untagging a nonexistent key should succeed silently");
+
+    // Tagging a nonexistent user should fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "tag-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "no-such-user",
+            "--tags",
+            "Key=Foo,Value=Bar",
+        ])
+        .await
+        .expect_err("Tagging a nonexistent user should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+
+    // Untagging a nonexistent user should fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "untag-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "no-such-user",
+            "--tag-keys",
+            "Foo",
+        ])
+        .await
+        .expect_err("Untagging a nonexistent user should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+
     // Delete the user.
     database
         .run([

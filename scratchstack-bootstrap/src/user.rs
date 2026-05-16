@@ -7,7 +7,8 @@ use {
         error_meta::Error as IamError,
         operation::{
             CreateUserInternalRequest, CreateUserResponse, DeleteUserInternalRequest, ListUserTagsInternalRequest,
-            ListUserTagsResponse, ListUsersInternalRequest, ListUsersResponse, UpdateUserInternalRequest,
+            ListUserTagsResponse, ListUsersInternalRequest, ListUsersResponse, TagUserInternalRequest,
+            UntagUserInternalRequest, UpdateUserInternalRequest,
         },
         types::{
             Tag,
@@ -100,6 +101,40 @@ pub(crate) struct ListUserTagsInternalCommand {
     pub marker: Option<String>,
 }
 
+/// Add or update tags on a user in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct TagUserInternalCommand {
+    /// The unique identifier for the account the user belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the user to tag.
+    #[clap(long)]
+    pub user_name: String,
+
+    /// A list of tags to associate with the user. Each tag is a key-value pair separated by an
+    /// equals sign (`=`), and multiple tags are separated by commas (`,`). For example:
+    /// `Key1=Value1,Key2=Value2`.
+    #[clap(long, num_args = 1..)]
+    pub tags: Vec<String>,
+}
+
+/// Remove tags from a user in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct UntagUserInternalCommand {
+    /// The unique identifier for the account the user belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the user to untag.
+    #[clap(long)]
+    pub user_name: String,
+
+    /// A list of tag keys to remove from the user.
+    #[clap(long, num_args = 1..)]
+    pub tag_keys: Vec<String>,
+}
+
 /// Update a user in a given account in the Scratchstack IAM service.
 #[derive(Debug, Parser)]
 pub(crate) struct UpdateUserInternalCommand {
@@ -188,6 +223,47 @@ impl Runnable for ListUserTagsInternalCommand {
             max_items: self.max_items,
             marker: self.marker.clone(),
         };
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for TagUserInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let tags = tags_from_shorthand(&self.tags)?;
+        let request = TagUserInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .user_name(self.user_name.clone())
+            .tags(tags)
+            .build()
+            .map_err(|e| {
+                log::error!("Failed to build TagUserInternalRequest: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for UntagUserInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = UntagUserInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .user_name(self.user_name.clone())
+            .tag_keys(self.tag_keys.clone())
+            .build()
+            .map_err(|e| {
+                log::error!("Failed to build UntagUserInternalRequest: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
