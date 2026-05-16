@@ -696,6 +696,10 @@ pub async fn untag_user(
     user_name: &str,
     tag_keys: &[String],
 ) -> Result<(), IamError> {
+    if tag_keys.is_empty() {
+        return Err(ValidationError::builder().message("At least one tag key must be provided.").build().into());
+    }
+
     validate_account_id(account_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,

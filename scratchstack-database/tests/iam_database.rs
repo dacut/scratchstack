@@ -90,6 +90,7 @@ async fn test_database() {
     test_tag_user_empty_tags(&pool).await;
     test_tag_user_nonexistent_user(&pool).await;
     test_untag_user(&pool).await;
+    test_untag_user_empty_keys(&pool).await;
     test_untag_user_nonexistent_key(&pool).await;
     test_untag_user_nonexistent_user(&pool).await;
 
@@ -896,6 +897,21 @@ async fn test_untag_user_nonexistent_key(pool: &sqlx::PgPool) {
         .await
         .expect("Untagging a nonexistent key should succeed silently");
     tx.rollback().await.expect("Failed to rollback transaction");
+}
+
+/// Untagging with an empty tag key list must fail.
+async fn test_untag_user_empty_keys(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = UntagUserInternalRequest::builder()
+        .user_name("alice".to_string())
+        .account_id("123456789012".to_string())
+        .tag_keys(vec![])
+        .build()
+        .expect("Failed to build UntagUserInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Untagging with an empty tag key list must fail");
 }
 
 /// Untagging a nonexistent user must fail with NoSuchEntityException.
