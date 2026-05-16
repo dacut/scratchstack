@@ -31,6 +31,9 @@ pub(crate) const MSG_INTERNAL_FAILURE: &str = "Internal failure";
 /// Operation name for ListGroups
 pub(crate) const OP_LIST_GROUPS: &str = "ListGroups";
 
+/// Operation name for ListGroupsForUser
+pub(crate) const OP_LIST_GROUPS_FOR_USER: &str = "ListGroupsForUser";
+
 /// Operation name for ListUsers
 pub(crate) const OP_LIST_USERS: &str = "ListUsers";
 

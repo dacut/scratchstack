@@ -22,6 +22,7 @@ async fn test_ssdb_ops() {
     test_accounts(&database).await;
     test_users(&database).await;
     test_groups(&database).await;
+    test_group_membership(&database).await;
 }
 
 async fn test_migrate_database(database: &TempDatabase) {
@@ -770,6 +771,277 @@ async fn test_groups(database: &TempDatabase) {
         err.message().unwrap_or_default().contains("cannot be found"),
         "Expected 'cannot be found' in error message, got: {err}"
     );
+}
+
+async fn test_group_membership(database: &TempDatabase) {
+    let port = database.port_str();
+
+    // Create a user and a group for membership testing.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "member-user",
+        ])
+        .await
+        .expect("Failed to create member-user");
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "MembershipGroup",
+        ])
+        .await
+        .expect("Failed to create MembershipGroup");
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "SecondGroup",
+        ])
+        .await
+        .expect("Failed to create SecondGroup");
+
+    // Add user to group.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "add-user-to-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "MembershipGroup",
+            "--user-name",
+            "member-user",
+        ])
+        .await
+        .expect("Failed to add member-user to MembershipGroup");
+
+    // Adding the same user again should succeed (idempotent).
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "add-user-to-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "MembershipGroup",
+            "--user-name",
+            "member-user",
+        ])
+        .await
+        .expect("Adding user to group again should be idempotent");
+
+    // Add user to a second group.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "add-user-to-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "SecondGroup",
+            "--user-name",
+            "member-user",
+        ])
+        .await
+        .expect("Failed to add member-user to SecondGroup");
+
+    // Adding user to a nonexistent group should fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "add-user-to-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "NoSuchGroup",
+            "--user-name",
+            "member-user",
+        ])
+        .await
+        .expect_err("Adding user to nonexistent group should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+
+    // Adding a nonexistent user to a group should fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "add-user-to-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "MembershipGroup",
+            "--user-name",
+            "no-such-user",
+        ])
+        .await
+        .expect_err("Adding nonexistent user to group should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+
+    // List groups for the user.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-groups-for-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "member-user",
+        ])
+        .await
+        .expect("Failed to list groups for member-user");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-groups-for-user output as JSON");
+    let groups = json.get("Groups").expect("Groups should be present").as_array().expect("Groups should be an array");
+    assert_eq!(groups.len(), 2, "Expected 2 groups for member-user, got {}", groups.len());
+    let names: Vec<&str> = groups.iter().map(|g| g.get("GroupName").unwrap().as_str().unwrap()).collect();
+    assert!(names.contains(&"MembershipGroup"), "Expected MembershipGroup in list");
+    assert!(names.contains(&"SecondGroup"), "Expected SecondGroup in list");
+
+    // List groups for a nonexistent user should fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-groups-for-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "no-such-user",
+        ])
+        .await
+        .expect_err("Listing groups for nonexistent user should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+
+    // Remove user from a group.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "remove-user-from-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "MembershipGroup",
+            "--user-name",
+            "member-user",
+        ])
+        .await
+        .expect("Failed to remove member-user from MembershipGroup");
+
+    // Verify user is now in only one group.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-groups-for-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "member-user",
+        ])
+        .await
+        .expect("Failed to list groups for member-user after removal");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-groups-for-user output as JSON");
+    let groups = json.get("Groups").expect("Groups should be present").as_array().expect("Groups should be an array");
+    assert_eq!(groups.len(), 1, "Expected 1 group after removal");
+    assert_eq!(groups[0].get("GroupName").unwrap().as_str().unwrap(), "SecondGroup");
+
+    // Removing user who is not a member should fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "remove-user-from-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "MembershipGroup",
+            "--user-name",
+            "member-user",
+        ])
+        .await
+        .expect_err("Removing non-member from group should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+
+    // Removing user from nonexistent group should fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "remove-user-from-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "NoSuchGroup",
+            "--user-name",
+            "member-user",
+        ])
+        .await
+        .expect_err("Removing user from nonexistent group should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
 }
 
 /// Convert a Vec<String-like> to a Vec<OsString>.

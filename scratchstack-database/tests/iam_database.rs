@@ -18,10 +18,11 @@ use {
     scratchstack_database::{Loadable, model::iam, ops::RequestExecutor, utils::TempDatabase},
     scratchstack_shapes_iam::{
         operation::{
-            CreateAccountRequest, CreateGroupInternalRequest, CreateUserInternalRequest, DeleteGroupInternalRequest,
-            GetCurrentPartitionRequest, GetGroupInternalRequest, GetUserInternalRequest, ListAccountsRequest,
-            ListGroupsInternalRequest, ListUserTagsInternalRequest, SetCurrentPartitionRequest, TagUserInternalRequest,
-            UntagUserInternalRequest, UpdateGroupInternalRequest,
+            AddUserToGroupInternalRequest, CreateAccountRequest, CreateGroupInternalRequest, CreateUserInternalRequest,
+            DeleteGroupInternalRequest, GetCurrentPartitionRequest, GetGroupInternalRequest, GetUserInternalRequest,
+            ListAccountsRequest, ListGroupsForUserInternalRequest, ListGroupsInternalRequest,
+            ListUserTagsInternalRequest, RemoveUserFromGroupInternalRequest, SetCurrentPartitionRequest,
+            TagUserInternalRequest, UntagUserInternalRequest, UpdateGroupInternalRequest,
         },
         types::{ListAccountsFilter, ListAccountsFilterName, Tag},
     },
@@ -121,6 +122,17 @@ async fn test_database() {
     test_update_group_rename(&pool).await;
     test_update_group_change_path(&pool).await;
     test_update_group_nonexistent(&pool).await;
+
+    // -- AddUserToGroupInternalRequest / RemoveUserFromGroupInternalRequest ---
+    test_add_user_to_group(&pool).await;
+    test_add_user_to_group_idempotent(&pool).await;
+    test_add_user_to_group_nonexistent_group(&pool).await;
+    test_add_user_to_group_nonexistent_user(&pool).await;
+    test_list_groups_for_user(&pool).await;
+    test_list_groups_for_user_nonexistent_user(&pool).await;
+    test_remove_user_from_group(&pool).await;
+    test_remove_user_from_group_not_member(&pool).await;
+    test_remove_user_from_group_nonexistent_group(&pool).await;
 
     // -- DeleteGroupInternalRequest -------------------------------------------
     test_delete_group(&pool).await;
@@ -1309,6 +1321,158 @@ async fn test_delete_group_nonexistent(pool: &sqlx::PgPool) {
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Deleting a nonexistent group must fail");
+}
+
+// -- Group membership tests --------------------------------------------------
+
+/// Add a user to a group. Uses alice (account 123456789012) and Administrators (renamed earlier).
+async fn test_add_user_to_group(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    AddUserToGroupInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .group_name("Administrators".to_string())
+        .user_name("alice".to_string())
+        .build()
+        .expect("Failed to build AddUserToGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to add user to group");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// Adding the same user to the same group again should succeed (idempotent).
+async fn test_add_user_to_group_idempotent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    AddUserToGroupInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .group_name("Administrators".to_string())
+        .user_name("alice".to_string())
+        .build()
+        .expect("Failed to build AddUserToGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Adding user to group again should succeed (idempotent)");
+    tx.rollback().await.expect("Failed to rollback transaction");
+}
+
+/// Adding a user to a nonexistent group must fail.
+async fn test_add_user_to_group_nonexistent_group(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = AddUserToGroupInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .group_name("NonexistentGroup".to_string())
+        .user_name("alice".to_string())
+        .build()
+        .expect("Failed to build AddUserToGroupInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Adding user to nonexistent group must fail");
+}
+
+/// Adding a nonexistent user to a group must fail.
+async fn test_add_user_to_group_nonexistent_user(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = AddUserToGroupInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .group_name("Administrators".to_string())
+        .user_name("nonexistent".to_string())
+        .build()
+        .expect("Failed to build AddUserToGroupInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Adding nonexistent user to group must fail");
+}
+
+/// List groups for a user who is a member of at least one group.
+async fn test_list_groups_for_user(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListGroupsForUserInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .user_name("alice".to_string())
+        .build()
+        .expect("Failed to build ListGroupsForUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list groups for user");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.groups.len(), 1, "Expected 1 group for alice");
+    assert_eq!(resp.groups[0].group_name, "Administrators");
+}
+
+/// Listing groups for a nonexistent user must fail.
+async fn test_list_groups_for_user_nonexistent_user(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = ListGroupsForUserInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .user_name("nonexistent".to_string())
+        .build()
+        .expect("Failed to build ListGroupsForUserInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Listing groups for nonexistent user must fail");
+}
+
+/// Remove a user from a group.
+async fn test_remove_user_from_group(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    RemoveUserFromGroupInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .group_name("Administrators".to_string())
+        .user_name("alice".to_string())
+        .build()
+        .expect("Failed to build RemoveUserFromGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to remove user from group");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Verify alice is no longer in the group.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListGroupsForUserInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .user_name("alice".to_string())
+        .build()
+        .expect("Failed to build ListGroupsForUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list groups for user after removal");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.groups.len(), 0, "Expected 0 groups for alice after removal");
+}
+
+/// Removing a user who is not a member of a group must fail.
+async fn test_remove_user_from_group_not_member(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = RemoveUserFromGroupInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .group_name("Administrators".to_string())
+        .user_name("alice".to_string())
+        .build()
+        .expect("Failed to build RemoveUserFromGroupInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Removing user who is not a group member must fail");
+}
+
+/// Removing a user from a nonexistent group must fail.
+async fn test_remove_user_from_group_nonexistent_group(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = RemoveUserFromGroupInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .group_name("NonexistentGroup".to_string())
+        .user_name("alice".to_string())
+        .build()
+        .expect("Failed to build RemoveUserFromGroupInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Removing user from nonexistent group must fail");
 }
 
 const TEST_DATA: &str = include_str!("iam_database.json");
