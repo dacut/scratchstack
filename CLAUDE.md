@@ -10,7 +10,7 @@ are in types.rs, error types are in types_error.rs, and a giant, all-encompassin
 AWS IAM APIs implemented in this project have internal counterparts that take an additional
 account_id parameter. For example, GetUserRequest will have a corresponding GetUserInternalRequest
 that takes the additional account_id field. The return types are the same as the non-internal
-counterparts, so GetUserInteralRequest's response is still GetUserResponse.
+counterparts, so GetUserInternalRequest's response is still GetUserResponse.
 
 When implementing code, make sure it passes formatting and clippy checks: `cargo fmt --check` (or
 just run `cargo fmt`) and `cargo clippy -- -Dwarnings` are used in GitHub Actions.
