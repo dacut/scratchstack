@@ -26,7 +26,7 @@ use {
         partition::{GetCurrentPartitionCommand, SetCurrentPartitionCommand},
         user::{
             CreateUserInternalCommand, DeleteUserInternalCommand, ListUserTagsInternalCommand,
-            ListUsersInternalCommand, UpdateUserInternalCommand,
+            ListUsersInternalCommand, TagUserInternalCommand, UntagUserInternalCommand, UpdateUserInternalCommand,
         },
     },
     aws_smithy_types::error::metadata::ProvideErrorMetadata,
@@ -131,9 +131,17 @@ enum Commands {
     #[command(name = "set-current-partition")]
     SetCurrentPartition(SetCurrentPartitionCommand),
 
+    /// Add or update tags on an IAM user in an account.
+    #[command(name = "tag-user")]
+    TagUser(TagUserInternalCommand),
+
     /// Update an IAM user in an account.
     #[command(name = "update-user")]
     UpdateUser(UpdateUserInternalCommand),
+
+    /// Remove tags from an IAM user in an account.
+    #[command(name = "untag-user")]
+    UntagUser(UntagUserInternalCommand),
 }
 
 impl Commands {
@@ -149,6 +157,8 @@ impl Commands {
             Commands::ListUserTags(_) => "ListUserTags",
             Commands::Migrate(_) => "Migrate",
             Commands::SetCurrentPartition(_) => "SetCurrentPartition",
+            Commands::TagUser(_) => "TagUser",
+            Commands::UntagUser(_) => "UntagUser",
             Commands::UpdateUser(_) => "UpdateUser",
         }
     }
@@ -245,7 +255,15 @@ where
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
+        Commands::TagUser(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
         Commands::UpdateUser(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::UntagUser(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
         }

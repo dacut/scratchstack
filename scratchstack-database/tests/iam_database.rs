@@ -19,7 +19,7 @@ use {
     scratchstack_shapes_iam::{
         operation::{
             CreateAccountRequest, CreateUserInternalRequest, GetCurrentPartitionRequest, ListAccountsRequest,
-            SetCurrentPartitionRequest,
+            ListUserTagsInternalRequest, SetCurrentPartitionRequest, TagUserInternalRequest, UntagUserInternalRequest,
         },
         types::{ListAccountsFilter, ListAccountsFilterName, Tag},
     },
@@ -83,6 +83,16 @@ async fn test_database() {
     test_create_user_invalid_name();
     test_create_user_nonexistent_account(&pool).await;
     test_create_user_nonexistent_permissions_boundary(&pool).await;
+
+    // -- TagUserInternalRequest / UntagUserInternalRequest --------------------
+    test_tag_user(&pool).await;
+    test_tag_user_upsert(&pool).await;
+    test_tag_user_empty_tags(&pool).await;
+    test_tag_user_nonexistent_user(&pool).await;
+    test_untag_user(&pool).await;
+    test_untag_user_empty_keys(&pool).await;
+    test_untag_user_nonexistent_key(&pool).await;
+    test_untag_user_nonexistent_user(&pool).await;
 
     iam::MIGRATOR.undo(&mut *c, 0).await.expect("Failed to undo database migrations");
 }
@@ -727,6 +737,196 @@ async fn test_create_user_nonexistent_permissions_boundary(pool: &sqlx::PgPool) 
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a user with a nonexistent permissions boundary must fail");
+}
+
+/// Tag an existing user and verify the tags appear in ListUserTags.
+async fn test_tag_user(pool: &sqlx::PgPool) {
+    // alice was created in account 123456789012 by test_create_user_simple.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    TagUserInternalRequest::builder()
+        .user_name("alice".to_string())
+        .account_id("123456789012".to_string())
+        .tags(vec![
+            Tag::builder()
+                .key("Dept".to_string())
+                .value("Engineering".to_string())
+                .build()
+                .expect("Failed to build tag"),
+            Tag::builder()
+                .key("CostCenter".to_string())
+                .value("1234".to_string())
+                .build()
+                .expect("Failed to build tag"),
+        ])
+        .build()
+        .expect("Failed to build TagUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to tag user");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Verify tags via ListUserTags.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListUserTagsInternalRequest::builder()
+        .user_name("alice".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListUserTagsInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list user tags");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.tags.len(), 2, "Expected 2 tags on alice");
+    // Tags are returned sorted by key_lower.
+    assert_eq!(resp.tags[0].key, "CostCenter");
+    assert_eq!(resp.tags[0].value, "1234");
+    assert_eq!(resp.tags[1].key, "Dept");
+    assert_eq!(resp.tags[1].value, "Engineering");
+}
+
+/// Tagging with an existing key should update the value (upsert).
+async fn test_tag_user_upsert(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    TagUserInternalRequest::builder()
+        .user_name("alice".to_string())
+        .account_id("123456789012".to_string())
+        .tags(vec![
+            Tag::builder().key("Dept".to_string()).value("Finance".to_string()).build().expect("Failed to build tag"),
+        ])
+        .build()
+        .expect("Failed to build TagUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to upsert tag on user");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Verify the value was updated and the other tag is still present.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListUserTagsInternalRequest::builder()
+        .user_name("alice".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListUserTagsInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list user tags after upsert");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.tags.len(), 2, "Expected 2 tags on alice after upsert");
+    assert_eq!(resp.tags[0].key, "CostCenter");
+    assert_eq!(resp.tags[0].value, "1234");
+    assert_eq!(resp.tags[1].key, "Dept");
+    assert_eq!(resp.tags[1].value, "Finance");
+}
+
+/// Tagging a nonexistent user must fail with NoSuchEntityException.
+async fn test_tag_user_nonexistent_user(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = TagUserInternalRequest::builder()
+        .user_name("nonexistent".to_string())
+        .account_id("123456789012".to_string())
+        .tags(vec![
+            Tag::builder().key("Key".to_string()).value("Value".to_string()).build().expect("Failed to build tag"),
+        ])
+        .build()
+        .expect("Failed to build TagUserInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Tagging a nonexistent user must fail");
+}
+
+/// Tagging with an empty tag list must fail.
+async fn test_tag_user_empty_tags(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = TagUserInternalRequest::builder()
+        .user_name("alice".to_string())
+        .account_id("123456789012".to_string())
+        .tags(vec![])
+        .build()
+        .expect("Failed to build TagUserInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Tagging with an empty tag list must fail");
+}
+
+/// Untag an existing user and verify the tag is removed.
+async fn test_untag_user(pool: &sqlx::PgPool) {
+    // alice currently has CostCenter and Dept tags from previous tests.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UntagUserInternalRequest::builder()
+        .user_name("alice".to_string())
+        .account_id("123456789012".to_string())
+        .tag_keys(vec!["Dept".to_string()])
+        .build()
+        .expect("Failed to build UntagUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to untag user");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Verify only CostCenter remains.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListUserTagsInternalRequest::builder()
+        .user_name("alice".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListUserTagsInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list user tags after untag");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.tags.len(), 1, "Expected 1 tag on alice after removing Dept");
+    assert_eq!(resp.tags[0].key, "CostCenter");
+    assert_eq!(resp.tags[0].value, "1234");
+}
+
+/// Untagging a key that does not exist on the user should succeed silently.
+async fn test_untag_user_nonexistent_key(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UntagUserInternalRequest::builder()
+        .user_name("alice".to_string())
+        .account_id("123456789012".to_string())
+        .tag_keys(vec!["NoSuchTag".to_string()])
+        .build()
+        .expect("Failed to build UntagUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Untagging a nonexistent key should succeed silently");
+    tx.rollback().await.expect("Failed to rollback transaction");
+}
+
+/// Untagging with an empty tag key list must fail.
+async fn test_untag_user_empty_keys(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = UntagUserInternalRequest::builder()
+        .user_name("alice".to_string())
+        .account_id("123456789012".to_string())
+        .tag_keys(vec![])
+        .build()
+        .expect("Failed to build UntagUserInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Untagging with an empty tag key list must fail");
+}
+
+/// Untagging a nonexistent user must fail with NoSuchEntityException.
+async fn test_untag_user_nonexistent_user(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = UntagUserInternalRequest::builder()
+        .user_name("nonexistent".to_string())
+        .account_id("123456789012".to_string())
+        .tag_keys(vec!["Key".to_string()])
+        .build()
+        .expect("Failed to build UntagUserInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Untagging a nonexistent user must fail");
 }
 
 const TEST_DATA: &str = include_str!("iam_database.json");
