@@ -148,6 +148,7 @@ impl Enum {
     fn write_shorthand_parser(&self, w: &mut dyn Write) -> IoResult<()> {
         let rust_typename = self.base.rust_typename();
 
+        writeln!(w, "#[cfg(feature = \"clap\")]")?;
         writeln!(w, "impl ::std::convert::TryFrom<&::scratchstack_cli_utils::ShorthandValue> for {rust_typename} {{")?;
         writeln!(w, "    type Error = ::std::string::String;")?;
         writeln!(
