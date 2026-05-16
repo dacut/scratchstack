@@ -25,7 +25,8 @@ use {
         account::{CreateAccountCommand, ListAccountsCommand},
         partition::{GetCurrentPartitionCommand, SetCurrentPartitionCommand},
         user::{
-            CreateUserInternalCommand, DeleteUserInternalCommand, ListUsersInternalCommand, UpdateUserInternalCommand,
+            CreateUserInternalCommand, DeleteUserInternalCommand, ListUserTagsInternalCommand,
+            ListUsersInternalCommand, UpdateUserInternalCommand,
         },
     },
     aws_smithy_types::error::metadata::ProvideErrorMetadata,
@@ -115,6 +116,10 @@ enum Commands {
     #[command(name = "list-users")]
     ListUsers(ListUsersInternalCommand),
 
+    /// List tags for an IAM user in an account.
+    #[command(name = "list-user-tags")]
+    ListUserTags(ListUserTagsInternalCommand),
+
     /// Migrate the database to the latest version or a specified version.
     #[command(name = "migrate")]
     Migrate(migrate::MigrateCommand),
@@ -141,6 +146,7 @@ impl Commands {
             Commands::GetCurrentPartition(_) => "GetCurrentPartition",
             Commands::ListAccounts(_) => "ListAccounts",
             Commands::ListUsers(_) => "ListUsers",
+            Commands::ListUserTags(_) => "ListUserTags",
             Commands::Migrate(_) => "Migrate",
             Commands::SetCurrentPartition(_) => "SetCurrentPartition",
             Commands::UpdateUser(_) => "UpdateUser",
@@ -215,6 +221,13 @@ where
             })?
         }
         Commands::ListUsers(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::ListUserTags(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");

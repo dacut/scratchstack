@@ -28,6 +28,9 @@ pub(crate) const MSG_INTERNAL_FAILURE: &str = "Internal failure";
 /// Operation name for ListUsers
 pub(crate) const OP_LIST_USERS: &str = "ListUsers";
 
+/// Operation name for ListUserTags
+pub(crate) const OP_LIST_USER_TAGS: &str = "ListUserTags";
+
 /// A fixed key for pagination operations. We really don't care if this is exposed since the user
 /// has raw access to the database anyway.
 pub(crate) const PAGINATION_KEY: &[u8; PAGINATION_KEY_SIZE] = b"\xb2\xa5\xac\x4c\x41\x9e\x8a\x62\x01\xf4\x18\x53\xde\x61\x63\x86\x14\x4a\xd1\x20\xf1\xbb\xe0\x93\x62\x5e\xf4\xc6\x6a\x7d\x80\xd8";

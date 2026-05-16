@@ -177,6 +177,9 @@ async fn test_users(database: &TempDatabase) {
             "555566667777",
             "--user-name",
             "test-user",
+            "--tags",
+            "Key=Environment,Value=Production",
+            "Key=Team,Value=Engineering",
         ])
         .await
         .expect("Failed to run create-user for 555566667777/test-user");
@@ -189,6 +192,52 @@ async fn test_users(database: &TempDatabase) {
     assert_eq!(user_name, "test-user");
     let arn = user.get("Arn").expect("Arn should be present").as_str().expect("Arn should be a string");
     assert_eq!(arn, "arn:test-partition:iam::555566667777:user/test-user");
+    let tags = user.get("Tags").expect("Tags should be present").as_array().expect("Tags should be an array");
+    assert_eq!(tags.len(), 2);
+    let tag1 = &tags[0];
+    let tag1_key = tag1.get("Key").expect("Tag Key should be present").as_str().expect("Tag Key should be a string");
+    let tag1_value =
+        tag1.get("Value").expect("Tag Value should be present").as_str().expect("Tag Value should be a string");
+    assert_eq!(tag1_key, "Environment");
+    assert_eq!(tag1_value, "Production");
+    let tag2 = &tags[1];
+    let tag2_key = tag2.get("Key").expect("Tag Key should be present").as_str().expect("Tag Key should be a string");
+    let tag2_value =
+        tag2.get("Value").expect("Tag Value should be present").as_str().expect("Tag Value should be a string");
+    assert_eq!(tag2_key, "Team");
+    assert_eq!(tag2_value, "Engineering");
+
+    // List the user's tags and verify them.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-user-tags",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "test-user",
+        ])
+        .await
+        .expect("Failed to run list-user-tags for 555566667777/test-user");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-user-tags output as JSON");
+    let tags = json.get("Tags").expect("Tags should be present").as_array().expect("Tags should be an array");
+    assert_eq!(tags.len(), 2);
+    let tag1 = &tags[0];
+    let tag1_key = tag1.get("Key").expect("Tag Key should be present").as_str().expect("Tag Key should be a string");
+    let tag1_value =
+        tag1.get("Value").expect("Tag Value should be present").as_str().expect("Tag Value should be a string");
+    assert_eq!(tag1_key, "Environment");
+    assert_eq!(tag1_value, "Production");
+    let tag2 = &tags[1];
+    let tag2_key = tag2.get("Key").expect("Tag Key should be present").as_str().expect("Tag Key should be a string");
+    let tag2_value =
+        tag2.get("Value").expect("Tag Value should be present").as_str().expect("Tag Value should be a string");
+    assert_eq!(tag2_key, "Team");
+    assert_eq!(tag2_value, "Engineering");
 
     // Delete the user.
     database

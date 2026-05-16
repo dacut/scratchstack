@@ -644,6 +644,12 @@ async fn test_create_user_with_tags(pool: &sqlx::PgPool) {
 
     let user = resp.user.expect("Response should include created user");
     assert_eq!(user.user_name, "carol");
+    assert_eq!(user.path, "/");
+    assert_eq!(user.tags.len(), 2);
+    assert_eq!(user.tags[0].key, "Environment");
+    assert_eq!(user.tags[0].value, "Production");
+    assert_eq!(user.tags[1].key, "Team");
+    assert_eq!(user.tags[1].value, "Engineering");
 }
 
 /// Create a user with an existing managed policy as the permissions boundary.

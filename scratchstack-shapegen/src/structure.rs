@@ -408,6 +408,7 @@ impl Structure {
 
         let rust_typename = self.base.rust_typename();
 
+        writeln!(w, "#[cfg(feature = \"clap\")]")?;
         writeln!(w, "impl ::std::str::FromStr for {rust_typename} {{")?;
         writeln!(w, "    type Err = ::std::string::String;")?;
         writeln!(w)?;
@@ -417,6 +418,7 @@ impl Structure {
         writeln!(w, "    }}")?;
         writeln!(w, "}}")?;
         writeln!(w)?;
+        writeln!(w, "#[cfg(feature = \"clap\")]")?;
         writeln!(w, "impl ::std::convert::TryFrom<&::scratchstack_cli_utils::ShorthandValue> for {rust_typename} {{")?;
         writeln!(w, "    type Error = ::std::string::String;")?;
         writeln!(w)?;
@@ -434,6 +436,7 @@ impl Structure {
         writeln!(w, "    }}")?;
         writeln!(w, "}}")?;
         writeln!(w)?;
+        writeln!(w, "#[cfg(feature = \"clap\")]")?;
         writeln!(
             w,
             "impl ::std::convert::TryFrom<&std::collections::HashMap<String, ::scratchstack_cli_utils::ShorthandValue>> for {rust_typename} {{"
