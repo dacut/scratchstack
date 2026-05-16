@@ -11,7 +11,7 @@ version.workspace = true
 
 [features]
 default = ["clap"]
-clap = ["dep:clap"]
+clap = ["dep:clap", "dep:scratchstack-cli-utils"]
 
 [build-dependencies]
 anyhow.workspace = true
@@ -28,7 +28,7 @@ chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true, optional = true, features = ["derive"] }
 derive_builder.workspace = true
 regex.workspace = true
-scratchstack-cli-utils.path = "../scratchstack-cli-utils"
+scratchstack-cli-utils = { path = "../scratchstack-cli-utils", optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 

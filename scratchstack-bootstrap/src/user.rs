@@ -6,8 +6,8 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
-            CreateUserInternalRequest, CreateUserResponse, DeleteUserInternalRequest, ListUsersInternalRequest,
-            ListUsersResponse, UpdateUserInternalRequest,
+            CreateUserInternalRequest, CreateUserResponse, DeleteUserInternalRequest, ListUserTagsInternalRequest,
+            ListUserTagsResponse, ListUsersInternalRequest, ListUsersResponse, UpdateUserInternalRequest,
         },
         types::{
             Tag,
@@ -78,6 +78,28 @@ pub(crate) struct ListUsersInternalCommand {
     pub marker: Option<String>,
 }
 
+/// List tags for a user in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct ListUserTagsInternalCommand {
+    /// The unique identifier for the account to list user tags in.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the user to list tags for.
+    #[clap(long)]
+    pub user_name: String,
+
+    /// The maximum number of users to include in the response.
+    #[clap(long)]
+    pub max_items: Option<i32>,
+
+    /// A marker for paginating the list of users. If the response from a previous ListUsers
+    /// request was truncated, the response will include a marker that you can use in a subsequent
+    /// ListUsers request to retrieve the next set of users.
+    #[clap(long)]
+    pub marker: Option<String>,
+}
+
 /// Update a user in a given account in the Scratchstack IAM service.
 #[derive(Debug, Parser)]
 pub(crate) struct UpdateUserInternalCommand {
@@ -110,40 +132,7 @@ impl Runnable for CreateUserInternalCommand {
             .path(self.path.clone())
             .user_name(self.user_name.clone())
             .permissions_boundary(self.permissions_boundary.clone());
-        let mut tags = Vec::with_capacity(self.tags.len());
-
-        for tag in &self.tags {
-            let parsed = parse_shorthand(tag).map_err(|e| {
-                IamError::from(ValidationError::builder().message(format!("Invalid tag format: {tag}: {e}")).build())
-            })?;
-            match parsed {
-                ShorthandValue::List(values) => {
-                    for value in values {
-                        let ShorthandValue::Map(map) = value else {
-                            return Err(ValidationError::builder()
-                                .message(format!(
-                                    "Invalid tag format: {tag}. Tags must be in the format 'Key=k,Value=v' or a JSON object with 'Key' and 'Value' fields"
-                                ))
-                                .build()
-                                .into());
-                        };
-                        tags = tags_from_shorthand(&map)?;
-                    }
-                }
-                ShorthandValue::Map(value) => {
-                    tags.extend(tags_from_shorthand(&value)?);
-                }
-                _ => {
-                    return Err(ValidationError::builder()
-                        .message(format!(
-                            "Invalid tag format: {tag}. Tags must be in the format 'Key=k,Value=v' or a JSON object with 'Key' and 'Value' fields"
-                        ))
-                        .build()
-                        .into());
-                }
-            }
-        }
-
+        let tags = tags_from_shorthand(&self.tags)?;
         builder = builder.tags(tags);
 
         let request = builder.build().map_err(|e| {
@@ -186,6 +175,23 @@ impl Runnable for ListUsersInternalCommand {
     }
 }
 
+impl Runnable for ListUserTagsInternalCommand {
+    type Result = ListUserTagsResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = ListUserTagsInternalRequest {
+            account_id: self.account_id.clone(),
+            user_name: self.user_name.clone(),
+            max_items: self.max_items,
+            marker: self.marker.clone(),
+        };
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
 impl Runnable for UpdateUserInternalCommand {
     type Result = ();
 
@@ -203,42 +209,114 @@ impl Runnable for UpdateUserInternalCommand {
     }
 }
 
-fn tags_from_shorthand(map: &HashMap<String, ShorthandValue>) -> Result<Vec<Tag>, IamError> {
-    let mut result = Vec::new();
+/// Convert a list of shorthand values to a `Vec<Tag>`.
+fn tags_from_shorthand(values: &[impl AsRef<str>]) -> Result<Vec<Tag>, IamError> {
+    let mut tags = Vec::with_capacity(values.len());
+    let mut tag_keys_lower = Vec::with_capacity(values.len());
+
+    for value in values {
+        let value = value.as_ref();
+        let parsed = parse_shorthand(value).map_err(|e| {
+            IamError::from(ValidationError::builder().message(format!("Invalid tag format: {value:?}: {e}")).build())
+        })?;
+        match parsed {
+            ShorthandValue::List(values) => {
+                tags.clear();
+                for value in values {
+                    let ShorthandValue::Map(map) = value else {
+                        return Err(ValidationError::builder()
+                            .message(format!(
+                                "Invalid tag format: {value:?}. Tags must be in the format 'Key=k,Value=v' or a JSON object with 'Key' and 'Value' fields"
+                            ))
+                            .build()
+                            .into());
+                    };
+                    let tag = tag_from_shorthand(&map)?;
+                    let tag_key_lower = tag.key.to_lowercase();
+                    if tag_keys_lower.contains(&tag_key_lower) {
+                        return Err(ValidationError::builder()
+                            .message(format!("Duplicate tag key {}. Note that tag keys are case-insensitive.", tag.key))
+                            .build()
+                            .into());
+                    }
+                    tag_keys_lower.push(tag_key_lower);
+                }
+            }
+            ShorthandValue::Map(map) => {
+                let tag = tag_from_shorthand(&map)?;
+                let tag_key_lower = tag.key.to_lowercase();
+                if tag_keys_lower.contains(&tag_key_lower) {
+                    return Err(ValidationError::builder()
+                        .message(format!("Duplicate tag key {}. Note that tag keys are case-insensitive.", tag.key))
+                        .build()
+                        .into());
+                }
+                tag_keys_lower.push(tag_key_lower);
+                tags.push(tag);
+            }
+            _ => {
+                return Err(ValidationError::builder()
+                    .message(format!(
+                        "Invalid tag format: {value:?}. Tags must be in the format 'Key=k,Value=v' or a JSON object with 'Key' and 'Value' fields"
+                    ))
+                    .build()
+                    .into());
+            }
+        }
+    }
+    Ok(tags)
+}
+
+/// Convert a map of keys to shorthand values to a [`Tag`].
+fn tag_from_shorthand(map: &HashMap<String, ShorthandValue>) -> Result<Tag, IamError> {
+    let mut tag_key = None;
+    let mut tag_value = None;
+
     for (key, value) in map {
-        let key = match key.as_str() {
-            "Key" => value.as_str().ok_or_else(|| {
-                IamError::from(
-                    ValidationError::builder()
-                        .message(format!("Invalid tag format: {map:?}. 'Key' must be a string"))
-                        .build(),
-                )
-            })?,
-            "Value" => value.as_str().ok_or_else(|| {
-                IamError::from(
-                    ValidationError::builder()
-                        .message(format!("Invalid tag format: {map:?}. 'Value' must be a string"))
-                        .build(),
-                )
-            })?,
+        match key.as_str() {
+            "Key" => {
+                tag_key = Some(value.as_str().ok_or_else(|| {
+                    IamError::from(
+                        ValidationError::builder()
+                            .message(format!("Invalid tag format: {map:?}. 'Key' must be a string"))
+                            .build(),
+                    )
+                })?);
+            }
+            "Value" => {
+                tag_value = Some(value.as_str().ok_or_else(|| {
+                    IamError::from(
+                        ValidationError::builder()
+                            .message(format!("Invalid tag format: {map:?}. 'Value' must be a string"))
+                            .build(),
+                    )
+                })?);
+            }
             _ => {
                 return Err(ValidationError::builder()
                     .message(format!("Invalid tag format: {map:?}. Tags must only contain 'Key' and 'Value' fields"))
                     .build()
                     .into());
             }
-        };
-        let value = value.as_str().ok_or_else(|| {
-            IamError::from(
-                ValidationError::builder()
-                    .message(format!("Invalid tag format: {map:?}. 'Value' must be a string"))
-                    .build(),
-            )
-        })?;
-        result.push(Tag {
-            key: key.to_string(),
-            value: value.to_string(),
-        });
+        }
     }
-    Ok(result)
+
+    let Some(tag_key) = tag_key else {
+        return Err(ValidationError::builder()
+            .message(format!("Invalid tag format: {map:?}. Missing 'Key' field"))
+            .build()
+            .into());
+    };
+
+    let Some(tag_value) = tag_value else {
+        return Err(ValidationError::builder()
+            .message(format!("Invalid tag format: {map:?}. Missing 'Value' field"))
+            .build()
+            .into());
+    };
+
+    Ok(Tag {
+        key: tag_key.to_string(),
+        value: tag_value.to_string(),
+    })
 }

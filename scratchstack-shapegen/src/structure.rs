@@ -408,6 +408,7 @@ impl Structure {
 
         let rust_typename = self.base.rust_typename();
 
+        writeln!(w, "#[cfg(feature = \"clap\")]")?;
         writeln!(w, "impl ::std::str::FromStr for {rust_typename} {{")?;
         writeln!(w, "    type Err = ::std::string::String;")?;
         writeln!(w)?;
