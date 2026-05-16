@@ -632,6 +632,7 @@ async fn test_create_user_with_path(pool: &sqlx::PgPool) {
     let user = resp.user.expect("Response should include created user");
     assert_eq!(user.user_name, "bob");
     assert_eq!(user.path, "/engineering/");
+    assert!(user.arn.ends_with(":user/engineering/bob"), "ARN must end with :user/engineering/bob, got {}", user.arn);
 }
 
 /// Create a user with tags attached.
@@ -952,7 +953,11 @@ async fn test_get_user_simple(pool: &sqlx::PgPool) {
     assert_eq!(resp.user.user_name, "bob");
     assert_eq!(resp.user.path, "/engineering/");
     assert!(resp.user.user_id.starts_with("AIDA"), "User ID must start with AIDA prefix");
-    assert!(resp.user.arn.ends_with(":user/bob"), "ARN must end with :user/bob, got {}", resp.user.arn);
+    assert!(
+        resp.user.arn.ends_with(":user/engineering/bob"),
+        "ARN must end with :user/engineering/bob, got {}",
+        resp.user.arn
+    );
     assert!(resp.user.permissions_boundary.is_none());
     assert!(resp.user.tags.is_empty());
 }

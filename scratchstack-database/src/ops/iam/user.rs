@@ -135,11 +135,18 @@ pub async fn create_user(
         }
     }
 
+    let resource_path = path.trim_matches('/');
+    let resource = if resource_path.is_empty() {
+        format!("{ARN_RESOURCE_PREFIX_USER}{user_name}")
+    } else {
+        format!("{ARN_RESOURCE_PREFIX_USER}{resource_path}/{user_name}")
+    };
+
     let arn = match Arn::builder()
         .partition(partition)
         .service(SERVICE_KEY_IAM)
         .account_id(account_id)
-        .resource(format!("{ARN_RESOURCE_PREFIX_USER}{user_name}"))
+        .resource(resource)
         .build()
     {
         Ok(arn) => arn,
@@ -284,11 +291,18 @@ pub async fn get_user(
     let permissions_boundary_id: Option<String> = row.get(3);
     let created_at: DateTime<Utc> = row.get(4);
 
+    let resource_path = path.trim_matches('/');
+    let resource = if resource_path.is_empty() {
+        format!("{ARN_RESOURCE_PREFIX_USER}{user_name_cased}")
+    } else {
+        format!("{ARN_RESOURCE_PREFIX_USER}{resource_path}/{user_name_cased}")
+    };
+
     let arn = Arn::builder()
         .partition(partition.clone())
         .service(SERVICE_KEY_IAM)
         .account_id(account_id)
-        .resource(format!("{ARN_RESOURCE_PREFIX_USER}{user_name_cased}"))
+        .resource(resource)
         .build()
         .map_err(|e| {
             log::error!("Failed to construct ARN for user: {e}");
