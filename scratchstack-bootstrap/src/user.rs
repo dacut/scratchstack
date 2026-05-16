@@ -221,7 +221,6 @@ fn tags_from_shorthand(values: &[impl AsRef<str>]) -> Result<Vec<Tag>, IamError>
         })?;
         match parsed {
             ShorthandValue::List(values) => {
-                tags.clear();
                 for value in values {
                     let ShorthandValue::Map(map) = value else {
                         return Err(ValidationError::builder()
@@ -240,6 +239,7 @@ fn tags_from_shorthand(values: &[impl AsRef<str>]) -> Result<Vec<Tag>, IamError>
                             .into());
                     }
                     tag_keys_lower.push(tag_key_lower);
+                    tags.push(tag);
                 }
             }
             ShorthandValue::Map(map) => {
