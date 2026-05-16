@@ -356,7 +356,7 @@ pub async fn list_groups(
             .partition(partition.clone())
             .service("iam")
             .account_id(account_id)
-            .resource(format!("group/{}", row.group_name_cased))
+            .resource(format!("group{}{}", row.path, row.group_name_cased))
             .build()
             .map_err(|e| {
                 log::error!("Failed to construct ARN for group: {e}");
