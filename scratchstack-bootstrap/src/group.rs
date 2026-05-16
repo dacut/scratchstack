@@ -5,8 +5,10 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
-            CreateGroupInternalRequest, CreateGroupResponse, DeleteGroupInternalRequest, GetGroupInternalRequest,
-            GetGroupResponse, ListGroupsInternalRequest, ListGroupsResponse, UpdateGroupInternalRequest,
+            AddUserToGroupInternalRequest, CreateGroupInternalRequest, CreateGroupResponse, DeleteGroupInternalRequest,
+            GetGroupInternalRequest, GetGroupResponse, ListGroupsForUserInternalRequest, ListGroupsForUserResponse,
+            ListGroupsInternalRequest, ListGroupsResponse, RemoveUserFromGroupInternalRequest,
+            UpdateGroupInternalRequest,
         },
         types::error::InternalFailure,
     },
@@ -184,6 +186,115 @@ impl Runnable for UpdateGroupInternalCommand {
             new_group_name: self.new_group_name.clone(),
             new_path: self.new_path.clone(),
         };
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+/// Add a user to a group in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct AddUserToGroupInternalCommand {
+    /// The unique identifier for the account.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the group to add the user to.
+    #[clap(long)]
+    pub group_name: String,
+
+    /// The name of the user to add to the group.
+    #[clap(long)]
+    pub user_name: String,
+}
+
+/// List groups that a user belongs to in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct ListGroupsForUserInternalCommand {
+    /// The unique identifier for the account.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the user to list groups for.
+    #[clap(long)]
+    pub user_name: String,
+
+    /// The maximum number of groups to include in the response.
+    #[clap(long)]
+    pub max_items: Option<i32>,
+
+    /// A marker for paginating the list of groups.
+    #[clap(long)]
+    pub marker: Option<String>,
+}
+
+/// Remove a user from a group in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct RemoveUserFromGroupInternalCommand {
+    /// The unique identifier for the account.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the group to remove the user from.
+    #[clap(long)]
+    pub group_name: String,
+
+    /// The name of the user to remove from the group.
+    #[clap(long)]
+    pub user_name: String,
+}
+
+impl Runnable for AddUserToGroupInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = AddUserToGroupInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .group_name(self.group_name.clone())
+            .user_name(self.user_name.clone())
+            .build()
+            .map_err(|e| {
+                log::error!("Failed to build AddUserToGroupInternalRequest: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for ListGroupsForUserInternalCommand {
+    type Result = ListGroupsForUserResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = ListGroupsForUserInternalRequest {
+            account_id: self.account_id.clone(),
+            user_name: self.user_name.clone(),
+            max_items: self.max_items,
+            marker: self.marker.clone(),
+        };
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for RemoveUserFromGroupInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = RemoveUserFromGroupInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .group_name(self.group_name.clone())
+            .user_name(self.user_name.clone())
+            .build()
+            .map_err(|e| {
+                log::error!("Failed to build RemoveUserFromGroupInternalRequest: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }

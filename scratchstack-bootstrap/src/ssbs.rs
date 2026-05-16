@@ -25,8 +25,9 @@ use {
     crate::{
         account::{CreateAccountCommand, ListAccountsCommand},
         group::{
-            CreateGroupInternalCommand, DeleteGroupInternalCommand, GetGroupInternalCommand, ListGroupsInternalCommand,
-            UpdateGroupInternalCommand,
+            AddUserToGroupInternalCommand, CreateGroupInternalCommand, DeleteGroupInternalCommand,
+            GetGroupInternalCommand, ListGroupsForUserInternalCommand, ListGroupsInternalCommand,
+            RemoveUserFromGroupInternalCommand, UpdateGroupInternalCommand,
         },
         partition::{GetCurrentPartitionCommand, SetCurrentPartitionCommand},
         user::{
@@ -97,6 +98,10 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Add a user to a group in an account.
+    #[command(name = "add-user-to-group")]
+    AddUserToGroup(AddUserToGroupInternalCommand),
+
     /// Create an IAM account.
     #[command(name = "create-account")]
     CreateAccount(CreateAccountCommand),
@@ -137,6 +142,10 @@ enum Commands {
     #[command(name = "list-groups")]
     ListGroups(ListGroupsInternalCommand),
 
+    /// List IAM groups that a user belongs to.
+    #[command(name = "list-groups-for-user")]
+    ListGroupsForUser(ListGroupsForUserInternalCommand),
+
     /// List IAM users in an account.
     #[command(name = "list-users")]
     ListUsers(ListUsersInternalCommand),
@@ -148,6 +157,10 @@ enum Commands {
     /// Migrate the database to the latest version or a specified version.
     #[command(name = "migrate")]
     Migrate(migrate::MigrateCommand),
+
+    /// Remove a user from a group in an account.
+    #[command(name = "remove-user-from-group")]
+    RemoveUserFromGroup(RemoveUserFromGroupInternalCommand),
 
     /// Set the current partition for the database.
     ///
@@ -177,6 +190,7 @@ impl Commands {
     /// Return the AWS-style operation name for this command.
     fn operation_name(&self) -> &'static str {
         match self {
+            Commands::AddUserToGroup(_) => "AddUserToGroup",
             Commands::CreateAccount(_) => "CreateAccount",
             Commands::CreateGroup(_) => "CreateGroup",
             Commands::CreateUser(_) => "CreateUser",
@@ -187,9 +201,11 @@ impl Commands {
             Commands::GetUser(_) => "GetUser",
             Commands::ListAccounts(_) => "ListAccounts",
             Commands::ListGroups(_) => "ListGroups",
+            Commands::ListGroupsForUser(_) => "ListGroupsForUser",
             Commands::ListUsers(_) => "ListUsers",
             Commands::ListUserTags(_) => "ListUserTags",
             Commands::Migrate(_) => "Migrate",
+            Commands::RemoveUserFromGroup(_) => "RemoveUserFromGroup",
             Commands::SetCurrentPartition(_) => "SetCurrentPartition",
             Commands::TagUser(_) => "TagUser",
             Commands::UntagUser(_) => "UntagUser",
@@ -233,6 +249,10 @@ where
 {
     let cli = Cli::parse_from(args);
     let result = match &cli.command {
+        Commands::AddUserToGroup(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
         Commands::CreateAccount(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
@@ -297,6 +317,13 @@ where
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
+        Commands::ListGroupsForUser(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
         Commands::ListUsers(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
@@ -314,6 +341,10 @@ where
         Commands::Migrate(sub) => {
             sub.run(&cli, vars).await?;
             "Migration completed successfully.".to_string()
+        }
+        Commands::RemoveUserFromGroup(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
         }
         Commands::SetCurrentPartition(sub) => {
             let response = sub.run(&cli, vars).await?;
