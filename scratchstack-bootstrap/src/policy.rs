@@ -1,32 +1,15 @@
 //! Scratchstack bootstrap policy subcommands
 use {
-    crate::{Cli, MSG_INTERNAL_FAILURE, Runnable, execute_in_transaction, user::tags_from_shorthand},
+    crate::{Cli, Runnable, execute_in_transaction, user::tags_from_shorthand},
     clap::Parser,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
             CreatePolicyInternalRequest, CreatePolicyResponse, CreatePolicyVersionRequest, CreatePolicyVersionResponse,
         },
-        types::error::{InternalFailure, MalformedPolicyDocumentException},
     },
     std::ffi::OsString,
 };
-
-/// Map a request-builder error string to the most appropriate IAM error.
-///
-/// Builder errors are plain strings produced by smithy codegen and contain a field-type marker
-/// such as `policyDocumentType`. When the failure pertains to the policy document, surface it as
-/// a `MalformedPolicyDocument` error rather than an opaque `InternalFailure`, so callers see the
-/// user-facing class of error AWS IAM uses for the same situation.
-fn map_builder_error(operation: &str, error: impl std::fmt::Display) -> IamError {
-    let message = error.to_string();
-    log::error!("Failed to build {operation}: {message}");
-    if message.contains("policyDocumentType") {
-        IamError::from(MalformedPolicyDocumentException::builder().message(message).build())
-    } else {
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-    }
-}
 
 /// Create a new managed policy in a given account in the Scratchstack IAM service.
 #[derive(Debug, Parser)]
@@ -89,8 +72,7 @@ impl Runnable for CreatePolicyInternalCommand {
             .description(self.description.clone())
             .path(Some(self.path.clone()))
             .tags(tags)
-            .build()
-            .map_err(|e| map_builder_error("CreatePolicyInternalRequest", e))?;
+            .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -108,7 +90,7 @@ impl Runnable for CreatePolicyVersionCommand {
         if self.set_as_default {
             request_builder = request_builder.set_as_default(Some(true));
         }
-        let request = request_builder.build().map_err(|e| map_builder_error("CreatePolicyVersionRequest", e))?;
+        let request = request_builder.build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }

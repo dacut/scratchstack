@@ -1,6 +1,6 @@
 //! Scratchstack bootsrap partition subcommands
 use {
-    crate::{Cli, MSG_INTERNAL_FAILURE, Runnable, execute_in_transaction},
+    crate::{Cli, Runnable, execute_in_transaction},
     clap::Parser,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -8,7 +8,6 @@ use {
             GetCurrentPartitionRequest, GetCurrentPartitionResponse, SetCurrentPartitionRequest,
             SetCurrentPartitionResponse,
         },
-        types::error::InternalFailure,
     },
     std::ffi::OsString,
 };
@@ -43,10 +42,7 @@ impl Runnable for SetCurrentPartitionCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let request = SetCurrentPartitionRequest::builder().partition(self.partition.clone()).build().map_err(|e| {
-            log::error!("Failed to build SetCurrentPartitionRequest: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-        })?;
+        let request = SetCurrentPartitionRequest::builder().partition(self.partition.clone()).build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }

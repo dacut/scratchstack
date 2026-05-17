@@ -1,6 +1,6 @@
 //! Scratchstack bootstrap group subcommands
 use {
-    crate::{Cli, MSG_INTERNAL_FAILURE, Runnable, execute_in_transaction},
+    crate::{Cli, Runnable, execute_in_transaction},
     clap::Parser,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -10,7 +10,6 @@ use {
             ListGroupsInternalRequest, ListGroupsResponse, RemoveUserFromGroupInternalRequest,
             UpdateGroupInternalRequest,
         },
-        types::error::InternalFailure,
     },
     std::ffi::OsString,
 };
@@ -109,11 +108,7 @@ impl Runnable for CreateGroupInternalCommand {
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
             .path(Some(self.path.clone()))
-            .build()
-            .map_err(|e| {
-                log::error!("Failed to build CreateGroupInternalRequest: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?;
+            .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -128,11 +123,7 @@ impl Runnable for DeleteGroupInternalCommand {
         let request = DeleteGroupInternalRequest::builder()
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
-            .build()
-            .map_err(|e| {
-                log::error!("Failed to build DeleteGroupInternalRequest: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?;
+            .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -147,11 +138,7 @@ impl Runnable for GetGroupInternalCommand {
         let request = GetGroupInternalRequest::builder()
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
-            .build()
-            .map_err(|e| {
-                log::error!("Failed to build GetGroupInternalRequest: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?;
+            .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -253,11 +240,7 @@ impl Runnable for AddUserToGroupInternalCommand {
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
             .user_name(self.user_name.clone())
-            .build()
-            .map_err(|e| {
-                log::error!("Failed to build AddUserToGroupInternalRequest: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?;
+            .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -290,11 +273,7 @@ impl Runnable for RemoveUserFromGroupInternalCommand {
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
             .user_name(self.user_name.clone())
-            .build()
-            .map_err(|e| {
-                log::error!("Failed to build RemoveUserFromGroupInternalRequest: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?;
+            .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
