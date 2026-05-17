@@ -18,7 +18,8 @@ use {
     scratchstack_database::{Loadable, model::iam, ops::RequestExecutor, utils::TempDatabase},
     scratchstack_shapes_iam::{
         operation::{
-            AddUserToGroupInternalRequest, CreateAccountRequest, CreateGroupInternalRequest, CreateUserInternalRequest,
+            AddUserToGroupInternalRequest, CreateAccountRequest, CreateGroupInternalRequest,
+            CreatePolicyInternalRequest, CreatePolicyVersionRequest, CreateUserInternalRequest,
             DeleteGroupInternalRequest, GetCurrentPartitionRequest, GetGroupInternalRequest, GetUserInternalRequest,
             ListAccountsRequest, ListGroupsForUserInternalRequest, ListGroupsInternalRequest,
             ListUserTagsInternalRequest, RemoveUserFromGroupInternalRequest, SetCurrentPartitionRequest,
@@ -134,6 +135,24 @@ async fn test_database() {
     test_remove_user_from_group(&pool).await;
     test_remove_user_from_group_not_member(&pool).await;
     test_remove_user_from_group_nonexistent_group(&pool).await;
+
+    // -- CreatePolicyInternalRequest ------------------------------------------
+    test_create_policy_simple(&pool).await;
+    test_create_policy_with_path(&pool).await;
+    test_create_policy_with_description(&pool).await;
+    test_create_policy_with_tags(&pool).await;
+    test_create_policy_duplicate_name(&pool).await;
+    test_create_policy_invalid_document(&pool).await;
+    test_create_policy_valid_json_invalid_aspen(&pool).await;
+    test_create_policy_nonexistent_account(&pool).await;
+
+    // -- CreatePolicyVersionRequest -------------------------------------------
+    test_create_policy_version_simple(&pool).await;
+    test_create_policy_version_set_as_default(&pool).await;
+    test_create_policy_version_not_default(&pool).await;
+    test_create_policy_version_limit_exceeded(&pool).await;
+    test_create_policy_version_nonexistent_policy(&pool).await;
+    test_create_policy_version_invalid_document(&pool).await;
 
     // -- DeleteGroupInternalRequest -------------------------------------------
     test_delete_group_max_length_name(&pool).await;
@@ -1524,6 +1543,330 @@ async fn test_remove_user_from_group_nonexistent_group(pool: &sqlx::PgPool) {
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Removing user from nonexistent group must fail");
+}
+
+// -- CreatePolicyInternalRequest tests ----------------------------------------
+
+const VALID_POLICY_DOCUMENT: &str =
+    r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#;
+
+/// Create a simple managed policy with defaults.
+async fn test_create_policy_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = CreatePolicyInternalRequest::builder()
+        .policy_name("TestPolicy".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create policy");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let policy = resp.policy.expect("Response should include created policy");
+    assert_eq!(policy.policy_name.as_deref(), Some("TestPolicy"));
+    assert_eq!(policy.path.as_deref(), Some("/"));
+    assert!(
+        policy.policy_id.as_ref().unwrap().starts_with("ANPA"),
+        "Policy ID must start with ANPA prefix, got {:?}",
+        policy.policy_id
+    );
+    assert!(
+        policy.arn.as_ref().unwrap().ends_with(":policy/TestPolicy"),
+        "ARN must end with :policy/TestPolicy, got {:?}",
+        policy.arn
+    );
+    assert_eq!(policy.default_version_id.as_deref(), Some("v1"));
+    assert_eq!(policy.is_attachable, Some(true));
+    assert_eq!(policy.attachment_count, Some(0));
+    assert_eq!(policy.permissions_boundary_usage_count, Some(0));
+    assert!(policy.description.is_none());
+    assert!(policy.tags.is_empty());
+}
+
+/// Create a policy with a non-default path.
+async fn test_create_policy_with_path(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = CreatePolicyInternalRequest::builder()
+        .policy_name("PathPolicy".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .path(Some("/engineering/".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create policy with path");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let policy = resp.policy.expect("Response should include created policy");
+    assert_eq!(policy.path.as_deref(), Some("/engineering/"));
+    assert!(
+        policy.arn.as_ref().unwrap().ends_with(":policy/engineering/PathPolicy"),
+        "ARN must end with :policy/engineering/PathPolicy, got {:?}",
+        policy.arn
+    );
+}
+
+/// Create a policy with a description.
+async fn test_create_policy_with_description(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = CreatePolicyInternalRequest::builder()
+        .policy_name("DescribedPolicy".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .description(Some("Grants read access to S3 objects".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create policy with description");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let policy = resp.policy.expect("Response should include created policy");
+    assert_eq!(policy.description.as_deref(), Some("Grants read access to S3 objects"));
+}
+
+/// Create a policy with tags.
+async fn test_create_policy_with_tags(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = CreatePolicyInternalRequest::builder()
+        .policy_name("TaggedPolicy".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .tags(vec![
+            Tag::builder()
+                .key("Environment".to_string())
+                .value("Production".to_string())
+                .build()
+                .expect("Failed to build tag"),
+            Tag::builder().key("Team".to_string()).value("Platform".to_string()).build().expect("Failed to build tag"),
+        ])
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create policy with tags");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let policy = resp.policy.expect("Response should include created policy");
+    assert_eq!(policy.tags.len(), 2, "Expected 2 tags on policy");
+}
+
+/// Creating a policy with a duplicate name must fail.
+async fn test_create_policy_duplicate_name(pool: &sqlx::PgPool) {
+    // "TestPolicy" was committed by test_create_policy_simple; re-inserting must fail.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = CreatePolicyInternalRequest::builder()
+        .policy_name("TestPolicy".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Creating a duplicate policy name must fail");
+}
+
+/// Creating a policy with an invalid policy document must fail.
+async fn test_create_policy_invalid_document(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = CreatePolicyInternalRequest::builder()
+        .policy_name("BadDocPolicy".to_string())
+        .policy_document("not valid json".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Creating a policy with an invalid document must fail");
+}
+
+/// Creating a policy with valid JSON that is not a valid Aspen policy must fail.
+async fn test_create_policy_valid_json_invalid_aspen(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = CreatePolicyInternalRequest::builder()
+        .policy_name("ValidJsonBadAspen".to_string())
+        .policy_document(r#"{"foo": "bar"}"#.to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Creating a policy with valid JSON but invalid Aspen document must fail");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = CreatePolicyInternalRequest::builder()
+        .policy_name("ValidJsonBadAspen".to_string())
+        .policy_document(
+            r#"{"Version":"2012-10-17","Statement":[{"Action":"s3:GetObject","Resource":"*"}]}"#.to_string(),
+        )
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Creating a policy with valid JSON but invalid Aspen document must fail");
+}
+
+/// Creating a policy in an account that does not exist must fail.
+async fn test_create_policy_nonexistent_account(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = CreatePolicyInternalRequest::builder()
+        .policy_name("OrphanPolicy".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .account_id("999999999999".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Creating a policy in a nonexistent account must fail");
+}
+
+/// Create a new policy version with set_as_default = true (default behavior).
+async fn test_create_policy_version_simple(pool: &sqlx::PgPool) {
+    // First, create a policy to add versions to.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreatePolicyInternalRequest::builder()
+        .policy_name("VersionedPolicy".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create policy");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Now create a new version.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let new_document =
+        r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:PutObject","Resource":"*"}]}"#;
+    let resp = CreatePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .policy_document(new_document.to_string())
+        .set_as_default(Some(true))
+        .build()
+        .expect("Failed to build CreatePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create policy version");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let pv = resp.policy_version.expect("Response should include policy version");
+    assert_eq!(pv.version_id.as_deref(), Some("v2"));
+    assert_eq!(pv.is_default_version, Some(true));
+    assert_eq!(pv.document.as_deref(), Some(new_document));
+    assert!(pv.create_date.is_some());
+}
+
+/// Create a policy version with set_as_default = true explicitly.
+async fn test_create_policy_version_set_as_default(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let new_document =
+        r#"{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":"s3:DeleteObject","Resource":"*"}]}"#;
+    let resp = CreatePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .policy_document(new_document.to_string())
+        .set_as_default(Some(true))
+        .build()
+        .expect("Failed to build CreatePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create policy version as default");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let pv = resp.policy_version.expect("Response should include policy version");
+    assert_eq!(pv.version_id.as_deref(), Some("v3"));
+    assert_eq!(pv.is_default_version, Some(true));
+}
+
+/// Create a policy version with set_as_default = false.
+async fn test_create_policy_version_not_default(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let new_document =
+        r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"ec2:DescribeInstances","Resource":"*"}]}"#;
+    let resp = CreatePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .policy_document(new_document.to_string())
+        .set_as_default(Some(false))
+        .build()
+        .expect("Failed to build CreatePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create policy version (not default)");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let pv = resp.policy_version.expect("Response should include policy version");
+    assert_eq!(pv.version_id.as_deref(), Some("v4"));
+    assert_eq!(pv.is_default_version, Some(false));
+}
+
+/// Exceeding 5 versions must fail with LimitExceededException.
+async fn test_create_policy_version_limit_exceeded(pool: &sqlx::PgPool) {
+    // v1 was created with the policy, v2-v4 above. Create v5.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let doc_v5 =
+        r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"ec2:RunInstances","Resource":"*"}]}"#;
+    CreatePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .policy_document(doc_v5.to_string())
+        .set_as_default(Some(false))
+        .build()
+        .expect("Failed to build CreatePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create policy version v5");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Now attempt to create v6, which must fail.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let doc_v6 =
+        r#"{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":"ec2:TerminateInstances","Resource":"*"}]}"#;
+    let result = CreatePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .policy_document(doc_v6.to_string())
+        .set_as_default(Some(false))
+        .build()
+        .expect("Failed to build CreatePolicyVersionRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Creating a 6th policy version must fail");
+}
+
+/// Creating a version for a nonexistent policy must fail.
+async fn test_create_policy_version_nonexistent_policy(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = CreatePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchPolicy".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .build()
+        .expect("Failed to build CreatePolicyVersionRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Creating a version for a nonexistent policy must fail");
+}
+
+/// Creating a version with an invalid policy document must fail.
+async fn test_create_policy_version_invalid_document(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = CreatePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .policy_document("not valid json".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyVersionRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Creating a version with an invalid document must fail");
 }
 
 const TEST_DATA: &str = include_str!("iam_database.json");

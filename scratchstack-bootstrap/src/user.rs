@@ -321,7 +321,7 @@ impl Runnable for UpdateUserInternalCommand {
 }
 
 /// Convert a list of shorthand values to a `Vec<Tag>`.
-fn tags_from_shorthand(values: &[impl AsRef<str>]) -> Result<Vec<Tag>, IamError> {
+pub(crate) fn tags_from_shorthand(values: &[impl AsRef<str>]) -> Result<Vec<Tag>, IamError> {
     let mut tags = Vec::with_capacity(values.len());
     let mut tag_keys_lower = Vec::with_capacity(values.len());
 

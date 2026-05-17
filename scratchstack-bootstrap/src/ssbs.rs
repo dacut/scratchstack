@@ -16,6 +16,7 @@ mod account;
 mod group;
 mod migrate;
 mod partition;
+mod policy;
 mod user;
 
 #[cfg(test)]
@@ -30,6 +31,7 @@ use {
             RemoveUserFromGroupInternalCommand, UpdateGroupInternalCommand,
         },
         partition::{GetCurrentPartitionCommand, SetCurrentPartitionCommand},
+        policy::{CreatePolicyInternalCommand, CreatePolicyVersionCommand},
         user::{
             CreateUserInternalCommand, DeleteUserInternalCommand, GetUserInternalCommand, ListUserTagsInternalCommand,
             ListUsersInternalCommand, TagUserInternalCommand, UntagUserInternalCommand, UpdateUserInternalCommand,
@@ -109,6 +111,14 @@ enum Commands {
     /// Create an IAM group in an account.
     #[command(name = "create-group")]
     CreateGroup(CreateGroupInternalCommand),
+
+    /// Create an IAM managed policy in an account.
+    #[command(name = "create-policy")]
+    CreatePolicy(CreatePolicyInternalCommand),
+
+    /// Create a new version of an IAM managed policy.
+    #[command(name = "create-policy-version")]
+    CreatePolicyVersion(CreatePolicyVersionCommand),
 
     /// Create an IAM user in an account.
     #[command(name = "create-user")]
@@ -193,6 +203,8 @@ impl Commands {
             Commands::AddUserToGroup(_) => "AddUserToGroup",
             Commands::CreateAccount(_) => "CreateAccount",
             Commands::CreateGroup(_) => "CreateGroup",
+            Commands::CreatePolicy(_) => "CreatePolicy",
+            Commands::CreatePolicyVersion(_) => "CreatePolicyVersion",
             Commands::CreateUser(_) => "CreateUser",
             Commands::DeleteGroup(_) => "DeleteGroup",
             Commands::DeleteUser(_) => "DeleteUser",
@@ -261,6 +273,20 @@ where
             })?
         }
         Commands::CreateGroup(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::CreatePolicy(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::CreatePolicyVersion(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");

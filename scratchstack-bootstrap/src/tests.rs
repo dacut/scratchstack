@@ -21,6 +21,7 @@ async fn test_ssdb_ops() {
     test_partition(&database).await;
     test_accounts(&database).await;
     test_users(&database).await;
+    test_policies(&database).await;
     test_groups(&database).await;
     test_group_membership(&database).await;
 }
@@ -500,6 +501,34 @@ async fn test_users(database: &TempDatabase) {
     assert!(
         err.message().unwrap_or_default().contains("cannot be found"),
         "Expected 'cannot be found' in error message, got: {err}"
+    );
+}
+
+async fn test_policies(database: &TempDatabase) {
+    let port = database.port_str();
+
+    // Creating a policy with an empty document should fail with MalformedPolicyDocument, not InternalFailure.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-policy",
+            "--account-id",
+            "555566667777",
+            "--policy-name",
+            "empty-doc-policy",
+            "--policy-document",
+            "",
+        ])
+        .await
+        .expect_err("Creating a policy with an empty document should fail");
+    assert_eq!(
+        err.code(),
+        Some("MalformedPolicyDocument"),
+        "Expected MalformedPolicyDocument error for empty document, got: {err}"
     );
 }
 
