@@ -507,7 +507,7 @@ async fn test_users(database: &TempDatabase) {
 async fn test_policies(database: &TempDatabase) {
     let port = database.port_str();
 
-    // Creating a policy with an empty document fails the smithy shape regex/length constraint,
+    // Creating a policy with an empty document fails the Smithy shape regex/length constraint,
     // which surfaces as ValidationError. (MalformedPolicyDocument is reserved for documents that
     // pass shape validation but fail Aspen parsing — covered by the database-layer tests.)
     let err = database
