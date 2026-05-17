@@ -108,6 +108,7 @@ async fn test_database() {
     test_create_group_with_path(&pool).await;
     test_create_group_duplicate_name(&pool).await;
     test_create_group_nonexistent_account(&pool).await;
+    test_create_group_max_length_name(&pool).await;
 
     // -- GetGroupInternalRequest ----------------------------------------------
     test_get_group_simple(&pool).await;
@@ -135,6 +136,7 @@ async fn test_database() {
     test_remove_user_from_group_nonexistent_group(&pool).await;
 
     // -- DeleteGroupInternalRequest -------------------------------------------
+    test_delete_group_max_length_name(&pool).await;
     test_delete_group(&pool).await;
     test_delete_group_nonexistent(&pool).await;
 
@@ -1119,6 +1121,40 @@ async fn test_create_group_nonexistent_account(pool: &sqlx::PgPool) {
     assert!(result.is_err(), "Creating a group in a nonexistent account must fail");
 }
 
+/// Create a group with a 128-character name (the maximum allowed by AWS IAM).
+async fn test_create_group_max_length_name(pool: &sqlx::PgPool) {
+    // 128 characters: valid characters are [\w+=,.@-]
+    let long_name = "A".repeat(128);
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = CreateGroupInternalRequest::builder()
+        .group_name(long_name.clone())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreateGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create group with 128-character name");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    assert_eq!(resp.group.group_name, long_name);
+    assert_eq!(resp.group.path, "/");
+    assert!(resp.group.group_id.starts_with("AGPA"), "Group ID must start with AGPA prefix");
+
+    // Verify we can retrieve the group.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetGroupInternalRequest::builder()
+        .group_name(long_name.clone())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build GetGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get group with 128-character name");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.group.group_name, long_name);
+}
+
 /// Get a group that exists with default path.
 async fn test_get_group_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
@@ -1281,6 +1317,21 @@ async fn test_update_group_nonexistent(pool: &sqlx::PgPool) {
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Updating a nonexistent group must fail");
+}
+
+/// Delete the group with the maximum-length (128-character) name.
+async fn test_delete_group_max_length_name(pool: &sqlx::PgPool) {
+    let long_name = "A".repeat(128);
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeleteGroupInternalRequest::builder()
+        .group_name(long_name)
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete group with 128-character name");
+    tx.commit().await.expect("Failed to commit transaction");
 }
 
 /// Delete a group that exists.
