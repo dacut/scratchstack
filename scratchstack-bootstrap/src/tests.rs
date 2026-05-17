@@ -528,6 +528,204 @@ async fn test_policies(database: &TempDatabase) {
         .await
         .expect_err("Creating a policy with an empty document should fail");
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError for empty document, got: {err}");
+
+    // -- delete-policy-version -------------------------------------------------
+    // Create a policy with two versions: v1 is default, v2 is not.
+    let policy_doc_v1 =
+        r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#;
+    let policy_doc_v2 =
+        r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:PutObject","Resource":"*"}]}"#;
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-policy",
+            "--account-id",
+            "555566667777",
+            "--policy-name",
+            "DelVersionPolicy",
+            "--policy-document",
+            policy_doc_v1,
+        ])
+        .await
+        .expect("Failed to create DelVersionPolicy");
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-policy-version",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/DelVersionPolicy",
+            "--policy-document",
+            policy_doc_v2,
+        ])
+        .await
+        .expect("Failed to create v2 of DelVersionPolicy");
+
+    // Deleting the default version (v1) must fail with DeleteConflict.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-policy-version",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/DelVersionPolicy",
+            "--version-id",
+            "v1",
+        ])
+        .await
+        .expect_err("Deleting the default version should fail");
+    assert_eq!(err.code(), Some("DeleteConflict"), "Expected DeleteConflict, got: {err}");
+
+    // Deleting a non-default version (v2) must succeed.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-policy-version",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/DelVersionPolicy",
+            "--version-id",
+            "v2",
+        ])
+        .await
+        .expect("Failed to delete v2 of DelVersionPolicy");
+
+    // Re-deleting v2 must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-policy-version",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/DelVersionPolicy",
+            "--version-id",
+            "v2",
+        ])
+        .await
+        .expect_err("Re-deleting v2 should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Deleting a version on a non-existent policy must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-policy-version",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/NoSuchDelPolicy",
+            "--version-id",
+            "v1",
+        ])
+        .await
+        .expect_err("Deleting from a non-existent policy should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Wrong path on the ARN should also fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-policy-version",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/wrong/DelVersionPolicy",
+            "--version-id",
+            "v1",
+        ])
+        .await
+        .expect_err("Deleting via wrong path should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // AWS-owned policy: addressing via "aws" in the ARN must map to account 000000000000.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-policy",
+            "--account-id",
+            "000000000000",
+            "--policy-name",
+            "AwsDelVersionPolicy",
+            "--policy-document",
+            policy_doc_v1,
+        ])
+        .await
+        .expect("Failed to create AwsDelVersionPolicy");
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-policy-version",
+            "--policy-arn",
+            "arn:test-partition:iam::000000000000:policy/AwsDelVersionPolicy",
+            "--policy-document",
+            policy_doc_v2,
+        ])
+        .await
+        .expect("Failed to create v2 of AwsDelVersionPolicy");
+
+    // Delete v2 using "aws" in the ARN.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-policy-version",
+            "--policy-arn",
+            "arn:test-partition:iam::aws:policy/AwsDelVersionPolicy",
+            "--version-id",
+            "v2",
+        ])
+        .await
+        .expect("Failed to delete v2 of AwsDelVersionPolicy via 'aws' account");
+
+    // Re-deleting v2 via "aws" must fail with NoSuchEntity, confirming it was actually removed
+    // from the 000000000000 account row.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-policy-version",
+            "--policy-arn",
+            "arn:test-partition:iam::aws:policy/AwsDelVersionPolicy",
+            "--version-id",
+            "v2",
+        ])
+        .await
+        .expect_err("Re-deleting v2 via aws should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
 }
 
 async fn test_groups(database: &TempDatabase) {

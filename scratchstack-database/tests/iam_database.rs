@@ -17,13 +17,14 @@ use {
     pretty_assertions::{assert_eq, assert_ne},
     scratchstack_database::{Loadable, model::iam, ops::RequestExecutor, utils::TempDatabase},
     scratchstack_shapes_iam::{
+        error_meta::Error as IamError,
         operation::{
             AddUserToGroupInternalRequest, CreateAccountRequest, CreateGroupInternalRequest,
             CreatePolicyInternalRequest, CreatePolicyVersionRequest, CreateUserInternalRequest,
-            DeleteGroupInternalRequest, GetCurrentPartitionRequest, GetGroupInternalRequest, GetUserInternalRequest,
-            ListAccountsRequest, ListGroupsForUserInternalRequest, ListGroupsInternalRequest,
-            ListUserTagsInternalRequest, RemoveUserFromGroupInternalRequest, SetCurrentPartitionRequest,
-            TagUserInternalRequest, UntagUserInternalRequest, UpdateGroupInternalRequest,
+            DeleteGroupInternalRequest, DeletePolicyVersionRequest, GetCurrentPartitionRequest,
+            GetGroupInternalRequest, GetUserInternalRequest, ListAccountsRequest, ListGroupsForUserInternalRequest,
+            ListGroupsInternalRequest, ListUserTagsInternalRequest, RemoveUserFromGroupInternalRequest,
+            SetCurrentPartitionRequest, TagUserInternalRequest, UntagUserInternalRequest, UpdateGroupInternalRequest,
         },
         types::{ListAccountsFilter, ListAccountsFilterName, Tag},
     },
@@ -154,6 +155,16 @@ async fn test_database() {
     test_create_policy_version_mismatched_path(&pool).await;
     test_create_policy_version_nonexistent_policy(&pool).await;
     test_create_policy_version_invalid_document(&pool).await;
+
+    // -- DeletePolicyVersionRequest -------------------------------------------
+    test_delete_policy_version_simple(&pool).await;
+    test_delete_policy_version_default_fails(&pool).await;
+    test_delete_policy_version_with_path(&pool).await;
+    test_delete_policy_version_mismatched_path(&pool).await;
+    test_delete_policy_version_nonexistent_policy(&pool).await;
+    test_delete_policy_version_nonexistent_version(&pool).await;
+    test_delete_policy_version_invalid_arn(&pool).await;
+    test_delete_policy_version_aws_account(&pool).await;
 
     // -- DeleteGroupInternalRequest -------------------------------------------
     test_delete_group_max_length_name(&pool).await;
@@ -1895,6 +1906,245 @@ async fn test_create_policy_version_invalid_document(pool: &sqlx::PgPool) {
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a version with an invalid document must fail");
+}
+
+/// Delete a non-default version of a managed policy. After the test_create_policy_version_*
+/// tests, "VersionedPolicy" has versions v1..v5 with v3 as the default version. v1 is not the
+/// default, so deleting it should succeed.
+async fn test_delete_policy_version_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeletePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .version_id("v1".to_string())
+        .build()
+        .expect("Failed to build DeletePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete policy version v1");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Re-deleting the same version should fail with NoSuchEntity since the row is gone.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeletePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .version_id("v1".to_string())
+        .build()
+        .expect("Failed to build DeletePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Re-deleting v1 should fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Deleting the default version must fail with DeleteConflictException.
+async fn test_delete_policy_version_default_fails(pool: &sqlx::PgPool) {
+    // v3 is the default version of VersionedPolicy.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeletePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .version_id("v3".to_string())
+        .build()
+        .expect("Failed to build DeletePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Deleting the default version should fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::DeleteConflictException(_)), "Expected DeleteConflict, got: {err:?}");
+
+    // Confirm v3 is still present by trying to delete it again (still must fail with DeleteConflict).
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeletePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .version_id("v3".to_string())
+        .build()
+        .expect("Failed to build DeletePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Default version still cannot be deleted on a retry");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::DeleteConflictException(_)), "Expected DeleteConflict, got: {err:?}");
+}
+
+/// Deleting a version on a policy with a non-default path must work when the ARN's path matches.
+async fn test_delete_policy_version_with_path(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreatePolicyInternalRequest::builder()
+        .policy_name("PathDelVersion".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .path(Some("/engineering/".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create policy at /engineering/PathDelVersion");
+    let doc_v2 = r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:PutObject","Resource":"*"}]}"#;
+    CreatePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/engineering/PathDelVersion".to_string())
+        .policy_document(doc_v2.to_string())
+        .set_as_default(Some(true))
+        .build()
+        .expect("Failed to build CreatePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create v2 of /engineering/PathDelVersion");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // v1 is no longer the default; delete it.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeletePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/engineering/PathDelVersion".to_string())
+        .version_id("v1".to_string())
+        .build()
+        .expect("Failed to build DeletePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete v1 of /engineering/PathDelVersion");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// Deleting a version using an ARN with the wrong path must fail with NoSuchEntity.
+async fn test_delete_policy_version_mismatched_path(pool: &sqlx::PgPool) {
+    // PathDelVersion lives at /engineering/, not at /.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeletePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/PathDelVersion".to_string())
+        .version_id("v2".to_string())
+        .build()
+        .expect("Failed to build DeletePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Deleting with a mismatched path must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Deleting a version from a policy that does not exist must fail with NoSuchEntity.
+async fn test_delete_policy_version_nonexistent_policy(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeletePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchPolicyEver".to_string())
+        .version_id("v1".to_string())
+        .build()
+        .expect("Failed to build DeletePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Deleting a version of a nonexistent policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Deleting a version that does not exist on an existing policy must fail with NoSuchEntity.
+async fn test_delete_policy_version_nonexistent_version(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeletePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .version_id("v99".to_string())
+        .build()
+        .expect("Failed to build DeletePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Deleting a nonexistent version must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Deleting with an unparseable ARN must fail with ValidationError.
+async fn test_delete_policy_version_invalid_arn(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    // 20+ character invalid ARN to pass the Smithy length check but fail ARN parsing.
+    let err = DeletePolicyVersionRequest::builder()
+        .policy_arn("not-an-arn-but-long-enough-to-pass".to_string())
+        .version_id("v1".to_string())
+        .build()
+        .expect("Failed to build DeletePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Deleting with an invalid ARN must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::ValidationError(_)), "Expected ValidationError, got: {err:?}");
+
+    // An ARN whose resource does not start with "policy/" must also fail with ValidationError.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeletePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:user/SomeUser".to_string())
+        .version_id("v1".to_string())
+        .build()
+        .expect("Failed to build DeletePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Deleting with a non-policy ARN must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::ValidationError(_)), "Expected ValidationError, got: {err:?}");
+}
+
+/// Deleting a version on an AWS-owned managed policy must accept an "aws" account in the ARN
+/// (mapped to "000000000000").
+async fn test_delete_policy_version_aws_account(pool: &sqlx::PgPool) {
+    // CreatePolicy's Smithy regex requires a 12-digit account id, so create the AWS-owned policy
+    // by addressing it with the literal "000000000000" account that bootstrap inserts.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreatePolicyInternalRequest::builder()
+        .policy_name("AwsOwnedDelVersion".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .account_id("000000000000".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create AWS-owned policy");
+    let doc_v2 =
+        r#"{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":"s3:DeleteBucket","Resource":"*"}]}"#;
+    CreatePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::000000000000:policy/AwsOwnedDelVersion".to_string())
+        .policy_document(doc_v2.to_string())
+        .set_as_default(Some(false))
+        .build()
+        .expect("Failed to build CreatePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create v2 of AwsOwnedDelVersion");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Delete v2 using "aws" in the ARN.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeletePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::aws:policy/AwsOwnedDelVersion".to_string())
+        .version_id("v2".to_string())
+        .build()
+        .expect("Failed to build DeletePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete v2 of AwsOwnedDelVersion via 'aws' account");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Re-deleting the same version should fail with NoSuchEntity (proves it really was deleted
+    // from the "000000000000" account row).
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeletePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::aws:policy/AwsOwnedDelVersion".to_string())
+        .version_id("v2".to_string())
+        .build()
+        .expect("Failed to build DeletePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Re-deleting v2 should fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+
+    // Also verify that the same ARN using "000000000000" addresses the same policy.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeletePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::000000000000:policy/AwsOwnedDelVersion".to_string())
+        .version_id("v1".to_string())
+        .build()
+        .expect("Failed to build DeletePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("v1 is the default and cannot be deleted");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::DeleteConflictException(_)), "Expected DeleteConflict, got: {err:?}");
 }
 
 const TEST_DATA: &str = include_str!("iam_database.json");

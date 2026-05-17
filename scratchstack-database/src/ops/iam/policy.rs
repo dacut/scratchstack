@@ -19,12 +19,13 @@ use {
         error_meta::Error as IamError,
         operation::{
             CreatePolicyInternalRequest, CreatePolicyResponse, CreatePolicyVersionRequest, CreatePolicyVersionResponse,
+            DeletePolicyVersionRequest,
         },
         types::{
             PolicyVersion, Tag,
             error::{
-                InternalFailure, LimitExceededException, MalformedPolicyDocumentException, NoSuchEntityException,
-                ValidationError,
+                DeleteConflictException, InternalFailure, LimitExceededException, MalformedPolicyDocumentException,
+                NoSuchEntityException, ValidationError,
             },
         },
     },
@@ -344,6 +345,132 @@ pub async fn create_policy_version(
         })?;
 
     Ok(CreatePolicyVersionResponse::builder().policy_version(Some(policy_version)).build().unwrap())
+}
+
+impl RequestExecutor for DeletePolicyVersionRequest {
+    type Response = ();
+    type Error = IamError;
+
+    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
+        delete_policy_version(tx, &self.policy_arn, &self.version_id).await
+    }
+}
+
+/// Delete a non-default version of a managed policy.
+pub async fn delete_policy_version(
+    tx: &mut PgTransaction<'_>,
+    policy_arn: &str,
+    version_id: &str,
+) -> Result<(), IamError> {
+    // Parse the policy ARN.
+    let arn = match Arn::from_str(policy_arn) {
+        Ok(arn) => arn,
+        Err(e) => {
+            log::info!("Failed to parse policy ARN: {e}");
+            return Err(ValidationError::builder().message("Invalid policy ARN".to_string()).build().into());
+        }
+    };
+
+    let resource = arn.resource();
+    if !resource.starts_with(ARN_RESOURCE_PREFIX_POLICY) {
+        return Err(ValidationError::builder()
+            .message("Policy ARN must have a resource that starts with \"policy/\"".to_string())
+            .build()
+            .into());
+    }
+
+    let account_id = arn.account_id();
+    let account_id = match account_id {
+        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
+        other => other,
+    };
+
+    // Extract path and name from the resource.
+    let policy_path_and_name = &resource[ARN_RESOURCE_PREFIX_POLICY.len()..];
+    let name_start = policy_path_and_name.rfind('/').map(|i| i + 1).unwrap_or(0);
+    let policy_name_lower = policy_path_and_name[name_start..].to_ascii_lowercase();
+    let policy_path = if name_start == 0 {
+        "/".to_string()
+    } else {
+        format!("/{}", &policy_path_and_name[..name_start])
+    };
+
+    // Parse the numeric portion of the version id. The Smithy regex enforces
+    // ^v[1-9][0-9]*(\.[A-Za-z0-9-]*)?$, so version_id always starts with 'v' followed by digits
+    // and optionally a '.suffix'. We accept the input defensively in case the builder is bypassed.
+    let version_number = parse_policy_version_id(version_id).ok_or_else(|| {
+        IamError::from(ValidationError::builder().message(format!("Invalid policy version id: {version_id}")).build())
+    })?;
+
+    // Lock the managed_policies row to prevent a race in which another transaction sets the
+    // default version to the one being deleted between our default-version check and the delete.
+    let row = match query(indoc! {"
+            SELECT managed_policy_id, default_version
+            FROM iam.managed_policies
+            WHERE account_id = $1 AND path = $2 AND managed_policy_name_lower = $3
+            FOR UPDATE
+        "})
+    .bind(account_id)
+    .bind(&policy_path)
+    .bind(&policy_name_lower)
+    .fetch_optional(tx.as_mut())
+    .await
+    {
+        Ok(Some(row)) => row,
+        Ok(None) => {
+            let message = format!("Policy {policy_arn} was not found.");
+            return Err(NoSuchEntityException::builder().message(message).build().into());
+        }
+        Err(e) => {
+            log::error!("Failed to query managed policy from database: {e}");
+            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+        }
+    };
+
+    let managed_policy_id: &str = row.try_get(0).map_err(|e| {
+        log::error!("Failed to get managed_policy_id from database row: {e}");
+        InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+    })?;
+    let default_version: i64 = row.try_get(1).map_err(|e| {
+        log::error!("Failed to get default_version from database row: {e}");
+        InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+    })?;
+
+    if version_number == default_version {
+        let message = "Cannot delete the default version of a policy. To delete the default version, you must first set another version as the default.".to_string();
+        return Err(DeleteConflictException::builder().message(message).build().into());
+    }
+
+    let result = match query(indoc! {"
+            DELETE FROM iam.managed_policy_versions
+            WHERE managed_policy_id = $1 AND managed_policy_version = $2
+        "})
+    .bind(managed_policy_id)
+    .bind(version_number)
+    .execute(tx.as_mut())
+    .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            log::error!("Failed to delete managed policy version from database: {e}");
+            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+        }
+    };
+
+    if result.rows_affected() == 0 {
+        let message = format!("Policy {policy_arn} version {version_id} was not found.");
+        return Err(NoSuchEntityException::builder().message(message).build().into());
+    }
+
+    Ok(())
+}
+
+/// Parse a policy version id of the form `v<N>` or `v<N>.<suffix>` into its numeric portion.
+/// Returns `None` if the input does not start with `v` followed by digits.
+fn parse_policy_version_id(version_id: &str) -> Option<i64> {
+    let digits = version_id.strip_prefix('v')?;
+    let digits = digits.split('.').next().unwrap_or(digits);
+    digits.parse::<i64>().ok().filter(|n| *n > 0)
 }
 
 fn policy_arn_resource(path: &str, policy_name: &str) -> String {
