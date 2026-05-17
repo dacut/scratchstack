@@ -25,7 +25,6 @@ const IAM_NO_INTERNAL_REQUEST_API: &[&str] = &[
     "SetDefaultPolicyVersion",
     "TagPolicy",
     "UntagPolicy",
-
     // These do not have request bodies, so we can't add an account id field to the object.
     // These are (or will be) implemented in scratchstack-iam-ext.json.
     "GenerateCredentialReport",
@@ -33,7 +32,6 @@ const IAM_NO_INTERNAL_REQUEST_API: &[&str] = &[
     "GetAccountSummary",
     "GetCredentialReport",
     "GetOutboundWebIdentityFederationInfo",
-
     // Organization APIs that don't need an account id.
     "DeleteAccountPasswordPolicy",
     "DisableOrganizationsRootCredentialsManagement",
