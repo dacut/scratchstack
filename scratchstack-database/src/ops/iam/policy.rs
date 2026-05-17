@@ -7,7 +7,7 @@ use {
             RequestExecutor,
             iam::{
                 constrain_max_items, get_current_partition_or_fail, validate_account_id, validate_path,
-                validate_policy_name, validate_tag_key, validate_tag_value,
+                validate_path_prefix, validate_policy_name, validate_tag_key, validate_tag_value,
             },
         },
     },
@@ -611,6 +611,9 @@ pub async fn list_policies(
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
+    if let Some(path_prefix) = path_prefix {
+        validate_path_prefix(path_prefix)?;
+    }
     let max_items = constrain_max_items(max_items)?;
     let partition = get_current_partition_or_fail(tx).await?;
 
