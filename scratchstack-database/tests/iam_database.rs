@@ -169,6 +169,9 @@ async fn test_database() {
     test_delete_policy_version_invalid_arn(&pool).await;
     test_delete_policy_version_aws_account(&pool).await;
 
+    // -- update_date denormalization ------------------------------------------
+    test_policy_update_date_lifecycle(&pool).await;
+
     // -- GetPolicyRequest / GetPolicyVersionRequest ---------------------------
     test_get_policy_simple(&pool).await;
     test_get_policy_with_path(&pool).await;
@@ -2783,6 +2786,119 @@ async fn test_list_policies_usage_filter_pb(pool: &sqlx::PgPool) {
 
     let names: Vec<String> = resp.policies.iter().filter_map(|p| p.policy_name.clone()).collect();
     assert!(names.contains(&"Example-Managed-Policy-1".to_string()), "Expected Example-Managed-Policy-1: {names:?}");
+}
+
+// -- update_date denormalization tests ----------------------------------------
+
+/// Exercise update_date semantics across CreatePolicy, CreatePolicyVersion, and
+/// DeletePolicyVersion (both for non-latest and latest versions). update_date is supposed to
+/// track the most recent version's created_at.
+async fn test_policy_update_date_lifecycle(pool: &sqlx::PgPool) {
+    let arn = "arn:test-partition:iam::123456789012:policy/UpdateDatePolicy";
+
+    // Create the policy. Initially the only version is v1, so update_date == v1.create_date.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let create = CreatePolicyInternalRequest::builder()
+        .policy_name("UpdateDatePolicy".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create UpdateDatePolicy");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let initial_update_date = get_policy_update_date(pool, arn).await;
+    // CreatePolicy doesn't return update_date directly, but it must equal the policy's create_date,
+    // which is the version's created_at (they all come from the same CURRENT_TIMESTAMP in-tx).
+    assert_eq!(initial_update_date, create.policy.as_ref().unwrap().create_date.unwrap());
+
+    // Create v2 (non-default). update_date should advance to v2.create_date.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let v2 = CreatePolicyVersionRequest::builder()
+        .policy_arn(arn.to_string())
+        .policy_document(
+            r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:PutObject","Resource":"*"}]}"#
+                .to_string(),
+        )
+        .set_as_default(Some(false))
+        .build()
+        .expect("Failed to build CreatePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create v2");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let after_v2 = get_policy_update_date(pool, arn).await;
+    assert_eq!(after_v2, v2.policy_version.as_ref().unwrap().create_date.unwrap());
+    assert!(after_v2 > initial_update_date, "update_date should advance after CreatePolicyVersion");
+
+    // Create v3 (non-default). update_date should advance to v3.create_date.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let v3 = CreatePolicyVersionRequest::builder()
+        .policy_arn(arn.to_string())
+        .policy_document(
+            r#"{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":"s3:DeleteObject","Resource":"*"}]}"#
+                .to_string(),
+        )
+        .set_as_default(Some(false))
+        .build()
+        .expect("Failed to build CreatePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create v3");
+    tx.commit().await.expect("Failed to commit transaction");
+    let v3_create_date = v3.policy_version.as_ref().unwrap().create_date.unwrap();
+    assert_eq!(get_policy_update_date(pool, arn).await, v3_create_date);
+
+    // Delete v2 (non-latest). update_date should be unchanged (still v3.create_date).
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeletePolicyVersionRequest::builder()
+        .policy_arn(arn.to_string())
+        .version_id("v2".to_string())
+        .build()
+        .expect("Failed to build DeletePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete v2");
+    tx.commit().await.expect("Failed to commit transaction");
+    assert_eq!(
+        get_policy_update_date(pool, arn).await,
+        v3_create_date,
+        "Deleting a non-latest version must not change update_date"
+    );
+
+    // Delete v3 (the latest). update_date should be recomputed to v1.create_date (only remaining).
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeletePolicyVersionRequest::builder()
+        .policy_arn(arn.to_string())
+        .version_id("v3".to_string())
+        .build()
+        .expect("Failed to build DeletePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete v3");
+    tx.commit().await.expect("Failed to commit transaction");
+    assert_eq!(
+        get_policy_update_date(pool, arn).await,
+        initial_update_date,
+        "Deleting the latest version must roll update_date back to the now-latest version's create_date"
+    );
+}
+
+/// Fetch the `update_date` for a managed policy via GetPolicy.
+async fn get_policy_update_date(pool: &sqlx::PgPool, arn: &str) -> chrono::DateTime<chrono::Utc> {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetPolicyRequest::builder()
+        .policy_arn(arn.to_string())
+        .build()
+        .expect("Failed to build GetPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get policy");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    resp.policy.unwrap().update_date.expect("Policy should have update_date")
 }
 
 const TEST_DATA: &str = include_str!("iam_database.json");

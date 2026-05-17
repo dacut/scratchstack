@@ -46,6 +46,10 @@ pub struct ManagedPolicy {
 
     /// Timestamp when the policy was created.
     pub created_at: Option<DateTime<Utc>>,
+
+    /// Timestamp of the most recent policy version's creation. Maintained denormalized on the
+    /// row so list/get queries don't need a per-row sub-query against `managed_policy_versions`.
+    pub update_date: Option<DateTime<Utc>>,
 }
 
 #[cfg(feature = "dump")]
@@ -54,7 +58,7 @@ impl crate::Dumpable for ManagedPolicy {
         sqlx::query_as(indoc! {"
             SELECT managed_policy_id, account_id, managed_policy_name_lower AS policy_name_lower,
                    managed_policy_name_cased AS policy_name_cased, path, default_version,
-                   deprecated, policy_type, latest_version, created_at
+                   deprecated, policy_type, latest_version, created_at, update_date
             FROM iam.managed_policies
             ORDER BY account_id, managed_policy_id
         "})

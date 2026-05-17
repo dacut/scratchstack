@@ -315,23 +315,25 @@ pub async fn create_policy_version(
         InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
     })?;
 
-    // Update latest_version (and default_version if set_as_default).
+    // Update latest_version and update_date (and default_version if set_as_default).
     let update_query = if set_as_default {
         query(indoc! {"
                 UPDATE iam.managed_policies
-                SET latest_version = $1, default_version = $1
+                SET latest_version = $1, default_version = $1, update_date = $3
                 WHERE managed_policy_id = $2
             "})
         .bind(new_version)
         .bind(managed_policy_id)
+        .bind(created_at)
     } else {
         query(indoc! {"
                 UPDATE iam.managed_policies
-                SET latest_version = $1
+                SET latest_version = $1, update_date = $3
                 WHERE managed_policy_id = $2
             "})
         .bind(new_version)
         .bind(managed_policy_id)
+        .bind(created_at)
     };
 
     if let Err(e) = update_query.execute(tx.as_mut()).await {
@@ -381,7 +383,7 @@ pub async fn delete_policy_version(
     // Lock the managed_policies row to prevent a race in which another transaction sets the
     // default version to the one being deleted between our default-version check and the delete.
     let row = match query(indoc! {"
-            SELECT managed_policy_id, default_version
+            SELECT managed_policy_id, default_version, latest_version
             FROM iam.managed_policies
             WHERE account_id = $1 AND path = $2 AND managed_policy_name_lower = $3
             FOR UPDATE
@@ -403,12 +405,16 @@ pub async fn delete_policy_version(
         }
     };
 
-    let managed_policy_id: &str = row.try_get(0).map_err(|e| {
+    let managed_policy_id: String = row.try_get(0).map_err(|e| {
         log::error!("Failed to get managed_policy_id from database row: {e}");
         InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
     })?;
     let default_version: i64 = row.try_get(1).map_err(|e| {
         log::error!("Failed to get default_version from database row: {e}");
+        InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+    })?;
+    let latest_version: i64 = row.try_get(2).map_err(|e| {
+        log::error!("Failed to get latest_version from database row: {e}");
         InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
     })?;
 
@@ -421,7 +427,7 @@ pub async fn delete_policy_version(
             DELETE FROM iam.managed_policy_versions
             WHERE managed_policy_id = $1 AND managed_policy_version = $2
         "})
-    .bind(managed_policy_id)
+    .bind(&managed_policy_id)
     .bind(version_number)
     .execute(tx.as_mut())
     .await
@@ -436,6 +442,29 @@ pub async fn delete_policy_version(
     if result.rows_affected() == 0 {
         let message = format!("Policy {policy_arn} version {version_id} was not found.");
         return Err(NoSuchEntityException::builder().message(message).build().into());
+    }
+
+    // If we just removed the latest version, the denormalized update_date is now stale. Recompute
+    // it from the remaining versions. (No COALESCE: the default version can't be deleted, so at
+    // least one version always remains.) This runs only on the rare path of deleting the latest
+    // version; non-latest deletes leave update_date alone, matching the existing latest_version
+    // laziness.
+    if version_number == latest_version
+        && let Err(e) = query(indoc! {"
+                UPDATE iam.managed_policies
+                SET update_date = (
+                    SELECT MAX(created_at)
+                    FROM iam.managed_policy_versions
+                    WHERE managed_policy_id = $1
+                )
+                WHERE managed_policy_id = $1
+            "})
+        .bind(&managed_policy_id)
+        .execute(tx.as_mut())
+        .await
+    {
+        log::error!("Failed to recompute managed policy update_date: {e}");
+        return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
     }
 
     Ok(())
@@ -457,7 +486,7 @@ pub async fn get_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Result<
 
     let row = query(indoc! {"
             SELECT managed_policy_id, managed_policy_name_cased, path, default_version, deprecated,
-                description, created_at
+                description, created_at, update_date
             FROM iam.managed_policies
             WHERE account_id = $1 AND path = $2 AND managed_policy_name_lower = $3
         "})
@@ -483,9 +512,9 @@ pub async fn get_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Result<
     let deprecated: bool = row.try_get(4).map_err(internal_failure_from_row_err("deprecated"))?;
     let description: Option<String> = row.try_get(5).map_err(internal_failure_from_row_err("description"))?;
     let created_at: DateTime<Utc> = row.try_get(6).map_err(internal_failure_from_row_err("created_at"))?;
+    let update_date: DateTime<Utc> = row.try_get(7).map_err(internal_failure_from_row_err("update_date"))?;
 
     let tags = fetch_policy_tags(tx, &managed_policy_id).await?;
-    let update_date = fetch_latest_version_created_at(tx, &managed_policy_id).await?.unwrap_or(created_at);
 
     let arn = build_policy_arn(&partition, &parts.account_id, &path, &policy_name_cased)?;
     let policy = build_policy(
@@ -622,7 +651,7 @@ pub async fn list_policies(
     let mut sql = QueryBuilder::new(
         r#"
         SELECT managed_policy_id, account_id, managed_policy_name_cased, path, default_version,
-            deprecated, description, created_at
+            deprecated, description, created_at, update_date
         FROM iam.managed_policies
         WHERE
     "#,
@@ -741,9 +770,9 @@ pub async fn list_policies(
         let deprecated: bool = row.try_get(5).map_err(internal_failure_from_row_err("deprecated"))?;
         let description: Option<String> = row.try_get(6).map_err(internal_failure_from_row_err("description"))?;
         let created_at: DateTime<Utc> = row.try_get(7).map_err(internal_failure_from_row_err("created_at"))?;
+        let update_date: DateTime<Utc> = row.try_get(8).map_err(internal_failure_from_row_err("update_date"))?;
 
         let tags = fetch_policy_tags(tx, &managed_policy_id).await?;
-        let update_date = fetch_latest_version_created_at(tx, &managed_policy_id).await?.unwrap_or(created_at);
 
         let arn = build_policy_arn(&partition, &row_account_id, &path, &policy_name_cased)?;
         let policy = build_policy(
@@ -1172,32 +1201,6 @@ async fn fetch_policy_tags(tx: &mut PgTransaction<'_>, managed_policy_id: &str) 
         })?);
     }
     Ok(tags)
-}
-
-/// Fetch the `created_at` of the most recent (highest-numbered) version of a managed policy.
-async fn fetch_latest_version_created_at(
-    tx: &mut PgTransaction<'_>,
-    managed_policy_id: &str,
-) -> Result<Option<DateTime<Utc>>, IamError> {
-    let row = query(indoc! {"
-            SELECT created_at
-            FROM iam.managed_policy_versions
-            WHERE managed_policy_id = $1
-            ORDER BY managed_policy_version DESC
-            LIMIT 1
-        "})
-    .bind(managed_policy_id)
-    .fetch_optional(tx.as_mut())
-    .await
-    .map_err(|e| {
-        log::error!("Failed to fetch latest managed policy version created_at: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-    })?;
-
-    Ok(match row {
-        Some(row) => Some(row.try_get(0).map_err(internal_failure_from_row_err("created_at"))?),
-        None => None,
-    })
 }
 
 /// Construct a `Policy` object from the fields fetched from the database.
