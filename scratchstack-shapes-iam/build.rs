@@ -13,6 +13,28 @@ use {
 /// Some of these do not have request bodies (so we can't annotate with an account id); others are
 /// organization APIs that do not need an account id.
 const IAM_NO_INTERNAL_REQUEST_API: &[&str] = &[
+    // These use an ARN parameter that already includes the account id, so we don't need to add an
+    // internal request with an account id field.
+    "CreatePolicyVersion",
+    "DeletePolicy",
+    "DeletePolicyVersion",
+    "GetPolicy",
+    "GetPolicyVersion",
+    "ListPolicyTags",
+    "ListPolicyVersions",
+    "SetDefaultPolicyVersion",
+    "TagPolicy",
+    "UntagPolicy",
+
+    // These do not have request bodies, so we can't add an account id field to the object.
+    // These are (or will be) implemented in scratchstack-iam-ext.json.
+    "GenerateCredentialReport",
+    "GetAccountPasswordPolicy",
+    "GetAccountSummary",
+    "GetCredentialReport",
+    "GetOutboundWebIdentityFederationInfo",
+
+    // Organization APIs that don't need an account id.
     "DeleteAccountPasswordPolicy",
     "DisableOrganizationsRootCredentialsManagement",
     "DisableOrganizationsRootSessions",
@@ -20,13 +42,8 @@ const IAM_NO_INTERNAL_REQUEST_API: &[&str] = &[
     "EnableOrganizationsRootCredentialsManagement",
     "EnableOrganizationsRootSessions",
     "EnableOutboundWebIdentityFederation",
-    "GenerateCredentialReport",
     "GenerateOrganizationsAccessReport",
-    "GetAccountPasswordPolicy",
-    "GetAccountSummary",
-    "GetCredentialReport",
     "GetOrganizationsAccessReport",
-    "GetOutboundWebIdentityFederationInfo",
     "ListOrganizationsFeatures",
 ];
 

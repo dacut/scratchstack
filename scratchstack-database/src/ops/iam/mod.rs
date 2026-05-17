@@ -97,6 +97,17 @@ pub fn validate_tag_value(tag_value: impl AsRef<str>) -> Result<(), ValidationEr
     }
 }
 
+/// Validate that the policy name is valid according to AWS IAM rules.
+pub fn validate_policy_name(policy_name: impl AsRef<str>) -> Result<(), ValidationError> {
+    let policy_name = policy_name.as_ref();
+    if !USER_NAME_REGEX.is_match(policy_name) || policy_name.is_empty() || policy_name.len() > 128 {
+        let message = "Policy name must contain only alphanumeric characters or the following symbols: =,.@-_ and must be between 1 and 128 characters long.".to_string();
+        Err(ValidationError::builder().message(message).build())
+    } else {
+        Ok(())
+    }
+}
+
 /// Validate that the user name is valid according to AWS IAM rules.
 pub fn validate_user_name(user_name: impl AsRef<str>) -> Result<(), ValidationError> {
     let user_name = user_name.as_ref();
