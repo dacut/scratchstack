@@ -1056,7 +1056,7 @@ async fn test_policies(database: &TempDatabase) {
     assert_eq!(tags.len(), 1);
     assert_eq!(tags[0].get("Key").unwrap().as_str(), Some("Env"));
 
-    // tag-policy on missing policy should NoSuchEntity.
+    // tag-policy on missing policy should fail with NoSuchEntity.
     let err = database
         .run([
             "ssbs",
