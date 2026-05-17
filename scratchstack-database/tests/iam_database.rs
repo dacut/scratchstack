@@ -151,6 +151,7 @@ async fn test_database() {
     test_create_policy_version_set_as_default(&pool).await;
     test_create_policy_version_not_default(&pool).await;
     test_create_policy_version_limit_exceeded(&pool).await;
+    test_create_policy_version_mismatched_path(&pool).await;
     test_create_policy_version_nonexistent_policy(&pool).await;
     test_create_policy_version_invalid_document(&pool).await;
 
@@ -1853,6 +1854,33 @@ async fn test_create_policy_version_nonexistent_policy(pool: &sqlx::PgPool) {
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a version for a nonexistent policy must fail");
+}
+
+/// Creating a version with an ARN whose path does not match the policy path must fail.
+async fn test_create_policy_version_mismatched_path(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreatePolicyInternalRequest::builder()
+        .policy_name("PathSensitivePolicy".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .path(Some("/engineering/".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create policy");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = CreatePolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/wrong/PathSensitivePolicy".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .build()
+        .expect("Failed to build CreatePolicyVersionRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Creating a version with a mismatched path must fail");
 }
 
 /// Creating a version with an invalid policy document must fail.

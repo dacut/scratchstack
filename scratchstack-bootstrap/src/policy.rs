@@ -69,9 +69,9 @@ pub(crate) struct CreatePolicyVersionCommand {
     #[clap(long)]
     pub policy_document: String,
 
-    /// Whether to set this version as the policy's default version.
-    #[clap(long)]
-    pub set_as_default: Option<bool>,
+    /// Set this version as the policy's default version.
+    #[clap(long, action = clap::ArgAction::SetTrue)]
+    pub set_as_default: bool,
 }
 
 impl Runnable for CreatePolicyInternalCommand {
@@ -102,12 +102,13 @@ impl Runnable for CreatePolicyVersionCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let request = CreatePolicyVersionRequest::builder()
+        let mut request_builder = CreatePolicyVersionRequest::builder()
             .policy_arn(self.policy_arn.clone())
-            .policy_document(self.policy_document.clone())
-            .set_as_default(self.set_as_default)
-            .build()
-            .map_err(|e| map_builder_error("CreatePolicyVersionRequest", e))?;
+            .policy_document(self.policy_document.clone());
+        if self.set_as_default {
+            request_builder = request_builder.set_as_default(Some(true));
+        }
+        let request = request_builder.build().map_err(|e| map_builder_error("CreatePolicyVersionRequest", e))?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
