@@ -6,6 +6,7 @@ use {
         error_meta::Error as IamError,
         operation::{
             CreatePolicyInternalRequest, CreatePolicyResponse, CreatePolicyVersionRequest, CreatePolicyVersionResponse,
+            DeletePolicyVersionRequest,
         },
     },
     std::ffi::OsString,
@@ -41,6 +42,18 @@ pub(crate) struct CreatePolicyInternalCommand {
     pub tags: Vec<String>,
 }
 
+/// Delete a version of a managed policy in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct DeletePolicyVersionCommand {
+    /// The ARN of the managed policy to delete a version from.
+    #[clap(long)]
+    pub policy_arn: String,
+
+    /// The version id to delete, e.g. `v1`. The default version cannot be deleted.
+    #[clap(long)]
+    pub version_id: String,
+}
+
 /// Create a new version of a managed policy in the Scratchstack IAM service.
 #[derive(Debug, Parser)]
 pub(crate) struct CreatePolicyVersionCommand {
@@ -72,6 +85,21 @@ impl Runnable for CreatePolicyInternalCommand {
             .description(self.description.clone())
             .path(Some(self.path.clone()))
             .tags(tags)
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for DeletePolicyVersionCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = DeletePolicyVersionRequest::builder()
+            .policy_arn(self.policy_arn.clone())
+            .version_id(self.version_id.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
