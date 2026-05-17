@@ -228,6 +228,11 @@ pub async fn create_policy_version(
     let policy_path_and_name = &resource[ARN_RESOURCE_PREFIX_POLICY.len()..];
     let name_start = policy_path_and_name.rfind('/').map(|i| i + 1).unwrap_or(0);
     let policy_name_lower = policy_path_and_name[name_start..].to_ascii_lowercase();
+    let policy_path = if name_start == 0 {
+        "/".to_string()
+    } else {
+        format!("/{}", &policy_path_and_name[..name_start])
+    };
 
     // Validate the policy document is valid Aspen JSON.
     if let Err(e) = AspenPolicy::from_str(policy_document) {
@@ -239,9 +244,10 @@ pub async fn create_policy_version(
     let row = match query(indoc! {"
             SELECT managed_policy_id, latest_version
             FROM iam.managed_policies
-            WHERE account_id = $1 AND managed_policy_name_lower = $2
+            WHERE account_id = $1 AND path = $2 AND managed_policy_name_lower = $3
         "})
     .bind(account_id)
+    .bind(&policy_path)
     .bind(&policy_name_lower)
     .fetch_optional(tx.as_mut())
     .await
