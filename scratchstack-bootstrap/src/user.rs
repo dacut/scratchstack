@@ -1,6 +1,6 @@
 //! Scratchstack bootsrap create-user subcommand
 use {
-    crate::{Cli, MSG_INTERNAL_FAILURE, Runnable, execute_in_transaction},
+    crate::{Cli, Runnable, execute_in_transaction},
     clap::Parser,
     scratchstack_cli_utils::{ShorthandValue, parse_shorthand},
     scratchstack_shapes_iam::{
@@ -10,10 +10,7 @@ use {
             GetUserResponse, ListUserTagsInternalRequest, ListUserTagsResponse, ListUsersInternalRequest,
             ListUsersResponse, TagUserInternalRequest, UntagUserInternalRequest, UpdateUserInternalRequest,
         },
-        types::{
-            Tag,
-            error::{InternalFailure, ValidationError},
-        },
+        types::{Tag, error::ValidationError},
     },
     std::{collections::HashMap, ffi::OsString},
 };
@@ -186,10 +183,7 @@ impl Runnable for CreateUserInternalCommand {
         let tags = tags_from_shorthand(&self.tags)?;
         builder = builder.tags(tags);
 
-        let request = builder.build().map_err(|e| {
-            log::error!("Failed to build CreateUserInternalRequest: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-        })?;
+        let request = builder.build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -219,11 +213,7 @@ impl Runnable for GetUserInternalCommand {
         let request = GetUserInternalRequest::builder()
             .user_name(Some(self.user_name.clone()))
             .account_id(self.account_id.clone())
-            .build()
-            .map_err(|e| {
-                log::error!("Failed to build GetUserInternalRequest: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?;
+            .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -274,11 +264,7 @@ impl Runnable for TagUserInternalCommand {
             .account_id(self.account_id.clone())
             .user_name(self.user_name.clone())
             .tags(tags)
-            .build()
-            .map_err(|e| {
-                log::error!("Failed to build TagUserInternalRequest: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?;
+            .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -294,11 +280,7 @@ impl Runnable for UntagUserInternalCommand {
             .account_id(self.account_id.clone())
             .user_name(self.user_name.clone())
             .tag_keys(self.tag_keys.clone())
-            .build()
-            .map_err(|e| {
-                log::error!("Failed to build UntagUserInternalRequest: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?;
+            .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }

@@ -66,7 +66,7 @@ impl ShapeInfo for Structure {
         } else if is_input || is_output {
             self.write_rust_decl(&mut w.operation)?;
             self.write_rust_impl(&mut w.operation)?;
-            self.write_builder_validate(&mut w.operation)?;
+            self.write_builder(&mut w.operation)?;
 
             if is_input {
                 self.write_shorthand_parser(&mut w.operation)?;
@@ -74,7 +74,7 @@ impl ShapeInfo for Structure {
         } else {
             self.write_rust_decl(&mut w.types)?;
             self.write_rust_impl(&mut w.types)?;
-            self.write_builder_validate(&mut w.types)?;
+            self.write_builder(&mut w.types)?;
             self.write_shorthand_parser(&mut w.types)?;
         }
 
@@ -126,10 +126,6 @@ impl Structure {
         self.base.traits.write_docs(w, "")?;
 
         // Attributes for the structure.
-        if !is_error {
-            writeln!(w, "#[derive(::derive_builder::Builder)]")?;
-            writeln!(w, "#[builder(pattern = \"owned\", build_fn(validate = \"Self::validate\"), setter(into))]")?;
-        }
         writeln!(w, "#[derive(::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::PartialEq, ::std::fmt::Debug)]")?;
         writeln!(w, "#[derive(::serde::Deserialize, ::serde::Serialize)]")?;
         writeln!(w, "pub struct {rust_typename} {{")?;
@@ -156,9 +152,6 @@ impl Structure {
                 writeln!(w, "    #[serde(rename = \"{member_name}\", skip_serializing_if = \"Option::is_none\")]")?;
             } else {
                 writeln!(w, "    #[serde(rename = \"{member_name}\")]")?;
-            }
-            if !is_error && (is_optional || is_list) {
-                writeln!(w, "    #[builder(default)]")?;
             }
             writeln!(w, "    pub {rust_member_name}: {member_type},")?;
         }
@@ -265,13 +258,47 @@ impl Structure {
         Ok(())
     }
 
-    /// Writes the derive_builder validation function for this structure, which checks that all
-    /// required fields are set and that all fields satisfy any constraints specified in the model.
-    fn write_builder_validate(&self, w: &mut dyn Write) -> IoResult<()> {
+    /// Writes a hand-rolled builder for this non-error structure.
+    ///
+    /// The builder mirrors the call-site contract of the previous `derive_builder`-based
+    /// implementation: setters take `impl Into<T>` where `T` is the struct field type, all
+    /// internal storage is `Option<T>`, and `build()` runs validation and returns a typed
+    /// `ValidationError` on failure instead of an opaque builder error.
+    fn write_builder(&self, w: &mut dyn Write) -> IoResult<()> {
         let rust_typename = self.base.rust_typename();
+
+        // 1. The builder struct itself.
+        writeln!(w, "/// Builder for [`{rust_typename}`].")?;
+        writeln!(w, "#[derive(::std::clone::Clone, ::std::fmt::Debug, ::std::default::Default)]")?;
+        writeln!(w, "pub struct {rust_typename}Builder {{")?;
+        for (member_name, member) in &self.members {
+            let rust_member_name = member_name.to_snake_case();
+            let field_type = self.builder_field_type(member);
+            writeln!(w, "    {rust_member_name}: ::std::option::Option<{field_type}>,")?;
+        }
+        writeln!(w, "}}")?;
+        writeln!(w)?;
+
         writeln!(w, "impl {rust_typename}Builder {{")?;
+
+        // 2. Per-field setters, matching derive_builder's `setter(into)` semantics.
+        for (member_name, member) in &self.members {
+            let rust_member_name = member_name.to_snake_case();
+            let field_type = self.builder_field_type(member);
+            writeln!(w, "    /// Sets the `{member_name}` field.")?;
+            writeln!(
+                w,
+                "    pub fn {rust_member_name}(mut self, value: impl ::std::convert::Into<{field_type}>) -> Self {{"
+            )?;
+            writeln!(w, "        self.{rust_member_name} = ::std::option::Option::Some(value.into());")?;
+            writeln!(w, "        self")?;
+            writeln!(w, "    }}")?;
+            writeln!(w)?;
+        }
+
+        // 3. The private validate() method (kept verbatim from the prior implementation).
         writeln!(w, "    #[allow(clippy::collapsible_if)]")?;
-        writeln!(w, "    fn validate(&self) -> Result<(), String> {{")?;
+        writeln!(w, "    fn validate(&self) -> ::std::result::Result<(), ::std::string::String> {{")?;
         for (member_name, member) in &self.members {
             let rust_member_name = member_name.to_snake_case();
             let is_required = member.is_required();
@@ -281,7 +308,7 @@ impl Structure {
                 writeln!(w, "        if self.{rust_member_name}.is_none() {{")?;
                 writeln!(
                     w,
-                    "            return Err(\"Missing required field '{member_name}' when building {rust_typename}\".to_string());"
+                    "            return ::std::result::Result::Err(\"Missing required field '{member_name}' when building {rust_typename}\".to_string());"
                 )?;
                 writeln!(w, "        }}")?;
             }
@@ -305,11 +332,51 @@ impl Structure {
                 }
             }
         }
-        writeln!(w, "        Ok(())")?;
+        writeln!(w, "        ::std::result::Result::Ok(())")?;
+        writeln!(w, "    }}")?;
+        writeln!(w)?;
+
+        // 4. The public build() method. validate() catches missing-required and per-field
+        //    constraint failures, so required fields can be unwrapped safely once it returns Ok.
+        writeln!(w, "    /// Consumes the builder and constructs a [`{rust_typename}`].")?;
+        writeln!(
+            w,
+            "    pub fn build(self) -> ::std::result::Result<{rust_typename}, crate::types::error::ValidationError> {{"
+        )?;
+        writeln!(
+            w,
+            "        self.validate().map_err(|msg| crate::types::error::ValidationError::builder().message(msg).build())?;"
+        )?;
+        writeln!(w, "        ::std::result::Result::Ok({rust_typename} {{")?;
+        for (member_name, member) in &self.members {
+            let rust_member_name = member_name.to_snake_case();
+            let is_required = member.is_required();
+            let is_list = member.is_list();
+            if is_required && !is_list {
+                writeln!(
+                    w,
+                    "            {rust_member_name}: self.{rust_member_name}.expect(\"validate confirmed required field is set\"),"
+                )?;
+            } else {
+                writeln!(w, "            {rust_member_name}: self.{rust_member_name}.unwrap_or_default(),")?;
+            }
+        }
+        writeln!(w, "        }})")?;
         writeln!(w, "    }}")?;
         writeln!(w, "}}")?;
         writeln!(w)?;
         Ok(())
+    }
+
+    /// Returns the struct's field Rust type for a member (matching `write_rust_decl`).
+    fn builder_field_type(&self, member: &Member) -> String {
+        let is_optional = !member.traits.is_required();
+        let is_list = member.is_list();
+        let mut t = member.rust_typename();
+        if is_optional && !is_list {
+            t = format!("::std::option::Option<{t}>");
+        }
+        t
     }
 
     /// Writes a builder structure for this error type instead of using derive_builder.

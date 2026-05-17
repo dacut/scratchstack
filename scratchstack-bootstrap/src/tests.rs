@@ -507,7 +507,9 @@ async fn test_users(database: &TempDatabase) {
 async fn test_policies(database: &TempDatabase) {
     let port = database.port_str();
 
-    // Creating a policy with an empty document should fail with MalformedPolicyDocument, not InternalFailure.
+    // Creating a policy with an empty document fails the smithy shape regex/length constraint,
+    // which surfaces as ValidationError. (MalformedPolicyDocument is reserved for documents that
+    // pass shape validation but fail Aspen parsing — covered by the database-layer tests.)
     let err = database
         .run([
             "ssbs",
@@ -525,11 +527,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("Creating a policy with an empty document should fail");
-    assert_eq!(
-        err.code(),
-        Some("MalformedPolicyDocument"),
-        "Expected MalformedPolicyDocument error for empty document, got: {err}"
-    );
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError for empty document, got: {err}");
 }
 
 async fn test_groups(database: &TempDatabase) {

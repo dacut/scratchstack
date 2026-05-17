@@ -1,15 +1,12 @@
 //! Scratchstack bootsrap account subcommands
 use {
-    crate::{Cli, MSG_INTERNAL_FAILURE, Runnable, execute_in_transaction},
+    crate::{Cli, Runnable, execute_in_transaction},
     clap::Parser,
     scratchstack_cli_utils::{ShorthandValue, parse_shorthand},
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{CreateAccountRequest, CreateAccountResponse, ListAccountsRequest, ListAccountsResponse},
-        types::{
-            ListAccountsFilter, ListAccountsFilterName,
-            error::{InternalFailure, ValidationError},
-        },
+        types::{ListAccountsFilter, ListAccountsFilterName, error::ValidationError},
     },
     std::{collections::HashMap, ffi::OsString, str::FromStr as _},
 };
@@ -73,10 +70,7 @@ impl Runnable for CreateAccountCommand {
             builder = builder.account_id(account_id.clone());
         }
 
-        let request = builder.build().map_err(|e| {
-            log::error!("Failed to build CreateAccountRequest: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-        })?;
+        let request = builder.build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -133,10 +127,7 @@ impl Runnable for ListAccountsCommand {
             builder = builder.marker(marker.clone());
         }
 
-        let request = builder.build().map_err(|e| {
-            log::error!("Failed to build ListAccountsRequest: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-        })?;
+        let request = builder.build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
