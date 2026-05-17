@@ -726,6 +726,353 @@ async fn test_policies(database: &TempDatabase) {
         .await
         .expect_err("Re-deleting v2 via aws should fail");
     assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // -- get-policy ----------------------------------------------------------
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-policy",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/DelVersionPolicy",
+        ])
+        .await
+        .expect("Failed to get DelVersionPolicy");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse get-policy output as JSON");
+    let policy = json.get("Policy").expect("Policy should be present");
+    assert_eq!(policy.get("PolicyName").unwrap().as_str(), Some("DelVersionPolicy"));
+    assert_eq!(policy.get("Path").unwrap().as_str(), Some("/"));
+    assert_eq!(policy.get("DefaultVersionId").unwrap().as_str(), Some("v1"));
+    let arn = policy.get("Arn").unwrap().as_str().unwrap();
+    assert_eq!(arn, "arn:test-partition:iam::555566667777:policy/DelVersionPolicy");
+
+    // get-policy via the 'aws' account in the ARN should map to 000000000000.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-policy",
+            "--policy-arn",
+            "arn:test-partition:iam::aws:policy/AwsDelVersionPolicy",
+        ])
+        .await
+        .expect("Failed to get AwsDelVersionPolicy via 'aws' account");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse get-policy output as JSON");
+    let policy = json.get("Policy").expect("Policy should be present");
+    assert_eq!(policy.get("PolicyName").unwrap().as_str(), Some("AwsDelVersionPolicy"));
+
+    // get-policy with a mismatched path should fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-policy",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/wrong/DelVersionPolicy",
+        ])
+        .await
+        .expect_err("Get with mismatched path should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // -- get-policy-version -------------------------------------------------
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-policy-version",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/DelVersionPolicy",
+            "--version-id",
+            "v1",
+        ])
+        .await
+        .expect("Failed to get v1 of DelVersionPolicy");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse get-policy-version output as JSON");
+    let pv = json.get("PolicyVersion").expect("PolicyVersion should be present");
+    assert_eq!(pv.get("VersionId").unwrap().as_str(), Some("v1"));
+    assert_eq!(pv.get("IsDefaultVersion").unwrap().as_bool(), Some(true));
+    assert!(pv.get("Document").is_some(), "Document should be present");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-policy-version",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/DelVersionPolicy",
+            "--version-id",
+            "v99",
+        ])
+        .await
+        .expect_err("Get nonexistent version should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // -- list-policies ------------------------------------------------------
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-policies",
+            "--account-id",
+            "555566667777",
+            "--scope",
+            "Local",
+            "--max-items",
+            "1000",
+        ])
+        .await
+        .expect("Failed to list local policies for 555566667777");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-policies output as JSON");
+    let policies = json.get("Policies").expect("Policies should be present").as_array().expect("Policies as array");
+    let names: Vec<&str> = policies.iter().map(|p| p.get("PolicyName").unwrap().as_str().unwrap()).collect();
+    assert!(names.contains(&"DelVersionPolicy"), "Expected DelVersionPolicy in local list: {names:?}");
+    assert!(!names.contains(&"AwsDelVersionPolicy"), "AwsDelVersionPolicy is not local for 555566667777");
+
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-policies",
+            "--account-id",
+            "555566667777",
+            "--scope",
+            "AWS",
+            "--max-items",
+            "1000",
+        ])
+        .await
+        .expect("Failed to list AWS-scope policies for 555566667777");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-policies output as JSON");
+    let policies = json.get("Policies").expect("Policies should be present").as_array().expect("Policies as array");
+    let names: Vec<&str> = policies.iter().map(|p| p.get("PolicyName").unwrap().as_str().unwrap()).collect();
+    assert!(names.contains(&"AwsDelVersionPolicy"), "Expected AwsDelVersionPolicy in AWS-scope list: {names:?}");
+
+    // -- list-policy-versions -----------------------------------------------
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-policy-versions",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/DelVersionPolicy",
+        ])
+        .await
+        .expect("Failed to list versions of DelVersionPolicy");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-policy-versions output as JSON");
+    let versions = json.get("Versions").expect("Versions should be present").as_array().expect("Versions as array");
+    // DelVersionPolicy: v1 default, v2 was deleted. Only v1 remains.
+    assert_eq!(versions.len(), 1);
+    assert_eq!(versions[0].get("VersionId").unwrap().as_str(), Some("v1"));
+
+    // -- set-default-policy-version + delete blocked then succeeds ----------
+    // Add a new version to DelVersionPolicy. Note that the new version is `v(latest_version + 1)`,
+    // which is v3 here — the original v2 was deleted earlier but `latest_version` isn't decremented
+    // on delete, so the previous create_policy_version left it at 2.
+    let policy_doc_new =
+        r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:PutObject","Resource":"*"}]}"#;
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-policy-version",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/DelVersionPolicy",
+            "--policy-document",
+            policy_doc_new,
+        ])
+        .await
+        .expect("Failed to add a new version to DelVersionPolicy");
+
+    // v1 is still default. Setting default to v3 should succeed.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "set-default-policy-version",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/DelVersionPolicy",
+            "--version-id",
+            "v3",
+        ])
+        .await
+        .expect("Failed to set default to v3");
+
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-policy",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/DelVersionPolicy",
+        ])
+        .await
+        .expect("Failed to get DelVersionPolicy");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse get-policy output as JSON");
+    assert_eq!(json.get("Policy").unwrap().get("DefaultVersionId").unwrap().as_str(), Some("v3"));
+
+    // Now v1 is no longer the default — deleting it should succeed.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-policy-version",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/DelVersionPolicy",
+            "--version-id",
+            "v1",
+        ])
+        .await
+        .expect("Failed to delete v1 after flipping default");
+
+    // Setting default to a nonexistent version should fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "set-default-policy-version",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/DelVersionPolicy",
+            "--version-id",
+            "v99",
+        ])
+        .await
+        .expect_err("Set default to nonexistent version should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // -- tag-policy / untag-policy ------------------------------------------
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "tag-policy",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/DelVersionPolicy",
+            "--tags",
+            "Key=Env,Value=Prod",
+            "Key=Owner,Value=Platform",
+        ])
+        .await
+        .expect("Failed to tag DelVersionPolicy");
+
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-policy",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/DelVersionPolicy",
+        ])
+        .await
+        .expect("Failed to get DelVersionPolicy after tagging");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse get-policy output as JSON");
+    let tags =
+        json.get("Policy").unwrap().get("Tags").expect("Tags should be present").as_array().expect("Tags as array");
+    assert_eq!(tags.len(), 2);
+    let tag_pairs: Vec<(&str, &str)> = tags
+        .iter()
+        .map(|t| (t.get("Key").unwrap().as_str().unwrap(), t.get("Value").unwrap().as_str().unwrap()))
+        .collect();
+    assert!(tag_pairs.contains(&("Env", "Prod")));
+    assert!(tag_pairs.contains(&("Owner", "Platform")));
+
+    // untag one of them.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "untag-policy",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/DelVersionPolicy",
+            "--tag-keys",
+            "Owner",
+        ])
+        .await
+        .expect("Failed to untag Owner");
+
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-policy",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/DelVersionPolicy",
+        ])
+        .await
+        .expect("Failed to get DelVersionPolicy after untagging");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse get-policy output as JSON");
+    let tags =
+        json.get("Policy").unwrap().get("Tags").expect("Tags should be present").as_array().expect("Tags as array");
+    assert_eq!(tags.len(), 1);
+    assert_eq!(tags[0].get("Key").unwrap().as_str(), Some("Env"));
+
+    // tag-policy on missing policy should NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "tag-policy",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/NoSuchTagBootstrap",
+            "--tags",
+            "Key=A,Value=B",
+        ])
+        .await
+        .expect_err("Tag on missing policy should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
 }
 
 async fn test_groups(database: &TempDatabase) {

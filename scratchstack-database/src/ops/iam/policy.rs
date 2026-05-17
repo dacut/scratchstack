@@ -6,30 +6,37 @@ use {
         ops::{
             RequestExecutor,
             iam::{
-                get_current_partition_or_fail, validate_account_id, validate_path, validate_policy_name,
-                validate_tag_key, validate_tag_value,
+                constrain_max_items, get_current_partition_or_fail, validate_account_id, validate_path,
+                validate_policy_name, validate_tag_key, validate_tag_value,
             },
         },
     },
+    chrono::{DateTime, Utc},
     indoc::indoc,
     scratchstack_arn::Arn,
     scratchstack_aspen::Policy as AspenPolicy,
     scratchstack_aws_principal::IamResourceType,
+    scratchstack_pagination::{
+        FixedKeyService, OperationPaginator, ScratchstackOperationMetadata, ScratchstackServiceMetadata,
+    },
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
             CreatePolicyInternalRequest, CreatePolicyResponse, CreatePolicyVersionRequest, CreatePolicyVersionResponse,
-            DeletePolicyVersionRequest,
+            DeletePolicyVersionRequest, GetPolicyRequest, GetPolicyResponse, GetPolicyVersionRequest,
+            GetPolicyVersionResponse, ListPoliciesInternalRequest, ListPoliciesResponse, ListPolicyVersionsRequest,
+            ListPolicyVersionsResponse, SetDefaultPolicyVersionRequest, TagPolicyRequest, UntagPolicyRequest,
         },
         types::{
-            PolicyVersion, Tag,
+            Policy, PolicyScopeType, PolicyUsageType, PolicyVersion, Tag,
             error::{
                 DeleteConflictException, InternalFailure, LimitExceededException, MalformedPolicyDocumentException,
                 NoSuchEntityException, ValidationError,
             },
         },
     },
-    sqlx::{Row as _, postgres::PgTransaction, query},
+    serde::{Deserialize, Serialize},
+    sqlx::{QueryBuilder, Row as _, postgres::PgTransaction, query},
     std::str::FromStr as _,
 };
 
@@ -362,38 +369,7 @@ pub async fn delete_policy_version(
     policy_arn: &str,
     version_id: &str,
 ) -> Result<(), IamError> {
-    // Parse the policy ARN.
-    let arn = match Arn::from_str(policy_arn) {
-        Ok(arn) => arn,
-        Err(e) => {
-            log::info!("Failed to parse policy ARN: {e}");
-            return Err(ValidationError::builder().message("Invalid policy ARN".to_string()).build().into());
-        }
-    };
-
-    let resource = arn.resource();
-    if !resource.starts_with(ARN_RESOURCE_PREFIX_POLICY) {
-        return Err(ValidationError::builder()
-            .message("Policy ARN must have a resource that starts with \"policy/\"".to_string())
-            .build()
-            .into());
-    }
-
-    let account_id = arn.account_id();
-    let account_id = match account_id {
-        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
-        other => other,
-    };
-
-    // Extract path and name from the resource.
-    let policy_path_and_name = &resource[ARN_RESOURCE_PREFIX_POLICY.len()..];
-    let name_start = policy_path_and_name.rfind('/').map(|i| i + 1).unwrap_or(0);
-    let policy_name_lower = policy_path_and_name[name_start..].to_ascii_lowercase();
-    let policy_path = if name_start == 0 {
-        "/".to_string()
-    } else {
-        format!("/{}", &policy_path_and_name[..name_start])
-    };
+    let parts = parse_policy_arn(policy_arn)?;
 
     // Parse the numeric portion of the version id. The Smithy regex enforces
     // ^v[1-9][0-9]*(\.[A-Za-z0-9-]*)?$, so version_id always starts with 'v' followed by digits
@@ -410,9 +386,9 @@ pub async fn delete_policy_version(
             WHERE account_id = $1 AND path = $2 AND managed_policy_name_lower = $3
             FOR UPDATE
         "})
-    .bind(account_id)
-    .bind(&policy_path)
-    .bind(&policy_name_lower)
+    .bind(&parts.account_id)
+    .bind(&parts.policy_path)
+    .bind(&parts.policy_name_lower)
     .fetch_optional(tx.as_mut())
     .await
     {
@@ -463,6 +439,833 @@ pub async fn delete_policy_version(
     }
 
     Ok(())
+}
+
+impl RequestExecutor for GetPolicyRequest {
+    type Response = GetPolicyResponse;
+    type Error = IamError;
+
+    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
+        get_policy(tx, &self.policy_arn).await
+    }
+}
+
+/// Get details for a single managed policy by ARN.
+pub async fn get_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Result<GetPolicyResponse, IamError> {
+    let parts = parse_policy_arn(policy_arn)?;
+    let partition = get_current_partition_or_fail(tx).await?;
+
+    let row = query(indoc! {"
+            SELECT managed_policy_id, managed_policy_name_cased, path, default_version, deprecated,
+                description, created_at
+            FROM iam.managed_policies
+            WHERE account_id = $1 AND path = $2 AND managed_policy_name_lower = $3
+        "})
+    .bind(&parts.account_id)
+    .bind(&parts.policy_path)
+    .bind(&parts.policy_name_lower)
+    .fetch_optional(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to query managed policy from database: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
+
+    let row = row.ok_or_else(|| {
+        IamError::from(NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())
+    })?;
+
+    let managed_policy_id: String = row.try_get(0).map_err(internal_failure_from_row_err("managed_policy_id"))?;
+    let policy_name_cased: String =
+        row.try_get(1).map_err(internal_failure_from_row_err("managed_policy_name_cased"))?;
+    let path: String = row.try_get(2).map_err(internal_failure_from_row_err("path"))?;
+    let default_version: i64 = row.try_get(3).map_err(internal_failure_from_row_err("default_version"))?;
+    let deprecated: bool = row.try_get(4).map_err(internal_failure_from_row_err("deprecated"))?;
+    let description: Option<String> = row.try_get(5).map_err(internal_failure_from_row_err("description"))?;
+    let created_at: DateTime<Utc> = row.try_get(6).map_err(internal_failure_from_row_err("created_at"))?;
+
+    let tags = fetch_policy_tags(tx, &managed_policy_id).await?;
+    let update_date = fetch_latest_version_created_at(tx, &managed_policy_id).await?.unwrap_or(created_at);
+
+    let arn = build_policy_arn(&partition, &parts.account_id, &path, &policy_name_cased)?;
+    let policy = build_policy(
+        arn,
+        path,
+        policy_name_cased,
+        format!("{}{}", IamResourceType::ManagedPolicy.as_str(), managed_policy_id),
+        default_version,
+        deprecated,
+        description,
+        created_at,
+        Some(update_date),
+        tags,
+    )?;
+
+    Ok(GetPolicyResponse::builder().policy(Some(policy)).build().unwrap())
+}
+
+impl RequestExecutor for GetPolicyVersionRequest {
+    type Response = GetPolicyVersionResponse;
+    type Error = IamError;
+
+    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
+        get_policy_version(tx, &self.policy_arn, &self.version_id).await
+    }
+}
+
+/// Get a specific version of a managed policy by ARN.
+pub async fn get_policy_version(
+    tx: &mut PgTransaction<'_>,
+    policy_arn: &str,
+    version_id: &str,
+) -> Result<GetPolicyVersionResponse, IamError> {
+    let parts = parse_policy_arn(policy_arn)?;
+    let version_number = parse_policy_version_id(version_id).ok_or_else(|| {
+        IamError::from(ValidationError::builder().message(format!("Invalid policy version id: {version_id}")).build())
+    })?;
+
+    let row = query(indoc! {"
+            SELECT mp.default_version, mpv.policy_document, mpv.created_at
+            FROM iam.managed_policies mp
+            JOIN iam.managed_policy_versions mpv ON mp.managed_policy_id = mpv.managed_policy_id
+            WHERE mp.account_id = $1 AND mp.path = $2 AND mp.managed_policy_name_lower = $3
+                AND mpv.managed_policy_version = $4
+        "})
+    .bind(&parts.account_id)
+    .bind(&parts.policy_path)
+    .bind(&parts.policy_name_lower)
+    .bind(version_number)
+    .fetch_optional(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to query managed policy version from database: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
+
+    let row = row.ok_or_else(|| {
+        IamError::from(
+            NoSuchEntityException::builder()
+                .message(format!("Policy {policy_arn} version {version_id} was not found."))
+                .build(),
+        )
+    })?;
+
+    let default_version: i64 = row.try_get(0).map_err(internal_failure_from_row_err("default_version"))?;
+    let policy_document: String = row.try_get(1).map_err(internal_failure_from_row_err("policy_document"))?;
+    let created_at: DateTime<Utc> = row.try_get(2).map_err(internal_failure_from_row_err("created_at"))?;
+
+    let policy_version = PolicyVersion::builder()
+        .create_date(Some(created_at))
+        .document(Some(policy_document))
+        .is_default_version(Some(version_number == default_version))
+        .version_id(Some(format!("v{version_number}")))
+        .build()
+        .map_err(|e| {
+            log::error!("Failed to construct PolicyVersion object: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })?;
+
+    Ok(GetPolicyVersionResponse::builder().policy_version(Some(policy_version)).build().unwrap())
+}
+
+impl RequestExecutor for ListPoliciesInternalRequest {
+    type Response = ListPoliciesResponse;
+    type Error = IamError;
+
+    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
+        list_policies(
+            tx,
+            &self.account_id,
+            self.marker.as_deref(),
+            self.max_items,
+            self.only_attached,
+            self.path_prefix.as_deref(),
+            self.policy_usage_filter.as_ref(),
+            self.scope.as_ref(),
+        )
+        .await
+    }
+}
+
+/// The marker innards for a ListPolicies operation.
+#[derive(Deserialize, Serialize)]
+struct ListPoliciesMarker {
+    next_account_id: String,
+    next_managed_policy_id: String,
+}
+
+/// List managed policies in an account, optionally including AWS-managed policies.
+#[allow(clippy::too_many_arguments)]
+pub async fn list_policies(
+    tx: &mut PgTransaction<'_>,
+    account_id: &str,
+    marker: Option<&str>,
+    max_items: Option<i32>,
+    only_attached: Option<bool>,
+    path_prefix: Option<&str>,
+    policy_usage_filter: Option<&PolicyUsageType>,
+    scope: Option<&PolicyScopeType>,
+) -> Result<ListPoliciesResponse, IamError> {
+    validate_account_id(account_id)?;
+    let account_id = match account_id {
+        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
+        account_id => account_id,
+    };
+    let max_items = constrain_max_items(max_items)?;
+    let partition = get_current_partition_or_fail(tx).await?;
+
+    let paginator = make_paginator(&partition, OP_LIST_POLICIES)?;
+
+    let mut sql = QueryBuilder::new(
+        r#"
+        SELECT managed_policy_id, account_id, managed_policy_name_cased, path, default_version,
+            deprecated, description, created_at
+        FROM iam.managed_policies
+        WHERE
+    "#,
+    );
+
+    let scope = scope.unwrap_or(&PolicyScopeType::All);
+    match scope {
+        PolicyScopeType::Aws => {
+            sql.push("account_id = ");
+            sql.push_bind(AWS_ACCOUNT_ID_NUMERIC);
+        }
+        PolicyScopeType::Local => {
+            sql.push("account_id = ");
+            sql.push_bind(account_id);
+        }
+        PolicyScopeType::All => {
+            sql.push("(account_id = ");
+            sql.push_bind(account_id);
+            sql.push(" OR account_id = ");
+            sql.push_bind(AWS_ACCOUNT_ID_NUMERIC);
+            sql.push(")");
+        }
+        other => {
+            return Err(ValidationError::builder().message(format!("Unsupported Scope value: {other}")).build().into());
+        }
+    }
+
+    if let Some(path_prefix) = path_prefix {
+        sql.push(" AND path LIKE ");
+        sql.push_bind(format!("{}%", path_prefix.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")));
+    }
+
+    if only_attached == Some(true) {
+        sql.push(indoc! {"
+             AND (managed_policy_id IN (SELECT managed_policy_id FROM iam.user_attached_policies)
+               OR managed_policy_id IN (SELECT managed_policy_id FROM iam.group_attached_policies)
+               OR managed_policy_id IN (SELECT managed_policy_id FROM iam.role_attached_policies))
+        "});
+    }
+
+    if let Some(filter) = policy_usage_filter {
+        match filter {
+            PolicyUsageType::PermissionsPolicy => {
+                sql.push(indoc! {"
+                     AND (managed_policy_id IN (SELECT managed_policy_id FROM iam.user_attached_policies)
+                       OR managed_policy_id IN (SELECT managed_policy_id FROM iam.group_attached_policies)
+                       OR managed_policy_id IN (SELECT managed_policy_id FROM iam.role_attached_policies))
+                "});
+            }
+            PolicyUsageType::PermissionsBoundary => {
+                // RTRIM strips the trailing space that the CHAR(17) column adds when the
+                // stored id is shorter than the column width.
+                sql.push(indoc! {"
+                     AND (managed_policy_id IN (SELECT RTRIM(permissions_boundary_managed_policy_id) FROM iam.users
+                                                WHERE permissions_boundary_managed_policy_id IS NOT NULL)
+                       OR managed_policy_id IN (SELECT permissions_boundary_managed_policy_id FROM iam.roles
+                                                WHERE permissions_boundary_managed_policy_id IS NOT NULL))
+                "});
+            }
+            other => {
+                return Err(ValidationError::builder()
+                    .message(format!("Unsupported PolicyUsageFilter value: {other}"))
+                    .build()
+                    .into());
+            }
+        }
+    }
+
+    if let Some(marker) = marker {
+        let info: ListPoliciesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
+            log::error!("Failed to decrypt pagination token for ListPolicies: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })?;
+        sql.push(" AND (account_id, managed_policy_id) >= (");
+        sql.push_bind(info.next_account_id);
+        sql.push(", ");
+        sql.push_bind(info.next_managed_policy_id);
+        sql.push(")");
+    }
+
+    sql.push(" ORDER BY account_id ASC, managed_policy_id ASC LIMIT ");
+    sql.push_bind(max_items as i32 + 1);
+
+    let rows = sql.build().fetch_all(tx.as_mut()).await.map_err(|e| {
+        log::error!("Failed to fetch managed policies from database: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
+
+    let mut results: Vec<Policy> = Vec::with_capacity(rows.len().min(max_items));
+    let mut next_marker = None;
+
+    for row in rows.into_iter() {
+        let managed_policy_id: String = row.try_get(0).map_err(internal_failure_from_row_err("managed_policy_id"))?;
+        let row_account_id: String = row.try_get(1).map_err(internal_failure_from_row_err("account_id"))?;
+
+        if results.len() == max_items {
+            next_marker = Some(
+                paginator
+                    .encrypt_token(&ListPoliciesMarker {
+                        next_account_id: row_account_id,
+                        next_managed_policy_id: managed_policy_id,
+                    })
+                    .await
+                    .map_err(|e| {
+                        log::error!("Failed to encrypt pagination token for ListPolicies: {e}");
+                        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                    })?,
+            );
+            break;
+        }
+
+        let policy_name_cased: String =
+            row.try_get(2).map_err(internal_failure_from_row_err("managed_policy_name_cased"))?;
+        let path: String = row.try_get(3).map_err(internal_failure_from_row_err("path"))?;
+        let default_version: i64 = row.try_get(4).map_err(internal_failure_from_row_err("default_version"))?;
+        let deprecated: bool = row.try_get(5).map_err(internal_failure_from_row_err("deprecated"))?;
+        let description: Option<String> = row.try_get(6).map_err(internal_failure_from_row_err("description"))?;
+        let created_at: DateTime<Utc> = row.try_get(7).map_err(internal_failure_from_row_err("created_at"))?;
+
+        let tags = fetch_policy_tags(tx, &managed_policy_id).await?;
+        let update_date = fetch_latest_version_created_at(tx, &managed_policy_id).await?.unwrap_or(created_at);
+
+        let arn = build_policy_arn(&partition, &row_account_id, &path, &policy_name_cased)?;
+        let policy = build_policy(
+            arn,
+            path,
+            policy_name_cased,
+            format!("{}{}", IamResourceType::ManagedPolicy.as_str(), managed_policy_id),
+            default_version,
+            deprecated,
+            description,
+            created_at,
+            Some(update_date),
+            tags,
+        )?;
+        results.push(policy);
+    }
+
+    let mut builder = ListPoliciesResponse::builder().policies(results);
+    if let Some(next_marker) = next_marker {
+        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
+    }
+
+    builder.build().map_err(|e| {
+        log::error!("Failed to build ListPoliciesResponse: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })
+}
+
+impl RequestExecutor for ListPolicyVersionsRequest {
+    type Response = ListPolicyVersionsResponse;
+    type Error = IamError;
+
+    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
+        list_policy_versions(tx, &self.policy_arn, self.marker.as_deref(), self.max_items).await
+    }
+}
+
+/// The marker innards for a ListPolicyVersions operation.
+#[derive(Deserialize, Serialize)]
+struct ListPolicyVersionsMarker {
+    next_version: i64,
+}
+
+/// List versions of a managed policy by ARN.
+pub async fn list_policy_versions(
+    tx: &mut PgTransaction<'_>,
+    policy_arn: &str,
+    marker: Option<&str>,
+    max_items: Option<i32>,
+) -> Result<ListPolicyVersionsResponse, IamError> {
+    let parts = parse_policy_arn(policy_arn)?;
+    let max_items = constrain_max_items(max_items)?;
+    let partition = get_current_partition_or_fail(tx).await?;
+
+    let paginator = make_paginator(&partition, OP_LIST_POLICY_VERSIONS)?;
+
+    // Look up the policy to get managed_policy_id and default_version.
+    let policy_row = query(indoc! {"
+            SELECT managed_policy_id, default_version
+            FROM iam.managed_policies
+            WHERE account_id = $1 AND path = $2 AND managed_policy_name_lower = $3
+        "})
+    .bind(&parts.account_id)
+    .bind(&parts.policy_path)
+    .bind(&parts.policy_name_lower)
+    .fetch_optional(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to query managed policy from database: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?
+    .ok_or_else(|| {
+        IamError::from(NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())
+    })?;
+
+    let managed_policy_id: String =
+        policy_row.try_get(0).map_err(internal_failure_from_row_err("managed_policy_id"))?;
+    let default_version: i64 = policy_row.try_get(1).map_err(internal_failure_from_row_err("default_version"))?;
+
+    let mut sql = QueryBuilder::new(
+        r#"
+        SELECT managed_policy_version, created_at
+        FROM iam.managed_policy_versions
+        WHERE managed_policy_id =
+    "#,
+    );
+    sql.push_bind(&managed_policy_id);
+
+    if let Some(marker) = marker {
+        let info: ListPolicyVersionsMarker = paginator.decrypt_token(marker).await.map_err(|e| {
+            log::error!("Failed to decrypt pagination token for ListPolicyVersions: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })?;
+        sql.push(" AND managed_policy_version <= ");
+        sql.push_bind(info.next_version);
+    }
+
+    sql.push(" ORDER BY managed_policy_version DESC LIMIT ");
+    sql.push_bind(max_items as i32 + 1);
+
+    let rows = sql.build().fetch_all(tx.as_mut()).await.map_err(|e| {
+        log::error!("Failed to fetch managed policy versions from database: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
+
+    let mut versions: Vec<PolicyVersion> = Vec::with_capacity(rows.len().min(max_items));
+    let mut next_marker = None;
+
+    for row in rows.into_iter() {
+        let version_number: i64 = row.try_get(0).map_err(internal_failure_from_row_err("managed_policy_version"))?;
+
+        if versions.len() == max_items {
+            next_marker = Some(
+                paginator
+                    .encrypt_token(&ListPolicyVersionsMarker {
+                        next_version: version_number,
+                    })
+                    .await
+                    .map_err(|e| {
+                        log::error!("Failed to encrypt pagination token for ListPolicyVersions: {e}");
+                        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                    })?,
+            );
+            break;
+        }
+
+        let created_at: DateTime<Utc> = row.try_get(1).map_err(internal_failure_from_row_err("created_at"))?;
+
+        versions.push(
+            PolicyVersion::builder()
+                .create_date(Some(created_at))
+                .is_default_version(Some(version_number == default_version))
+                .version_id(Some(format!("v{version_number}")))
+                .build()
+                .map_err(|e| {
+                    log::error!("Failed to construct PolicyVersion object: {e}");
+                    IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                })?,
+        );
+    }
+
+    let mut builder = ListPolicyVersionsResponse::builder().versions(versions);
+    if let Some(next_marker) = next_marker {
+        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
+    }
+
+    builder.build().map_err(|e| {
+        log::error!("Failed to build ListPolicyVersionsResponse: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })
+}
+
+impl RequestExecutor for SetDefaultPolicyVersionRequest {
+    type Response = ();
+    type Error = IamError;
+
+    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
+        set_default_policy_version(tx, &self.policy_arn, &self.version_id).await
+    }
+}
+
+/// Set the default version of a managed policy by ARN.
+pub async fn set_default_policy_version(
+    tx: &mut PgTransaction<'_>,
+    policy_arn: &str,
+    version_id: &str,
+) -> Result<(), IamError> {
+    let parts = parse_policy_arn(policy_arn)?;
+    let version_number = parse_policy_version_id(version_id).ok_or_else(|| {
+        IamError::from(ValidationError::builder().message(format!("Invalid policy version id: {version_id}")).build())
+    })?;
+
+    // Lock the managed_policies row FOR UPDATE to serialize against DeletePolicyVersion (which
+    // also takes FOR UPDATE on this row). With this lock held, no concurrent transaction can
+    // delete the version we're about to install as default before our commit lands.
+    let policy_row = query(indoc! {"
+            SELECT managed_policy_id
+            FROM iam.managed_policies
+            WHERE account_id = $1 AND path = $2 AND managed_policy_name_lower = $3
+            FOR UPDATE
+        "})
+    .bind(&parts.account_id)
+    .bind(&parts.policy_path)
+    .bind(&parts.policy_name_lower)
+    .fetch_optional(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to query managed policy from database: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?
+    .ok_or_else(|| {
+        IamError::from(NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())
+    })?;
+
+    let managed_policy_id: String =
+        policy_row.try_get(0).map_err(internal_failure_from_row_err("managed_policy_id"))?;
+
+    // Also lock the specific version row. This is redundant given the policy-row lock above (which
+    // already blocks DeletePolicyVersion), but matches the user's "lock the version" requirement
+    // and is defensive if a future code path deletes versions without locking the policy row.
+    let version_exists = query(indoc! {"
+            SELECT 1
+            FROM iam.managed_policy_versions
+            WHERE managed_policy_id = $1 AND managed_policy_version = $2
+            FOR UPDATE
+        "})
+    .bind(&managed_policy_id)
+    .bind(version_number)
+    .fetch_optional(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to query managed policy version from database: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
+
+    if version_exists.is_none() {
+        return Err(NoSuchEntityException::builder()
+            .message(format!("Policy {policy_arn} version {version_id} was not found."))
+            .build()
+            .into());
+    }
+
+    query(indoc! {"
+            UPDATE iam.managed_policies
+            SET default_version = $1
+            WHERE managed_policy_id = $2
+        "})
+    .bind(version_number)
+    .bind(&managed_policy_id)
+    .execute(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to update managed policy default_version: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
+
+    Ok(())
+}
+
+impl RequestExecutor for TagPolicyRequest {
+    type Response = ();
+    type Error = IamError;
+
+    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
+        tag_policy(tx, &self.policy_arn, &self.tags).await
+    }
+}
+
+/// Add or update tags on a managed policy by ARN.
+pub async fn tag_policy(tx: &mut PgTransaction<'_>, policy_arn: &str, tags: &[Tag]) -> Result<(), IamError> {
+    if tags.is_empty() {
+        return Err(ValidationError::builder().message("At least one tag must be provided.").build().into());
+    }
+    for tag in tags {
+        validate_tag_key(&tag.key)?;
+        validate_tag_value(&tag.value)?;
+    }
+
+    let parts = parse_policy_arn(policy_arn)?;
+    let managed_policy_id = lookup_managed_policy_id(tx, &parts, policy_arn).await?;
+
+    for tag in tags {
+        let key_cased = tag.key.as_str();
+        let key_lower = key_cased.to_ascii_lowercase();
+        let value = tag.value.as_str();
+
+        if let Err(e) = query(indoc! {"
+                INSERT INTO iam.managed_policy_tags(managed_policy_id, key_lower, key_cased, value)
+                VALUES($1, $2, $3, $4)
+                ON CONFLICT (managed_policy_id, key_lower)
+                DO UPDATE SET key_cased = EXCLUDED.key_cased, value = EXCLUDED.value,
+                              updated_at = CURRENT_TIMESTAMP
+            "})
+        .bind(&managed_policy_id)
+        .bind(key_lower)
+        .bind(key_cased)
+        .bind(value)
+        .execute(tx.as_mut())
+        .await
+        {
+            log::error!("Failed to insert/update managed policy tag: {e}");
+            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+        }
+    }
+
+    Ok(())
+}
+
+impl RequestExecutor for UntagPolicyRequest {
+    type Response = ();
+    type Error = IamError;
+
+    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
+        untag_policy(tx, &self.policy_arn, &self.tag_keys).await
+    }
+}
+
+/// Remove tags from a managed policy by ARN.
+pub async fn untag_policy(tx: &mut PgTransaction<'_>, policy_arn: &str, tag_keys: &[String]) -> Result<(), IamError> {
+    if tag_keys.is_empty() {
+        return Err(ValidationError::builder().message("At least one tag key must be provided.").build().into());
+    }
+    for key in tag_keys {
+        validate_tag_key(key)?;
+    }
+
+    let parts = parse_policy_arn(policy_arn)?;
+    let managed_policy_id = lookup_managed_policy_id(tx, &parts, policy_arn).await?;
+
+    for key in tag_keys {
+        if let Err(e) = query(indoc! {"
+                DELETE FROM iam.managed_policy_tags
+                WHERE managed_policy_id = $1 AND key_lower = $2
+            "})
+        .bind(&managed_policy_id)
+        .bind(key.to_ascii_lowercase())
+        .execute(tx.as_mut())
+        .await
+        {
+            log::error!("Failed to delete managed policy tag: {e}");
+            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+        }
+    }
+
+    Ok(())
+}
+
+/// Parsed components of a policy ARN. `account_id` has the literal `aws` mapped to
+/// `000000000000`.
+struct PolicyArnParts {
+    account_id: String,
+    policy_path: String,
+    policy_name_lower: String,
+}
+
+/// Parse a policy ARN and extract the account id, path, and lowercase policy name. Returns a
+/// `ValidationError` if the ARN is unparseable or does not point at a `policy/` resource.
+fn parse_policy_arn(policy_arn: &str) -> Result<PolicyArnParts, IamError> {
+    let arn = Arn::from_str(policy_arn).map_err(|e| {
+        log::info!("Failed to parse policy ARN: {e}");
+        IamError::from(ValidationError::builder().message("Invalid policy ARN".to_string()).build())
+    })?;
+
+    let resource = arn.resource();
+    if !resource.starts_with(ARN_RESOURCE_PREFIX_POLICY) {
+        return Err(ValidationError::builder()
+            .message("Policy ARN must have a resource that starts with \"policy/\"".to_string())
+            .build()
+            .into());
+    }
+
+    let account_id = match arn.account_id() {
+        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC.to_string(),
+        other => other.to_string(),
+    };
+
+    let policy_path_and_name = &resource[ARN_RESOURCE_PREFIX_POLICY.len()..];
+    let name_start = policy_path_and_name.rfind('/').map(|i| i + 1).unwrap_or(0);
+    let policy_name_lower = policy_path_and_name[name_start..].to_ascii_lowercase();
+    let policy_path = if name_start == 0 {
+        "/".to_string()
+    } else {
+        format!("/{}", &policy_path_and_name[..name_start])
+    };
+
+    Ok(PolicyArnParts {
+        account_id,
+        policy_path,
+        policy_name_lower,
+    })
+}
+
+/// Look up the `managed_policy_id` for a policy named by ARN; returns NoSuchEntity if not found.
+async fn lookup_managed_policy_id(
+    tx: &mut PgTransaction<'_>,
+    parts: &PolicyArnParts,
+    policy_arn: &str,
+) -> Result<String, IamError> {
+    query(indoc! {"
+            SELECT managed_policy_id
+            FROM iam.managed_policies
+            WHERE account_id = $1 AND path = $2 AND managed_policy_name_lower = $3
+        "})
+    .bind(&parts.account_id)
+    .bind(&parts.policy_path)
+    .bind(&parts.policy_name_lower)
+    .fetch_optional(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to query managed policy from database: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?
+    .ok_or_else(|| {
+        IamError::from(NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())
+    })?
+    .try_get(0)
+    .map_err(|e| {
+        log::error!("Failed to get managed_policy_id from database row: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })
+}
+
+/// Fetch the tags attached to a managed policy.
+async fn fetch_policy_tags(tx: &mut PgTransaction<'_>, managed_policy_id: &str) -> Result<Vec<Tag>, IamError> {
+    let rows = query(indoc! {"
+            SELECT key_cased, value
+            FROM iam.managed_policy_tags
+            WHERE managed_policy_id = $1
+            ORDER BY key_lower ASC
+        "})
+    .bind(managed_policy_id)
+    .fetch_all(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to fetch managed policy tags: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
+
+    let mut tags = Vec::with_capacity(rows.len());
+    for row in rows {
+        let key: String = row.try_get(0).map_err(internal_failure_from_row_err("key_cased"))?;
+        let value: String = row.try_get(1).map_err(internal_failure_from_row_err("value"))?;
+        tags.push(Tag::builder().key(key).value(value).build().map_err(|e| {
+            log::error!("Failed to construct tag object: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })?);
+    }
+    Ok(tags)
+}
+
+/// Fetch the `created_at` of the most recent (highest-numbered) version of a managed policy.
+async fn fetch_latest_version_created_at(
+    tx: &mut PgTransaction<'_>,
+    managed_policy_id: &str,
+) -> Result<Option<DateTime<Utc>>, IamError> {
+    let row = query(indoc! {"
+            SELECT created_at
+            FROM iam.managed_policy_versions
+            WHERE managed_policy_id = $1
+            ORDER BY managed_policy_version DESC
+            LIMIT 1
+        "})
+    .bind(managed_policy_id)
+    .fetch_optional(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to fetch latest managed policy version created_at: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
+
+    Ok(match row {
+        Some(row) => Some(row.try_get(0).map_err(internal_failure_from_row_err("created_at"))?),
+        None => None,
+    })
+}
+
+/// Construct a `Policy` object from the fields fetched from the database.
+#[allow(clippy::too_many_arguments)]
+fn build_policy(
+    arn: Arn,
+    path: String,
+    policy_name_cased: String,
+    policy_id: String,
+    default_version: i64,
+    deprecated: bool,
+    description: Option<String>,
+    create_date: DateTime<Utc>,
+    update_date: Option<DateTime<Utc>>,
+    tags: Vec<Tag>,
+) -> Result<Policy, IamError> {
+    Policy::builder()
+        .arn(Some(arn.to_string()))
+        .attachment_count(Some(0))
+        .create_date(Some(create_date))
+        .default_version_id(Some(format!("v{default_version}")))
+        .description(description)
+        .is_attachable(Some(!deprecated))
+        .path(Some(path))
+        .permissions_boundary_usage_count(Some(0))
+        .policy_id(Some(policy_id))
+        .policy_name(Some(policy_name_cased))
+        .tags(tags)
+        .update_date(Some(update_date.unwrap_or(create_date)))
+        .build()
+        .map_err(|e| {
+            log::error!("Failed to construct Policy object: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })
+}
+
+/// Construct a policy ARN from its components.
+fn build_policy_arn(partition: &str, account_id: &str, path: &str, policy_name: &str) -> Result<Arn, IamError> {
+    Arn::builder()
+        .partition(partition)
+        .service(SERVICE_KEY_IAM)
+        .account_id(account_id)
+        .resource(policy_arn_resource(path, policy_name))
+        .build()
+        .map_err(|e| {
+            log::error!("Failed to construct ARN for managed policy: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })
+}
+
+/// Construct an `OperationPaginator` for a policy-related list operation.
+fn make_paginator(
+    partition: &str,
+    operation_name: &'static str,
+) -> Result<OperationPaginator<FixedKeyService, FixedKeyService>, IamError> {
+    let service_metadata = ScratchstackServiceMetadata::new(partition.to_string(), "", SERVICE_ID_IAM);
+    let operation_metadata = ScratchstackOperationMetadata::new(IAM_API_VERSION, operation_name);
+    OperationPaginator::new_fixed_key(&service_metadata, &operation_metadata, PAGINATION_KEY_ID, *PAGINATION_KEY)
+        .map_err(|e| {
+            log::error!("Failed to create paginator for {operation_name}: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })
+}
+
+/// Returns a closure that converts a sqlx `try_get` failure for the named column into an
+/// `InternalFailure` IamError.
+fn internal_failure_from_row_err(column: &'static str) -> impl Fn(sqlx::Error) -> IamError {
+    move |e: sqlx::Error| {
+        log::error!("Failed to get {column} from database row: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    }
 }
 
 /// Parse a policy version id of the form `v<N>` or `v<N>.<suffix>` into its numeric portion.

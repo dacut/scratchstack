@@ -37,6 +37,12 @@ pub(crate) const OP_LIST_GROUPS: &str = "ListGroups";
 /// Operation name for ListGroupsForUser
 pub(crate) const OP_LIST_GROUPS_FOR_USER: &str = "ListGroupsForUser";
 
+/// Operation name for ListPolicies
+pub(crate) const OP_LIST_POLICIES: &str = "ListPolicies";
+
+/// Operation name for ListPolicyVersions
+pub(crate) const OP_LIST_POLICY_VERSIONS: &str = "ListPolicyVersions";
+
 /// Operation name for ListUsers
 pub(crate) const OP_LIST_USERS: &str = "ListUsers";
 
