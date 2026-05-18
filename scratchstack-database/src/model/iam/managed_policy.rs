@@ -70,6 +70,8 @@ impl crate::Dumpable for ManagedPolicy {
 #[cfg(feature = "load")]
 impl crate::Loadable for ManagedPolicy {
     async fn load_into(&self, conn: &mut PgConnection) -> Result<usize, sqlx::Error> {
+        // Preserve dumped timestamps when present. Fallback order is:
+        // update_date -> created_at -> CURRENT_TIMESTAMP.
         let result = sqlx::query(indoc! {"
             INSERT INTO iam.managed_policies(
                 managed_policy_id, account_id, managed_policy_name_lower, managed_policy_name_cased,
