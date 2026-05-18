@@ -1210,11 +1210,8 @@ fn parse_policy_arn(policy_arn: &str) -> Result<PolicyArnParts, IamError> {
             .into());
     }
 
-    if arn.region().is_some() {
-        return Err(ValidationError::builder()
-            .message("Policy ARN must not have a region".to_string())
-            .build()
-            .into());
+    if !arn.region().is_empty() {
+        return Err(ValidationError::builder().message("Policy ARN must not have a region".to_string()).build().into());
     }
 
     let resource = arn.resource();
