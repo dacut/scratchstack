@@ -6,8 +6,11 @@ use {
         error_meta::Error as IamError,
         operation::{
             CreatePolicyInternalRequest, CreatePolicyResponse, CreatePolicyVersionRequest, CreatePolicyVersionResponse,
-            DeletePolicyVersionRequest,
+            DeletePolicyVersionRequest, GetPolicyRequest, GetPolicyResponse, GetPolicyVersionRequest,
+            GetPolicyVersionResponse, ListPoliciesInternalRequest, ListPoliciesResponse, ListPolicyVersionsRequest,
+            ListPolicyVersionsResponse, SetDefaultPolicyVersionRequest, TagPolicyRequest, UntagPolicyRequest,
         },
+        types::{PolicyScopeType, PolicyUsageType},
     },
     std::ffi::OsString,
 };
@@ -42,18 +45,6 @@ pub(crate) struct CreatePolicyInternalCommand {
     pub tags: Vec<String>,
 }
 
-/// Delete a version of a managed policy in the Scratchstack IAM service.
-#[derive(Debug, Parser)]
-pub(crate) struct DeletePolicyVersionCommand {
-    /// The ARN of the managed policy to delete a version from.
-    #[clap(long)]
-    pub policy_arn: String,
-
-    /// The version id to delete, e.g. `v1`. The default version cannot be deleted.
-    #[clap(long)]
-    pub version_id: String,
-}
-
 /// Create a new version of a managed policy in the Scratchstack IAM service.
 #[derive(Debug, Parser)]
 pub(crate) struct CreatePolicyVersionCommand {
@@ -68,6 +59,123 @@ pub(crate) struct CreatePolicyVersionCommand {
     /// Set this version as the policy's default version.
     #[clap(long, action = clap::ArgAction::SetTrue)]
     pub set_as_default: bool,
+}
+
+/// Delete a version of a managed policy in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct DeletePolicyVersionCommand {
+    /// The ARN of the managed policy to delete a version from.
+    #[clap(long)]
+    pub policy_arn: String,
+
+    /// The version id to delete, e.g. `v1`. The default version cannot be deleted.
+    #[clap(long)]
+    pub version_id: String,
+}
+
+/// Get details for a managed policy in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct GetPolicyCommand {
+    /// The ARN of the managed policy to get.
+    #[clap(long)]
+    pub policy_arn: String,
+}
+
+/// Get a specific version of a managed policy in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct GetPolicyVersionCommand {
+    /// The ARN of the managed policy to fetch a version for.
+    #[clap(long)]
+    pub policy_arn: String,
+
+    /// The version id to fetch, e.g. `v1`.
+    #[clap(long)]
+    pub version_id: String,
+}
+
+/// List managed policies in an account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct ListPoliciesInternalCommand {
+    /// The unique identifier for the account to list policies in.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The scope to filter by: AWS, Local, or All (default: All).
+    #[clap(long)]
+    pub scope: Option<PolicyScopeType>,
+
+    /// When set, list only attached policies.
+    #[clap(long, action = clap::ArgAction::SetTrue)]
+    pub only_attached: bool,
+
+    /// Optional path prefix to filter by.
+    #[clap(long)]
+    pub path_prefix: Option<String>,
+
+    /// Optional usage filter: PermissionsPolicy or PermissionsBoundary.
+    #[clap(long)]
+    pub policy_usage_filter: Option<PolicyUsageType>,
+
+    /// Maximum number of policies to return.
+    #[clap(long)]
+    pub max_items: Option<i32>,
+
+    /// Marker for paginating list results.
+    #[clap(long)]
+    pub marker: Option<String>,
+}
+
+/// List versions of a managed policy in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct ListPolicyVersionsCommand {
+    /// The ARN of the managed policy whose versions to list.
+    #[clap(long)]
+    pub policy_arn: String,
+
+    /// Maximum number of versions to return.
+    #[clap(long)]
+    pub max_items: Option<i32>,
+
+    /// Marker for paginating list results.
+    #[clap(long)]
+    pub marker: Option<String>,
+}
+
+/// Set the default version for a managed policy in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct SetDefaultPolicyVersionCommand {
+    /// The ARN of the managed policy whose default version to set.
+    #[clap(long)]
+    pub policy_arn: String,
+
+    /// The version id to make default, e.g. `v2`.
+    #[clap(long)]
+    pub version_id: String,
+}
+
+/// Add or update tags on a managed policy in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct TagPolicyCommand {
+    /// The ARN of the managed policy to tag.
+    #[clap(long)]
+    pub policy_arn: String,
+
+    /// A list of tags to associate with the policy. Each tag must use AWS CLI-style shorthand,
+    /// for example: `Key=Environment,Value=Production`.
+    #[clap(long, num_args = 1..)]
+    pub tags: Vec<String>,
+}
+
+/// Remove tags from a managed policy in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct UntagPolicyCommand {
+    /// The ARN of the managed policy to untag.
+    #[clap(long)]
+    pub policy_arn: String,
+
+    /// A list of tag keys to remove from the policy.
+    #[clap(long, num_args = 1..)]
+    pub tag_keys: Vec<String>,
 }
 
 impl Runnable for CreatePolicyInternalCommand {
@@ -90,6 +198,24 @@ impl Runnable for CreatePolicyInternalCommand {
     }
 }
 
+impl Runnable for CreatePolicyVersionCommand {
+    type Result = CreatePolicyVersionResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let mut request_builder = CreatePolicyVersionRequest::builder()
+            .policy_arn(self.policy_arn.clone())
+            .policy_document(self.policy_document.clone());
+        if self.set_as_default {
+            request_builder = request_builder.set_as_default(Some(true));
+        }
+        let request = request_builder.build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
 impl Runnable for DeletePolicyVersionCommand {
     type Result = ();
 
@@ -105,20 +231,122 @@ impl Runnable for DeletePolicyVersionCommand {
     }
 }
 
-impl Runnable for CreatePolicyVersionCommand {
-    type Result = CreatePolicyVersionResponse;
+impl Runnable for GetPolicyCommand {
+    type Result = GetPolicyResponse;
 
     async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let mut request_builder = CreatePolicyVersionRequest::builder()
+        let request = GetPolicyRequest::builder().policy_arn(self.policy_arn.clone()).build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for GetPolicyVersionCommand {
+    type Result = GetPolicyVersionResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = GetPolicyVersionRequest::builder()
             .policy_arn(self.policy_arn.clone())
-            .policy_document(self.policy_document.clone());
-        if self.set_as_default {
-            request_builder = request_builder.set_as_default(Some(true));
+            .version_id(self.version_id.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for ListPoliciesInternalCommand {
+    type Result = ListPoliciesResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let mut builder = ListPoliciesInternalRequest::builder().account_id(self.account_id.clone());
+        if let Some(scope) = self.scope {
+            builder = builder.scope(Some(scope));
         }
-        let request = request_builder.build()?;
+        if self.only_attached {
+            builder = builder.only_attached(Some(true));
+        }
+        if let Some(path_prefix) = &self.path_prefix {
+            builder = builder.path_prefix(Some(path_prefix.clone()));
+        }
+        if let Some(filter) = self.policy_usage_filter {
+            builder = builder.policy_usage_filter(Some(filter));
+        }
+        if let Some(max_items) = self.max_items {
+            builder = builder.max_items(Some(max_items));
+        }
+        if let Some(marker) = &self.marker {
+            builder = builder.marker(Some(marker.clone()));
+        }
+        let request = builder.build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for ListPolicyVersionsCommand {
+    type Result = ListPolicyVersionsResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let mut builder = ListPolicyVersionsRequest::builder().policy_arn(self.policy_arn.clone());
+        if let Some(max_items) = self.max_items {
+            builder = builder.max_items(Some(max_items));
+        }
+        if let Some(marker) = &self.marker {
+            builder = builder.marker(Some(marker.clone()));
+        }
+        let request = builder.build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for SetDefaultPolicyVersionCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = SetDefaultPolicyVersionRequest::builder()
+            .policy_arn(self.policy_arn.clone())
+            .version_id(self.version_id.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for TagPolicyCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let tags = tags_from_shorthand(&self.tags)?;
+        let request = TagPolicyRequest::builder().policy_arn(self.policy_arn.clone()).tags(tags).build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for UntagPolicyCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = UntagPolicyRequest::builder()
+            .policy_arn(self.policy_arn.clone())
+            .tag_keys(self.tag_keys.clone())
+            .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }

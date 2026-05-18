@@ -46,6 +46,10 @@ pub struct ManagedPolicy {
 
     /// Timestamp when the policy was created.
     pub created_at: Option<DateTime<Utc>>,
+
+    /// Timestamp of the most recent policy version's creation. Maintained denormalized on the
+    /// row so list/get queries don't need a per-row sub-query against `managed_policy_versions`.
+    pub update_date: Option<DateTime<Utc>>,
 }
 
 #[cfg(feature = "dump")]
@@ -54,7 +58,7 @@ impl crate::Dumpable for ManagedPolicy {
         sqlx::query_as(indoc! {"
             SELECT managed_policy_id, account_id, managed_policy_name_lower AS policy_name_lower,
                    managed_policy_name_cased AS policy_name_cased, path, default_version,
-                   deprecated, policy_type, latest_version, created_at
+                   deprecated, policy_type, latest_version, created_at, update_date
             FROM iam.managed_policies
             ORDER BY account_id, managed_policy_id
         "})
@@ -66,11 +70,13 @@ impl crate::Dumpable for ManagedPolicy {
 #[cfg(feature = "load")]
 impl crate::Loadable for ManagedPolicy {
     async fn load_into(&self, conn: &mut PgConnection) -> Result<usize, sqlx::Error> {
+        // Preserve dumped timestamps when present. Fallback order is:
+        // update_date -> created_at -> CURRENT_TIMESTAMP.
         let result = sqlx::query(indoc! {"
             INSERT INTO iam.managed_policies(
                 managed_policy_id, account_id, managed_policy_name_lower, managed_policy_name_cased,
-                path, default_version, deprecated, policy_type, latest_version)
-            VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                path, default_version, deprecated, policy_type, latest_version, created_at, update_date)
+            VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, CURRENT_TIMESTAMP), COALESCE($11, $10, CURRENT_TIMESTAMP))
         "})
         .bind(self.managed_policy_id.clone())
         .bind(self.account_id.clone())
@@ -81,6 +87,8 @@ impl crate::Loadable for ManagedPolicy {
         .bind(self.deprecated)
         .bind(self.policy_type.clone())
         .bind(self.latest_version)
+        .bind(self.created_at)
+        .bind(self.update_date)
         .execute(conn)
         .await?;
         Ok(result.rows_affected() as usize)

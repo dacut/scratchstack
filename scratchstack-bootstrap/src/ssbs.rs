@@ -31,7 +31,11 @@ use {
             RemoveUserFromGroupInternalCommand, UpdateGroupInternalCommand,
         },
         partition::{GetCurrentPartitionCommand, SetCurrentPartitionCommand},
-        policy::{CreatePolicyInternalCommand, CreatePolicyVersionCommand, DeletePolicyVersionCommand},
+        policy::{
+            CreatePolicyInternalCommand, CreatePolicyVersionCommand, DeletePolicyVersionCommand, GetPolicyCommand,
+            GetPolicyVersionCommand, ListPoliciesInternalCommand, ListPolicyVersionsCommand,
+            SetDefaultPolicyVersionCommand, TagPolicyCommand, UntagPolicyCommand,
+        },
         user::{
             CreateUserInternalCommand, DeleteUserInternalCommand, GetUserInternalCommand, ListUserTagsInternalCommand,
             ListUsersInternalCommand, TagUserInternalCommand, UntagUserInternalCommand, UpdateUserInternalCommand,
@@ -144,6 +148,14 @@ enum Commands {
     #[command(name = "get-group")]
     GetGroup(GetGroupInternalCommand),
 
+    /// Get information about an IAM managed policy.
+    #[command(name = "get-policy")]
+    GetPolicy(GetPolicyCommand),
+
+    /// Get a specific version of an IAM managed policy.
+    #[command(name = "get-policy-version")]
+    GetPolicyVersion(GetPolicyVersionCommand),
+
     /// Get information about an IAM user in an account.
     #[command(name = "get-user")]
     GetUser(GetUserInternalCommand),
@@ -159,6 +171,14 @@ enum Commands {
     /// List IAM groups that a user belongs to.
     #[command(name = "list-groups-for-user")]
     ListGroupsForUser(ListGroupsForUserInternalCommand),
+
+    /// List IAM managed policies in an account (optionally including AWS-managed policies).
+    #[command(name = "list-policies")]
+    ListPolicies(ListPoliciesInternalCommand),
+
+    /// List the versions of an IAM managed policy.
+    #[command(name = "list-policy-versions")]
+    ListPolicyVersions(ListPolicyVersionsCommand),
 
     /// List IAM users in an account.
     #[command(name = "list-users")]
@@ -183,9 +203,21 @@ enum Commands {
     #[command(name = "set-current-partition")]
     SetCurrentPartition(SetCurrentPartitionCommand),
 
+    /// Set the default version of an IAM managed policy.
+    #[command(name = "set-default-policy-version")]
+    SetDefaultPolicyVersion(SetDefaultPolicyVersionCommand),
+
+    /// Add or update tags on an IAM managed policy.
+    #[command(name = "tag-policy")]
+    TagPolicy(TagPolicyCommand),
+
     /// Add or update tags on an IAM user in an account.
     #[command(name = "tag-user")]
     TagUser(TagUserInternalCommand),
+
+    /// Remove tags from an IAM managed policy.
+    #[command(name = "untag-policy")]
+    UntagPolicy(UntagPolicyCommand),
 
     /// Update an IAM group in an account.
     #[command(name = "update-group")]
@@ -215,16 +247,23 @@ impl Commands {
             Commands::DeleteUser(_) => "DeleteUser",
             Commands::GetCurrentPartition(_) => "GetCurrentPartition",
             Commands::GetGroup(_) => "GetGroup",
+            Commands::GetPolicy(_) => "GetPolicy",
+            Commands::GetPolicyVersion(_) => "GetPolicyVersion",
             Commands::GetUser(_) => "GetUser",
             Commands::ListAccounts(_) => "ListAccounts",
             Commands::ListGroups(_) => "ListGroups",
             Commands::ListGroupsForUser(_) => "ListGroupsForUser",
+            Commands::ListPolicies(_) => "ListPolicies",
+            Commands::ListPolicyVersions(_) => "ListPolicyVersions",
             Commands::ListUsers(_) => "ListUsers",
             Commands::ListUserTags(_) => "ListUserTags",
             Commands::Migrate(_) => "Migrate",
             Commands::RemoveUserFromGroup(_) => "RemoveUserFromGroup",
             Commands::SetCurrentPartition(_) => "SetCurrentPartition",
+            Commands::SetDefaultPolicyVersion(_) => "SetDefaultPolicyVersion",
+            Commands::TagPolicy(_) => "TagPolicy",
             Commands::TagUser(_) => "TagUser",
+            Commands::UntagPolicy(_) => "UntagPolicy",
             Commands::UntagUser(_) => "UntagUser",
             Commands::UpdateGroup(_) => "UpdateGroup",
             Commands::UpdateUser(_) => "UpdateUser",
@@ -331,6 +370,20 @@ where
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
+        Commands::GetPolicy(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::GetPolicyVersion(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
         Commands::GetUser(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
@@ -353,6 +406,20 @@ where
             })?
         }
         Commands::ListGroupsForUser(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::ListPolicies(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::ListPolicyVersions(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
@@ -388,7 +455,19 @@ where
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
+        Commands::SetDefaultPolicyVersion(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::TagPolicy(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
         Commands::TagUser(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::UntagPolicy(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
         }

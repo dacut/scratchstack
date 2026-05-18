@@ -22,11 +22,14 @@ use {
             AddUserToGroupInternalRequest, CreateAccountRequest, CreateGroupInternalRequest,
             CreatePolicyInternalRequest, CreatePolicyVersionRequest, CreateUserInternalRequest,
             DeleteGroupInternalRequest, DeletePolicyVersionRequest, GetCurrentPartitionRequest,
-            GetGroupInternalRequest, GetUserInternalRequest, ListAccountsRequest, ListGroupsForUserInternalRequest,
-            ListGroupsInternalRequest, ListUserTagsInternalRequest, RemoveUserFromGroupInternalRequest,
-            SetCurrentPartitionRequest, TagUserInternalRequest, UntagUserInternalRequest, UpdateGroupInternalRequest,
+            GetGroupInternalRequest, GetPolicyRequest, GetPolicyVersionRequest, GetUserInternalRequest,
+            ListAccountsRequest, ListGroupsForUserInternalRequest, ListGroupsInternalRequest,
+            ListPoliciesInternalRequest, ListPolicyVersionsRequest, ListUserTagsInternalRequest,
+            RemoveUserFromGroupInternalRequest, SetCurrentPartitionRequest, SetDefaultPolicyVersionRequest,
+            TagPolicyRequest, TagUserInternalRequest, UntagPolicyRequest, UntagUserInternalRequest,
+            UpdateGroupInternalRequest,
         },
-        types::{ListAccountsFilter, ListAccountsFilterName, Tag},
+        types::{ListAccountsFilter, ListAccountsFilterName, PolicyScopeType, PolicyUsageType, Tag},
     },
 };
 
@@ -165,6 +168,49 @@ async fn test_database() {
     test_delete_policy_version_nonexistent_version(&pool).await;
     test_delete_policy_version_invalid_arn(&pool).await;
     test_delete_policy_version_aws_account(&pool).await;
+
+    // -- update_date denormalization ------------------------------------------
+    test_policy_update_date_lifecycle(&pool).await;
+
+    // -- GetPolicyRequest / GetPolicyVersionRequest ---------------------------
+    test_get_policy_simple(&pool).await;
+    test_get_policy_with_path(&pool).await;
+    test_get_policy_aws_account(&pool).await;
+    test_get_policy_mismatched_path(&pool).await;
+    test_get_policy_nonexistent(&pool).await;
+    test_get_policy_version_simple(&pool).await;
+    test_get_policy_version_nonexistent_version(&pool).await;
+    test_get_policy_version_mismatched_path(&pool).await;
+
+    // -- SetDefaultPolicyVersionRequest ---------------------------------------
+    test_set_default_policy_version_simple(&pool).await;
+    test_set_default_policy_version_nonexistent_version(&pool).await;
+    test_set_default_policy_version_nonexistent_policy(&pool).await;
+    test_set_default_policy_version_mismatched_path(&pool).await;
+    test_set_default_policy_version_aws_account(&pool).await;
+
+    // -- TagPolicyRequest / UntagPolicyRequest --------------------------------
+    test_tag_policy_simple(&pool).await;
+    test_tag_policy_upsert(&pool).await;
+    test_tag_policy_empty(&pool).await;
+    test_tag_policy_nonexistent(&pool).await;
+    test_untag_policy_simple(&pool).await;
+    test_untag_policy_empty(&pool).await;
+    test_untag_policy_nonexistent(&pool).await;
+
+    // -- ListPolicyVersionsRequest --------------------------------------------
+    test_list_policy_versions_simple(&pool).await;
+    test_list_policy_versions_nonexistent(&pool).await;
+    test_list_policy_versions_pagination(&pool).await;
+
+    // -- ListPoliciesInternalRequest ------------------------------------------
+    test_list_policies_local(&pool).await;
+    test_list_policies_aws(&pool).await;
+    test_list_policies_all(&pool).await;
+    test_list_policies_path_prefix(&pool).await;
+    test_list_policies_only_attached(&pool).await;
+    test_list_policies_usage_filter_pb(&pool).await;
+    test_list_policies_pagination(&pool).await;
 
     // -- DeleteGroupInternalRequest -------------------------------------------
     test_delete_group_max_length_name(&pool).await;
@@ -2145,6 +2191,862 @@ async fn test_delete_policy_version_aws_account(pool: &sqlx::PgPool) {
         .expect_err("v1 is the default and cannot be deleted");
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(matches!(err, IamError::DeleteConflictException(_)), "Expected DeleteConflict, got: {err:?}");
+}
+
+// -- GetPolicy / GetPolicyVersion tests ----------------------------------------
+
+async fn test_get_policy_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/TestPolicy".to_string())
+        .build()
+        .expect("Failed to build GetPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get TestPolicy");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let policy = resp.policy.expect("Response should include policy");
+    assert_eq!(policy.policy_name.as_deref(), Some("TestPolicy"));
+    assert_eq!(policy.path.as_deref(), Some("/"));
+    assert_eq!(policy.default_version_id.as_deref(), Some("v1"));
+    assert_eq!(policy.is_attachable, Some(true));
+    assert_eq!(policy.arn.as_deref(), Some("arn:test-partition:iam::123456789012:policy/TestPolicy"));
+    assert!(policy.tags.is_empty());
+    assert!(policy.policy_id.as_ref().unwrap().starts_with("ANPA"));
+    assert!(policy.create_date.is_some());
+    assert!(policy.update_date.is_some());
+}
+
+async fn test_get_policy_with_path(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/engineering/PathPolicy".to_string())
+        .build()
+        .expect("Failed to build GetPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get PathPolicy at /engineering/");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let policy = resp.policy.expect("Response should include policy");
+    assert_eq!(policy.policy_name.as_deref(), Some("PathPolicy"));
+    assert_eq!(policy.path.as_deref(), Some("/engineering/"));
+}
+
+/// Look up the AWS-owned policy created earlier in the delete tests by using "aws" in the ARN.
+async fn test_get_policy_aws_account(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::aws:policy/AwsOwnedDelVersion".to_string())
+        .build()
+        .expect("Failed to build GetPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get AwsOwnedDelVersion via 'aws' account");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let policy = resp.policy.expect("Response should include policy");
+    assert_eq!(policy.policy_name.as_deref(), Some("AwsOwnedDelVersion"));
+}
+
+async fn test_get_policy_mismatched_path(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = GetPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/engineering/TestPolicy".to_string())
+        .build()
+        .expect("Failed to build GetPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Get with mismatched path should fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+async fn test_get_policy_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = GetPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchGetPolicy".to_string())
+        .build()
+        .expect("Failed to build GetPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Get on missing policy should fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// VersionedPolicy has v3 as default after CreatePolicyVersion tests.
+async fn test_get_policy_version_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetPolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .version_id("v3".to_string())
+        .build()
+        .expect("Failed to build GetPolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get v3 of VersionedPolicy");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let pv = resp.policy_version.expect("Response should include policy_version");
+    assert_eq!(pv.version_id.as_deref(), Some("v3"));
+    assert_eq!(pv.is_default_version, Some(true));
+    assert!(pv.document.is_some());
+    assert!(pv.create_date.is_some());
+
+    // Also fetch a non-default version (v4 was created non-default in CreatePolicyVersion tests).
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetPolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .version_id("v4".to_string())
+        .build()
+        .expect("Failed to build GetPolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get v4 of VersionedPolicy");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let pv = resp.policy_version.expect("Response should include policy_version");
+    assert_eq!(pv.version_id.as_deref(), Some("v4"));
+    assert_eq!(pv.is_default_version, Some(false));
+}
+
+async fn test_get_policy_version_nonexistent_version(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = GetPolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .version_id("v99".to_string())
+        .build()
+        .expect("Failed to build GetPolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Get nonexistent version should fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+async fn test_get_policy_version_mismatched_path(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = GetPolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/engineering/VersionedPolicy".to_string())
+        .version_id("v1".to_string())
+        .build()
+        .expect("Failed to build GetPolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Get with wrong path should fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+// -- SetDefaultPolicyVersion tests --------------------------------------------
+
+/// VersionedPolicy currently has v3 as default. Set it to v4, verify, then back to v3.
+async fn test_set_default_policy_version_simple(pool: &sqlx::PgPool) {
+    let arn = "arn:test-partition:iam::123456789012:policy/VersionedPolicy";
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    SetDefaultPolicyVersionRequest::builder()
+        .policy_arn(arn.to_string())
+        .version_id("v4".to_string())
+        .build()
+        .expect("Failed to build SetDefaultPolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to set default to v4");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetPolicyRequest::builder()
+        .policy_arn(arn.to_string())
+        .build()
+        .expect("Failed to build GetPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get VersionedPolicy");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert_eq!(resp.policy.unwrap().default_version_id.as_deref(), Some("v4"));
+
+    // Restore v3 as default so later list tests see a stable state.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    SetDefaultPolicyVersionRequest::builder()
+        .policy_arn(arn.to_string())
+        .version_id("v3".to_string())
+        .build()
+        .expect("Failed to build SetDefaultPolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to restore default to v3");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+async fn test_set_default_policy_version_nonexistent_version(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = SetDefaultPolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .version_id("v99".to_string())
+        .build()
+        .expect("Failed to build SetDefaultPolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Set default to nonexistent version should fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+async fn test_set_default_policy_version_nonexistent_policy(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = SetDefaultPolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchSetDefaultPolicy".to_string())
+        .version_id("v1".to_string())
+        .build()
+        .expect("Failed to build SetDefaultPolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Set default on missing policy should fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+async fn test_set_default_policy_version_mismatched_path(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = SetDefaultPolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/engineering/VersionedPolicy".to_string())
+        .version_id("v3".to_string())
+        .build()
+        .expect("Failed to build SetDefaultPolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Set default with mismatched path should fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// AwsOwnedDelVersion has only v1 in account 000000000000. Setting v1 as default through 'aws'
+/// ARN should succeed (idempotent).
+async fn test_set_default_policy_version_aws_account(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    SetDefaultPolicyVersionRequest::builder()
+        .policy_arn("arn:test-partition:iam::aws:policy/AwsOwnedDelVersion".to_string())
+        .version_id("v1".to_string())
+        .build()
+        .expect("Failed to build SetDefaultPolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to set default via 'aws' ARN");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+// -- TagPolicy / UntagPolicy tests --------------------------------------------
+
+async fn test_tag_policy_simple(pool: &sqlx::PgPool) {
+    let arn = "arn:test-partition:iam::123456789012:policy/TestPolicy";
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    TagPolicyRequest::builder()
+        .policy_arn(arn.to_string())
+        .tags(vec![
+            Tag::builder().key("Env".to_string()).value("Prod".to_string()).build().expect("Tag build failed"),
+            Tag::builder().key("Owner".to_string()).value("Platform".to_string()).build().expect("Tag build failed"),
+        ])
+        .build()
+        .expect("Failed to build TagPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to tag TestPolicy");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetPolicyRequest::builder()
+        .policy_arn(arn.to_string())
+        .build()
+        .expect("Failed to build GetPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get TestPolicy after tagging");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let policy = resp.policy.expect("Response should include policy");
+    let tag_pairs: Vec<(String, String)> = policy.tags.iter().map(|t| (t.key.clone(), t.value.clone())).collect();
+    assert!(tag_pairs.contains(&("Env".to_string(), "Prod".to_string())));
+    assert!(tag_pairs.contains(&("Owner".to_string(), "Platform".to_string())));
+}
+
+async fn test_tag_policy_upsert(pool: &sqlx::PgPool) {
+    let arn = "arn:test-partition:iam::123456789012:policy/TestPolicy";
+
+    // Update Env=Prod to Env=Staging.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    TagPolicyRequest::builder()
+        .policy_arn(arn.to_string())
+        .tags(vec![
+            Tag::builder().key("Env".to_string()).value("Staging".to_string()).build().expect("Tag build failed"),
+        ])
+        .build()
+        .expect("Failed to build TagPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to upsert tag");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetPolicyRequest::builder()
+        .policy_arn(arn.to_string())
+        .build()
+        .expect("Failed to build GetPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get TestPolicy");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let env_value = resp
+        .policy
+        .unwrap()
+        .tags
+        .iter()
+        .find(|t| t.key == "Env")
+        .map(|t| t.value.clone())
+        .expect("Env tag should exist");
+    assert_eq!(env_value, "Staging");
+}
+
+async fn test_tag_policy_empty(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = TagPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/TestPolicy".to_string())
+        .tags(vec![])
+        .build()
+        .expect("Failed to build TagPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Tagging with empty list should fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::ValidationError(_)), "Expected ValidationError, got: {err:?}");
+}
+
+async fn test_tag_policy_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = TagPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchTagPolicy".to_string())
+        .tags(vec![Tag::builder().key("X".to_string()).value("Y".to_string()).build().expect("Tag build failed")])
+        .build()
+        .expect("Failed to build TagPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Tagging missing policy should fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+async fn test_untag_policy_simple(pool: &sqlx::PgPool) {
+    let arn = "arn:test-partition:iam::123456789012:policy/TestPolicy";
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UntagPolicyRequest::builder()
+        .policy_arn(arn.to_string())
+        .tag_keys(vec!["Owner".to_string()])
+        .build()
+        .expect("Failed to build UntagPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to untag Owner");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetPolicyRequest::builder()
+        .policy_arn(arn.to_string())
+        .build()
+        .expect("Failed to build GetPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get TestPolicy");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let keys: Vec<String> = resp.policy.unwrap().tags.iter().map(|t| t.key.clone()).collect();
+    assert!(!keys.contains(&"Owner".to_string()), "Owner tag should have been removed");
+    assert!(keys.contains(&"Env".to_string()), "Env tag should still be present");
+}
+
+async fn test_untag_policy_empty(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = UntagPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/TestPolicy".to_string())
+        .tag_keys(vec![])
+        .build()
+        .expect("Failed to build UntagPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Untagging with empty list should fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::ValidationError(_)), "Expected ValidationError, got: {err:?}");
+}
+
+async fn test_untag_policy_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = UntagPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchUntagPolicy".to_string())
+        .tag_keys(vec!["X".to_string()])
+        .build()
+        .expect("Failed to build UntagPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Untagging missing policy should fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+// -- ListPolicyVersions tests -------------------------------------------------
+
+async fn test_list_policy_versions_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListPolicyVersionsRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .build()
+        .expect("Failed to build ListPolicyVersionsRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list versions of VersionedPolicy");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    // VersionedPolicy has v2..v5 after v1 was deleted in delete tests.
+    let version_ids: Vec<String> = resp.versions.iter().filter_map(|v| v.version_id.clone()).collect();
+    assert_eq!(version_ids, vec!["v5".to_string(), "v4".to_string(), "v3".to_string(), "v2".to_string()]);
+
+    // v3 should be marked as the default.
+    let v3 = resp.versions.iter().find(|v| v.version_id.as_deref() == Some("v3")).expect("v3 should exist");
+    assert_eq!(v3.is_default_version, Some(true));
+    let v4 = resp.versions.iter().find(|v| v.version_id.as_deref() == Some("v4")).expect("v4 should exist");
+    assert_eq!(v4.is_default_version, Some(false));
+}
+
+async fn test_list_policy_versions_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = ListPolicyVersionsRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchListVersions".to_string())
+        .build()
+        .expect("Failed to build ListPolicyVersionsRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("List versions on missing policy should fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+async fn test_list_policy_versions_pagination(pool: &sqlx::PgPool) {
+    let arn = "arn:test-partition:iam::123456789012:policy/VersionedPolicy";
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let page1 = ListPolicyVersionsRequest::builder()
+        .policy_arn(arn.to_string())
+        .max_items(Some(2))
+        .build()
+        .expect("Failed to build ListPolicyVersionsRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list page 1");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(page1.versions.len(), 2);
+    assert_eq!(page1.is_truncated, Some(true));
+    let marker = page1.marker.expect("Page 1 should have a marker");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let page2 = ListPolicyVersionsRequest::builder()
+        .policy_arn(arn.to_string())
+        .max_items(Some(2))
+        .marker(Some(marker))
+        .build()
+        .expect("Failed to build ListPolicyVersionsRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list page 2");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(page2.versions.len(), 2);
+    let all: Vec<String> =
+        page1.versions.iter().chain(page2.versions.iter()).filter_map(|v| v.version_id.clone()).collect();
+    assert_eq!(all, vec!["v5".to_string(), "v4".to_string(), "v3".to_string(), "v2".to_string()]);
+}
+
+// -- ListPolicies tests -------------------------------------------------------
+
+async fn test_list_policies_local(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListPoliciesInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .scope(Some(PolicyScopeType::Local))
+        .max_items(Some(1000))
+        .build()
+        .expect("Failed to build ListPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list local policies");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let names: Vec<String> = resp.policies.iter().filter_map(|p| p.policy_name.clone()).collect();
+    assert!(names.contains(&"TestPolicy".to_string()), "Expected TestPolicy in local list: {names:?}");
+    assert!(names.contains(&"Example-Managed-Policy-1".to_string()), "Expected Example-Managed-Policy-1: {names:?}");
+    assert!(names.iter().all(|n| n != "AwsOwnedDelVersion"), "AwsOwnedDelVersion should not be local for this account");
+}
+
+async fn test_list_policies_aws(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListPoliciesInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .scope(Some(PolicyScopeType::Aws))
+        .max_items(Some(1000))
+        .build()
+        .expect("Failed to build ListPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list AWS-scope policies");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let names: Vec<String> = resp.policies.iter().filter_map(|p| p.policy_name.clone()).collect();
+    assert!(names.contains(&"AwsOwnedDelVersion".to_string()), "Expected AwsOwnedDelVersion in AWS-scope: {names:?}");
+    assert!(names.iter().all(|n| n != "TestPolicy"), "TestPolicy is customer-managed and must not appear");
+}
+
+async fn test_list_policies_all(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListPoliciesInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .scope(Some(PolicyScopeType::All))
+        .max_items(Some(1000))
+        .build()
+        .expect("Failed to build ListPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list all policies");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let names: Vec<String> = resp.policies.iter().filter_map(|p| p.policy_name.clone()).collect();
+    assert!(names.contains(&"TestPolicy".to_string()));
+    assert!(names.contains(&"AwsOwnedDelVersion".to_string()));
+}
+
+async fn test_list_policies_path_prefix(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListPoliciesInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .scope(Some(PolicyScopeType::Local))
+        .path_prefix(Some("/engineering/".to_string()))
+        .max_items(Some(1000))
+        .build()
+        .expect("Failed to build ListPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list policies with /engineering/ path");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let names: Vec<String> = resp.policies.iter().filter_map(|p| p.policy_name.clone()).collect();
+    assert!(names.contains(&"PathPolicy".to_string()), "Expected PathPolicy: {names:?}");
+    assert!(names.contains(&"PathDelVersion".to_string()), "Expected PathDelVersion: {names:?}");
+    for policy in &resp.policies {
+        assert_eq!(policy.path.as_deref(), Some("/engineering/"));
+    }
+}
+
+/// only_attached=true should surface policies attached to entities in the caller's account, but
+/// must NOT surface a policy whose only attachment is cross-account.
+///
+/// Positive: Example-Managed-Policy-1 (AAAABBBBCCCCDDDD, owned by 123456789012) is attached to
+/// EXAMPLEGROUPID123 and EXAMPLEROLEID123 (both in 123456789012) via the seeded data, so it
+/// must appear.
+///
+/// Negative: we create a fresh policy in 123456789012, attach it only to a fresh group in
+/// 210987654321 (via raw SQL inside a tx that rolls back), and verify it does NOT appear from
+/// 123456789012's view. This is the case the pre-fix code leaked.
+async fn test_list_policies_only_attached(pool: &sqlx::PgPool) {
+    // Positive case (uses seeded in-account attachments).
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListPoliciesInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .scope(Some(PolicyScopeType::All))
+        .only_attached(Some(true))
+        .max_items(Some(1000))
+        .build()
+        .expect("Failed to build ListPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list attached policies");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    let names: Vec<String> = resp.policies.iter().filter_map(|p| p.policy_name.clone()).collect();
+    assert!(
+        names.contains(&"Example-Managed-Policy-1".to_string()),
+        "Expected Example-Managed-Policy-1 via in-account group/role attachments: {names:?}"
+    );
+    assert!(!names.contains(&"TestPolicy".to_string()), "TestPolicy is not attached and should not appear");
+
+    // Negative case: a policy with only a cross-account attachment must not leak. All writes and
+    // the read happen in the same transaction so nothing persists into later tests.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let create_resp = CreatePolicyInternalRequest::builder()
+        .policy_name("CrossAttachOnly".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create CrossAttachOnly");
+    // managed_policy_id stored in the DB is the IAM id without its 4-char "ANPA" prefix.
+    let managed_policy_id = create_resp
+        .policy
+        .unwrap()
+        .policy_id
+        .unwrap()
+        .strip_prefix("ANPA")
+        .expect("policy_id has ANPA prefix")
+        .to_string();
+
+    // Insert a fresh group in 210987654321 and attach the policy to it cross-account.
+    sqlx::query(
+        "INSERT INTO iam.groups(group_id, account_id, group_name_lower, group_name_cased, path) \
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind("XACCTGRPIDXACCTGR")
+    .bind("210987654321")
+    .bind("xacct-grp")
+    .bind("xacct-grp")
+    .bind("/")
+    .execute(tx.as_mut())
+    .await
+    .expect("Failed to insert cross-account group");
+    sqlx::query("INSERT INTO iam.group_attached_policies(group_id, managed_policy_id) VALUES ($1, $2)")
+        .bind("XACCTGRPIDXACCTGR")
+        .bind(&managed_policy_id)
+        .execute(tx.as_mut())
+        .await
+        .expect("Failed to insert cross-account attachment");
+
+    let resp = ListPoliciesInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .scope(Some(PolicyScopeType::Local))
+        .only_attached(Some(true))
+        .max_items(Some(1000))
+        .build()
+        .expect("Failed to build ListPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list attached policies");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    let names: Vec<String> = resp.policies.iter().filter_map(|p| p.policy_name.clone()).collect();
+    assert!(
+        !names.contains(&"CrossAttachOnly".to_string()),
+        "CrossAttachOnly is only attached cross-account and must not appear from 123456789012's \
+         view: {names:?}"
+    );
+}
+
+/// Example-Managed-Policy-1 is also the permissions boundary of EXAMPLEUSERID123, so it should
+/// appear when filtering for PermissionsBoundary usage.
+async fn test_list_policies_usage_filter_pb(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListPoliciesInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .scope(Some(PolicyScopeType::All))
+        .policy_usage_filter(Some(PolicyUsageType::PermissionsBoundary))
+        .max_items(Some(1000))
+        .build()
+        .expect("Failed to build ListPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list PB policies");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let names: Vec<String> = resp.policies.iter().filter_map(|p| p.policy_name.clone()).collect();
+    assert!(names.contains(&"Example-Managed-Policy-1".to_string()), "Expected Example-Managed-Policy-1: {names:?}");
+
+    // TestPolicy is unattached and not used as a permissions boundary, so it should not appear.
+    assert!(
+        !names.contains(&"TestPolicy".to_string()),
+        "TestPolicy is not used as a permissions boundary and should not appear"
+    );
+}
+
+/// Walk the marker-based pagination path: create 5 policies under a fresh path, list 3 pages
+/// with max_items=2, and verify the union covers all 5 with no duplicates. All writes and reads
+/// happen in a transaction that rolls back so subsequent tests aren't affected.
+async fn test_list_policies_pagination(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+
+    // Create 5 policies in a fresh path so the path_prefix filter gives a deterministic subset.
+    for i in 0..5 {
+        CreatePolicyInternalRequest::builder()
+            .policy_name(format!("PaginationPolicy{i}"))
+            .policy_document(VALID_POLICY_DOCUMENT.to_string())
+            .account_id("123456789012".to_string())
+            .path(Some("/pagination/".to_string()))
+            .build()
+            .expect("Failed to build CreatePolicyInternalRequest")
+            .execute(&mut tx)
+            .await
+            .unwrap_or_else(|e| panic!("Failed to create PaginationPolicy{i}: {e:?}"));
+    }
+
+    let list_page = async |tx: &mut sqlx::PgTransaction<'_>,
+                           marker: Option<String>|
+           -> scratchstack_shapes_iam::operation::ListPoliciesResponse {
+        let mut builder = ListPoliciesInternalRequest::builder()
+            .account_id("123456789012".to_string())
+            .scope(Some(PolicyScopeType::Local))
+            .path_prefix(Some("/pagination/".to_string()))
+            .max_items(Some(2));
+        if let Some(marker) = marker {
+            builder = builder.marker(Some(marker));
+        }
+        builder
+            .build()
+            .expect("Failed to build ListPoliciesInternalRequest")
+            .execute(tx)
+            .await
+            .expect("Failed to list policies page")
+    };
+
+    let page1 = list_page(&mut tx, None).await;
+    assert_eq!(page1.policies.len(), 2, "page 1 should have max_items=2 entries");
+    assert_eq!(page1.is_truncated, Some(true), "page 1 should be truncated");
+    let marker1 = page1.marker.clone().expect("page 1 should have a marker");
+
+    let page2 = list_page(&mut tx, Some(marker1)).await;
+    assert_eq!(page2.policies.len(), 2, "page 2 should have max_items=2 entries");
+    assert_eq!(page2.is_truncated, Some(true), "page 2 should be truncated");
+    let marker2 = page2.marker.clone().expect("page 2 should have a marker");
+
+    let page3 = list_page(&mut tx, Some(marker2)).await;
+    assert_eq!(page3.policies.len(), 1, "page 3 should have the remaining 1 entry");
+    assert!(page3.is_truncated != Some(true), "page 3 should not be truncated");
+    assert!(page3.marker.is_none(), "page 3 should have no marker");
+
+    let mut all_names: Vec<String> = page1
+        .policies
+        .iter()
+        .chain(page2.policies.iter())
+        .chain(page3.policies.iter())
+        .filter_map(|p| p.policy_name.clone())
+        .collect();
+    let unique: std::collections::HashSet<&String> = all_names.iter().collect();
+    assert_eq!(unique.len(), all_names.len(), "Pages must not contain duplicate policy names: {all_names:?}");
+
+    all_names.sort();
+    let expected: Vec<String> = (0..5).map(|i| format!("PaginationPolicy{i}")).collect();
+    assert_eq!(all_names, expected, "Union of pages should cover all 5 policies");
+
+    tx.rollback().await.expect("Failed to rollback transaction");
+}
+
+// -- update_date denormalization tests ----------------------------------------
+
+/// Exercise update_date semantics across CreatePolicy, CreatePolicyVersion, and
+/// DeletePolicyVersion (both for non-latest and latest versions). update_date is supposed to
+/// track the most recent version's created_at.
+async fn test_policy_update_date_lifecycle(pool: &sqlx::PgPool) {
+    let arn = "arn:test-partition:iam::123456789012:policy/UpdateDatePolicy";
+
+    // Create the policy. Initially the only version is v1, so update_date == v1.create_date.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let create = CreatePolicyInternalRequest::builder()
+        .policy_name("UpdateDatePolicy".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create UpdateDatePolicy");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let initial_update_date = get_policy_update_date(pool, arn).await;
+    // CreatePolicy doesn't return update_date directly, but it must equal the policy's create_date,
+    // which is the version's created_at (they all come from the same CURRENT_TIMESTAMP in-tx).
+    assert_eq!(initial_update_date, create.policy.as_ref().unwrap().create_date.unwrap());
+
+    // Create v2 (non-default). update_date should advance to v2.create_date.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let v2 = CreatePolicyVersionRequest::builder()
+        .policy_arn(arn.to_string())
+        .policy_document(
+            r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:PutObject","Resource":"*"}]}"#
+                .to_string(),
+        )
+        .set_as_default(Some(false))
+        .build()
+        .expect("Failed to build CreatePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create v2");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let after_v2 = get_policy_update_date(pool, arn).await;
+    assert_eq!(after_v2, v2.policy_version.as_ref().unwrap().create_date.unwrap());
+    assert!(after_v2 > initial_update_date, "update_date should advance after CreatePolicyVersion");
+
+    // Create v3 (non-default). update_date should advance to v3.create_date.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let v3 = CreatePolicyVersionRequest::builder()
+        .policy_arn(arn.to_string())
+        .policy_document(
+            r#"{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":"s3:DeleteObject","Resource":"*"}]}"#
+                .to_string(),
+        )
+        .set_as_default(Some(false))
+        .build()
+        .expect("Failed to build CreatePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create v3");
+    tx.commit().await.expect("Failed to commit transaction");
+    let v3_create_date = v3.policy_version.as_ref().unwrap().create_date.unwrap();
+    assert_eq!(get_policy_update_date(pool, arn).await, v3_create_date);
+
+    // Delete v2 (non-latest). update_date should be unchanged (still v3.create_date).
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeletePolicyVersionRequest::builder()
+        .policy_arn(arn.to_string())
+        .version_id("v2".to_string())
+        .build()
+        .expect("Failed to build DeletePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete v2");
+    tx.commit().await.expect("Failed to commit transaction");
+    assert_eq!(
+        get_policy_update_date(pool, arn).await,
+        v3_create_date,
+        "Deleting a non-latest version must not change update_date"
+    );
+
+    // Delete v3 (the latest). update_date should be recomputed to v1.create_date (only remaining).
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeletePolicyVersionRequest::builder()
+        .policy_arn(arn.to_string())
+        .version_id("v3".to_string())
+        .build()
+        .expect("Failed to build DeletePolicyVersionRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete v3");
+    tx.commit().await.expect("Failed to commit transaction");
+    assert_eq!(
+        get_policy_update_date(pool, arn).await,
+        initial_update_date,
+        "Deleting the latest version must roll update_date back to the now-latest version's create_date"
+    );
+}
+
+/// Fetch the `update_date` for a managed policy via GetPolicy.
+async fn get_policy_update_date(pool: &sqlx::PgPool, arn: &str) -> chrono::DateTime<chrono::Utc> {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetPolicyRequest::builder()
+        .policy_arn(arn.to_string())
+        .build()
+        .expect("Failed to build GetPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get policy");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    resp.policy.unwrap().update_date.expect("Policy should have update_date")
 }
 
 const TEST_DATA: &str = include_str!("iam_database.json");

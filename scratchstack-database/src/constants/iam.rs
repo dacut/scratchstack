@@ -13,6 +13,9 @@ pub(crate) const ARN_RESOURCE_PREFIX_POLICY: &str = "policy/";
 /// The resource prefix for IAM users in an ARN.
 pub(crate) const ARN_RESOURCE_PREFIX_USER: &str = "user/";
 
+/// The service name for IAM in an ARN.
+pub(crate) const ARN_SERVICE_IAM: &str = "iam";
+
 /// The account id for the AWS account.
 pub(crate) const AWS_ACCOUNT_ID: &str = "aws";
 
@@ -36,6 +39,12 @@ pub(crate) const OP_LIST_GROUPS: &str = "ListGroups";
 
 /// Operation name for ListGroupsForUser
 pub(crate) const OP_LIST_GROUPS_FOR_USER: &str = "ListGroupsForUser";
+
+/// Operation name for ListPolicies
+pub(crate) const OP_LIST_POLICIES: &str = "ListPolicies";
+
+/// Operation name for ListPolicyVersions
+pub(crate) const OP_LIST_POLICY_VERSIONS: &str = "ListPolicyVersions";
 
 /// Operation name for ListUsers
 pub(crate) const OP_LIST_USERS: &str = "ListUsers";
