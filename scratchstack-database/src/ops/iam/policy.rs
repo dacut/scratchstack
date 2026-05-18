@@ -1379,6 +1379,10 @@ fn parse_policy_arn(policy_arn: &str) -> Result<PolicyArnParts, IamError> {
         format!("/{}", &policy_path_and_name[..name_start])
     };
 
+    if policy_name_lower.is_empty() {
+        return Err(ValidationError::builder().message("Policy name must not be empty".to_string()).build().into());
+    }
+
     Ok(PolicyArnParts {
         account_id,
         policy_path,
