@@ -1202,6 +1202,14 @@ fn parse_policy_arn(policy_arn: &str) -> Result<PolicyArnParts, IamError> {
         IamError::from(ValidationError::builder().message("Invalid policy ARN".to_string()).build())
     })?;
 
+    let service = arn.service();
+    if service != ARN_SERVICE_IAM {
+        return Err(ValidationError::builder()
+            .message("Policy ARN must have service \"iam\"".to_string())
+            .build()
+            .into());
+    }
+
     let resource = arn.resource();
     if !resource.starts_with(ARN_RESOURCE_PREFIX_POLICY) {
         return Err(ValidationError::builder()

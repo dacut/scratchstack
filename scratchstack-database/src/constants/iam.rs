@@ -13,6 +13,9 @@ pub(crate) const ARN_RESOURCE_PREFIX_POLICY: &str = "policy/";
 /// The resource prefix for IAM users in an ARN.
 pub(crate) const ARN_RESOURCE_PREFIX_USER: &str = "user/";
 
+/// The service name for IAM in an ARN.
+pub(crate) const ARN_SERVICE_IAM: &str = "iam";
+
 /// The account id for the AWS account.
 pub(crate) const AWS_ACCOUNT_ID: &str = "aws";
 
