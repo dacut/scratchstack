@@ -158,6 +158,7 @@ async fn test_database() {
     test_create_policy_version_mismatched_path(&pool).await;
     test_create_policy_version_nonexistent_policy(&pool).await;
     test_create_policy_version_invalid_document(&pool).await;
+    test_create_policy_version_invalid_arn(&pool).await;
 
     // -- DeletePolicyVersionRequest -------------------------------------------
     test_delete_policy_version_simple(&pool).await;
@@ -210,6 +211,7 @@ async fn test_database() {
     test_list_policies_path_prefix(&pool).await;
     test_list_policies_only_attached(&pool).await;
     test_list_policies_usage_filter_pb(&pool).await;
+    test_list_policies_usage_filter_permissions_policy(&pool).await;
     test_list_policies_pagination(&pool).await;
 
     // -- DeleteGroupInternalRequest -------------------------------------------
@@ -1954,6 +1956,36 @@ async fn test_create_policy_version_invalid_document(pool: &sqlx::PgPool) {
     assert!(result.is_err(), "Creating a version with an invalid document must fail");
 }
 
+/// CreatePolicyVersion still has its own inline ARN parsing (separate from `parse_policy_arn`).
+/// Both rejection branches should surface as ValidationError.
+async fn test_create_policy_version_invalid_arn(pool: &sqlx::PgPool) {
+    let cases: &[(&str, &str)] = &[
+        // Unparseable but long enough to pass the Smithy 20-char minimum.
+        ("not-an-arn-but-long-enough-to-pass", "unparseable ARN"),
+        // Resource doesn't start with "policy/".
+        ("arn:test-partition:iam::123456789012:user/SomeUser", "non-policy resource"),
+    ];
+    for (arn, label) in cases {
+        let mut tx = pool.begin().await.expect("Failed to begin transaction");
+        let result = CreatePolicyVersionRequest::builder()
+            .policy_arn(arn.to_string())
+            .policy_document(VALID_POLICY_DOCUMENT.to_string())
+            .build()
+            .expect("Failed to build CreatePolicyVersionRequest")
+            .execute(&mut tx)
+            .await;
+        tx.rollback().await.expect("Failed to rollback transaction");
+        let err = match result {
+            Ok(_) => panic!("Expected error for {label} ({arn}), got Ok"),
+            Err(e) => e,
+        };
+        assert!(
+            matches!(err, IamError::ValidationError(_)),
+            "Expected ValidationError for {label} ({arn}), got: {err:?}"
+        );
+    }
+}
+
 /// Delete a non-default version of a managed policy. After the test_create_policy_version_*
 /// tests, "VersionedPolicy" has versions v1..v5 with v3 as the default version. v1 is not the
 /// default, so deleting it should succeed.
@@ -2098,31 +2130,37 @@ async fn test_delete_policy_version_nonexistent_version(pool: &sqlx::PgPool) {
 
 /// Deleting with an unparseable ARN must fail with ValidationError.
 async fn test_delete_policy_version_invalid_arn(pool: &sqlx::PgPool) {
-    let mut tx = pool.begin().await.expect("Failed to begin transaction");
-    // 20+ character invalid ARN to pass the Smithy length check but fail ARN parsing.
-    let err = DeletePolicyVersionRequest::builder()
-        .policy_arn("not-an-arn-but-long-enough-to-pass".to_string())
-        .version_id("v1".to_string())
-        .build()
-        .expect("Failed to build DeletePolicyVersionRequest")
-        .execute(&mut tx)
-        .await
-        .expect_err("Deleting with an invalid ARN must fail");
-    tx.rollback().await.expect("Failed to rollback transaction");
-    assert!(matches!(err, IamError::ValidationError(_)), "Expected ValidationError, got: {err:?}");
+    // Each case exercises a distinct rejection in parse_policy_arn.
+    let cases: &[(&str, &str)] = &[
+        // Unparseable string (passes the Smithy length check but not the ARN parser).
+        ("not-an-arn-but-long-enough-to-pass", "unparseable ARN"),
+        // Wrong service (s3 instead of iam).
+        ("arn:test-partition:s3:::policy/SomePolicy", "wrong service"),
+        // Region must be empty for IAM ARNs.
+        ("arn:test-partition:iam:us-east-1:123456789012:policy/SomePolicy", "non-empty region"),
+        // Resource doesn't start with "policy/".
+        ("arn:test-partition:iam::123456789012:user/SomeUser", "non-policy resource"),
+    ];
 
-    // An ARN whose resource does not start with "policy/" must also fail with ValidationError.
-    let mut tx = pool.begin().await.expect("Failed to begin transaction");
-    let err = DeletePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:user/SomeUser".to_string())
-        .version_id("v1".to_string())
-        .build()
-        .expect("Failed to build DeletePolicyVersionRequest")
-        .execute(&mut tx)
-        .await
-        .expect_err("Deleting with a non-policy ARN must fail");
-    tx.rollback().await.expect("Failed to rollback transaction");
-    assert!(matches!(err, IamError::ValidationError(_)), "Expected ValidationError, got: {err:?}");
+    for (arn, label) in cases {
+        let mut tx = pool.begin().await.expect("Failed to begin transaction");
+        let result = DeletePolicyVersionRequest::builder()
+            .policy_arn(arn.to_string())
+            .version_id("v1".to_string())
+            .build()
+            .expect("Failed to build DeletePolicyVersionRequest")
+            .execute(&mut tx)
+            .await;
+        tx.rollback().await.expect("Failed to rollback transaction");
+        let err = match result {
+            Ok(_) => panic!("Expected error for {label} ({arn}), got Ok"),
+            Err(e) => e,
+        };
+        assert!(
+            matches!(err, IamError::ValidationError(_)),
+            "Expected ValidationError for {label} ({arn}), got: {err:?}"
+        );
+    }
 }
 
 /// Deleting a version on an AWS-owned managed policy must accept an "aws" account in the ARN
@@ -2862,6 +2900,33 @@ async fn test_list_policies_usage_filter_pb(pool: &sqlx::PgPool) {
     assert!(
         !names.contains(&"TestPolicy".to_string()),
         "TestPolicy is not used as a permissions boundary and should not appear"
+    );
+}
+
+/// Example-Managed-Policy-1 is attached (via the seeded group/role in 123456789012) so it should
+/// appear under PolicyUsageFilter=PermissionsPolicy. TestPolicy is unattached and must not.
+async fn test_list_policies_usage_filter_permissions_policy(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListPoliciesInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .scope(Some(PolicyScopeType::All))
+        .policy_usage_filter(Some(PolicyUsageType::PermissionsPolicy))
+        .max_items(Some(1000))
+        .build()
+        .expect("Failed to build ListPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list PermissionsPolicy-filtered policies");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let names: Vec<String> = resp.policies.iter().filter_map(|p| p.policy_name.clone()).collect();
+    assert!(
+        names.contains(&"Example-Managed-Policy-1".to_string()),
+        "Expected Example-Managed-Policy-1 under PermissionsPolicy filter: {names:?}"
+    );
+    assert!(
+        !names.contains(&"TestPolicy".to_string()),
+        "TestPolicy is not attached and must not appear under PermissionsPolicy filter"
     );
 }
 
