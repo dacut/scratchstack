@@ -32,8 +32,8 @@ use {
         },
         partition::{GetCurrentPartitionCommand, SetCurrentPartitionCommand},
         policy::{
-            CreatePolicyInternalCommand, CreatePolicyVersionCommand, DeletePolicyVersionCommand, GetPolicyCommand,
-            GetPolicyVersionCommand, ListPoliciesInternalCommand, ListPolicyVersionsCommand,
+            CreatePolicyInternalCommand, CreatePolicyVersionCommand, DeletePolicyCommand, DeletePolicyVersionCommand,
+            GetPolicyCommand, GetPolicyVersionCommand, ListPoliciesInternalCommand, ListPolicyVersionsCommand,
             SetDefaultPolicyVersionCommand, TagPolicyCommand, UntagPolicyCommand,
         },
         user::{
@@ -131,6 +131,11 @@ enum Commands {
     /// Delete an IAM group from an account.
     #[command(name = "delete-group")]
     DeleteGroup(DeleteGroupInternalCommand),
+
+    /// Delete an IAM managed policy. The policy must have no attachments, no permissions-boundary
+    /// usages, and no non-default versions remaining.
+    #[command(name = "delete-policy")]
+    DeletePolicy(DeletePolicyCommand),
 
     /// Delete a non-default version of an IAM managed policy.
     #[command(name = "delete-policy-version")]
@@ -243,6 +248,7 @@ impl Commands {
             Commands::CreatePolicyVersion(_) => "CreatePolicyVersion",
             Commands::CreateUser(_) => "CreateUser",
             Commands::DeleteGroup(_) => "DeleteGroup",
+            Commands::DeletePolicy(_) => "DeletePolicy",
             Commands::DeletePolicyVersion(_) => "DeletePolicyVersion",
             Commands::DeleteUser(_) => "DeleteUser",
             Commands::GetCurrentPartition(_) => "GetCurrentPartition",
@@ -345,6 +351,10 @@ where
             })?
         }
         Commands::DeleteGroup(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::DeletePolicy(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
         }

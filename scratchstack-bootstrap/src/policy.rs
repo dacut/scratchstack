@@ -6,9 +6,10 @@ use {
         error_meta::Error as IamError,
         operation::{
             CreatePolicyInternalRequest, CreatePolicyResponse, CreatePolicyVersionRequest, CreatePolicyVersionResponse,
-            DeletePolicyVersionRequest, GetPolicyRequest, GetPolicyResponse, GetPolicyVersionRequest,
-            GetPolicyVersionResponse, ListPoliciesInternalRequest, ListPoliciesResponse, ListPolicyVersionsRequest,
-            ListPolicyVersionsResponse, SetDefaultPolicyVersionRequest, TagPolicyRequest, UntagPolicyRequest,
+            DeletePolicyRequest, DeletePolicyVersionRequest, GetPolicyRequest, GetPolicyResponse,
+            GetPolicyVersionRequest, GetPolicyVersionResponse, ListPoliciesInternalRequest, ListPoliciesResponse,
+            ListPolicyVersionsRequest, ListPolicyVersionsResponse, SetDefaultPolicyVersionRequest, TagPolicyRequest,
+            UntagPolicyRequest,
         },
         types::{PolicyScopeType, PolicyUsageType},
     },
@@ -59,6 +60,17 @@ pub(crate) struct CreatePolicyVersionCommand {
     /// Set this version as the policy's default version.
     #[clap(long, action = clap::ArgAction::SetTrue)]
     pub set_as_default: bool,
+}
+
+/// Delete a managed policy in the Scratchstack IAM service. The policy must have no attachments
+/// to users, groups, or roles, must not be used as a permissions boundary, and must have only the
+/// default version remaining (all other versions must be deleted first via
+/// `delete-policy-version`).
+#[derive(Debug, Parser)]
+pub(crate) struct DeletePolicyCommand {
+    /// The ARN of the managed policy to delete.
+    #[clap(long)]
+    pub policy_arn: String,
 }
 
 /// Delete a version of a managed policy in the Scratchstack IAM service.
@@ -212,6 +224,18 @@ impl Runnable for CreatePolicyVersionCommand {
             request_builder = request_builder.set_as_default(Some(true));
         }
         let request = request_builder.build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for DeletePolicyCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = DeletePolicyRequest::builder().policy_arn(self.policy_arn.clone()).build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
