@@ -864,8 +864,11 @@ pub async fn list_policies(
         }
     }
 
+    let mut policies = results.into_iter().collect::<Vec<_>>();
+    policies.sort_by(|(left_id, _), (right_id, _)| left_id.cmp(right_id));
+
     Ok(ListPoliciesResponse {
-        policies: results.into_values().collect(),
+        policies: policies.into_iter().map(|(_, policy)| policy).collect(),
         is_truncated: Some(next_marker.is_some()),
         marker: next_marker,
     })
