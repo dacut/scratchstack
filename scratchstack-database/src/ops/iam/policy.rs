@@ -489,13 +489,13 @@ pub async fn delete_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Resu
     .execute(tx.as_mut())
     .await
     {
-        if let sqlx::Error::Database(db_err) = &e {
-            if db_err.code().as_deref() == Some("23503") {
-                let message = format!(
-                    "Cannot delete policy {policy_arn} because it is attached to an entity or is set as a permissions boundary."
-                );
-                return Err(DeleteConflictException::builder().message(message).build().into());
-            }
+        if let sqlx::Error::Database(db_err) = &e
+            && db_err.code().as_deref() == Some("23503")
+        {
+            let message = format!(
+                "Cannot delete policy {policy_arn} because it is attached to an entity or is set as a permissions boundary."
+            );
+            return Err(DeleteConflictException::builder().message(message).build().into());
         }
 
         log::error!("Failed to delete managed policy from database: {e}");
