@@ -730,15 +730,15 @@ pub async fn list_policies(
     // "Attached" here means "attached to a user/group/role in the caller's account". The
     // subqueries join back to the owning entity tables so attachments to entities in other
     // accounts don't leak through.
-    if only_attached == Some(true) {
+    let needs_permissions_policy_filter =
+        only_attached == Some(true) || policy_usage_filter == Some(&PolicyUsageType::PermissionsPolicy);
+    if needs_permissions_policy_filter {
         push_attached_in_account_filter(&mut sql, account_id);
     }
 
     if let Some(filter) = policy_usage_filter {
         match filter {
-            PolicyUsageType::PermissionsPolicy => {
-                push_attached_in_account_filter(&mut sql, account_id);
-            }
+            PolicyUsageType::PermissionsPolicy => {}
             PolicyUsageType::PermissionsBoundary => {
                 push_pb_in_account_filter(&mut sql, account_id);
             }
@@ -842,13 +842,16 @@ pub async fn list_policies(
         // Retrieve the permissions boundary usage count for each of the policies in the result set.
         let permissions_boundary_usage_rows: Vec<AttachmentCountRow> = query_as(indoc! {"
             SELECT mp.managed_policy_id,
-                (SELECT COUNT(*) FROM iam.users WHERE permissions_boundary_managed_policy_id = mp.managed_policy_id) +
-                (SELECT COUNT(*) FROM iam.roles WHERE permissions_boundary_managed_policy_id = mp.managed_policy_id)
+                (SELECT COUNT(*) FROM iam.users
+                 WHERE account_id = $2 AND permissions_boundary_managed_policy_id = mp.managed_policy_id) +
+                (SELECT COUNT(*) FROM iam.roles
+                 WHERE account_id = $2 AND permissions_boundary_managed_policy_id = mp.managed_policy_id)
                 AS attachment_count
             FROM iam.managed_policies mp
             WHERE mp.managed_policy_id = ANY($1)
         "})
         .bind(results.keys().cloned().collect::<Vec<String>>())
+        .bind(account_id)
         .fetch_all(tx.as_mut())
         .await
         .map_err(|e| {

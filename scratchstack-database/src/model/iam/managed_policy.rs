@@ -73,8 +73,8 @@ impl crate::Loadable for ManagedPolicy {
         let result = sqlx::query(indoc! {"
             INSERT INTO iam.managed_policies(
                 managed_policy_id, account_id, managed_policy_name_lower, managed_policy_name_cased,
-                path, default_version, deprecated, policy_type, latest_version)
-            VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                path, default_version, deprecated, policy_type, latest_version, created_at, update_date)
+            VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, CURRENT_TIMESTAMP), COALESCE($11, $10, CURRENT_TIMESTAMP))
         "})
         .bind(self.managed_policy_id.clone())
         .bind(self.account_id.clone())
@@ -85,6 +85,8 @@ impl crate::Loadable for ManagedPolicy {
         .bind(self.deprecated)
         .bind(self.policy_type.clone())
         .bind(self.latest_version)
+        .bind(self.created_at)
+        .bind(self.update_date)
         .execute(conn)
         .await?;
         Ok(result.rows_affected() as usize)
