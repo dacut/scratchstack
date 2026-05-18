@@ -743,10 +743,8 @@ pub async fn list_policies(
                 "});
             }
             PolicyUsageType::PermissionsBoundary => {
-                // RTRIM strips the trailing space that the CHAR(17) column adds when the
-                // stored id is shorter than the column width.
                 sql.push(indoc! {"
-                     AND (managed_policy_id IN (SELECT RTRIM(permissions_boundary_managed_policy_id) FROM iam.users
+                     AND (managed_policy_id IN (SELECT permissions_boundary_managed_policy_id FROM iam.users
                                                 WHERE permissions_boundary_managed_policy_id IS NOT NULL)
                        OR managed_policy_id IN (SELECT permissions_boundary_managed_policy_id FROM iam.roles
                                                 WHERE permissions_boundary_managed_policy_id IS NOT NULL))
