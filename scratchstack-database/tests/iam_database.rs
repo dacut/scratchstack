@@ -210,6 +210,7 @@ async fn test_database() {
     test_list_policies_path_prefix(&pool).await;
     test_list_policies_only_attached(&pool).await;
     test_list_policies_usage_filter_pb(&pool).await;
+    test_list_policies_pagination(&pool).await;
 
     // -- DeleteGroupInternalRequest -------------------------------------------
     test_delete_group_max_length_name(&pool).await;
@@ -2862,6 +2863,77 @@ async fn test_list_policies_usage_filter_pb(pool: &sqlx::PgPool) {
         !names.contains(&"TestPolicy".to_string()),
         "TestPolicy is not used as a permissions boundary and should not appear"
     );
+}
+
+/// Walk the marker-based pagination path: create 5 policies under a fresh path, list 3 pages
+/// with max_items=2, and verify the union covers all 5 with no duplicates. All writes and reads
+/// happen in a transaction that rolls back so subsequent tests aren't affected.
+async fn test_list_policies_pagination(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+
+    // Create 5 policies in a fresh path so the path_prefix filter gives a deterministic subset.
+    for i in 0..5 {
+        CreatePolicyInternalRequest::builder()
+            .policy_name(format!("PaginationPolicy{i}"))
+            .policy_document(VALID_POLICY_DOCUMENT.to_string())
+            .account_id("123456789012".to_string())
+            .path(Some("/pagination/".to_string()))
+            .build()
+            .expect("Failed to build CreatePolicyInternalRequest")
+            .execute(&mut tx)
+            .await
+            .unwrap_or_else(|e| panic!("Failed to create PaginationPolicy{i}: {e:?}"));
+    }
+
+    let list_page = async |tx: &mut sqlx::PgTransaction<'_>,
+                           marker: Option<String>|
+           -> scratchstack_shapes_iam::operation::ListPoliciesResponse {
+        let mut builder = ListPoliciesInternalRequest::builder()
+            .account_id("123456789012".to_string())
+            .scope(Some(PolicyScopeType::Local))
+            .path_prefix(Some("/pagination/".to_string()))
+            .max_items(Some(2));
+        if let Some(marker) = marker {
+            builder = builder.marker(Some(marker));
+        }
+        builder
+            .build()
+            .expect("Failed to build ListPoliciesInternalRequest")
+            .execute(tx)
+            .await
+            .expect("Failed to list policies page")
+    };
+
+    let page1 = list_page(&mut tx, None).await;
+    assert_eq!(page1.policies.len(), 2, "page 1 should have max_items=2 entries");
+    assert_eq!(page1.is_truncated, Some(true), "page 1 should be truncated");
+    let marker1 = page1.marker.clone().expect("page 1 should have a marker");
+
+    let page2 = list_page(&mut tx, Some(marker1)).await;
+    assert_eq!(page2.policies.len(), 2, "page 2 should have max_items=2 entries");
+    assert_eq!(page2.is_truncated, Some(true), "page 2 should be truncated");
+    let marker2 = page2.marker.clone().expect("page 2 should have a marker");
+
+    let page3 = list_page(&mut tx, Some(marker2)).await;
+    assert_eq!(page3.policies.len(), 1, "page 3 should have the remaining 1 entry");
+    assert!(page3.is_truncated != Some(true), "page 3 should not be truncated");
+    assert!(page3.marker.is_none(), "page 3 should have no marker");
+
+    let mut all_names: Vec<String> = page1
+        .policies
+        .iter()
+        .chain(page2.policies.iter())
+        .chain(page3.policies.iter())
+        .filter_map(|p| p.policy_name.clone())
+        .collect();
+    let unique: std::collections::HashSet<&String> = all_names.iter().collect();
+    assert_eq!(unique.len(), all_names.len(), "Pages must not contain duplicate policy names: {all_names:?}");
+
+    all_names.sort();
+    let expected: Vec<String> = (0..5).map(|i| format!("PaginationPolicy{i}")).collect();
+    assert_eq!(all_names, expected, "Union of pages should cover all 5 policies");
+
+    tx.rollback().await.expect("Failed to rollback transaction");
 }
 
 // -- update_date denormalization tests ----------------------------------------

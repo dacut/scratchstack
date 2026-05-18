@@ -868,6 +868,82 @@ async fn test_policies(database: &TempDatabase) {
     let names: Vec<&str> = policies.iter().map(|p| p.get("PolicyName").unwrap().as_str().unwrap()).collect();
     assert!(names.contains(&"AwsDelVersionPolicy"), "Expected AwsDelVersionPolicy in AWS-scope list: {names:?}");
 
+    // -- list-policies pagination ------------------------------------------
+    // Seed 5 policies under a fresh path so the path-prefix filter gives a deterministic
+    // subset, then walk the marker across pages with max-items=2.
+    let pagination_doc =
+        r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#;
+    for i in 0..5 {
+        let name = format!("BsPaginationPolicy{i}");
+        database
+            .run([
+                "ssbs",
+                "--port",
+                &port,
+                "--username",
+                "scratchstack",
+                "create-policy",
+                "--account-id",
+                "555566667777",
+                "--policy-name",
+                &name,
+                "--policy-document",
+                pagination_doc,
+                "--path",
+                "/bs-pagination/",
+            ])
+            .await
+            .unwrap_or_else(|e| panic!("Failed to create {name}: {e}"));
+    }
+
+    let mut collected: Vec<String> = Vec::new();
+    let mut marker: Option<String> = None;
+    let mut pages = 0;
+    loop {
+        pages += 1;
+        let mut args: Vec<String> = vec![
+            "ssbs".to_string(),
+            "--port".to_string(),
+            port.clone(),
+            "--username".to_string(),
+            "scratchstack".to_string(),
+            "list-policies".to_string(),
+            "--account-id".to_string(),
+            "555566667777".to_string(),
+            "--scope".to_string(),
+            "Local".to_string(),
+            "--path-prefix".to_string(),
+            "/bs-pagination/".to_string(),
+            "--max-items".to_string(),
+            "2".to_string(),
+        ];
+        if let Some(m) = &marker {
+            args.push("--marker".to_string());
+            args.push(m.clone());
+        }
+        let result = database.run(args).await.expect("Failed to list paginated policies");
+        let json: JsonValue =
+            serde_json::from_str(&result).expect("Failed to parse paginated list-policies output as JSON");
+        let policies = json.get("Policies").expect("Policies should be present").as_array().expect("Policies as array");
+        for p in policies {
+            collected.push(p.get("PolicyName").unwrap().as_str().unwrap().to_string());
+        }
+        match json.get("Marker") {
+            Some(m) => marker = Some(m.as_str().expect("Marker is a string").to_string()),
+            None => break,
+        }
+        if pages > 10 {
+            panic!("list-policies pagination did not terminate after 10 pages");
+        }
+    }
+    assert_eq!(pages, 3, "Expected 3 pages (2+2+1) for 5 policies with max-items=2; got {pages}");
+    assert_eq!(collected.len(), 5, "Expected 5 total policies across pages: {collected:?}");
+    let unique: HashSet<&String> = collected.iter().collect();
+    assert_eq!(unique.len(), 5, "Pages must not contain duplicates: {collected:?}");
+    collected.sort();
+    let expected: Vec<String> = (0..5).map(|i| format!("BsPaginationPolicy{i}")).collect();
+    assert_eq!(collected, expected, "Union of paginated pages should cover all 5 policies");
+
     // -- list-policy-versions -----------------------------------------------
     let result = database
         .run([
