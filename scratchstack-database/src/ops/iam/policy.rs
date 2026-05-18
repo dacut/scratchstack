@@ -518,19 +518,26 @@ pub async fn get_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Result<
 
     let arn = build_policy_arn(&partition, &parts.account_id, &policy_row.path, &policy_row.managed_policy_name_cased)?;
     let tags = fetch_policy_tags(tx, &policy_row.managed_policy_id).await?;
-    let attachment_count = get_policy_attachment_count(tx, &policy_row.managed_policy_id).await?;
-    let permissions_boundary_usage_count =
-        get_policy_permissions_boundary_usage_count(tx, &policy_row.managed_policy_id).await?;
+    let attachment_count = if parts.account_id == AWS_ACCOUNT_ID_NUMERIC {
+        None
+    } else {
+        Some(get_policy_attachment_count(tx, &policy_row.managed_policy_id).await?)
+    };
+    let permissions_boundary_usage_count = if parts.account_id == AWS_ACCOUNT_ID_NUMERIC {
+        None
+    } else {
+        Some(get_policy_permissions_boundary_usage_count(tx, &policy_row.managed_policy_id).await?)
+    };
 
     let policy = Policy::builder()
         .arn(Some(arn.to_string()))
-        .attachment_count(Some(attachment_count))
+        .attachment_count(attachment_count)
         .create_date(Some(policy_row.created_at))
         .default_version_id(Some(format!("v{}", policy_row.default_version)))
         .description(policy_row.description)
         .is_attachable(Some(!policy_row.deprecated))
         .path(Some(policy_row.path))
-        .permissions_boundary_usage_count(Some(permissions_boundary_usage_count))
+        .permissions_boundary_usage_count(permissions_boundary_usage_count)
         .policy_id(Some(format!("{}{}", IamResourceType::ManagedPolicy.as_str(), policy_row.managed_policy_id)))
         .policy_name(Some(policy_row.managed_policy_name_cased))
         .update_date(Some(policy_row.update_date))
@@ -813,52 +820,57 @@ pub async fn list_policies(
         results.insert(row.managed_policy_id, policy);
     }
 
-    // Retrieve the attachment count for each of the policies in the result set.
-    let attachment_rows: Vec<AttachmentCountRow> = query_as(indoc! {"
-        SELECT mp.managed_policy_id,
-            (SELECT COUNT(*) FROM iam.user_attached_policies WHERE managed_policy_id = mp.managed_policy_id) +
-            (SELECT COUNT(*) FROM iam.group_attached_policies WHERE managed_policy_id = mp.managed_policy_id) +
-            (SELECT COUNT(*) FROM iam.role_attached_policies WHERE managed_policy_id = mp.managed_policy_id)
-            AS attachment_count
-        FROM iam.managed_policies mp
-        WHERE mp.managed_policy_id = ANY($1)
-    "})
-    .bind(results.keys().cloned().collect::<Vec<String>>())
-    .fetch_all(tx.as_mut())
-    .await
-    .map_err(|e| {
-        log::error!("Failed to fetch policy attachment counts from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-    })?;
-    for row in attachment_rows.into_iter() {
-        let attachment_count = min(row.attachment_count, i32::MAX as i64) as i32;
+    // This will be very, very many for AWS policies, will overflow the resulting i32, and will
+    // take an extremely long time. Skip it for AWS policies by only doing it when listing a single
+    // account's policies.
+    if account_id != AWS_ACCOUNT_ID_NUMERIC {
+        // Retrieve the attachment count for each of the policies in the result set.
+        let attachment_rows: Vec<AttachmentCountRow> = query_as(indoc! {"
+            SELECT mp.managed_policy_id,
+                (SELECT COUNT(*) FROM iam.user_attached_policies WHERE managed_policy_id = mp.managed_policy_id) +
+                (SELECT COUNT(*) FROM iam.group_attached_policies WHERE managed_policy_id = mp.managed_policy_id) +
+                (SELECT COUNT(*) FROM iam.role_attached_policies WHERE managed_policy_id = mp.managed_policy_id)
+                AS attachment_count
+            FROM iam.managed_policies mp
+            WHERE mp.managed_policy_id = ANY($1)
+        "})
+        .bind(results.keys().cloned().collect::<Vec<String>>())
+        .fetch_all(tx.as_mut())
+        .await
+        .map_err(|e| {
+            log::error!("Failed to fetch policy attachment counts from database: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })?;
+        for row in attachment_rows.into_iter() {
+            let attachment_count = min(row.attachment_count, i32::MAX as i64) as i32;
 
-        if let Some(policy) = results.get_mut(&row.managed_policy_id) {
-            policy.attachment_count = Some(attachment_count);
+            if let Some(policy) = results.get_mut(&row.managed_policy_id) {
+                policy.attachment_count = Some(attachment_count);
+            }
         }
-    }
 
-    // Retrieve the permissions boundary usage count for each of the policies in the result set.
-    let permissions_boundary_usage_rows: Vec<AttachmentCountRow> = query_as(indoc! {"
-        SELECT mp.managed_policy_id,
-            (SELECT COUNT(*) FROM iam.users WHERE permissions_boundary_managed_policy_id = mp.managed_policy_id) +
-            (SELECT COUNT(*) FROM iam.roles WHERE permissions_boundary_managed_policy_id = mp.managed_policy_id)
-            AS attachment_count
-        FROM iam.managed_policies mp
-        WHERE mp.managed_policy_id = ANY($1)
-    "})
-    .bind(results.keys().cloned().collect::<Vec<String>>())
-    .fetch_all(tx.as_mut())
-    .await
-    .map_err(|e| {
-        log::error!("Failed to fetch policy permissions boundary usage counts from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-    })?;
-    for row in permissions_boundary_usage_rows.into_iter() {
-        let usage_count = min(row.attachment_count, i32::MAX as i64) as i32;
+        // Retrieve the permissions boundary usage count for each of the policies in the result set.
+        let permissions_boundary_usage_rows: Vec<AttachmentCountRow> = query_as(indoc! {"
+            SELECT mp.managed_policy_id,
+                (SELECT COUNT(*) FROM iam.users WHERE permissions_boundary_managed_policy_id = mp.managed_policy_id) +
+                (SELECT COUNT(*) FROM iam.roles WHERE permissions_boundary_managed_policy_id = mp.managed_policy_id)
+                AS attachment_count
+            FROM iam.managed_policies mp
+            WHERE mp.managed_policy_id = ANY($1)
+        "})
+        .bind(results.keys().cloned().collect::<Vec<String>>())
+        .fetch_all(tx.as_mut())
+        .await
+        .map_err(|e| {
+            log::error!("Failed to fetch policy permissions boundary usage counts from database: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })?;
+        for row in permissions_boundary_usage_rows.into_iter() {
+            let usage_count = min(row.attachment_count, i32::MAX as i64) as i32;
 
-        if let Some(policy) = results.get_mut(&row.managed_policy_id) {
-            policy.permissions_boundary_usage_count = Some(usage_count);
+            if let Some(policy) = results.get_mut(&row.managed_policy_id) {
+                policy.permissions_boundary_usage_count = Some(usage_count);
+            }
         }
     }
 
