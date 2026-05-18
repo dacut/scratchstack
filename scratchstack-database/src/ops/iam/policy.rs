@@ -83,6 +83,8 @@ pub async fn create_policy(
         return Err(MalformedPolicyDocumentException::builder().message(message).build().into());
     }
 
+    // TODO: make sure we don't exceed the maximum number of tags per policy.
+    // Default limit is 50 but may vary by account.
     for tag in tags {
         validate_tag_key(&tag.key)?;
         validate_tag_value(&tag.value)?;
@@ -1100,6 +1102,9 @@ pub async fn tag_policy(tx: &mut PgTransaction<'_>, policy_arn: &str, tags: &[Ta
     if tags.is_empty() {
         return Err(ValidationError::builder().message("At least one tag must be provided.").build().into());
     }
+
+    // TODO: make sure we don't exceed the maximum number of tags per policy.
+    // Default limit is 50 but may vary by account.
     for tag in tags {
         validate_tag_key(&tag.key)?;
         validate_tag_value(&tag.value)?;
