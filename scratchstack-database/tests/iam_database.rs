@@ -2786,6 +2786,12 @@ async fn test_list_policies_usage_filter_pb(pool: &sqlx::PgPool) {
 
     let names: Vec<String> = resp.policies.iter().filter_map(|p| p.policy_name.clone()).collect();
     assert!(names.contains(&"Example-Managed-Policy-1".to_string()), "Expected Example-Managed-Policy-1: {names:?}");
+
+    // TestPolicy is unattached and not used as a permissions boundary, so it should not appear.
+    assert!(
+        !names.contains(&"TestPolicy".to_string()),
+        "TestPolicy is not used as a permissions boundary and should not appear"
+    );
 }
 
 // -- update_date denormalization tests ----------------------------------------
