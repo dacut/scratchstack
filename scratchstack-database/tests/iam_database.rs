@@ -2746,9 +2746,18 @@ async fn test_list_policies_path_prefix(pool: &sqlx::PgPool) {
     }
 }
 
-/// Example-Managed-Policy-1 (AAAABBBBCCCCDDDD) is attached to EXAMPLEUSERID456 via the seeded
-/// test data, so it should appear when only_attached=true.
+/// only_attached=true should surface policies attached to entities in the caller's account, but
+/// must NOT surface a policy whose only attachment is cross-account.
+///
+/// Positive: Example-Managed-Policy-1 (AAAABBBBCCCCDDDD, owned by 123456789012) is attached to
+/// EXAMPLEGROUPID123 and EXAMPLEROLEID123 (both in 123456789012) via the seeded data, so it
+/// must appear.
+///
+/// Negative: we create a fresh policy in 123456789012, attach it only to a fresh group in
+/// 210987654321 (via raw SQL inside a tx that rolls back), and verify it does NOT appear from
+/// 123456789012's view. This is the case the pre-fix code leaked.
 async fn test_list_policies_only_attached(pool: &sqlx::PgPool) {
+    // Positive case (uses seeded in-account attachments).
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListPoliciesInternalRequest::builder()
         .account_id("123456789012".to_string())
@@ -2761,11 +2770,72 @@ async fn test_list_policies_only_attached(pool: &sqlx::PgPool) {
         .await
         .expect("Failed to list attached policies");
     tx.rollback().await.expect("Failed to rollback transaction");
-
     let names: Vec<String> = resp.policies.iter().filter_map(|p| p.policy_name.clone()).collect();
-    assert!(names.contains(&"Example-Managed-Policy-1".to_string()), "Expected Example-Managed-Policy-1: {names:?}");
-    // None of the freshly-created policies are attached to a user/role/group.
+    assert!(
+        names.contains(&"Example-Managed-Policy-1".to_string()),
+        "Expected Example-Managed-Policy-1 via in-account group/role attachments: {names:?}"
+    );
     assert!(!names.contains(&"TestPolicy".to_string()), "TestPolicy is not attached and should not appear");
+
+    // Negative case: a policy with only a cross-account attachment must not leak. All writes and
+    // the read happen in the same transaction so nothing persists into later tests.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let create_resp = CreatePolicyInternalRequest::builder()
+        .policy_name("CrossAttachOnly".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create CrossAttachOnly");
+    // managed_policy_id stored in the DB is the IAM id without its 4-char "ANPA" prefix.
+    let managed_policy_id = create_resp
+        .policy
+        .unwrap()
+        .policy_id
+        .unwrap()
+        .strip_prefix("ANPA")
+        .expect("policy_id has ANPA prefix")
+        .to_string();
+
+    // Insert a fresh group in 210987654321 and attach the policy to it cross-account.
+    sqlx::query(
+        "INSERT INTO iam.groups(group_id, account_id, group_name_lower, group_name_cased, path) \
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind("XACCTGRPIDXACCTGR")
+    .bind("210987654321")
+    .bind("xacct-grp")
+    .bind("xacct-grp")
+    .bind("/")
+    .execute(tx.as_mut())
+    .await
+    .expect("Failed to insert cross-account group");
+    sqlx::query("INSERT INTO iam.group_attached_policies(group_id, managed_policy_id) VALUES ($1, $2)")
+        .bind("XACCTGRPIDXACCTGR")
+        .bind(&managed_policy_id)
+        .execute(tx.as_mut())
+        .await
+        .expect("Failed to insert cross-account attachment");
+
+    let resp = ListPoliciesInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .scope(Some(PolicyScopeType::Local))
+        .only_attached(Some(true))
+        .max_items(Some(1000))
+        .build()
+        .expect("Failed to build ListPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list attached policies");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    let names: Vec<String> = resp.policies.iter().filter_map(|p| p.policy_name.clone()).collect();
+    assert!(
+        !names.contains(&"CrossAttachOnly".to_string()),
+        "CrossAttachOnly is only attached cross-account and must not appear from 123456789012's \
+         view: {names:?}"
+    );
 }
 
 /// Example-Managed-Policy-1 is also the permissions boundary of EXAMPLEUSERID123, so it should

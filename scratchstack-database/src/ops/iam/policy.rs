@@ -725,30 +725,20 @@ pub async fn list_policies(
         sql.push_bind(format!("{}%", path_prefix.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")));
     }
 
+    // "Attached" here means "attached to a user/group/role in the caller's account". The
+    // subqueries join back to the owning entity tables so attachments to entities in other
+    // accounts don't leak through.
     if only_attached == Some(true) {
-        sql.push(indoc! {"
-             AND (managed_policy_id IN (SELECT managed_policy_id FROM iam.user_attached_policies)
-               OR managed_policy_id IN (SELECT managed_policy_id FROM iam.group_attached_policies)
-               OR managed_policy_id IN (SELECT managed_policy_id FROM iam.role_attached_policies))
-        "});
+        push_attached_in_account_filter(&mut sql, account_id);
     }
 
     if let Some(filter) = policy_usage_filter {
         match filter {
             PolicyUsageType::PermissionsPolicy => {
-                sql.push(indoc! {"
-                     AND (managed_policy_id IN (SELECT managed_policy_id FROM iam.user_attached_policies)
-                       OR managed_policy_id IN (SELECT managed_policy_id FROM iam.group_attached_policies)
-                       OR managed_policy_id IN (SELECT managed_policy_id FROM iam.role_attached_policies))
-                "});
+                push_attached_in_account_filter(&mut sql, account_id);
             }
             PolicyUsageType::PermissionsBoundary => {
-                sql.push(indoc! {"
-                     AND (managed_policy_id IN (SELECT permissions_boundary_managed_policy_id FROM iam.users
-                                                WHERE permissions_boundary_managed_policy_id IS NOT NULL)
-                       OR managed_policy_id IN (SELECT permissions_boundary_managed_policy_id FROM iam.roles
-                                                WHERE permissions_boundary_managed_policy_id IS NOT NULL))
-                "});
+                push_pb_in_account_filter(&mut sql, account_id);
             }
             other => {
                 return Err(ValidationError::builder()
@@ -1396,6 +1386,34 @@ fn make_paginator(
             log::error!("Failed to create paginator for {operation_name}: {e}");
             IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
         })
+}
+
+/// Append a ListPolicies filter restricting results to policies attached to a user, group, or
+/// role in `account_id`. The join back to the entity tables prevents attachments to entities in
+/// other accounts from leaking through.
+fn push_attached_in_account_filter<'a>(sql: &mut QueryBuilder<'a, sqlx::Postgres>, account_id: &'a str) {
+    sql.push(" AND managed_policy_id IN (SELECT uap.managed_policy_id FROM iam.user_attached_policies uap ");
+    sql.push("JOIN iam.users u ON u.user_id = uap.user_id WHERE u.account_id = ");
+    sql.push_bind(account_id);
+    sql.push(" UNION ALL SELECT gap.managed_policy_id FROM iam.group_attached_policies gap ");
+    sql.push("JOIN iam.groups g ON g.group_id = gap.group_id WHERE g.account_id = ");
+    sql.push_bind(account_id);
+    sql.push(" UNION ALL SELECT rap.managed_policy_id FROM iam.role_attached_policies rap ");
+    sql.push("JOIN iam.roles r ON r.role_id = rap.role_id WHERE r.account_id = ");
+    sql.push_bind(account_id);
+    sql.push(")");
+}
+
+/// Append a ListPolicies filter restricting results to policies used as a permissions boundary
+/// by a user or role in `account_id`.
+fn push_pb_in_account_filter<'a>(sql: &mut QueryBuilder<'a, sqlx::Postgres>, account_id: &'a str) {
+    sql.push(" AND managed_policy_id IN (");
+    sql.push("SELECT permissions_boundary_managed_policy_id FROM iam.users WHERE account_id = ");
+    sql.push_bind(account_id);
+    sql.push(" AND permissions_boundary_managed_policy_id IS NOT NULL");
+    sql.push(" UNION ALL SELECT permissions_boundary_managed_policy_id FROM iam.roles WHERE account_id = ");
+    sql.push_bind(account_id);
+    sql.push(" AND permissions_boundary_managed_policy_id IS NOT NULL)");
 }
 
 /// Parse a policy version id of the form `v<N>` or `v<N>.<suffix>` into its numeric portion.
