@@ -37,7 +37,7 @@ use {
     },
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, QueryBuilder, Row as _, postgres::PgTransaction, query, query_as},
-    std::str::FromStr as _,
+    std::{cmp::min, collections::HashMap, str::FromStr as _},
 };
 
 impl RequestExecutor for CreatePolicyInternalRequest {
@@ -172,7 +172,7 @@ pub async fn create_policy(
         }
     };
 
-    let policy = scratchstack_shapes_iam::types::Policy::builder()
+    let policy = Policy::builder()
         .arn(Some(arn.to_string()))
         .attachment_count(Some(0))
         .create_date(Some(created_at))
@@ -190,7 +190,9 @@ pub async fn create_policy(
             InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
         })?;
 
-    Ok(CreatePolicyResponse::builder().policy(Some(policy)).build().unwrap())
+    Ok(CreatePolicyResponse {
+        policy: Some(policy),
+    })
 }
 
 impl RequestExecutor for CreatePolicyVersionRequest {
@@ -352,7 +354,9 @@ pub async fn create_policy_version(
             InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
         })?;
 
-    Ok(CreatePolicyVersionResponse::builder().policy_version(Some(policy_version)).build().unwrap())
+    Ok(CreatePolicyVersionResponse {
+        policy_version: Some(policy_version),
+    })
 }
 
 impl RequestExecutor for DeletePolicyVersionRequest {
@@ -512,23 +516,29 @@ pub async fn get_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Result<
         IamError::from(NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())
     })?;
 
-    let tags = fetch_policy_tags(tx, &policy_row.managed_policy_id).await?;
     let arn = build_policy_arn(&partition, &parts.account_id, &policy_row.path, &policy_row.managed_policy_name_cased)?;
+    let tags = fetch_policy_tags(tx, &policy_row.managed_policy_id).await?;
+    let attachment_count = get_policy_attachment_count(tx, &policy_row.managed_policy_id).await?;
+    let permissions_boundary_usage_count =
+        get_policy_permissions_boundary_usage_count(tx, &policy_row.managed_policy_id).await?;
+
     let policy = Policy::builder()
         .arn(Some(arn.to_string()))
-        .attachment_count(None) // FIXME: Calculate the attachment count of the policy
+        .attachment_count(Some(attachment_count))
         .create_date(Some(policy_row.created_at))
         .default_version_id(Some(format!("v{}", policy_row.default_version)))
         .description(policy_row.description)
         .is_attachable(Some(!policy_row.deprecated))
         .path(Some(policy_row.path))
-        .permissions_boundary_usage_count(Some(0)) // FIXME: Calculate the permissions boundary usage count of the policy
+        .permissions_boundary_usage_count(Some(permissions_boundary_usage_count))
         .policy_id(Some(format!("{}{}", IamResourceType::ManagedPolicy.as_str(), policy_row.managed_policy_id)))
         .policy_name(Some(policy_row.managed_policy_name_cased))
         .update_date(Some(policy_row.update_date))
         .tags(tags)
         .build()?;
-    Ok(GetPolicyResponse::builder().policy(Some(policy)).build().unwrap())
+    Ok(GetPolicyResponse {
+        policy: Some(policy),
+    })
 }
 
 impl RequestExecutor for GetPolicyVersionRequest {
@@ -596,7 +606,9 @@ pub async fn get_policy_version(
             IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
         })?;
 
-    Ok(GetPolicyVersionResponse::builder().policy_version(Some(policy_version)).build().unwrap())
+    Ok(GetPolicyVersionResponse {
+        policy_version: Some(policy_version),
+    })
 }
 
 impl RequestExecutor for ListPoliciesInternalRequest {
@@ -618,26 +630,6 @@ impl RequestExecutor for ListPoliciesInternalRequest {
     }
 }
 
-/// The marker innards for a ListPolicies operation.
-#[derive(Deserialize, Serialize)]
-struct ListPoliciesMarker {
-    next_account_id: String,
-    next_managed_policy_id: String,
-}
-
-/// The rows returned by the ListPolicies operation.
-#[derive(FromRow)]
-struct ListPoliciesRow {
-    managed_policy_id: String,
-    account_id: String,
-    managed_policy_name_cased: String,
-    path: String,
-    default_version: i64,
-    deprecated: bool,
-    created_at: DateTime<Utc>,
-    update_date: DateTime<Utc>,
-}
-
 /// List managed policies in an account, optionally including AWS-managed policies.
 #[allow(clippy::too_many_arguments)]
 pub async fn list_policies(
@@ -650,6 +642,33 @@ pub async fn list_policies(
     policy_usage_filter: Option<&PolicyUsageType>,
     scope: Option<&PolicyScopeType>,
 ) -> Result<ListPoliciesResponse, IamError> {
+    /// The marker innards for a ListPolicies operation.
+    #[derive(Deserialize, Serialize)]
+    struct ListPoliciesMarker {
+        next_account_id: String,
+        next_managed_policy_id: String,
+    }
+
+    /// The rows returned by the ListPolicies operation.
+    #[derive(FromRow)]
+    struct ListPoliciesRow {
+        managed_policy_id: String,
+        account_id: String,
+        managed_policy_name_cased: String,
+        path: String,
+        default_version: i64,
+        deprecated: bool,
+        created_at: DateTime<Utc>,
+        update_date: DateTime<Utc>,
+    }
+
+    /// The rows returned for attachment counts.
+    #[derive(FromRow)]
+    struct AttachmentCountRow {
+        managed_policy_id: String,
+        attachment_count: i64,
+    }
+
     validate_account_id(account_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
@@ -755,7 +774,7 @@ pub async fn list_policies(
         IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
     })?;
 
-    let mut results: Vec<Policy> = Vec::with_capacity(rows.len().min(max_items));
+    let mut results: HashMap<String, Policy> = HashMap::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
 
     for row in rows.into_iter() {
@@ -776,14 +795,14 @@ pub async fn list_policies(
         }
 
         let arn = build_policy_arn(&partition, &row.account_id, &row.path, &row.managed_policy_name_cased)?;
+        let policy_id = format!("{}{}", IamResourceType::ManagedPolicy.as_str(), row.managed_policy_id);
         let policy = Policy::builder()
             .arn(Some(arn.to_string()))
-            .attachment_count(None) // FIXME: Calculate the attachment count of the policy
             .create_date(Some(row.created_at))
             .default_version_id(Some(format!("v{}", row.default_version)))
             .is_attachable(Some(!row.deprecated))
             .path(Some(row.path))
-            .policy_id(format!("{}{}", IamResourceType::ManagedPolicy.as_str(), row.managed_policy_id))
+            .policy_id(policy_id.clone())
             .policy_name(Some(row.managed_policy_name_cased))
             .update_date(Some(row.update_date))
             .build()
@@ -791,17 +810,62 @@ pub async fn list_policies(
                 log::error!("Failed to construct Policy object for ListPolicies result: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?;
-        results.push(policy);
+        results.insert(row.managed_policy_id, policy);
     }
 
-    let mut builder = ListPoliciesResponse::builder().policies(results);
-    if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
-    }
-
-    builder.build().map_err(|e| {
-        log::error!("Failed to build ListPoliciesResponse: {e}");
+    // Retrieve the attachment count for each of the policies in the result set.
+    let attachment_rows: Vec<AttachmentCountRow> = query_as(indoc! {"
+        SELECT mp.managed_policy_id,
+            (SELECT COUNT(*) FROM iam.user_attached_policies WHERE managed_policy_id = mp.managed_policy_id) +
+            (SELECT COUNT(*) FROM iam.group_attached_policies WHERE managed_policy_id = mp.managed_policy_id) +
+            (SELECT COUNT(*) FROM iam.role_attached_policies WHERE managed_policy_id = mp.managed_policy_id)
+            AS attachment_count
+        FROM iam.managed_policies mp
+        WHERE mp.managed_policy_id = ANY($1)
+    "})
+    .bind(results.keys().cloned().collect::<Vec<String>>())
+    .fetch_all(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to fetch policy attachment counts from database: {e}");
         IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
+    for row in attachment_rows.into_iter() {
+        let attachment_count = min(row.attachment_count, i32::MAX as i64) as i32;
+
+        if let Some(policy) = results.get_mut(&row.managed_policy_id) {
+            policy.attachment_count = Some(attachment_count);
+        }
+    }
+
+    // Retrieve the permissions boundary usage count for each of the policies in the result set.
+    let permissions_boundary_usage_rows: Vec<AttachmentCountRow> = query_as(indoc! {"
+        SELECT mp.managed_policy_id,
+            (SELECT COUNT(*) FROM iam.users WHERE permissions_boundary_managed_policy_id = mp.managed_policy_id) +
+            (SELECT COUNT(*) FROM iam.roles WHERE permissions_boundary_managed_policy_id = mp.managed_policy_id)
+            AS attachment_count
+        FROM iam.managed_policies mp
+        WHERE mp.managed_policy_id = ANY($1)
+    "})
+    .bind(results.keys().cloned().collect::<Vec<String>>())
+    .fetch_all(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to fetch policy permissions boundary usage counts from database: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
+    for row in permissions_boundary_usage_rows.into_iter() {
+        let usage_count = min(row.attachment_count, i32::MAX as i64) as i32;
+
+        if let Some(policy) = results.get_mut(&row.managed_policy_id) {
+            policy.permissions_boundary_usage_count = Some(usage_count);
+        }
+    }
+
+    Ok(ListPoliciesResponse {
+        policies: results.into_values().collect(),
+        is_truncated: Some(next_marker.is_some()),
+        marker: next_marker,
     })
 }
 
@@ -925,14 +989,10 @@ pub async fn list_policy_versions(
         );
     }
 
-    let mut builder = ListPolicyVersionsResponse::builder().versions(versions);
-    if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
-    }
-
-    builder.build().map_err(|e| {
-        log::error!("Failed to build ListPolicyVersionsResponse: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    Ok(ListPolicyVersionsResponse {
+        versions,
+        is_truncated: Some(next_marker.is_some()),
+        marker: next_marker,
     })
 }
 
@@ -1157,6 +1217,72 @@ fn parse_policy_arn(policy_arn: &str) -> Result<PolicyArnParts, IamError> {
         policy_path,
         policy_name_lower,
     })
+}
+
+/// Calculate the number of attachments for a policy by its managed_policy_id. This is the sum of
+/// the number of user, group, and role attachments.
+async fn get_policy_attachment_count(tx: &mut PgTransaction<'_>, managed_policy_id: &str) -> Result<i32, IamError> {
+    let row = query(indoc! {"
+            SELECT
+                (SELECT COUNT(*) FROM iam.user_attached_policies WHERE managed_policy_id = $1) +
+                (SELECT COUNT(*) FROM iam.group_attached_policies WHERE managed_policy_id = $1) +
+                (SELECT COUNT(*) FROM iam.role_attached_policies WHERE managed_policy_id = $1)
+                AS attachment_count
+        "})
+    .bind(managed_policy_id)
+    .fetch_one(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to query attachment count for managed policy: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
+
+    row.try_get::<i64, _>(0)
+        .map(|count| {
+            if count > i32::MAX as i64 {
+                i32::MAX
+            } else {
+                count as i32
+            }
+        })
+        .map_err(|e| {
+            log::error!("Failed to get attachment_count from database row: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })
+}
+
+/// Calculate the number of permissions boundary attachments for a policy by its managed_policy_id.
+/// This is the sum of the number of user and role permissions boundary attachments.
+async fn get_policy_permissions_boundary_usage_count(
+    tx: &mut PgTransaction<'_>,
+    managed_policy_id: &str,
+) -> Result<i32, IamError> {
+    let row = query(indoc! {"
+            SELECT
+                (SELECT COUNT(*) FROM iam.users WHERE permissions_boundary_managed_policy_id = $1) +
+                (SELECT COUNT(*) FROM iam.roles WHERE permissions_boundary_managed_policy_id = $1)
+                AS usage_count
+        "})
+    .bind(managed_policy_id)
+    .fetch_one(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to query permissions boundary usage count for managed policy: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
+
+    row.try_get::<i64, _>("usage_count")
+        .map(|count| {
+            if count > i32::MAX as i64 {
+                i32::MAX
+            } else {
+                count as i32
+            }
+        })
+        .map_err(|e| {
+            log::error!("Failed to get usage_count from database row: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })
 }
 
 /// Look up the `managed_policy_id` for a policy named by ARN; returns NoSuchEntity if not found.
