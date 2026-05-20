@@ -6,7 +6,7 @@ use {
         ops::{
             RequestExecutor,
             iam::{
-                build_policy_arn, constrain_max_items, get_current_partition_or_fail, parse_policy_arn,
+                build_policy_arn, constrain_max_items, get_current_partition_or_fail, make_paginator, parse_policy_arn,
                 validate_account_id, validate_group_name, validate_path, validate_path_prefix, validate_user_name,
             },
         },
@@ -15,7 +15,6 @@ use {
     indoc::indoc,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
-    scratchstack_pagination::{OperationPaginator, ScratchstackOperationMetadata, ScratchstackServiceMetadata},
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
@@ -330,15 +329,7 @@ pub async fn list_attached_group_policies(
         }
     };
 
-    // Create the paginator for this operation.
-    let service_metadata = ScratchstackServiceMetadata::new(partition.clone(), "", SERVICE_ID_IAM);
-    let operation_metadata = ScratchstackOperationMetadata::new(IAM_API_VERSION, OP_LIST_ATTACHED_GROUP_POLICIES);
-    let paginator =
-        OperationPaginator::new_fixed_key(&service_metadata, &operation_metadata, PAGINATION_KEY_ID, *PAGINATION_KEY)
-            .map_err(|e| {
-            log::error!("Failed to create paginator for ListAttachedGroupPolicies: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-        })?;
+    let paginator = make_paginator(&partition, OP_LIST_ATTACHED_GROUP_POLICIES)?;
 
     let mut sql = QueryBuilder::new(
         r#"
@@ -465,15 +456,7 @@ pub async fn list_groups(
     let max_items = constrain_max_items(max_items)?;
     let partition = get_current_partition_or_fail(tx).await?;
 
-    // Create the paginator for this operation.
-    let service_metadata = ScratchstackServiceMetadata::new(partition.clone(), "", SERVICE_ID_IAM);
-    let operation_metadata = ScratchstackOperationMetadata::new(IAM_API_VERSION, OP_LIST_GROUPS);
-    let paginator =
-        OperationPaginator::new_fixed_key(&service_metadata, &operation_metadata, PAGINATION_KEY_ID, *PAGINATION_KEY)
-            .map_err(|e| {
-            log::error!("Failed to create paginator for ListGroups: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-        })?;
+    let paginator = make_paginator(&partition, OP_LIST_GROUPS)?;
 
     let mut sql = QueryBuilder::new(
         r#"
@@ -787,15 +770,7 @@ pub async fn list_groups_for_user(
             .into());
     }
 
-    // Create the paginator for this operation.
-    let service_metadata = ScratchstackServiceMetadata::new(partition.clone(), "", SERVICE_ID_IAM);
-    let operation_metadata = ScratchstackOperationMetadata::new(IAM_API_VERSION, OP_LIST_GROUPS_FOR_USER);
-    let paginator =
-        OperationPaginator::new_fixed_key(&service_metadata, &operation_metadata, PAGINATION_KEY_ID, *PAGINATION_KEY)
-            .map_err(|e| {
-            log::error!("Failed to create paginator for ListGroupsForUser: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-        })?;
+    let paginator = make_paginator(&partition, OP_LIST_GROUPS_FOR_USER)?;
 
     let mut sql = QueryBuilder::new(
         r#"

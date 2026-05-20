@@ -5,13 +5,12 @@ use {
         ops::{
             RequestExecutor,
             iam::{
-                build_policy_arn, constrain_max_items, get_current_partition_or_fail, parse_policy_arn,
+                build_policy_arn, constrain_max_items, get_current_partition_or_fail, make_paginator, parse_policy_arn,
                 validate_account_id, validate_path_prefix, validate_role_name,
             },
         },
     },
     indoc::indoc,
-    scratchstack_pagination::{OperationPaginator, ScratchstackOperationMetadata, ScratchstackServiceMetadata},
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
@@ -309,15 +308,7 @@ pub async fn list_attached_role_policies(
         }
     };
 
-    // Create the paginator for this operation.
-    let service_metadata = ScratchstackServiceMetadata::new(partition.clone(), "", SERVICE_ID_IAM);
-    let operation_metadata = ScratchstackOperationMetadata::new(IAM_API_VERSION, OP_LIST_ATTACHED_ROLE_POLICIES);
-    let paginator =
-        OperationPaginator::new_fixed_key(&service_metadata, &operation_metadata, PAGINATION_KEY_ID, *PAGINATION_KEY)
-            .map_err(|e| {
-            log::error!("Failed to create paginator for ListAttachedRolePolicies: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-        })?;
+    let paginator = make_paginator(&partition, OP_LIST_ATTACHED_ROLE_POLICIES)?;
 
     let mut sql = QueryBuilder::new(
         r#"

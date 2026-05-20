@@ -7,8 +7,8 @@ use {
             RequestExecutor,
             iam::{
                 build_policy_arn, constrain_max_items, get_current_partition_or_fail, get_permissions_boundary_id,
-                parse_policy_arn, validate_account_id, validate_path, validate_path_prefix, validate_tag_key,
-                validate_tag_value, validate_user_name,
+                make_paginator, parse_policy_arn, validate_account_id, validate_path, validate_path_prefix,
+                validate_tag_key, validate_tag_value, validate_user_name,
             },
         },
     },
@@ -16,7 +16,6 @@ use {
     indoc::indoc,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
-    scratchstack_pagination::{OperationPaginator, ScratchstackOperationMetadata, ScratchstackServiceMetadata},
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
@@ -449,15 +448,7 @@ pub async fn list_attached_user_policies(
         }
     };
 
-    // Create the paginator for this operation.
-    let service_metadata = ScratchstackServiceMetadata::new(partition.clone(), "", SERVICE_ID_IAM);
-    let operation_metadata = ScratchstackOperationMetadata::new(IAM_API_VERSION, OP_LIST_ATTACHED_USER_POLICIES);
-    let paginator =
-        OperationPaginator::new_fixed_key(&service_metadata, &operation_metadata, PAGINATION_KEY_ID, *PAGINATION_KEY)
-            .map_err(|e| {
-            log::error!("Failed to create paginator for ListAttachedUserPolicies: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-        })?;
+    let paginator = make_paginator(&partition, OP_LIST_ATTACHED_USER_POLICIES)?;
 
     let mut sql = QueryBuilder::new(
         r#"
@@ -586,15 +577,7 @@ pub async fn list_users(
     let max_items = constrain_max_items(max_items)?;
     let partition = get_current_partition_or_fail(tx).await?;
 
-    // Create the paginator for this operation.
-    let service_metadata = ScratchstackServiceMetadata::new(partition.clone(), "", SERVICE_ID_IAM);
-    let operation_metadata = ScratchstackOperationMetadata::new(IAM_API_VERSION, OP_LIST_USERS);
-    let paginator =
-        OperationPaginator::new_fixed_key(&service_metadata, &operation_metadata, PAGINATION_KEY_ID, *PAGINATION_KEY)
-            .map_err(|e| {
-            log::error!("Failed to create paginator for ListUsers: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-        })?;
+    let paginator = make_paginator(&partition, OP_LIST_USERS)?;
 
     let mut sql = QueryBuilder::new(
         r#"
@@ -768,15 +751,7 @@ pub async fn list_user_tags(
             .into());
     }
 
-    // Create the paginator for this operation.
-    let service_metadata = ScratchstackServiceMetadata::new(partition.clone(), "", SERVICE_ID_IAM);
-    let operation_metadata = ScratchstackOperationMetadata::new(IAM_API_VERSION, OP_LIST_USER_TAGS);
-    let paginator =
-        OperationPaginator::new_fixed_key(&service_metadata, &operation_metadata, PAGINATION_KEY_ID, *PAGINATION_KEY)
-            .map_err(|e| {
-            log::error!("Failed to create paginator for ListUserTags: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-        })?;
+    let paginator = make_paginator(&partition, OP_LIST_USER_TAGS)?;
 
     let mut sql = QueryBuilder::new(
         r#"

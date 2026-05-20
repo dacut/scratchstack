@@ -2182,16 +2182,12 @@ async fn test_policy_attachments(database: &TempDatabase) {
         ])
         .await
         .expect("Failed to list attached user policies");
-    let json: JsonValue =
-        serde_json::from_str(&result).expect("Failed to parse attached user policies output");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse attached user policies output");
     let attached_policies = json
         .get("AttachedPolicies")
         .and_then(JsonValue::as_array)
         .expect("Expected AttachedPolicies to exist and be an array");
-    assert!(
-        attached_policies.is_empty(),
-        "Expected empty AttachedPolicies, got: {result}"
-    );
+    assert!(attached_policies.is_empty(), "Expected empty AttachedPolicies, got: {result}");
 
     // Re-attach the policy and verify list-attached-user-policies now shows it.
     database

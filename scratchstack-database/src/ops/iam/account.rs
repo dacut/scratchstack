@@ -5,21 +5,21 @@ use {
         constants::iam::*,
         ops::{
             RequestExecutor,
-            iam::{constrain_max_items, validate_account_id},
+            iam::{constrain_max_items, get_current_partition_or_fail, make_paginator, validate_account_id},
         },
     },
-    base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
     indoc::indoc,
     rand::random_range,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{CreateAccountRequest, CreateAccountResponse, ListAccountsRequest, ListAccountsResponse},
         types::{
-            Account, ListAccountsFilterName,
+            Account, ListAccountsFilter, ListAccountsFilterName,
             error::{InternalFailure, ValidationError},
         },
     },
-    sqlx::{Acquire as _, Row as _, postgres::PgTransaction, query},
+    serde::{Deserialize, Serialize},
+    sqlx::{Acquire as _, FromRow, QueryBuilder, postgres::PgTransaction, query},
 };
 
 impl RequestExecutor for CreateAccountRequest {
@@ -171,117 +171,111 @@ impl RequestExecutor for ListAccountsRequest {
     type Error = IamError;
 
     async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        let mut sql = "SELECT account_id, email, alias, created_at FROM iam.accounts WHERE 1=1".to_string();
-        let mut filter_bindings = Vec::with_capacity(self.filters.len());
-        let max_items = constrain_max_items(self.max_items)?;
-        let mut next_id: usize = 1;
-
-        if !self.filters.is_empty() {
-            for filter in self.filters.iter() {
-                sql.push_str(" AND ");
-
-                match filter.name {
-                    ListAccountsFilterName::AccountId => sql.push_str(&format!("account_id = ANY(${})", next_id)),
-                    ListAccountsFilterName::AccountAlias => sql.push_str(&format!("alias = ANY(${})", next_id)),
-                    ListAccountsFilterName::Email => sql.push_str(&format!("email = ANY(${})", next_id)),
-                    _ => log::warn!("Received unsupported filter key: {:?}", filter.name),
-                }
-                filter_bindings.push(&filter.values);
-                next_id += 1;
-            }
-        }
-
-        let mut prev_account_id = None;
-
-        if let Some(marker) = self.marker.clone()
-            && !marker.is_empty()
-        {
-            let version = marker.as_bytes()[0];
-            if version == b'1' {
-                // Version 1 tokens are just the account id to start after,
-                // encoded in base64.
-                if let Ok(previous_account_id_bytes) = URL_SAFE_NO_PAD.decode(&marker[1..])
-                    && let Ok(previous_account_id_str) = String::from_utf8(previous_account_id_bytes)
-                {
-                    sql.push_str(&format!(" AND account_id > ${}", next_id));
-                    next_id += 1;
-                    prev_account_id = Some(previous_account_id_str.clone());
-                }
-            }
-        }
-
-        sql.push_str(&format!(" ORDER BY account_id LIMIT ${}", next_id));
-
-        let mut q = query(&sql);
-        for values in filter_bindings.into_iter() {
-            q = q.bind(values);
-        }
-
-        if let Some(prev_account_id) = prev_account_id {
-            q = q.bind(prev_account_id);
-        }
-
-        q = q.bind(max_items as i64 + 1); // Request one more than max items so we can determine if there are more results.
-
-        let rows = match q.fetch_all(tx.as_mut()).await {
-            Ok(rows) => rows,
-            Err(e) => {
-                log::error!("Failed to fetch accounts from database: {e}");
-                return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
-            }
-        };
-        let mut accounts = Vec::new();
-        let mut has_more = false;
-
-        for row in rows {
-            let account_id: String = row.try_get(0).map_err(|e| {
-                log::error!("Failed to get account_id from database row: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?;
-            let email = row.try_get(1).map_err(|e| {
-                log::error!("Failed to get email from database row: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?;
-            let account_alias = row.try_get(2).map_err(|e| {
-                log::error!("Failed to get account_alias from database row: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?;
-            let created_at = row.try_get(3).map_err(|e| {
-                log::error!("Failed to get created_at from database row: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?;
-
-            if accounts.len() == max_items {
-                // The overflow row confirms there are more results; don't include it.
-                has_more = true;
-                break;
-            }
-
-            accounts.push(Account {
-                organization_id: None,
-                account_id,
-                account_alias,
-                email,
-                created_at,
-            });
-        }
-
-        // The cursor is the last *included* account ID, not the overflow row's ID.
-        // The next page queries `account_id > cursor`, so using the overflow row's ID
-        // would skip it entirely.
-        let marker = if has_more {
-            accounts.last().map(|a| format!("1{}", URL_SAFE_NO_PAD.encode(a.account_id.as_bytes())))
-        } else {
-            None
-        };
-        let is_truncated = marker.is_some();
-
-        Ok(ListAccountsResponse {
-            accounts,
-            marker,
-            is_truncated,
-        })
+        list_accounts(tx, &self.filters, self.marker.as_deref(), self.max_items).await
     }
+}
+
+/// The marker innards for a ListAccounts operation.
+#[derive(Deserialize, Serialize)]
+struct ListAccountsMarker {
+    next_account_id: String,
+}
+
+/// The rows returned by the ListAccounts query.
+#[derive(FromRow)]
+struct ListAccountsRow {
+    account_id: String,
+    email: Option<String>,
+    alias: Option<String>,
+    created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// List accounts on the database, optionally filtered by account id, email, or account alias.
+pub async fn list_accounts(
+    tx: &mut PgTransaction<'_>,
+    filters: &[ListAccountsFilter],
+    marker: Option<&str>,
+    max_items: Option<i32>,
+) -> Result<ListAccountsResponse, IamError> {
+    let max_items = constrain_max_items(max_items)?;
+    let partition = get_current_partition_or_fail(tx).await?;
+    let paginator = make_paginator(&partition, OP_LIST_ACCOUNTS)?;
+
+    let mut sql = QueryBuilder::new("SELECT account_id, email, alias, created_at FROM iam.accounts WHERE TRUE");
+
+    for filter in filters.iter() {
+        let column = match filter.name {
+            ListAccountsFilterName::AccountId => "account_id",
+            ListAccountsFilterName::AccountAlias => "alias",
+            ListAccountsFilterName::Email => "email",
+            _ => {
+                log::warn!("Received unsupported filter key: {:?}", filter.name);
+                continue;
+            }
+        };
+        sql.push(format!(" AND {column} = ANY("));
+        sql.push_bind(&filter.values);
+        sql.push(")");
+    }
+
+    if let Some(marker) = marker {
+        let info: ListAccountsMarker = paginator.decrypt_token(marker).await.map_err(|e| {
+            log::error!("Failed to decrypt pagination token for ListAccounts: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })?;
+        sql.push(" AND account_id > ");
+        sql.push_bind(info.next_account_id);
+    }
+
+    // Request one more than max_items so we can determine if there are more results.
+    sql.push(" ORDER BY account_id ASC LIMIT ");
+    sql.push_bind(max_items as i32 + 1);
+
+    let rows = sql.build_query_as::<ListAccountsRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
+        log::error!("Failed to fetch accounts from database: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
+
+    let mut accounts = Vec::with_capacity(rows.len().min(max_items));
+    let mut next_marker = None;
+
+    for row in rows.into_iter() {
+        if accounts.len() == max_items {
+            // The cursor is the last *included* account id, not the overflow row's id. The
+            // next page queries `account_id > cursor`, so using the overflow row's id would
+            // skip it entirely.
+            let last_account_id = accounts.last().map(|a: &Account| a.account_id.clone()).expect(
+                "accounts is non-empty when len() == max_items > 0, which is guaranteed by constrain_max_items",
+            );
+            next_marker = Some(
+                paginator
+                    .encrypt_token(&ListAccountsMarker {
+                        next_account_id: last_account_id,
+                    })
+                    .await
+                    .map_err(|e| {
+                        log::error!("Failed to encrypt pagination token for ListAccounts: {e}");
+                        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                    })?,
+            );
+            break;
+        }
+
+        accounts.push(Account {
+            organization_id: None,
+            account_id: row.account_id,
+            account_alias: row.alias,
+            email: row.email,
+            created_at: Some(row.created_at),
+        });
+    }
+
+    let is_truncated = next_marker.is_some();
+    Ok(ListAccountsResponse {
+        accounts,
+        marker: next_marker,
+        is_truncated,
+    })
 }
 
 #[cfg(test)]
