@@ -7,7 +7,13 @@
 use {
     crate::constants::iam::*,
     scratchstack_arn::Arn,
-    scratchstack_shapes_iam::{error_meta::Error as IamError, types::error::ValidationError},
+    scratchstack_pagination::{
+        FixedKeyService, OperationPaginator, ScratchstackOperationMetadata, ScratchstackServiceMetadata,
+    },
+    scratchstack_shapes_iam::{
+        error_meta::Error as IamError,
+        types::error::{InternalFailure, ValidationError},
+    },
     std::str::FromStr as _,
 };
 
@@ -19,6 +25,20 @@ mod role;
 mod user;
 
 pub use {account::*, group::*, partition::*, policy::*, role::*, user::*};
+
+/// Construct an `OperationPaginator` for a policy-related list operation.
+pub(crate) fn make_paginator(
+    partition: &str,
+    operation_name: &'static str,
+) -> Result<OperationPaginator<FixedKeyService, FixedKeyService>, IamError> {
+    let service_metadata = ScratchstackServiceMetadata::new(partition.to_string(), "", SERVICE_ID_IAM);
+    let operation_metadata = ScratchstackOperationMetadata::new(IAM_API_VERSION, operation_name);
+    OperationPaginator::new_fixed_key(&service_metadata, &operation_metadata, PAGINATION_KEY_ID, *PAGINATION_KEY)
+        .map_err(|e| {
+            log::error!("Failed to create paginator for {operation_name}: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })
+}
 
 /// Validate that the account id is valid.
 ///

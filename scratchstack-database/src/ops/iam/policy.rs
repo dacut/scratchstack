@@ -6,7 +6,7 @@ use {
         ops::{
             RequestExecutor,
             iam::{
-                PolicyArnParts, constrain_max_items, get_current_partition_or_fail, parse_policy_arn,
+                PolicyArnParts, constrain_max_items, get_current_partition_or_fail, make_paginator, parse_policy_arn,
                 validate_account_id, validate_path, validate_path_prefix, validate_policy_name, validate_tag_key,
                 validate_tag_value,
             },
@@ -17,9 +17,6 @@ use {
     scratchstack_arn::Arn,
     scratchstack_aspen::Policy as AspenPolicy,
     scratchstack_aws_principal::IamResourceType,
-    scratchstack_pagination::{
-        FixedKeyService, OperationPaginator, ScratchstackOperationMetadata, ScratchstackServiceMetadata,
-    },
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
@@ -1460,7 +1457,12 @@ async fn fetch_policy_tags(tx: &mut PgTransaction<'_>, managed_policy_id: &str) 
 }
 
 /// Construct a policy ARN from its components.
-fn build_policy_arn(partition: &str, account_id: &str, path: &str, policy_name: &str) -> Result<Arn, IamError> {
+pub(crate) fn build_policy_arn(
+    partition: &str,
+    account_id: &str,
+    path: &str,
+    policy_name: &str,
+) -> Result<Arn, IamError> {
     Arn::builder()
         .partition(partition)
         .service(SERVICE_KEY_IAM)
@@ -1469,20 +1471,6 @@ fn build_policy_arn(partition: &str, account_id: &str, path: &str, policy_name: 
         .build()
         .map_err(|e| {
             log::error!("Failed to construct ARN for managed policy: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-        })
-}
-
-/// Construct an `OperationPaginator` for a policy-related list operation.
-fn make_paginator(
-    partition: &str,
-    operation_name: &'static str,
-) -> Result<OperationPaginator<FixedKeyService, FixedKeyService>, IamError> {
-    let service_metadata = ScratchstackServiceMetadata::new(partition.to_string(), "", SERVICE_ID_IAM);
-    let operation_metadata = ScratchstackOperationMetadata::new(IAM_API_VERSION, operation_name);
-    OperationPaginator::new_fixed_key(&service_metadata, &operation_metadata, PAGINATION_KEY_ID, *PAGINATION_KEY)
-        .map_err(|e| {
-            log::error!("Failed to create paginator for {operation_name}: {e}");
             IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
         })
 }

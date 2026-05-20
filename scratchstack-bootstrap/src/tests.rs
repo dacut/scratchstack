@@ -2164,6 +2164,160 @@ async fn test_policy_attachments(database: &TempDatabase) {
         .await
         .expect_err("Detaching from nonexistent role should fail");
     assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // After the detach tests above, the user and group have no attached policies. Verify with
+    // list-attached-user-policies and list-attached-group-policies.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-attached-user-policies",
+            "--account-id",
+            "777788889999",
+            "--user-name",
+            "attach-test-user",
+        ])
+        .await
+        .expect("Failed to list attached user policies");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse attached user policies output");
+    let attached_policies = json
+        .get("AttachedPolicies")
+        .and_then(JsonValue::as_array)
+        .expect("Expected AttachedPolicies to exist and be an array");
+    assert!(attached_policies.is_empty(), "Expected empty AttachedPolicies, got: {result}");
+
+    // Re-attach the policy and verify list-attached-user-policies now shows it.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "attach-user-policy",
+            "--account-id",
+            "777788889999",
+            "--user-name",
+            "attach-test-user",
+            "--policy-arn",
+            policy_arn,
+        ])
+        .await
+        .expect("Failed to re-attach policy to user");
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-attached-user-policies",
+            "--account-id",
+            "777788889999",
+            "--user-name",
+            "attach-test-user",
+        ])
+        .await
+        .expect("Failed to list attached user policies after re-attach");
+    assert!(result.contains("AttachTestPolicy"), "Expected AttachTestPolicy in output, got: {result}");
+    assert!(
+        result.contains(":iam::777788889999:policy/AttachTestPolicy"),
+        "Expected policy ARN suffix in output, got: {result}"
+    );
+
+    // Listing attached policies for a nonexistent user should fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-attached-user-policies",
+            "--account-id",
+            "777788889999",
+            "--user-name",
+            "no-such-user",
+        ])
+        .await
+        .expect_err("Listing attached policies for nonexistent user should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Re-attach the policy to the group and verify list-attached-group-policies shows it.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "attach-group-policy",
+            "--account-id",
+            "777788889999",
+            "--group-name",
+            "AttachTestGroup",
+            "--policy-arn",
+            policy_arn,
+        ])
+        .await
+        .expect("Failed to re-attach policy to group");
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-attached-group-policies",
+            "--account-id",
+            "777788889999",
+            "--group-name",
+            "AttachTestGroup",
+        ])
+        .await
+        .expect("Failed to list attached group policies");
+    assert!(result.contains("AttachTestPolicy"), "Expected AttachTestPolicy in output, got: {result}");
+
+    // Listing attached policies for a nonexistent group should fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-attached-group-policies",
+            "--account-id",
+            "777788889999",
+            "--group-name",
+            "NoSuchGroup",
+        ])
+        .await
+        .expect_err("Listing attached policies for nonexistent group should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Listing attached policies for a nonexistent role should fail with NoSuchEntity (no
+    // create-role CLI command, so this also smoke-tests that list-attached-role-policies is
+    // wired up correctly).
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-attached-role-policies",
+            "--account-id",
+            "777788889999",
+            "--role-name",
+            "no-such-role",
+        ])
+        .await
+        .expect_err("Listing attached policies for nonexistent role should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
 }
 
 /// Convert a Vec<String-like> to a Vec<OsString>.

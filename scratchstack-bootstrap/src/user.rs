@@ -7,7 +7,8 @@ use {
         error_meta::Error as IamError,
         operation::{
             AttachUserPolicyInternalRequest, CreateUserInternalRequest, CreateUserResponse, DeleteUserInternalRequest,
-            DetachUserPolicyInternalRequest, GetUserInternalRequest, GetUserResponse, ListUserTagsInternalRequest,
+            DetachUserPolicyInternalRequest, GetUserInternalRequest, GetUserResponse,
+            ListAttachedUserPoliciesInternalRequest, ListAttachedUserPoliciesResponse, ListUserTagsInternalRequest,
             ListUserTagsResponse, ListUsersInternalRequest, ListUsersResponse, TagUserInternalRequest,
             UntagUserInternalRequest, UpdateUserInternalRequest,
         },
@@ -96,6 +97,34 @@ pub(crate) struct GetUserInternalCommand {
     /// The name of the user to get information about.
     #[clap(long)]
     pub user_name: String,
+}
+
+/// List managed policies attached to a user in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct ListAttachedUserPoliciesInternalCommand {
+    /// The unique identifier for the account the user belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the user to list attached policies for.
+    #[clap(long)]
+    pub user_name: String,
+
+    /// The path prefix for filtering the list of attached policies. Only policies with a path
+    /// that starts with this prefix will be included in the response.
+    #[clap(long)]
+    pub path_prefix: Option<String>,
+
+    /// The maximum number of attached policies to include in the response.
+    #[clap(long)]
+    pub max_items: Option<i32>,
+
+    /// A marker for paginating the list of attached policies. If the response from a previous
+    /// ListAttachedUserPolicies request was truncated, the response will include a marker that
+    /// you can use in a subsequent ListAttachedUserPolicies request to retrieve the next set of
+    /// attached policies.
+    #[clap(long)]
+    pub marker: Option<String>,
 }
 
 /// List users in a given account in the Scratchstack IAM service.
@@ -278,6 +307,24 @@ impl Runnable for GetUserInternalCommand {
         let request = GetUserInternalRequest::builder()
             .user_name(Some(self.user_name.clone()))
             .account_id(self.account_id.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for ListAttachedUserPoliciesInternalCommand {
+    type Result = ListAttachedUserPoliciesResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = ListAttachedUserPoliciesInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .user_name(self.user_name.clone())
+            .path_prefix(self.path_prefix.clone())
+            .max_items(self.max_items)
+            .marker(self.marker.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
