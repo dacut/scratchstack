@@ -1460,7 +1460,12 @@ async fn fetch_policy_tags(tx: &mut PgTransaction<'_>, managed_policy_id: &str) 
 }
 
 /// Construct a policy ARN from its components.
-fn build_policy_arn(partition: &str, account_id: &str, path: &str, policy_name: &str) -> Result<Arn, IamError> {
+pub(super) fn build_policy_arn(
+    partition: &str,
+    account_id: &str,
+    path: &str,
+    policy_name: &str,
+) -> Result<Arn, IamError> {
     Arn::builder()
         .partition(partition)
         .service(SERVICE_KEY_IAM)

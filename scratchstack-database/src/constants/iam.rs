@@ -34,6 +34,15 @@ pub(crate) const MAX_POLICY_VERSIONS: i64 = 5;
 /// Error message: `"Internal failure"`.
 pub(crate) const MSG_INTERNAL_FAILURE: &str = "Internal failure";
 
+/// Operation name for ListAttachedGroupPolicies
+pub(crate) const OP_LIST_ATTACHED_GROUP_POLICIES: &str = "ListAttachedGroupPolicies";
+
+/// Operation name for ListAttachedRolePolicies
+pub(crate) const OP_LIST_ATTACHED_ROLE_POLICIES: &str = "ListAttachedRolePolicies";
+
+/// Operation name for ListAttachedUserPolicies
+pub(crate) const OP_LIST_ATTACHED_USER_POLICIES: &str = "ListAttachedUserPolicies";
+
 /// Operation name for ListGroups
 pub(crate) const OP_LIST_GROUPS: &str = "ListGroups";
 

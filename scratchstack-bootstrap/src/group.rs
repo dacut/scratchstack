@@ -7,8 +7,9 @@ use {
         operation::{
             AddUserToGroupInternalRequest, AttachGroupPolicyInternalRequest, CreateGroupInternalRequest,
             CreateGroupResponse, DeleteGroupInternalRequest, DetachGroupPolicyInternalRequest, GetGroupInternalRequest,
-            GetGroupResponse, ListGroupsForUserInternalRequest, ListGroupsForUserResponse, ListGroupsInternalRequest,
-            ListGroupsResponse, RemoveUserFromGroupInternalRequest, UpdateGroupInternalRequest,
+            GetGroupResponse, ListAttachedGroupPoliciesInternalRequest, ListAttachedGroupPoliciesResponse,
+            ListGroupsForUserInternalRequest, ListGroupsForUserResponse, ListGroupsInternalRequest, ListGroupsResponse,
+            RemoveUserFromGroupInternalRequest, UpdateGroupInternalRequest,
         },
     },
     std::ffi::OsString,
@@ -84,6 +85,34 @@ pub(crate) struct GetGroupInternalCommand {
     /// The name of the group to get information about.
     #[clap(long)]
     pub group_name: String,
+}
+
+/// List managed policies attached to a group in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct ListAttachedGroupPoliciesInternalCommand {
+    /// The unique identifier for the account the group belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the group to list attached policies for.
+    #[clap(long)]
+    pub group_name: String,
+
+    /// The path prefix for filtering the list of attached policies. Only policies with a path
+    /// that starts with this prefix will be included in the response.
+    #[clap(long)]
+    pub path_prefix: Option<String>,
+
+    /// The maximum number of attached policies to include in the response.
+    #[clap(long)]
+    pub max_items: Option<i32>,
+
+    /// A marker for paginating the list of attached policies. If the response from a previous
+    /// ListAttachedGroupPolicies request was truncated, the response will include a marker that
+    /// you can use in a subsequent ListAttachedGroupPolicies request to retrieve the next set of
+    /// attached policies.
+    #[clap(long)]
+    pub marker: Option<String>,
 }
 
 /// List groups in a given account in the Scratchstack IAM service.
@@ -170,6 +199,24 @@ impl Runnable for GetGroupInternalCommand {
         let request = GetGroupInternalRequest::builder()
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for ListAttachedGroupPoliciesInternalCommand {
+    type Result = ListAttachedGroupPoliciesResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = ListAttachedGroupPoliciesInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .group_name(self.group_name.clone())
+            .path_prefix(self.path_prefix.clone())
+            .max_items(self.max_items)
+            .marker(self.marker.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
