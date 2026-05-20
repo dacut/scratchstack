@@ -306,6 +306,14 @@ async fn test_database() {
     group::test_delete_group(&pool).await;
     group::test_delete_group_nonexistent(&pool).await;
 
+    // -- DeleteRoleInternalRequest --------------------------------------------
+    role::test_delete_role_simple(&pool).await;
+    role::test_delete_role_cascades_tags(&pool).await;
+    role::test_delete_role_attached_policy_fails(&pool).await;
+    role::test_delete_role_inline_policy_fails(&pool).await;
+    role::test_delete_role_nonexistent(&pool).await;
+    role::test_delete_role_invalid_name();
+
     iam::MIGRATOR.undo(&mut *c, 0).await.expect("Failed to undo database migrations");
 }
 

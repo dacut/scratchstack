@@ -2036,6 +2036,195 @@ async fn test_roles(database: &TempDatabase) {
         .await
         .expect_err("max-session-duration below 3600 should fail");
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // -- delete-role -----------------------------------------------------------
+    // Create a fresh role and delete it. This leaves test_policy_attachments' role landscape
+    // untouched.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "DeleteMeCliRole",
+            "--assume-role-policy-document",
+            trust_policy,
+        ])
+        .await
+        .expect("Failed to create DeleteMeCliRole");
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "DeleteMeCliRole",
+        ])
+        .await
+        .expect("Failed to delete DeleteMeCliRole");
+
+    // Deleting the same role again must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "DeleteMeCliRole",
+        ])
+        .await
+        .expect_err("Re-deleting DeleteMeCliRole should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Deleting a role that never existed must also fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "no-such-role",
+        ])
+        .await
+        .expect_err("Deleting a role that never existed should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Delete a role that has an attached managed policy: must fail with DeleteConflict and the
+    // role must still exist afterwards. Use DeployRole (created above) and a managed policy
+    // created and attached just for this case.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-policy",
+            "--account-id",
+            "555566667777",
+            "--policy-name",
+            "DeleteRoleBlockerPolicy",
+            "--policy-document",
+            r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#,
+        ])
+        .await
+        .expect("Failed to create DeleteRoleBlockerPolicy");
+    let blocker_arn = "arn:test-partition:iam::555566667777:policy/DeleteRoleBlockerPolicy";
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "attach-role-policy",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "DeployRole",
+            "--policy-arn",
+            blocker_arn,
+        ])
+        .await
+        .expect("Failed to attach DeleteRoleBlockerPolicy to DeployRole");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "DeployRole",
+        ])
+        .await
+        .expect_err("Deleting a role with an attached managed policy should fail");
+    assert_eq!(err.code(), Some("DeleteConflict"), "Expected DeleteConflict, got: {err}");
+
+    // Detach and then delete to leave the test database tidy.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "detach-role-policy",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "DeployRole",
+            "--policy-arn",
+            blocker_arn,
+        ])
+        .await
+        .expect("Failed to detach DeleteRoleBlockerPolicy from DeployRole");
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "DeployRole",
+        ])
+        .await
+        .expect("Failed to delete DeployRole after detaching blocker");
+
+    database
+        .run(["ssbs", "--port", &port, "--username", "scratchstack", "delete-policy", "--policy-arn", blocker_arn])
+        .await
+        .expect("Failed to delete DeleteRoleBlockerPolicy");
+
+    // delete-role on an invalid role name must produce a ValidationError before reaching the
+    // database.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "bad role!",
+        ])
+        .await
+        .expect_err("delete-role with an invalid role name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 }
 
 async fn test_policy_attachments(database: &TempDatabase) {
