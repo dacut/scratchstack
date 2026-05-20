@@ -40,7 +40,8 @@ use {
         },
         role::{
             AttachRolePolicyInternalCommand, CreateRoleInternalCommand, DeleteRoleInternalCommand,
-            DetachRolePolicyInternalCommand, ListAttachedRolePoliciesInternalCommand,
+            DeleteRolePermissionsBoundaryInternalCommand, DetachRolePolicyInternalCommand,
+            ListAttachedRolePoliciesInternalCommand,
         },
         user::{
             AttachUserPolicyInternalCommand, CreateUserInternalCommand, DeleteUserInternalCommand,
@@ -169,6 +170,11 @@ enum Commands {
     /// inline policies remaining.
     #[command(name = "delete-role")]
     DeleteRole(DeleteRoleInternalCommand),
+
+    /// Remove the permissions boundary from an IAM role. Succeeds whether or not the role has a
+    /// permissions boundary set.
+    #[command(name = "delete-role-permissions-boundary")]
+    DeleteRolePermissionsBoundary(DeleteRolePermissionsBoundaryInternalCommand),
 
     /// Delete an IAM user from an account.
     #[command(name = "delete-user")]
@@ -313,6 +319,7 @@ impl Commands {
             Commands::DeletePolicy(_) => "DeletePolicy",
             Commands::DeletePolicyVersion(_) => "DeletePolicyVersion",
             Commands::DeleteRole(_) => "DeleteRole",
+            Commands::DeleteRolePermissionsBoundary(_) => "DeleteRolePermissionsBoundary",
             Commands::DeleteUser(_) => "DeleteUser",
             Commands::DetachGroupPolicy(_) => "DetachGroupPolicy",
             Commands::DetachRolePolicy(_) => "DetachRolePolicy",
@@ -452,6 +459,10 @@ where
             "".to_string()
         }
         Commands::DeleteRole(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::DeleteRolePermissionsBoundary(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
         }

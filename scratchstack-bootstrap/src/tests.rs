@@ -2225,6 +2225,146 @@ async fn test_roles(database: &TempDatabase) {
         .await
         .expect_err("delete-role with an invalid role name should fail");
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // -- delete-role-permissions-boundary --------------------------------------
+    // Create a managed policy and a role that uses it as its permissions boundary.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-policy",
+            "--account-id",
+            "555566667777",
+            "--policy-name",
+            "RolePbPolicy",
+            "--policy-document",
+            r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#,
+        ])
+        .await
+        .expect("Failed to create RolePbPolicy");
+    let pb_arn = "arn:test-partition:iam::555566667777:policy/RolePbPolicy";
+
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PbRole",
+            "--assume-role-policy-document",
+            trust_policy,
+            "--permissions-boundary",
+            pb_arn,
+        ])
+        .await
+        .expect("Failed to create PbRole with permissions boundary");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse create-role output");
+    let pb_arn_out = json
+        .get("Role")
+        .and_then(|r| r.get("PermissionsBoundary"))
+        .and_then(|p| p.get("PermissionsBoundaryArn"))
+        .and_then(JsonValue::as_str)
+        .expect("PermissionsBoundary.PermissionsBoundaryArn should be present");
+    assert_eq!(pb_arn_out, pb_arn);
+
+    // Clear the boundary.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-role-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PbRole",
+        ])
+        .await
+        .expect("Failed to delete-role-permissions-boundary on PbRole");
+
+    // Re-running on a role with no PB must still succeed (idempotent).
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-role-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PbRole",
+        ])
+        .await
+        .expect("delete-role-permissions-boundary must be idempotent");
+
+    // Now we should be able to delete the role and then the (no-longer-PB) policy.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PbRole",
+        ])
+        .await
+        .expect("Failed to delete PbRole");
+    database
+        .run(["ssbs", "--port", &port, "--username", "scratchstack", "delete-policy", "--policy-arn", pb_arn])
+        .await
+        .expect("Failed to delete RolePbPolicy");
+
+    // delete-role-permissions-boundary on a nonexistent role must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-role-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "no-such-role",
+        ])
+        .await
+        .expect_err("delete-role-permissions-boundary on a nonexistent role should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Invalid role name must surface as ValidationError before reaching the database.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-role-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "bad role!",
+        ])
+        .await
+        .expect_err("delete-role-permissions-boundary with an invalid role name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 }
 
 async fn test_policy_attachments(database: &TempDatabase) {
