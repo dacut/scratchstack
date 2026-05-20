@@ -4,7 +4,9 @@ use {
     scratchstack_database::ops::RequestExecutor,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
-        operation::{CreateRoleInternalRequest, DeleteRoleInternalRequest},
+        operation::{
+            CreateRoleInternalRequest, DeleteRoleInternalRequest, DeleteRolePermissionsBoundaryInternalRequest,
+        },
         types::Tag,
     },
 };
@@ -468,4 +470,106 @@ pub fn test_delete_role_invalid_name() {
         .account_id("123456789012".to_string())
         .build();
     assert!(result.is_err(), "Building a delete request with an invalid role name must fail");
+}
+
+/// Clear a permissions boundary that is set on a role. The role exists and has a PB; afterwards
+/// the column must be NULL.
+pub async fn test_delete_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
+    // Set up: create a role with no PB, then attach a PB directly via SQL (the create_role API
+    // verifies the PB exists by name, but we just need any seeded managed_policy_id here).
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateRoleInternalRequest::builder()
+        .role_name("DeleteMePbRole".to_string())
+        .account_id("123456789012".to_string())
+        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .build()
+        .expect("Failed to build CreateRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create DeleteMePbRole");
+    let role_id: String =
+        sqlx::query_scalar("SELECT role_id FROM iam.roles WHERE account_id = $1 AND role_name_lower = $2")
+            .bind("123456789012")
+            .bind("deletemepbrole")
+            .fetch_one(tx.as_mut())
+            .await
+            .expect("Failed to fetch DeleteMePbRole role_id");
+    sqlx::query("UPDATE iam.roles SET permissions_boundary_managed_policy_id = $1 WHERE role_id = $2")
+        .bind("AAAABBBBCCCCDDDD")
+        .bind(&role_id)
+        .execute(tx.as_mut())
+        .await
+        .expect("Failed to set DeleteMePbRole permissions boundary");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeleteRolePermissionsBoundaryInternalRequest::builder()
+        .role_name("DeleteMePbRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteRolePermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete DeleteMePbRole permissions boundary");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let pb: Option<String> =
+        sqlx::query_scalar("SELECT permissions_boundary_managed_policy_id FROM iam.roles WHERE role_id = $1")
+            .bind(&role_id)
+            .fetch_one(pool)
+            .await
+            .expect("Failed to fetch DeleteMePbRole permissions boundary after delete");
+    assert!(pb.is_none(), "permissions_boundary_managed_policy_id must be NULL after delete");
+
+    // Clean up.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeleteRoleInternalRequest::builder()
+        .role_name("DeleteMePbRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete DeleteMePbRole");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// Calling DeleteRolePermissionsBoundary on a role that has no PB must succeed (idempotent).
+pub async fn test_delete_role_permissions_boundary_no_boundary(pool: &sqlx::PgPool) {
+    // LambdaExecutor was committed earlier in test_create_role_simple with no PB.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeleteRolePermissionsBoundaryInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteRolePermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("DeleteRolePermissionsBoundary on a role with no PB must succeed");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// Calling DeleteRolePermissionsBoundary on a nonexistent role must fail with NoSuchEntity.
+pub async fn test_delete_role_permissions_boundary_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteRolePermissionsBoundaryInternalRequest::builder()
+        .role_name("NoSuchPbRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteRolePermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Clearing PB on a nonexistent role must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building a DeleteRolePermissionsBoundary request with an invalid role name must fail before
+/// touching the database.
+pub fn test_delete_role_permissions_boundary_invalid_name() {
+    let result = DeleteRolePermissionsBoundaryInternalRequest::builder()
+        .role_name("bad role!".to_string())
+        .account_id("123456789012".to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid role name must fail");
 }

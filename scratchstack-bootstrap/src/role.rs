@@ -6,7 +6,8 @@ use {
         error_meta::Error as IamError,
         operation::{
             AttachRolePolicyInternalRequest, CreateRoleInternalRequest, CreateRoleResponse, DeleteRoleInternalRequest,
-            DetachRolePolicyInternalRequest, ListAttachedRolePoliciesInternalRequest, ListAttachedRolePoliciesResponse,
+            DeleteRolePermissionsBoundaryInternalRequest, DetachRolePolicyInternalRequest,
+            ListAttachedRolePoliciesInternalRequest, ListAttachedRolePoliciesResponse,
         },
     },
     std::ffi::OsString,
@@ -81,6 +82,19 @@ pub(crate) struct DeleteRoleInternalCommand {
     pub account_id: String,
 
     /// The name of the role to delete.
+    #[clap(long)]
+    pub role_name: String,
+}
+
+/// Remove the permissions boundary from a role in the Scratchstack IAM service. Succeeds even
+/// when the role has no permissions boundary set; only a missing role yields NoSuchEntity.
+#[derive(Debug, Parser)]
+pub(crate) struct DeleteRolePermissionsBoundaryInternalCommand {
+    /// The unique identifier for the account the role belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the role to remove the permissions boundary from.
     #[clap(long)]
     pub role_name: String,
 }
@@ -175,6 +189,21 @@ impl Runnable for DeleteRoleInternalCommand {
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
         let request = DeleteRoleInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .role_name(self.role_name.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for DeleteRolePermissionsBoundaryInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = DeleteRolePermissionsBoundaryInternalRequest::builder()
             .account_id(self.account_id.clone())
             .role_name(self.role_name.clone())
             .build()?;
