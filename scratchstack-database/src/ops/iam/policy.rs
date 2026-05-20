@@ -1174,10 +1174,10 @@ impl RequestExecutor for ListEntitiesForPolicyRequest {
 /// The marker innards for a ListEntitiesForPolicy operation.
 #[derive(Deserialize, Serialize)]
 struct ListEntitiesForPolicyMarker {
-    /// Which section to resume in: 'g' (groups), 'r' (roles), or 'u' (users).
+    /// Which section to resume in.
     section: EntitySection,
 
-    /// The next entity name (lowercased) to resume after within the section.
+    /// The next entity id to resume after within the section.
     next_entity_id: String,
 }
 
@@ -1390,7 +1390,7 @@ pub async fn list_entities_for_policy(
 }
 
 /// Fetch rows from the requested section (groups/roles/users) attached to or boundaried by a
-/// managed policy. The rows are returned in `(name_lower, entity_id)` order.
+/// managed policy. The rows are returned in `entity_id` order.
 #[allow(clippy::too_many_arguments)]
 async fn fetch_section_rows(
     tx: &mut PgTransaction<'_>,

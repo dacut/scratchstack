@@ -831,9 +831,8 @@ pub async fn test_list_entities_for_policy_cross_account_attachment(pool: &sqlx:
 }
 
 /// Attaching the same managed policy to roles whose name happens to fall lexicographically
-/// between two attached roles must be reachable in pagination — verifying the (name_lower,
-/// entity_id) tie-breaker is applied as expected. We create three additional roles, attach all
-/// three to a fresh policy, and walk pages of size 2.
+/// between two attached roles must be reachable in pagination. We create three additional roles,
+/// attach all three to a fresh policy, and walk pages of size 2.
 pub async fn test_list_entities_for_policy_within_section_pagination(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
 
