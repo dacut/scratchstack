@@ -397,9 +397,11 @@ pub async fn delete_role(tx: &mut PgTransaction<'_>, account_id: &str, role_name
         return Err(DeleteConflictException::builder().message(message).build().into());
     }
 
-    // FK cascade handles role_tags. The unchanged role_attached_policies / role_inline_policies
-    // FKs act as a backstop: if a concurrent transaction managed to slip an attachment in despite
-    // the FOR UPDATE row lock, the DELETE would fail with a FK violation rather than corrupt state.
+    // Race protection comes from the FOR UPDATE row lock above: a concurrent
+    // AttachRolePolicy / PutRolePolicy needs a share lock on this iam.roles row to validate its
+    // FK, so it blocks until we commit or rolls back if we delete first. role_tags,
+    // role_attached_policies, and role_inline_policies all cascade on role_id, so this DELETE
+    // takes any leftover rows with it.
     if let Err(e) = query(indoc! {"
             DELETE FROM iam.roles
             WHERE role_id = $1
@@ -408,14 +410,6 @@ pub async fn delete_role(tx: &mut PgTransaction<'_>, account_id: &str, role_name
     .execute(tx.as_mut())
     .await
     {
-        if let sqlx::Error::Database(db_err) = &e
-            && db_err.code().as_deref() == Some("23503")
-        {
-            let message =
-                format!("Cannot delete role {role_name} because it has attached managed policies or inline policies.");
-            return Err(DeleteConflictException::builder().message(message).build().into());
-        }
-
         log::error!("Failed to delete role from database: {e}");
         return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
     }
