@@ -12,6 +12,7 @@ use {
             },
         },
     },
+    chrono::{DateTime, Utc},
     indoc::indoc,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
@@ -19,8 +20,8 @@ use {
         error_meta::Error as IamError,
         operation::{
             AttachRolePolicyInternalRequest, CreateRoleInternalRequest, CreateRoleResponse, DeleteRoleInternalRequest,
-            DeleteRolePermissionsBoundaryInternalRequest, DetachRolePolicyInternalRequest,
-            ListAttachedRolePoliciesInternalRequest, ListAttachedRolePoliciesResponse,
+            DeleteRolePermissionsBoundaryInternalRequest, DetachRolePolicyInternalRequest, GetRoleInternalRequest,
+            GetRoleResponse, ListAttachedRolePoliciesInternalRequest, ListAttachedRolePoliciesResponse,
         },
         types::{
             AttachedPermissionsBoundary, AttachedPolicy, PermissionsBoundaryAttachmentType, Role, Tag,
@@ -573,6 +574,139 @@ pub async fn detach_role_policy(
     }
 
     Ok(())
+}
+
+impl RequestExecutor for GetRoleInternalRequest {
+    type Response = GetRoleResponse;
+    type Error = IamError;
+
+    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
+        get_role(tx, &self.account_id, &self.role_name).await
+    }
+}
+
+/// Get a role from the database, including its tags, permissions boundary, and trust policy.
+pub async fn get_role(
+    tx: &mut PgTransaction<'_>,
+    account_id: &str,
+    role_name: &str,
+) -> Result<GetRoleResponse, IamError> {
+    validate_account_id(account_id)?;
+    let account_id = match account_id {
+        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
+        account_id => account_id,
+    };
+    validate_role_name(role_name)?;
+    let role_name_lower = role_name.to_lowercase();
+
+    let partition = get_current_partition_or_fail(tx).await?;
+
+    let row = query(indoc! {"
+            SELECT role_id, role_name_cased, path, permissions_boundary_managed_policy_id,
+                description, assume_role_policy_document, max_session_duration, created_at
+            FROM iam.roles
+            WHERE account_id = $1 AND role_name_lower = $2
+        "})
+    .bind(account_id)
+    .bind(&role_name_lower)
+    .fetch_optional(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to fetch role from database: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
+
+    let row = row.ok_or_else(|| {
+        IamError::from(
+            NoSuchEntityException::builder()
+                .message(format!("The role with name {role_name} cannot be found."))
+                .build(),
+        )
+    })?;
+
+    let role_id: String = row.get(0);
+    let role_name_cased: String = row.get(1);
+    let path: String = row.get(2);
+    let permissions_boundary_id: Option<String> = row.get(3);
+    let description: Option<String> = row.get(4);
+    let assume_role_policy_document: String = row.get(5);
+    let max_session_duration: Option<i32> = row.get(6);
+    let created_at: DateTime<Utc> = row.get(7);
+
+    let arn = Arn::builder()
+        .partition(partition.clone())
+        .service(SERVICE_KEY_IAM)
+        .account_id(account_id)
+        .resource(role_arn_resource(&path, &role_name_cased))
+        .build()
+        .map_err(|e| {
+            log::error!("Failed to construct ARN for role: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })?;
+
+    let permissions_boundary = if let Some(pb_id) = permissions_boundary_id {
+        // FIXME: The ARN here is incorrect; we need to translate the managed policy ID back into
+        // its path and name. Mirrors the same gap in get_user.
+        log::warn!(
+            "Permissions boundary ARN for role is incorrect because we don't have the policy name and path available"
+        );
+        let pb_arn = format!("arn:{partition}:{SERVICE_KEY_IAM}::{account_id}:{ARN_RESOURCE_PREFIX_POLICY}{pb_id}");
+        Some(
+            AttachedPermissionsBoundary::builder()
+                .permissions_boundary_arn(Some(pb_arn))
+                .permissions_boundary_type(Some(PermissionsBoundaryAttachmentType::Policy))
+                .build()
+                .map_err(|e| {
+                    log::error!("Failed to construct permissions boundary for role: {e}");
+                    IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                })?,
+        )
+    } else {
+        None
+    };
+
+    let tag_rows = query(indoc! {"
+            SELECT key_cased, value
+            FROM iam.role_tags
+            WHERE role_id = $1
+            ORDER BY key_lower ASC
+        "})
+    .bind(&role_id)
+    .fetch_all(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to fetch role tags from database: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })?;
+
+    let mut tags = Vec::with_capacity(tag_rows.len());
+    for tag_row in tag_rows {
+        let key: String = tag_row.get(0);
+        let value: String = tag_row.get(1);
+        tags.push(Tag::builder().key(key).value(value).build().map_err(|e| {
+            log::error!("Failed to construct tag object: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })?);
+    }
+
+    let role = Role::builder()
+        .arn(arn.to_string())
+        .assume_role_policy_document(Some(assume_role_policy_document))
+        .create_date(created_at)
+        .description(description)
+        .max_session_duration(max_session_duration)
+        .path(path)
+        .permissions_boundary(permissions_boundary)
+        .role_id(format!("{}{}", IamResourceType::Role.as_str(), role_id))
+        .role_name(role_name_cased)
+        .tags(tags)
+        .build()
+        .map_err(|e| {
+            log::error!("Failed to construct role object: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })?;
+
+    Ok(GetRoleResponse::builder().role(role).build().unwrap())
 }
 
 impl RequestExecutor for ListAttachedRolePoliciesInternalRequest {

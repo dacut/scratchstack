@@ -6,8 +6,8 @@ use {
         error_meta::Error as IamError,
         operation::{
             AttachRolePolicyInternalRequest, CreateRoleInternalRequest, CreateRoleResponse, DeleteRoleInternalRequest,
-            DeleteRolePermissionsBoundaryInternalRequest, DetachRolePolicyInternalRequest,
-            ListAttachedRolePoliciesInternalRequest, ListAttachedRolePoliciesResponse,
+            DeleteRolePermissionsBoundaryInternalRequest, DetachRolePolicyInternalRequest, GetRoleInternalRequest,
+            GetRoleResponse, ListAttachedRolePoliciesInternalRequest, ListAttachedRolePoliciesResponse,
         },
     },
     std::ffi::OsString,
@@ -111,6 +111,18 @@ pub(crate) struct DetachRolePolicyInternalCommand {
     pub policy_arn: String,
 
     /// The name of the role to detach the policy from.
+    #[clap(long)]
+    pub role_name: String,
+}
+
+/// Get information about a role in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct GetRoleInternalCommand {
+    /// The unique identifier for the account the role belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the role to retrieve.
     #[clap(long)]
     pub role_name: String,
 }
@@ -221,6 +233,21 @@ impl Runnable for DetachRolePolicyInternalCommand {
         let request = DetachRolePolicyInternalRequest::builder()
             .account_id(self.account_id.clone())
             .policy_arn(self.policy_arn.clone())
+            .role_name(self.role_name.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for GetRoleInternalCommand {
+    type Result = GetRoleResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = GetRoleInternalRequest::builder()
+            .account_id(self.account_id.clone())
             .role_name(self.role_name.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await

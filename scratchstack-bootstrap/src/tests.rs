@@ -2037,6 +2037,108 @@ async fn test_roles(database: &TempDatabase) {
         .expect_err("max-session-duration below 3600 should fail");
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 
+    // -- get-role --------------------------------------------------------------
+    // Round-trip LambdaExecutor (created above with no PB, no tags).
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+        ])
+        .await
+        .expect("Failed to get-role LambdaExecutor");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse get-role output");
+    let role = json.get("Role").expect("Role should be present");
+    assert_eq!(role.get("RoleName").and_then(JsonValue::as_str), Some("LambdaExecutor"));
+    assert_eq!(role.get("Path").and_then(JsonValue::as_str), Some("/"));
+    assert_eq!(
+        role.get("Arn").and_then(JsonValue::as_str),
+        Some("arn:test-partition:iam::555566667777:role/LambdaExecutor")
+    );
+    let role_id = role.get("RoleId").and_then(JsonValue::as_str).expect("RoleId should be a string");
+    assert!(role_id.starts_with("AROA"), "RoleId should start with AROA, got {role_id}");
+    let trust = role
+        .get("AssumeRolePolicyDocument")
+        .and_then(JsonValue::as_str)
+        .expect("AssumeRolePolicyDocument should be a string");
+    assert_eq!(trust, trust_policy);
+    assert!(role.get("PermissionsBoundary").is_none(), "Expected no PermissionsBoundary, got {role}");
+
+    // Round-trip DeployRole (created above with description, max-session-duration, path, tags).
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "DeployRole",
+        ])
+        .await
+        .expect("Failed to get-role DeployRole");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse get-role output");
+    let role = json.get("Role").expect("Role should be present");
+    assert_eq!(role.get("Path").and_then(JsonValue::as_str), Some("/service-roles/"));
+    assert_eq!(
+        role.get("Arn").and_then(JsonValue::as_str),
+        Some("arn:test-partition:iam::555566667777:role/service-roles/DeployRole")
+    );
+    assert_eq!(role.get("Description").and_then(JsonValue::as_str), Some("Deployment automation role."));
+    assert_eq!(role.get("MaxSessionDuration").and_then(JsonValue::as_i64), Some(14400));
+    let tags = role.get("Tags").and_then(JsonValue::as_array).expect("Tags should be an array");
+    assert_eq!(tags.len(), 2);
+    assert_eq!(tags[0].get("Key").and_then(JsonValue::as_str), Some("Environment"));
+    assert_eq!(tags[0].get("Value").and_then(JsonValue::as_str), Some("Production"));
+    assert_eq!(tags[1].get("Key").and_then(JsonValue::as_str), Some("Team"));
+    assert_eq!(tags[1].get("Value").and_then(JsonValue::as_str), Some("Platform"));
+
+    // get-role on a nonexistent role must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "no-such-role",
+        ])
+        .await
+        .expect_err("get-role on a nonexistent role should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // get-role with an invalid role name must surface as ValidationError.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "bad role!",
+        ])
+        .await
+        .expect_err("get-role with an invalid role name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
     // -- delete-role -----------------------------------------------------------
     // Create a fresh role and delete it. This leaves test_policy_attachments' role landscape
     // untouched.

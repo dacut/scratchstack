@@ -320,6 +320,14 @@ async fn test_database() {
     role::test_delete_role_permissions_boundary_nonexistent(&pool).await;
     role::test_delete_role_permissions_boundary_invalid_name();
 
+    // -- GetRoleInternalRequest -----------------------------------------------
+    role::test_get_role_simple(&pool).await;
+    role::test_get_role_with_path(&pool).await;
+    role::test_get_role_with_tags(&pool).await;
+    role::test_get_role_with_permissions_boundary(&pool).await;
+    role::test_get_role_nonexistent(&pool).await;
+    role::test_get_role_invalid_name();
+
     iam::MIGRATOR.undo(&mut *c, 0).await.expect("Failed to undo database migrations");
 }
 
