@@ -494,8 +494,16 @@ pub async fn test_delete_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
             .fetch_one(tx.as_mut())
             .await
             .expect("Failed to fetch DeleteMePbRole role_id");
+    let managed_policy_id: String = sqlx::query_scalar(
+        "SELECT managed_policy_id FROM iam.managed_policies WHERE account_id = $1 AND managed_policy_name_lower = $2",
+    )
+    .bind("123456789012")
+    .bind("example-managed-policy-1")
+    .fetch_one(tx.as_mut())
+    .await
+    .expect("Failed to fetch Example-Managed-Policy-1 managed_policy_id");
     sqlx::query("UPDATE iam.roles SET permissions_boundary_managed_policy_id = $1 WHERE role_id = $2")
-        .bind("AAAABBBBCCCCDDDD")
+        .bind(managed_policy_id)
         .bind(&role_id)
         .execute(tx.as_mut())
         .await
