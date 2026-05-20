@@ -80,11 +80,11 @@ pub async fn create_role(
     let path = path.unwrap_or("/");
     validate_path(path)?;
     validate_role_name(role_name)?;
-    if let Some(max_session_duration) = max_session_duration {
-        if max_session_duration < 3600 || max_session_duration > 43200 {
-            let message = "Maximum session duration must be between 3600 and 43200 seconds.".to_string();
-            return Err(ValidationError::builder().message(message).build().into());
-        }
+    if let Some(max_session_duration) = max_session_duration
+        && (max_session_duration < 3600 || max_session_duration > 43200)
+    {
+        let message = "Maximum session duration must be between 3600 and 43200 seconds.".to_string();
+        return Err(ValidationError::builder().message(message).build().into());
     }
 
     for tag in tags {
