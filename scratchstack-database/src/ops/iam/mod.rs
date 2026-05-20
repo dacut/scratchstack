@@ -117,7 +117,8 @@ pub fn validate_policy_name(policy_name: impl AsRef<str>) -> Result<(), Validati
 /// Validate that the role name is valid according to AWS IAM rules.
 pub fn validate_role_name(role_name: impl AsRef<str>) -> Result<(), ValidationError> {
     let role_name = role_name.as_ref();
-    if !USER_NAME_REGEX.is_match(role_name) || role_name.is_empty() || role_name.len() > 64 {
+    let full_match = USER_NAME_REGEX.find(role_name).is_some_and(|m| m.as_str() == role_name);
+    if !full_match || role_name.is_empty() || role_name.len() > 64 {
         let message = "Role name must contain only alphanumeric characters or the following symbols: +=,.@-_ and must be between 1 and 64 characters long.".to_string();
         Err(ValidationError::builder().message(message).build())
     } else {

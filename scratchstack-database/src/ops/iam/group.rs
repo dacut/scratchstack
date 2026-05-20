@@ -836,6 +836,12 @@ pub async fn attach_group_policy(
     validate_group_name(group_name)?;
 
     let parts = parse_policy_arn(policy_arn)?;
+    if parts.account_id != account_id && parts.account_id != AWS_ACCOUNT_ID_NUMERIC {
+        return Err(NoSuchEntityException::builder()
+            .message(format!("Policy {policy_arn} was not found."))
+            .build()
+            .into());
+    }
 
     // Look up the managed_policy_id.
     let managed_policy_id: String = match query(indoc! {"
