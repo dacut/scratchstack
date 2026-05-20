@@ -2,7 +2,11 @@
 use {
     pretty_assertions::assert_eq,
     scratchstack_database::ops::RequestExecutor,
-    scratchstack_shapes_iam::{operation::CreateRoleInternalRequest, types::Tag},
+    scratchstack_shapes_iam::{
+        error_meta::Error as IamError,
+        operation::{CreateRoleInternalRequest, DeleteRoleInternalRequest},
+        types::Tag,
+    },
 };
 
 /// Simple trust policy that allows Lambda to assume the role.
@@ -219,4 +223,249 @@ pub async fn test_create_role_nonexistent_permissions_boundary(pool: &sqlx::PgPo
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a role with a nonexistent permissions boundary must fail");
+}
+
+/// Delete a role that has no attached or inline policies — success path.
+pub async fn test_delete_role_simple(pool: &sqlx::PgPool) {
+    // Create a fresh role so this test is self-contained.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateRoleInternalRequest::builder()
+        .role_name("DeleteMeRole".to_string())
+        .account_id("123456789012".to_string())
+        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .build()
+        .expect("Failed to build CreateRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create DeleteMeRole");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeleteRoleInternalRequest::builder()
+        .role_name("DeleteMeRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete DeleteMeRole");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Re-deleting the same role must fail with NoSuchEntity.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteRoleInternalRequest::builder()
+        .role_name("DeleteMeRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Re-deleting DeleteMeRole must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Verify that DeleteRole cascades to role_tags so a tagged role can be deleted cleanly once its
+/// attachments and inline policies are removed.
+pub async fn test_delete_role_cascades_tags(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateRoleInternalRequest::builder()
+        .role_name("DeleteMeTaggedRole".to_string())
+        .account_id("123456789012".to_string())
+        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .tags(vec![
+            Tag::builder()
+                .key("Environment".to_string())
+                .value("Dev".to_string())
+                .build()
+                .expect("Failed to build Environment tag"),
+        ])
+        .build()
+        .expect("Failed to build CreateRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create DeleteMeTaggedRole");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Capture the raw role_id (without AROA prefix) so we can confirm cascade on role_tags.
+    let role_id: String =
+        sqlx::query_scalar("SELECT role_id FROM iam.roles WHERE account_id = $1 AND role_name_lower = $2")
+            .bind("123456789012")
+            .bind("deletemetaggedrole")
+            .fetch_one(pool)
+            .await
+            .expect("Failed to fetch role_id");
+
+    let pre_tags: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM iam.role_tags WHERE role_id = $1")
+        .bind(&role_id)
+        .fetch_one(pool)
+        .await
+        .expect("Failed to count role tags before delete");
+    assert_eq!(pre_tags, 1, "Expected exactly one tag before delete");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeleteRoleInternalRequest::builder()
+        .role_name("DeleteMeTaggedRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete DeleteMeTaggedRole");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let post_tags: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM iam.role_tags WHERE role_id = $1")
+        .bind(&role_id)
+        .fetch_one(pool)
+        .await
+        .expect("Failed to count role tags after delete");
+    assert_eq!(post_tags, 0, "role_tags rows must cascade-delete with the role");
+}
+
+/// A role with an attached managed policy (and nothing else) must not be deletable. Build a fresh
+/// role and attach an existing seeded managed policy directly via SQL so the only blocking
+/// condition is the attachment.
+pub async fn test_delete_role_attached_policy_fails(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateRoleInternalRequest::builder()
+        .role_name("DeleteMeAttachedRole".to_string())
+        .account_id("123456789012".to_string())
+        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .build()
+        .expect("Failed to build CreateRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create DeleteMeAttachedRole");
+    let role_id: String =
+        sqlx::query_scalar("SELECT role_id FROM iam.roles WHERE account_id = $1 AND role_name_lower = $2")
+            .bind("123456789012")
+            .bind("deletemeattachedrole")
+            .fetch_one(tx.as_mut())
+            .await
+            .expect("Failed to fetch DeleteMeAttachedRole role_id");
+    // AAAABBBBCCCCDDDD is the seeded Example-Managed-Policy-1.
+    sqlx::query("INSERT INTO iam.role_attached_policies(role_id, managed_policy_id) VALUES ($1, $2)")
+        .bind(&role_id)
+        .bind("AAAABBBBCCCCDDDD")
+        .execute(tx.as_mut())
+        .await
+        .expect("Failed to attach Example-Managed-Policy-1 to DeleteMeAttachedRole");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteRoleInternalRequest::builder()
+        .role_name("DeleteMeAttachedRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Deleting a role with an attached managed policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::DeleteConflictException(_)), "Expected DeleteConflict, got: {err:?}");
+
+    // Clean up: detach the policy, confirm DeleteRole now succeeds. This also exercises the
+    // success path with cascaded role_attached_policies removal being unnecessary (we already
+    // cleared the row).
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    sqlx::query("DELETE FROM iam.role_attached_policies WHERE role_id = $1")
+        .bind(&role_id)
+        .execute(tx.as_mut())
+        .await
+        .expect("Failed to detach managed policy");
+    DeleteRoleInternalRequest::builder()
+        .role_name("DeleteMeAttachedRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete DeleteMeAttachedRole after detaching policy");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// A role with inline policies must not be deletable. Build a fresh role and write an inline
+/// policy directly via SQL so this test does not depend on the seed role's mixed state.
+pub async fn test_delete_role_inline_policy_fails(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateRoleInternalRequest::builder()
+        .role_name("DeleteMeInlineRole".to_string())
+        .account_id("123456789012".to_string())
+        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .build()
+        .expect("Failed to build CreateRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create DeleteMeInlineRole");
+    let role_id: String =
+        sqlx::query_scalar("SELECT role_id FROM iam.roles WHERE account_id = $1 AND role_name_lower = $2")
+            .bind("123456789012")
+            .bind("deletemeinlinerole")
+            .fetch_one(tx.as_mut())
+            .await
+            .expect("Failed to fetch DeleteMeInlineRole role_id");
+    sqlx::query(
+        "INSERT INTO iam.role_inline_policies(role_id, policy_name_lower, policy_name_cased, policy_document) VALUES ($1, $2, $3, $4)",
+    )
+    .bind(&role_id)
+    .bind("inline-blocker")
+    .bind("inline-blocker")
+    .bind(r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}"#)
+    .execute(tx.as_mut())
+    .await
+    .expect("Failed to insert inline policy for DeleteMeInlineRole");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteRoleInternalRequest::builder()
+        .role_name("DeleteMeInlineRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Deleting a role with an inline policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::DeleteConflictException(_)), "Expected DeleteConflict, got: {err:?}");
+
+    // Clean up: remove the inline policy and confirm DeleteRole then succeeds.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    sqlx::query("DELETE FROM iam.role_inline_policies WHERE role_id = $1")
+        .bind(&role_id)
+        .execute(tx.as_mut())
+        .await
+        .expect("Failed to remove inline policy");
+    DeleteRoleInternalRequest::builder()
+        .role_name("DeleteMeInlineRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete DeleteMeInlineRole after removing inline policy");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// Deleting a role that does not exist must fail with NoSuchEntity.
+pub async fn test_delete_role_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteRoleInternalRequest::builder()
+        .role_name("NoSuchDeleteRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Deleting a nonexistent role must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building a request with an invalid role name must fail before touching the database.
+pub fn test_delete_role_invalid_name() {
+    let result = DeleteRoleInternalRequest::builder()
+        .role_name("bad role!".to_string())
+        .account_id("123456789012".to_string())
+        .build();
+    assert!(result.is_err(), "Building a delete request with an invalid role name must fail");
 }

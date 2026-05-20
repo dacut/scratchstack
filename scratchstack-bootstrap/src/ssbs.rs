@@ -39,8 +39,8 @@ use {
             ListPolicyVersionsCommand, SetDefaultPolicyVersionCommand, TagPolicyCommand, UntagPolicyCommand,
         },
         role::{
-            AttachRolePolicyInternalCommand, CreateRoleInternalCommand, DetachRolePolicyInternalCommand,
-            ListAttachedRolePoliciesInternalCommand,
+            AttachRolePolicyInternalCommand, CreateRoleInternalCommand, DeleteRoleInternalCommand,
+            DetachRolePolicyInternalCommand, ListAttachedRolePoliciesInternalCommand,
         },
         user::{
             AttachUserPolicyInternalCommand, CreateUserInternalCommand, DeleteUserInternalCommand,
@@ -164,6 +164,11 @@ enum Commands {
     /// Delete a non-default version of an IAM managed policy.
     #[command(name = "delete-policy-version")]
     DeletePolicyVersion(DeletePolicyVersionCommand),
+
+    /// Delete an IAM role from an account. The role must have no attached managed policies and no
+    /// inline policies remaining.
+    #[command(name = "delete-role")]
+    DeleteRole(DeleteRoleInternalCommand),
 
     /// Delete an IAM user from an account.
     #[command(name = "delete-user")]
@@ -307,6 +312,7 @@ impl Commands {
             Commands::DeleteGroup(_) => "DeleteGroup",
             Commands::DeletePolicy(_) => "DeletePolicy",
             Commands::DeletePolicyVersion(_) => "DeletePolicyVersion",
+            Commands::DeleteRole(_) => "DeleteRole",
             Commands::DeleteUser(_) => "DeleteUser",
             Commands::DetachGroupPolicy(_) => "DetachGroupPolicy",
             Commands::DetachRolePolicy(_) => "DetachRolePolicy",
@@ -442,6 +448,10 @@ where
             "".to_string()
         }
         Commands::DeletePolicyVersion(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::DeleteRole(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
         }

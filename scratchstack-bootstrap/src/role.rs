@@ -5,7 +5,7 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
-            AttachRolePolicyInternalRequest, CreateRoleInternalRequest, CreateRoleResponse,
+            AttachRolePolicyInternalRequest, CreateRoleInternalRequest, CreateRoleResponse, DeleteRoleInternalRequest,
             DetachRolePolicyInternalRequest, ListAttachedRolePoliciesInternalRequest, ListAttachedRolePoliciesResponse,
         },
     },
@@ -67,6 +67,20 @@ pub(crate) struct AttachRolePolicyInternalCommand {
     pub policy_arn: String,
 
     /// The name of the role to attach the policy to.
+    #[clap(long)]
+    pub role_name: String,
+}
+
+/// Delete a role from the given account in the Scratchstack IAM service. The role must have no
+/// attached managed policies and no inline policies; detach them with `detach-role-policy` (and
+/// delete any inline policies) before invoking this command.
+#[derive(Debug, Parser)]
+pub(crate) struct DeleteRoleInternalCommand {
+    /// The unique identifier for the account to delete the role from.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the role to delete.
     #[clap(long)]
     pub role_name: String,
 }
@@ -148,6 +162,21 @@ impl Runnable for CreateRoleInternalCommand {
             .permissions_boundary(self.permissions_boundary.clone())
             .role_name(self.role_name.clone())
             .tags(tags)
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for DeleteRoleInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = DeleteRoleInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .role_name(self.role_name.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
