@@ -22,9 +22,10 @@ use {
             AddUserToGroupInternalRequest, AttachGroupPolicyInternalRequest, AttachRolePolicyInternalRequest,
             AttachUserPolicyInternalRequest, CreateAccountRequest, CreateGroupInternalRequest,
             CreatePolicyInternalRequest, CreatePolicyVersionRequest, CreateUserInternalRequest,
-            DeleteGroupInternalRequest, DeletePolicyRequest, DeletePolicyVersionRequest, GetCurrentPartitionRequest,
-            GetGroupInternalRequest, GetPolicyRequest, GetPolicyVersionRequest, GetUserInternalRequest,
-            ListAccountsRequest, ListGroupsForUserInternalRequest, ListGroupsInternalRequest,
+            DeleteGroupInternalRequest, DeletePolicyRequest, DeletePolicyVersionRequest,
+            DetachGroupPolicyInternalRequest, DetachRolePolicyInternalRequest, DetachUserPolicyInternalRequest,
+            GetCurrentPartitionRequest, GetGroupInternalRequest, GetPolicyRequest, GetPolicyVersionRequest,
+            GetUserInternalRequest, ListAccountsRequest, ListGroupsForUserInternalRequest, ListGroupsInternalRequest,
             ListPoliciesInternalRequest, ListPolicyVersionsRequest, ListUserTagsInternalRequest,
             RemoveUserFromGroupInternalRequest, SetCurrentPartitionRequest, SetDefaultPolicyVersionRequest,
             TagPolicyRequest, TagUserInternalRequest, UntagPolicyRequest, UntagUserInternalRequest,
@@ -154,6 +155,20 @@ async fn test_database() {
     test_attach_role_policy_idempotent(&pool).await;
     test_attach_role_policy_nonexistent_policy(&pool).await;
     test_attach_role_policy_nonexistent_role(&pool).await;
+
+    // -- DetachUserPolicyInternalRequest / DetachGroupPolicyInternalRequest / DetachRolePolicyInternalRequest ---
+    test_detach_user_policy_simple(&pool).await;
+    test_detach_user_policy_not_attached(&pool).await;
+    test_detach_user_policy_nonexistent_policy(&pool).await;
+    test_detach_user_policy_nonexistent_user(&pool).await;
+    test_detach_group_policy_simple(&pool).await;
+    test_detach_group_policy_not_attached(&pool).await;
+    test_detach_group_policy_nonexistent_policy(&pool).await;
+    test_detach_group_policy_nonexistent_group(&pool).await;
+    test_detach_role_policy_simple(&pool).await;
+    test_detach_role_policy_not_attached(&pool).await;
+    test_detach_role_policy_nonexistent_policy(&pool).await;
+    test_detach_role_policy_nonexistent_role(&pool).await;
 
     // -- CreatePolicyInternalRequest ------------------------------------------
     test_create_policy_simple(&pool).await;
@@ -1803,6 +1818,238 @@ async fn test_attach_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Attaching a policy to a nonexistent role must fail");
+}
+
+// -- DetachUserPolicyInternalRequest tests ------------------------------------
+
+async fn test_detach_user_policy_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    AttachUserPolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .user_name("alice".to_string())
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build AttachUserPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to attach policy to user");
+    DetachUserPolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .user_name("alice".to_string())
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build DetachUserPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to detach policy from user");
+    tx.rollback().await.expect("Failed to rollback transaction");
+}
+
+async fn test_detach_user_policy_not_attached(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DetachUserPolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .user_name("alice".to_string())
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build DetachUserPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Detaching an unattached policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+async fn test_detach_user_policy_nonexistent_policy(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DetachUserPolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .user_name("alice".to_string())
+        .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy".to_string())
+        .build()
+        .expect("Failed to build DetachUserPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Detaching a nonexistent policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+async fn test_detach_user_policy_nonexistent_user(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DetachUserPolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .user_name("nonexistent-user".to_string())
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build DetachUserPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Detaching from a nonexistent user must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+// -- DetachGroupPolicyInternalRequest tests -----------------------------------
+
+async fn test_detach_group_policy_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    AttachGroupPolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .group_name("Example-Group-1".to_string())
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build AttachGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to attach policy to group");
+    DetachGroupPolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .group_name("Example-Group-1".to_string())
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build DetachGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to detach policy from group");
+    tx.rollback().await.expect("Failed to rollback transaction");
+}
+
+async fn test_detach_group_policy_not_attached(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    // Seed data has Example-Managed-Policy-1 attached to Example-Group-1, so detach it first
+    // to set up the "not attached" state, then verify a second detach fails.
+    DetachGroupPolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .group_name("Example-Group-1".to_string())
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build DetachGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to detach seed attachment");
+    let err = DetachGroupPolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .group_name("Example-Group-1".to_string())
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build DetachGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Detaching an unattached policy from group must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+async fn test_detach_group_policy_nonexistent_policy(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DetachGroupPolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .group_name("Example-Group-1".to_string())
+        .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy".to_string())
+        .build()
+        .expect("Failed to build DetachGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Detaching a nonexistent policy from group must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+async fn test_detach_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DetachGroupPolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .group_name("NonexistentGroup".to_string())
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build DetachGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Detaching from a nonexistent group must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+// -- DetachRolePolicyInternalRequest tests ------------------------------------
+
+async fn test_detach_role_policy_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    AttachRolePolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .role_name("Example-Role-1".to_string())
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build AttachRolePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to attach policy to role");
+    DetachRolePolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .role_name("Example-Role-1".to_string())
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build DetachRolePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to detach policy from role");
+    tx.rollback().await.expect("Failed to rollback transaction");
+}
+
+async fn test_detach_role_policy_not_attached(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    // Seed data has Example-Managed-Policy-1 attached to Example-Role-1, so detach it first
+    // to set up the "not attached" state, then verify a second detach fails.
+    DetachRolePolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .role_name("Example-Role-1".to_string())
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build DetachRolePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to detach seed attachment");
+    let err = DetachRolePolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .role_name("Example-Role-1".to_string())
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build DetachRolePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Detaching an unattached policy from role must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+async fn test_detach_role_policy_nonexistent_policy(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DetachRolePolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .role_name("Example-Role-1".to_string())
+        .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy".to_string())
+        .build()
+        .expect("Failed to build DetachRolePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Detaching a nonexistent policy from role must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+async fn test_detach_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DetachRolePolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .role_name("nonexistent-role".to_string())
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build DetachRolePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Detaching from a nonexistent role must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
 }
 
 // -- CreatePolicyInternalRequest tests ----------------------------------------
