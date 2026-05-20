@@ -36,7 +36,7 @@ pub fn validate_account_id(account_id: impl AsRef<str>) -> Result<(), Validation
 /// Validate that the group name is valid according to AWS IAM rules.
 pub fn validate_group_name(group_name: impl AsRef<str>) -> Result<(), ValidationError> {
     let group_name = group_name.as_ref();
-    if !GROUP_NAME_REGEX.is_match(group_name) || group_name.is_empty() || group_name.len() > 128 {
+    if !ENTITY_NAME_REGEX.is_match(group_name) || group_name.is_empty() || group_name.len() > 128 {
         let message = "Group name must contain only alphanumeric characters or the following symbols: =,.@- and must be between 1 and 128 characters long.".to_string();
         Err(ValidationError::builder().message(message).build())
     } else {
@@ -106,7 +106,7 @@ pub fn validate_tag_value(tag_value: impl AsRef<str>) -> Result<(), ValidationEr
 /// Validate that the policy name is valid according to AWS IAM rules.
 pub fn validate_policy_name(policy_name: impl AsRef<str>) -> Result<(), ValidationError> {
     let policy_name = policy_name.as_ref();
-    if !USER_NAME_REGEX.is_match(policy_name) || policy_name.is_empty() || policy_name.len() > 128 {
+    if !ENTITY_NAME_REGEX.is_match(policy_name) || policy_name.is_empty() || policy_name.len() > 128 {
         let message = "Policy name must contain only alphanumeric characters or the following symbols: =,.@-_ and must be between 1 and 128 characters long.".to_string();
         Err(ValidationError::builder().message(message).build())
     } else {
@@ -117,7 +117,7 @@ pub fn validate_policy_name(policy_name: impl AsRef<str>) -> Result<(), Validati
 /// Validate that the role name is valid according to AWS IAM rules.
 pub fn validate_role_name(role_name: impl AsRef<str>) -> Result<(), ValidationError> {
     let role_name = role_name.as_ref();
-    let is_full_match = USER_NAME_REGEX.find(role_name).is_some_and(|m| m.as_str() == role_name);
+    let is_full_match = ENTITY_NAME_REGEX.find(role_name).is_some_and(|m| m.as_str() == role_name);
     if !is_full_match || role_name.is_empty() || role_name.len() > 64 {
         let message = "Role name must contain only alphanumeric characters or the following symbols: +=,.@-_ and must be between 1 and 64 characters long.".to_string();
         Err(ValidationError::builder().message(message).build())
@@ -129,7 +129,7 @@ pub fn validate_role_name(role_name: impl AsRef<str>) -> Result<(), ValidationEr
 /// Validate that the user name is valid according to AWS IAM rules.
 pub fn validate_user_name(user_name: impl AsRef<str>) -> Result<(), ValidationError> {
     let user_name = user_name.as_ref();
-    if !USER_NAME_REGEX.is_match(user_name) || user_name.is_empty() || user_name.len() > 64 {
+    if !ENTITY_NAME_REGEX.is_match(user_name) || user_name.is_empty() || user_name.len() > 64 {
         let message = "User name must contain only alphanumeric characters or the following symbols: =,.@- and must be between 1 and 64 characters long.".to_string();
         Err(ValidationError::builder().message(message).build())
     } else {

@@ -75,12 +75,12 @@ pub static ACCOUNT_ID_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d
 pub static ACCOUNT_ALIAS_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-z0-9]([a-z0-9]|-[a-z0-9])+[a-z0-9]$").unwrap());
 
+/// Regular expression for user, group, role, and policy names.
+pub static ENTITY_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\w+=,.@-]+$").unwrap());
+
 /// Regular expression for partition names.
 pub static PARTITION_NAME_REGEX: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"^[a-z][-a-z0-9]+[a-z0-9]$").unwrap());
-
-/// Regular expression for group names.
-pub static GROUP_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9+=,.@-]+$").unwrap());
 
 /// Regular expression for paths.
 pub static PATH_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(/|/[\x21-\x7e]+/)$").unwrap());
@@ -89,10 +89,7 @@ pub static PATH_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(/|/[\x2
 pub static PATH_PREFIX_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^/[\x21-\x7e]*$").unwrap());
 
 /// Regular expression for tag keys.
-pub static TAG_KEY_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\p{L}\p{Z}\p{N}_.:/=+\-@]+").unwrap());
+pub static TAG_KEY_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\p{L}\p{Z}\p{N}_.:/=+\-@]+$").unwrap());
 
 /// Regular expression for tag values.
-pub static TAG_VALUE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\p{L}\p{Z}\p{N}_.:/=+\-@]*").unwrap());
-
-/// Regular expression for user names.
-pub static USER_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\w+=,.@-]+").unwrap());
+pub static TAG_VALUE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\p{L}\p{Z}\p{N}_.:/=+\-@]*$").unwrap());
