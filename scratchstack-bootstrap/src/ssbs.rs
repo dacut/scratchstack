@@ -28,8 +28,9 @@ use {
         account::{CreateAccountCommand, ListAccountsCommand},
         group::{
             AddUserToGroupInternalCommand, AttachGroupPolicyInternalCommand, CreateGroupInternalCommand,
-            DeleteGroupInternalCommand, GetGroupInternalCommand, ListGroupsForUserInternalCommand,
-            ListGroupsInternalCommand, RemoveUserFromGroupInternalCommand, UpdateGroupInternalCommand,
+            DeleteGroupInternalCommand, DetachGroupPolicyInternalCommand, GetGroupInternalCommand,
+            ListGroupsForUserInternalCommand, ListGroupsInternalCommand, RemoveUserFromGroupInternalCommand,
+            UpdateGroupInternalCommand,
         },
         partition::{GetCurrentPartitionCommand, SetCurrentPartitionCommand},
         policy::{
@@ -37,11 +38,11 @@ use {
             GetPolicyCommand, GetPolicyVersionCommand, ListPoliciesInternalCommand, ListPolicyVersionsCommand,
             SetDefaultPolicyVersionCommand, TagPolicyCommand, UntagPolicyCommand,
         },
-        role::AttachRolePolicyInternalCommand,
+        role::{AttachRolePolicyInternalCommand, DetachRolePolicyInternalCommand},
         user::{
             AttachUserPolicyInternalCommand, CreateUserInternalCommand, DeleteUserInternalCommand,
-            GetUserInternalCommand, ListUserTagsInternalCommand, ListUsersInternalCommand, TagUserInternalCommand,
-            UntagUserInternalCommand, UpdateUserInternalCommand,
+            DetachUserPolicyInternalCommand, GetUserInternalCommand, ListUserTagsInternalCommand,
+            ListUsersInternalCommand, TagUserInternalCommand, UntagUserInternalCommand, UpdateUserInternalCommand,
         },
     },
     aws_smithy_types::error::metadata::ProvideErrorMetadata,
@@ -160,6 +161,18 @@ enum Commands {
     #[command(name = "delete-user")]
     DeleteUser(DeleteUserInternalCommand),
 
+    /// Detach a managed policy from a group in an account.
+    #[command(name = "detach-group-policy")]
+    DetachGroupPolicy(DetachGroupPolicyInternalCommand),
+
+    /// Detach a managed policy from a role in an account.
+    #[command(name = "detach-role-policy")]
+    DetachRolePolicy(DetachRolePolicyInternalCommand),
+
+    /// Detach a managed policy from a user in an account.
+    #[command(name = "detach-user-policy")]
+    DetachUserPolicy(DetachUserPolicyInternalCommand),
+
     /// Get the current partition of the database.
     #[command(name = "get-current-partition")]
     GetCurrentPartition(GetCurrentPartitionCommand),
@@ -269,6 +282,9 @@ impl Commands {
             Commands::DeletePolicy(_) => "DeletePolicy",
             Commands::DeletePolicyVersion(_) => "DeletePolicyVersion",
             Commands::DeleteUser(_) => "DeleteUser",
+            Commands::DetachGroupPolicy(_) => "DetachGroupPolicy",
+            Commands::DetachRolePolicy(_) => "DetachRolePolicy",
+            Commands::DetachUserPolicy(_) => "DetachUserPolicy",
             Commands::GetCurrentPartition(_) => "GetCurrentPartition",
             Commands::GetGroup(_) => "GetGroup",
             Commands::GetPolicy(_) => "GetPolicy",
@@ -393,6 +409,18 @@ where
             "".to_string()
         }
         Commands::DeleteUser(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::DetachGroupPolicy(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::DetachRolePolicy(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::DetachUserPolicy(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
         }
