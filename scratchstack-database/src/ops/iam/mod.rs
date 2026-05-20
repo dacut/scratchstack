@@ -117,8 +117,8 @@ pub fn validate_policy_name(policy_name: impl AsRef<str>) -> Result<(), Validati
 /// Validate that the role name is valid according to AWS IAM rules.
 pub fn validate_role_name(role_name: impl AsRef<str>) -> Result<(), ValidationError> {
     let role_name = role_name.as_ref();
-    let full_match = USER_NAME_REGEX.find(role_name).is_some_and(|m| m.as_str() == role_name);
-    if !full_match || role_name.is_empty() || role_name.len() > 64 {
+    let is_full_match = USER_NAME_REGEX.find(role_name).is_some_and(|m| m.as_str() == role_name);
+    if !is_full_match || role_name.is_empty() || role_name.len() > 64 {
         let message = "Role name must contain only alphanumeric characters or the following symbols: +=,.@-_ and must be between 1 and 64 characters long.".to_string();
         Err(ValidationError::builder().message(message).build())
     } else {
@@ -156,8 +156,12 @@ pub fn constrain_max_items(max_items: Option<i32>) -> Result<usize, ValidationEr
 
 /// Parts extracted from a policy ARN.
 pub(crate) struct PolicyArnParts {
+    /// Owning account id for the policy. The literal `aws` alias is normalized to
+    /// `000000000000`.
     pub(crate) account_id: String,
+    /// Canonical policy path, including a leading slash.
     pub(crate) policy_path: String,
+    /// Lowercase policy name for case-insensitive lookup.
     pub(crate) policy_name_lower: String,
 }
 
