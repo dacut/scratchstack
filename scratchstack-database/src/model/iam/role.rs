@@ -35,6 +35,9 @@ pub struct Role {
     /// The trust policy document for the role, as a JSON string.
     pub assume_role_policy_document: String,
 
+    /// Maximum session duration (in seconds) when assuming the role.
+    pub max_session_duration: Option<i32>,
+
     /// Timestamp when the role was created.
     pub created_at: Option<DateTime<Utc>>,
 }
@@ -45,7 +48,7 @@ impl crate::Dumpable for Role {
         sqlx::query_as(indoc! {"
             SELECT role_id, account_id, role_name_lower, role_name_cased, path,
                    permissions_boundary_managed_policy_id, description,
-                   assume_role_policy_document, created_at
+                   assume_role_policy_document, max_session_duration, created_at
             FROM iam.roles
             ORDER BY account_id, role_id
         "})
@@ -60,8 +63,9 @@ impl crate::Loadable for Role {
         let result = sqlx::query(indoc! {"
             INSERT INTO iam.roles(
                 role_id, account_id, role_name_lower, role_name_cased, path,
-                permissions_boundary_managed_policy_id, description, assume_role_policy_document)
-            VALUES($1, $2, $3, $4, $5, $6, $7, $8)
+                permissions_boundary_managed_policy_id, description, assume_role_policy_document,
+                max_session_duration)
+            VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
         "})
         .bind(self.role_id.clone())
         .bind(self.account_id.clone())
@@ -71,6 +75,7 @@ impl crate::Loadable for Role {
         .bind(self.permissions_boundary_managed_policy_id.clone())
         .bind(self.description.clone())
         .bind(self.assume_role_policy_document.clone())
+        .bind(self.max_session_duration)
         .execute(conn)
         .await?;
         Ok(result.rows_affected() as usize)

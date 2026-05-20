@@ -24,6 +24,7 @@ async fn test_ssdb_ops() {
     test_policies(&database).await;
     test_groups(&database).await;
     test_group_membership(&database).await;
+    test_roles(&database).await;
     test_policy_attachments(&database).await;
 }
 
@@ -1902,6 +1903,141 @@ async fn test_group_membership(database: &TempDatabase) {
     assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
 }
 
+async fn test_roles(database: &TempDatabase) {
+    let port = database.port_str();
+    let trust_policy = r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}"#;
+
+    // Create a role with the minimum set of arguments.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+            "--assume-role-policy-document",
+            trust_policy,
+        ])
+        .await
+        .expect("Failed to run create-role for 555566667777/LambdaExecutor");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse create-role output as JSON");
+    let role = json.get("Role").expect("Role should be present");
+    let path = role.get("Path").expect("Path should be present").as_str().expect("Path should be a string");
+    assert_eq!(path, "/");
+    let role_name =
+        role.get("RoleName").expect("RoleName should be present").as_str().expect("RoleName should be a string");
+    assert_eq!(role_name, "LambdaExecutor");
+    let arn = role.get("Arn").expect("Arn should be present").as_str().expect("Arn should be a string");
+    assert_eq!(arn, "arn:test-partition:iam::555566667777:role/LambdaExecutor");
+    let role_id = role.get("RoleId").expect("RoleId should be present").as_str().expect("RoleId should be a string");
+    assert!(role_id.starts_with("AROA"), "RoleId should start with AROA, got {role_id}");
+    let assume_role_policy_document = role
+        .get("AssumeRolePolicyDocument")
+        .expect("AssumeRolePolicyDocument should be present")
+        .as_str()
+        .expect("AssumeRolePolicyDocument should be a string");
+    assert_eq!(assume_role_policy_document, trust_policy);
+
+    // Create a role with description, max-session-duration, path, and tags.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "DeployRole",
+            "--assume-role-policy-document",
+            trust_policy,
+            "--description",
+            "Deployment automation role.",
+            "--max-session-duration",
+            "14400",
+            "--path",
+            "/service-roles/",
+            "--tags",
+            "Key=Environment,Value=Production",
+            "Key=Team,Value=Platform",
+        ])
+        .await
+        .expect("Failed to run create-role for 555566667777/DeployRole");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse create-role output as JSON");
+    let role = json.get("Role").expect("Role should be present");
+    let path = role.get("Path").expect("Path should be present").as_str().expect("Path should be a string");
+    assert_eq!(path, "/service-roles/");
+    let arn = role.get("Arn").expect("Arn should be present").as_str().expect("Arn should be a string");
+    assert_eq!(arn, "arn:test-partition:iam::555566667777:role/service-roles/DeployRole");
+    let description = role
+        .get("Description")
+        .expect("Description should be present")
+        .as_str()
+        .expect("Description should be a string");
+    assert_eq!(description, "Deployment automation role.");
+    let max_session_duration = role
+        .get("MaxSessionDuration")
+        .expect("MaxSessionDuration should be present")
+        .as_i64()
+        .expect("MaxSessionDuration should be an integer");
+    assert_eq!(max_session_duration, 14400);
+    let tags = role.get("Tags").expect("Tags should be present").as_array().expect("Tags should be an array");
+    assert_eq!(tags.len(), 2);
+    assert_eq!(tags[0].get("Key").unwrap().as_str().unwrap(), "Environment");
+    assert_eq!(tags[0].get("Value").unwrap().as_str().unwrap(), "Production");
+    assert_eq!(tags[1].get("Key").unwrap().as_str().unwrap(), "Team");
+    assert_eq!(tags[1].get("Value").unwrap().as_str().unwrap(), "Platform");
+
+    // Creating a duplicate role should fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+            "--assume-role-policy-document",
+            trust_policy,
+        ])
+        .await
+        .expect_err("Creating a duplicate role should fail");
+    assert!(err.code().is_some(), "Expected an error code, got: {err}");
+
+    // max-session-duration below the AWS minimum should fail validation.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "TooShortRole",
+            "--assume-role-policy-document",
+            trust_policy,
+            "--max-session-duration",
+            "60",
+        ])
+        .await
+        .expect_err("max-session-duration below 3600 should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+}
+
 async fn test_policy_attachments(database: &TempDatabase) {
     let port = database.port_str();
 
@@ -2144,8 +2280,7 @@ async fn test_policy_attachments(database: &TempDatabase) {
         .expect_err("Second detach-group-policy should fail (not attached)");
     assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
 
-    // Detaching from a nonexistent role should fail with NoSuchEntity (no create-role CLI command,
-    // so this also serves as smoke-test coverage that detach-role-policy is wired up correctly).
+    // Detaching from a nonexistent role should fail with NoSuchEntity.
     let err = database
         .run([
             "ssbs",

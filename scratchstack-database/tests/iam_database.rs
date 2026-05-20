@@ -37,6 +37,8 @@ mod policy_crud;
 mod policy_delete;
 #[path = "iam_database/policy_query.rs"]
 mod policy_query;
+#[path = "iam_database/role.rs"]
+mod role;
 #[path = "iam_database/user.rs"]
 mod user;
 
@@ -114,6 +116,18 @@ async fn test_database() {
     user::test_get_user_with_tags(&pool).await;
     user::test_get_user_nonexistent(&pool).await;
     user::test_get_user_no_user_name(&pool).await;
+
+    // -- CreateRoleInternalRequest --------------------------------------------
+    role::test_create_role_simple(&pool).await;
+    role::test_create_role_with_path(&pool).await;
+    role::test_create_role_with_description_and_duration(&pool).await;
+    role::test_create_role_with_tags(&pool).await;
+    role::test_create_role_with_permissions_boundary(&pool).await;
+    role::test_create_role_duplicate_name(&pool).await;
+    role::test_create_role_invalid_name();
+    role::test_create_role_invalid_max_session_duration();
+    role::test_create_role_nonexistent_account(&pool).await;
+    role::test_create_role_nonexistent_permissions_boundary(&pool).await;
 
     // -- CreateGroupInternalRequest -------------------------------------------
     group::test_create_group_simple(&pool).await;
