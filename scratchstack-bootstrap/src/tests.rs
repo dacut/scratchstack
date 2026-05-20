@@ -2063,6 +2063,107 @@ async fn test_policy_attachments(database: &TempDatabase) {
         .await
         .expect_err("Attaching to nonexistent user should fail");
     assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Detach policy from user.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "detach-user-policy",
+            "--account-id",
+            "777788889999",
+            "--user-name",
+            "attach-test-user",
+            "--policy-arn",
+            policy_arn,
+        ])
+        .await
+        .expect("Failed to detach policy from user");
+    assert_eq!(result.trim(), "", "detach-user-policy should produce no output");
+
+    // Detaching again should fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "detach-user-policy",
+            "--account-id",
+            "777788889999",
+            "--user-name",
+            "attach-test-user",
+            "--policy-arn",
+            policy_arn,
+        ])
+        .await
+        .expect_err("Second detach-user-policy should fail (not attached)");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Detach policy from group.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "detach-group-policy",
+            "--account-id",
+            "777788889999",
+            "--group-name",
+            "AttachTestGroup",
+            "--policy-arn",
+            policy_arn,
+        ])
+        .await
+        .expect("Failed to detach policy from group");
+    assert_eq!(result.trim(), "", "detach-group-policy should produce no output");
+
+    // Detaching again should fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "detach-group-policy",
+            "--account-id",
+            "777788889999",
+            "--group-name",
+            "AttachTestGroup",
+            "--policy-arn",
+            policy_arn,
+        ])
+        .await
+        .expect_err("Second detach-group-policy should fail (not attached)");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Detaching from a nonexistent role should fail with NoSuchEntity (no create-role CLI command,
+    // so this also serves as smoke-test coverage that detach-role-policy is wired up correctly).
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "detach-role-policy",
+            "--account-id",
+            "777788889999",
+            "--role-name",
+            "no-such-role",
+            "--policy-arn",
+            policy_arn,
+        ])
+        .await
+        .expect_err("Detaching from nonexistent role should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
 }
 
 /// Convert a Vec<String-like> to a Vec<OsString>.

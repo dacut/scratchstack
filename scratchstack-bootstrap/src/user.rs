@@ -7,9 +7,9 @@ use {
         error_meta::Error as IamError,
         operation::{
             AttachUserPolicyInternalRequest, CreateUserInternalRequest, CreateUserResponse, DeleteUserInternalRequest,
-            GetUserInternalRequest, GetUserResponse, ListUserTagsInternalRequest, ListUserTagsResponse,
-            ListUsersInternalRequest, ListUsersResponse, TagUserInternalRequest, UntagUserInternalRequest,
-            UpdateUserInternalRequest,
+            DetachUserPolicyInternalRequest, GetUserInternalRequest, GetUserResponse, ListUserTagsInternalRequest,
+            ListUserTagsResponse, ListUsersInternalRequest, ListUsersResponse, TagUserInternalRequest,
+            UntagUserInternalRequest, UpdateUserInternalRequest,
         },
         types::{Tag, error::ValidationError},
     },
@@ -66,6 +66,22 @@ pub(crate) struct DeleteUserInternalCommand {
     pub account_id: String,
 
     /// The name of the user to delete.
+    #[clap(long)]
+    pub user_name: String,
+}
+
+/// Detach a managed policy from a user in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct DetachUserPolicyInternalCommand {
+    /// The unique identifier for the account the user belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The ARN of the managed policy to detach from the user.
+    #[clap(long)]
+    pub policy_arn: String,
+
+    /// The name of the user to detach the policy from.
     #[clap(long)]
     pub user_name: String,
 }
@@ -232,6 +248,22 @@ impl Runnable for DeleteUserInternalCommand {
             account_id: self.account_id.clone(),
             user_name: self.user_name.clone(),
         };
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for DetachUserPolicyInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = DetachUserPolicyInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .policy_arn(self.policy_arn.clone())
+            .user_name(self.user_name.clone())
+            .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }

@@ -6,9 +6,9 @@ use {
         error_meta::Error as IamError,
         operation::{
             AddUserToGroupInternalRequest, AttachGroupPolicyInternalRequest, CreateGroupInternalRequest,
-            CreateGroupResponse, DeleteGroupInternalRequest, GetGroupInternalRequest, GetGroupResponse,
-            ListGroupsForUserInternalRequest, ListGroupsForUserResponse, ListGroupsInternalRequest, ListGroupsResponse,
-            RemoveUserFromGroupInternalRequest, UpdateGroupInternalRequest,
+            CreateGroupResponse, DeleteGroupInternalRequest, DetachGroupPolicyInternalRequest, GetGroupInternalRequest,
+            GetGroupResponse, ListGroupsForUserInternalRequest, ListGroupsForUserResponse, ListGroupsInternalRequest,
+            ListGroupsResponse, RemoveUserFromGroupInternalRequest, UpdateGroupInternalRequest,
         },
     },
     std::ffi::OsString,
@@ -56,6 +56,22 @@ pub(crate) struct DeleteGroupInternalCommand {
     /// The name of the group to delete.
     #[clap(long)]
     pub group_name: String,
+}
+
+/// Detach a managed policy from a group in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct DetachGroupPolicyInternalCommand {
+    /// The unique identifier for the account the group belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the group to detach the policy from.
+    #[clap(long)]
+    pub group_name: String,
+
+    /// The ARN of the managed policy to detach from the group.
+    #[clap(long)]
+    pub policy_arn: String,
 }
 
 /// Get information about an IAM group in a given account in the Scratchstack IAM service.
@@ -302,6 +318,22 @@ impl Runnable for AttachGroupPolicyInternalCommand {
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
         let request = AttachGroupPolicyInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .group_name(self.group_name.clone())
+            .policy_arn(self.policy_arn.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for DetachGroupPolicyInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = DetachGroupPolicyInternalRequest::builder()
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
             .policy_arn(self.policy_arn.clone())
