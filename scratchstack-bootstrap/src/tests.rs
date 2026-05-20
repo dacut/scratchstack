@@ -24,6 +24,7 @@ async fn test_ssdb_ops() {
     test_policies(&database).await;
     test_groups(&database).await;
     test_group_membership(&database).await;
+    test_policy_attachments(&database).await;
 }
 
 async fn test_migrate_database(database: &TempDatabase) {
@@ -1899,6 +1900,169 @@ async fn test_group_membership(database: &TempDatabase) {
         .await
         .expect_err("Removing user from nonexistent group should fail");
     assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+}
+
+async fn test_policy_attachments(database: &TempDatabase) {
+    let port = database.port_str();
+
+    // Create an account, user, group, and policy for attachment testing.
+    let account_result = database
+        .run(["ssbs", "--port", &port, "--username", "scratchstack", "create-account", "--account-id", "777788889999"])
+        .await
+        .expect("Failed to create account 777788889999");
+    assert!(account_result.contains("777788889999"), "Account ID should appear in output");
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-user",
+            "--account-id",
+            "777788889999",
+            "--user-name",
+            "attach-test-user",
+        ])
+        .await
+        .expect("Failed to create attach-test-user");
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-group",
+            "--account-id",
+            "777788889999",
+            "--group-name",
+            "AttachTestGroup",
+        ])
+        .await
+        .expect("Failed to create AttachTestGroup");
+
+    let policy_result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-policy",
+            "--account-id",
+            "777788889999",
+            "--policy-name",
+            "AttachTestPolicy",
+            "--policy-document",
+            r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#,
+        ])
+        .await
+        .expect("Failed to create AttachTestPolicy");
+    assert!(policy_result.contains("AttachTestPolicy"), "Policy name should appear in output");
+
+    let policy_arn = "arn:aws:iam::777788889999:policy/AttachTestPolicy";
+
+    // Attach policy to user.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "attach-user-policy",
+            "--account-id",
+            "777788889999",
+            "--user-name",
+            "attach-test-user",
+            "--policy-arn",
+            policy_arn,
+        ])
+        .await
+        .expect("Failed to attach policy to user");
+    assert_eq!(result.trim(), "", "attach-user-policy should produce no output");
+
+    // Attaching again should be idempotent.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "attach-user-policy",
+            "--account-id",
+            "777788889999",
+            "--user-name",
+            "attach-test-user",
+            "--policy-arn",
+            policy_arn,
+        ])
+        .await
+        .expect("Second attach-user-policy should succeed (idempotent)");
+
+    // Attach policy to group.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "attach-group-policy",
+            "--account-id",
+            "777788889999",
+            "--group-name",
+            "AttachTestGroup",
+            "--policy-arn",
+            policy_arn,
+        ])
+        .await
+        .expect("Failed to attach policy to group");
+    assert_eq!(result.trim(), "", "attach-group-policy should produce no output");
+
+    // Nonexistent group should fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "attach-group-policy",
+            "--account-id",
+            "777788889999",
+            "--group-name",
+            "NoSuchGroup",
+            "--policy-arn",
+            policy_arn,
+        ])
+        .await
+        .expect_err("Attaching to nonexistent group should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Nonexistent user should fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "attach-user-policy",
+            "--account-id",
+            "777788889999",
+            "--user-name",
+            "no-such-user",
+            "--policy-arn",
+            policy_arn,
+        ])
+        .await
+        .expect_err("Attaching to nonexistent user should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
 }
 
 /// Convert a Vec<String-like> to a Vec<OsString>.

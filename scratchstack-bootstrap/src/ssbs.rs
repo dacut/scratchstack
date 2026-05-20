@@ -17,6 +17,7 @@ mod group;
 mod migrate;
 mod partition;
 mod policy;
+mod role;
 mod user;
 
 #[cfg(test)]
@@ -26,9 +27,9 @@ use {
     crate::{
         account::{CreateAccountCommand, ListAccountsCommand},
         group::{
-            AddUserToGroupInternalCommand, CreateGroupInternalCommand, DeleteGroupInternalCommand,
-            GetGroupInternalCommand, ListGroupsForUserInternalCommand, ListGroupsInternalCommand,
-            RemoveUserFromGroupInternalCommand, UpdateGroupInternalCommand,
+            AddUserToGroupInternalCommand, AttachGroupPolicyInternalCommand, CreateGroupInternalCommand,
+            DeleteGroupInternalCommand, GetGroupInternalCommand, ListGroupsForUserInternalCommand,
+            ListGroupsInternalCommand, RemoveUserFromGroupInternalCommand, UpdateGroupInternalCommand,
         },
         partition::{GetCurrentPartitionCommand, SetCurrentPartitionCommand},
         policy::{
@@ -36,9 +37,11 @@ use {
             GetPolicyCommand, GetPolicyVersionCommand, ListPoliciesInternalCommand, ListPolicyVersionsCommand,
             SetDefaultPolicyVersionCommand, TagPolicyCommand, UntagPolicyCommand,
         },
+        role::AttachRolePolicyInternalCommand,
         user::{
-            CreateUserInternalCommand, DeleteUserInternalCommand, GetUserInternalCommand, ListUserTagsInternalCommand,
-            ListUsersInternalCommand, TagUserInternalCommand, UntagUserInternalCommand, UpdateUserInternalCommand,
+            AttachUserPolicyInternalCommand, CreateUserInternalCommand, DeleteUserInternalCommand,
+            GetUserInternalCommand, ListUserTagsInternalCommand, ListUsersInternalCommand, TagUserInternalCommand,
+            UntagUserInternalCommand, UpdateUserInternalCommand,
         },
     },
     aws_smithy_types::error::metadata::ProvideErrorMetadata,
@@ -107,6 +110,18 @@ enum Commands {
     /// Add a user to a group in an account.
     #[command(name = "add-user-to-group")]
     AddUserToGroup(AddUserToGroupInternalCommand),
+
+    /// Attach a managed policy to a group in an account.
+    #[command(name = "attach-group-policy")]
+    AttachGroupPolicy(AttachGroupPolicyInternalCommand),
+
+    /// Attach a managed policy to a role in an account.
+    #[command(name = "attach-role-policy")]
+    AttachRolePolicy(AttachRolePolicyInternalCommand),
+
+    /// Attach a managed policy to a user in an account.
+    #[command(name = "attach-user-policy")]
+    AttachUserPolicy(AttachUserPolicyInternalCommand),
 
     /// Create an IAM account.
     #[command(name = "create-account")]
@@ -242,6 +257,9 @@ impl Commands {
     fn operation_name(&self) -> &'static str {
         match self {
             Commands::AddUserToGroup(_) => "AddUserToGroup",
+            Commands::AttachGroupPolicy(_) => "AttachGroupPolicy",
+            Commands::AttachRolePolicy(_) => "AttachRolePolicy",
+            Commands::AttachUserPolicy(_) => "AttachUserPolicy",
             Commands::CreateAccount(_) => "CreateAccount",
             Commands::CreateGroup(_) => "CreateGroup",
             Commands::CreatePolicy(_) => "CreatePolicy",
@@ -312,6 +330,18 @@ where
     let cli = Cli::parse_from(args);
     let result = match &cli.command {
         Commands::AddUserToGroup(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::AttachGroupPolicy(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::AttachRolePolicy(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::AttachUserPolicy(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
         }

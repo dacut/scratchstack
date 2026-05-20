@@ -4,15 +4,21 @@
 //! transactions as needed. Any returned results are subject to the transaction being committed.
 //! Do **not** use results until the commit has been completed.
 
-use {crate::constants::iam::*, scratchstack_shapes_iam::types::error::ValidationError};
+use {
+    crate::constants::iam::*,
+    scratchstack_arn::Arn,
+    scratchstack_shapes_iam::{error_meta::Error as IamError, types::error::ValidationError},
+    std::str::FromStr as _,
+};
 
 mod account;
 mod group;
 mod partition;
 mod policy;
+mod role;
 mod user;
 
-pub use {account::*, group::*, partition::*, policy::*, user::*};
+pub use {account::*, group::*, partition::*, policy::*, role::*, user::*};
 
 /// Validate that the account id is valid.
 ///
@@ -30,7 +36,7 @@ pub fn validate_account_id(account_id: impl AsRef<str>) -> Result<(), Validation
 /// Validate that the group name is valid according to AWS IAM rules.
 pub fn validate_group_name(group_name: impl AsRef<str>) -> Result<(), ValidationError> {
     let group_name = group_name.as_ref();
-    if !GROUP_NAME_REGEX.is_match(group_name) || group_name.is_empty() || group_name.len() > 128 {
+    if !ENTITY_NAME_REGEX.is_match(group_name) || group_name.is_empty() || group_name.len() > 128 {
         let message = "Group name must contain only alphanumeric characters or the following symbols: =,.@- and must be between 1 and 128 characters long.".to_string();
         Err(ValidationError::builder().message(message).build())
     } else {
@@ -100,8 +106,20 @@ pub fn validate_tag_value(tag_value: impl AsRef<str>) -> Result<(), ValidationEr
 /// Validate that the policy name is valid according to AWS IAM rules.
 pub fn validate_policy_name(policy_name: impl AsRef<str>) -> Result<(), ValidationError> {
     let policy_name = policy_name.as_ref();
-    if !USER_NAME_REGEX.is_match(policy_name) || policy_name.is_empty() || policy_name.len() > 128 {
+    if !ENTITY_NAME_REGEX.is_match(policy_name) || policy_name.is_empty() || policy_name.len() > 128 {
         let message = "Policy name must contain only alphanumeric characters or the following symbols: =,.@-_ and must be between 1 and 128 characters long.".to_string();
+        Err(ValidationError::builder().message(message).build())
+    } else {
+        Ok(())
+    }
+}
+
+/// Validate that the role name is valid according to AWS IAM rules.
+pub fn validate_role_name(role_name: impl AsRef<str>) -> Result<(), ValidationError> {
+    let role_name = role_name.as_ref();
+    let is_full_match = ENTITY_NAME_REGEX.find(role_name).is_some_and(|m| m.as_str() == role_name);
+    if !is_full_match || role_name.is_empty() || role_name.len() > 64 {
+        let message = "Role name must contain only alphanumeric characters or the following symbols: +=,.@-_ and must be between 1 and 64 characters long.".to_string();
         Err(ValidationError::builder().message(message).build())
     } else {
         Ok(())
@@ -111,7 +129,7 @@ pub fn validate_policy_name(policy_name: impl AsRef<str>) -> Result<(), Validati
 /// Validate that the user name is valid according to AWS IAM rules.
 pub fn validate_user_name(user_name: impl AsRef<str>) -> Result<(), ValidationError> {
     let user_name = user_name.as_ref();
-    if !USER_NAME_REGEX.is_match(user_name) || user_name.is_empty() || user_name.len() > 64 {
+    if !ENTITY_NAME_REGEX.is_match(user_name) || user_name.is_empty() || user_name.len() > 64 {
         let message = "User name must contain only alphanumeric characters or the following symbols: =,.@- and must be between 1 and 64 characters long.".to_string();
         Err(ValidationError::builder().message(message).build())
     } else {
@@ -134,4 +152,68 @@ pub fn constrain_max_items(max_items: Option<i32>) -> Result<usize, ValidationEr
     } else {
         Ok(100)
     }
+}
+
+/// Parts extracted from a policy ARN.
+pub(crate) struct PolicyArnParts {
+    /// Owning account id for the policy. The literal `aws` alias is normalized to
+    /// `000000000000`.
+    pub(crate) account_id: String,
+    /// Canonical policy path, including a leading slash.
+    pub(crate) policy_path: String,
+    /// Lowercase policy name for case-insensitive lookup.
+    pub(crate) policy_name_lower: String,
+}
+
+/// Parse a policy ARN and extract the account id, path, and lowercase policy name. Returns a
+/// `ValidationError` if the ARN is unparseable or does not point at a `policy/` resource.
+pub(crate) fn parse_policy_arn(policy_arn: &str) -> Result<PolicyArnParts, IamError> {
+    let arn = Arn::from_str(policy_arn).map_err(|e| {
+        log::info!("Failed to parse policy ARN: {e}");
+        IamError::from(ValidationError::builder().message("Invalid policy ARN".to_string()).build())
+    })?;
+
+    let service = arn.service();
+    if service != ARN_SERVICE_IAM {
+        return Err(ValidationError::builder()
+            .message("Policy ARN must have service \"iam\"".to_string())
+            .build()
+            .into());
+    }
+
+    if !arn.region().is_empty() {
+        return Err(ValidationError::builder().message("Policy ARN must not have a region".to_string()).build().into());
+    }
+
+    let resource = arn.resource();
+    if !resource.starts_with(ARN_RESOURCE_PREFIX_POLICY) {
+        return Err(ValidationError::builder()
+            .message("Policy ARN must have a resource that starts with \"policy/\"".to_string())
+            .build()
+            .into());
+    }
+
+    let account_id = match arn.account_id() {
+        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC.to_string(),
+        other => other.to_string(),
+    };
+
+    let policy_path_and_name = &resource[ARN_RESOURCE_PREFIX_POLICY.len()..];
+    let name_start = policy_path_and_name.rfind('/').map(|i| i + 1).unwrap_or(0);
+    let policy_name_lower = policy_path_and_name[name_start..].to_ascii_lowercase();
+    let policy_path = if name_start == 0 {
+        "/".to_string()
+    } else {
+        format!("/{}", &policy_path_and_name[..name_start])
+    };
+
+    if policy_name_lower.is_empty() {
+        return Err(ValidationError::builder().message("Policy name must not be empty".to_string()).build().into());
+    }
+
+    Ok(PolicyArnParts {
+        account_id,
+        policy_path,
+        policy_name_lower,
+    })
 }
