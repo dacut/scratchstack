@@ -10,6 +10,9 @@ pub(crate) const ARN_RESOURCE_PREFIX_GROUP: &str = "group/";
 /// The resource prefix for IAM policies in an ARN.
 pub(crate) const ARN_RESOURCE_PREFIX_POLICY: &str = "policy/";
 
+/// The resource prefix for IAM roles in an ARN.
+pub(crate) const ARN_RESOURCE_PREFIX_ROLE: &str = "role/";
+
 /// The resource prefix for IAM users in an ARN.
 pub(crate) const ARN_RESOURCE_PREFIX_USER: &str = "user/";
 

@@ -39,7 +39,8 @@ use {
             ListPolicyVersionsCommand, SetDefaultPolicyVersionCommand, TagPolicyCommand, UntagPolicyCommand,
         },
         role::{
-            AttachRolePolicyInternalCommand, DetachRolePolicyInternalCommand, ListAttachedRolePoliciesInternalCommand,
+            AttachRolePolicyInternalCommand, CreateRoleInternalCommand, DetachRolePolicyInternalCommand,
+            ListAttachedRolePoliciesInternalCommand,
         },
         user::{
             AttachUserPolicyInternalCommand, CreateUserInternalCommand, DeleteUserInternalCommand,
@@ -142,6 +143,10 @@ enum Commands {
     /// Create a new version of an IAM managed policy.
     #[command(name = "create-policy-version")]
     CreatePolicyVersion(CreatePolicyVersionCommand),
+
+    /// Create an IAM role in an account.
+    #[command(name = "create-role")]
+    CreateRole(CreateRoleInternalCommand),
 
     /// Create an IAM user in an account.
     #[command(name = "create-user")]
@@ -297,6 +302,7 @@ impl Commands {
             Commands::CreateGroup(_) => "CreateGroup",
             Commands::CreatePolicy(_) => "CreatePolicy",
             Commands::CreatePolicyVersion(_) => "CreatePolicyVersion",
+            Commands::CreateRole(_) => "CreateRole",
             Commands::CreateUser(_) => "CreateUser",
             Commands::DeleteGroup(_) => "DeleteGroup",
             Commands::DeletePolicy(_) => "DeletePolicy",
@@ -407,6 +413,13 @@ where
             })?
         }
         Commands::CreatePolicyVersion(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::CreateRole(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
