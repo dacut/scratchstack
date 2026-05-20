@@ -6,14 +6,31 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
-            CreateUserInternalRequest, CreateUserResponse, DeleteUserInternalRequest, GetUserInternalRequest,
-            GetUserResponse, ListUserTagsInternalRequest, ListUserTagsResponse, ListUsersInternalRequest,
-            ListUsersResponse, TagUserInternalRequest, UntagUserInternalRequest, UpdateUserInternalRequest,
+            AttachUserPolicyInternalRequest, CreateUserInternalRequest, CreateUserResponse, DeleteUserInternalRequest,
+            GetUserInternalRequest, GetUserResponse, ListUserTagsInternalRequest, ListUserTagsResponse,
+            ListUsersInternalRequest, ListUsersResponse, TagUserInternalRequest, UntagUserInternalRequest,
+            UpdateUserInternalRequest,
         },
         types::{Tag, error::ValidationError},
     },
     std::{collections::HashMap, ffi::OsString},
 };
+
+/// Attach a managed policy to a user in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct AttachUserPolicyInternalCommand {
+    /// The unique identifier for the account the user belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The ARN of the managed policy to attach to the user.
+    #[clap(long)]
+    pub policy_arn: String,
+
+    /// The name of the user to attach the policy to.
+    #[clap(long)]
+    pub user_name: String,
+}
 
 /// Create a new user in a given account in the Scratchstack IAM service.
 #[derive(Debug, Parser)]
@@ -166,6 +183,22 @@ pub(crate) struct UpdateUserInternalCommand {
     /// The new name of the user.
     #[clap(long)]
     pub new_user_name: Option<String>,
+}
+
+impl Runnable for AttachUserPolicyInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = AttachUserPolicyInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .policy_arn(self.policy_arn.clone())
+            .user_name(self.user_name.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
 }
 
 impl Runnable for CreateUserInternalCommand {

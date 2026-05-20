@@ -5,14 +5,30 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
-            AddUserToGroupInternalRequest, CreateGroupInternalRequest, CreateGroupResponse, DeleteGroupInternalRequest,
-            GetGroupInternalRequest, GetGroupResponse, ListGroupsForUserInternalRequest, ListGroupsForUserResponse,
-            ListGroupsInternalRequest, ListGroupsResponse, RemoveUserFromGroupInternalRequest,
-            UpdateGroupInternalRequest,
+            AddUserToGroupInternalRequest, AttachGroupPolicyInternalRequest, CreateGroupInternalRequest,
+            CreateGroupResponse, DeleteGroupInternalRequest, GetGroupInternalRequest, GetGroupResponse,
+            ListGroupsForUserInternalRequest, ListGroupsForUserResponse, ListGroupsInternalRequest, ListGroupsResponse,
+            RemoveUserFromGroupInternalRequest, UpdateGroupInternalRequest,
         },
     },
     std::ffi::OsString,
 };
+
+/// Attach a managed policy to a group in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct AttachGroupPolicyInternalCommand {
+    /// The unique identifier for the account the group belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the group to attach the policy to.
+    #[clap(long)]
+    pub group_name: String,
+
+    /// The ARN of the managed policy to attach to the group.
+    #[clap(long)]
+    pub policy_arn: String,
+}
 
 /// Create a new group in a given account in the Scratchstack IAM service.
 #[derive(Debug, Parser)]
@@ -273,6 +289,22 @@ impl Runnable for RemoveUserFromGroupInternalCommand {
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
             .user_name(self.user_name.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for AttachGroupPolicyInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = AttachGroupPolicyInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .group_name(self.group_name.clone())
+            .policy_arn(self.policy_arn.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }

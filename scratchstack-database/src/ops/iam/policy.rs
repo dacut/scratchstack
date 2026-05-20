@@ -6,8 +6,9 @@ use {
         ops::{
             RequestExecutor,
             iam::{
-                constrain_max_items, get_current_partition_or_fail, validate_account_id, validate_path,
-                validate_path_prefix, validate_policy_name, validate_tag_key, validate_tag_value,
+                PolicyArnParts, constrain_max_items, get_current_partition_or_fail, parse_policy_arn,
+                validate_account_id, validate_path, validate_path_prefix, validate_policy_name, validate_tag_key,
+                validate_tag_value,
             },
         },
     },
@@ -1327,67 +1328,6 @@ pub async fn untag_policy(tx: &mut PgTransaction<'_>, policy_arn: &str, tag_keys
     }
 
     Ok(())
-}
-
-/// Parsed components of a policy ARN. `account_id` has the literal `aws` mapped to
-/// `000000000000`.
-struct PolicyArnParts {
-    account_id: String,
-    policy_path: String,
-    policy_name_lower: String,
-}
-
-/// Parse a policy ARN and extract the account id, path, and lowercase policy name. Returns a
-/// `ValidationError` if the ARN is unparseable or does not point at a `policy/` resource.
-fn parse_policy_arn(policy_arn: &str) -> Result<PolicyArnParts, IamError> {
-    let arn = Arn::from_str(policy_arn).map_err(|e| {
-        log::info!("Failed to parse policy ARN: {e}");
-        IamError::from(ValidationError::builder().message("Invalid policy ARN".to_string()).build())
-    })?;
-
-    let service = arn.service();
-    if service != ARN_SERVICE_IAM {
-        return Err(ValidationError::builder()
-            .message("Policy ARN must have service \"iam\"".to_string())
-            .build()
-            .into());
-    }
-
-    if !arn.region().is_empty() {
-        return Err(ValidationError::builder().message("Policy ARN must not have a region".to_string()).build().into());
-    }
-
-    let resource = arn.resource();
-    if !resource.starts_with(ARN_RESOURCE_PREFIX_POLICY) {
-        return Err(ValidationError::builder()
-            .message("Policy ARN must have a resource that starts with \"policy/\"".to_string())
-            .build()
-            .into());
-    }
-
-    let account_id = match arn.account_id() {
-        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC.to_string(),
-        other => other.to_string(),
-    };
-
-    let policy_path_and_name = &resource[ARN_RESOURCE_PREFIX_POLICY.len()..];
-    let name_start = policy_path_and_name.rfind('/').map(|i| i + 1).unwrap_or(0);
-    let policy_name_lower = policy_path_and_name[name_start..].to_ascii_lowercase();
-    let policy_path = if name_start == 0 {
-        "/".to_string()
-    } else {
-        format!("/{}", &policy_path_and_name[..name_start])
-    };
-
-    if policy_name_lower.is_empty() {
-        return Err(ValidationError::builder().message("Policy name must not be empty".to_string()).build().into());
-    }
-
-    Ok(PolicyArnParts {
-        account_id,
-        policy_path,
-        policy_name_lower,
-    })
 }
 
 /// Calculate the number of attachments for a policy by its managed_policy_id. This is the sum of
