@@ -7,11 +7,12 @@ use {
         operation::{
             CreatePolicyInternalRequest, CreatePolicyResponse, CreatePolicyVersionRequest, CreatePolicyVersionResponse,
             DeletePolicyRequest, DeletePolicyVersionRequest, GetPolicyRequest, GetPolicyResponse,
-            GetPolicyVersionRequest, GetPolicyVersionResponse, ListPoliciesInternalRequest, ListPoliciesResponse,
+            GetPolicyVersionRequest, GetPolicyVersionResponse, ListEntitiesForPolicyRequest,
+            ListEntitiesForPolicyResponse, ListPoliciesInternalRequest, ListPoliciesResponse,
             ListPolicyVersionsRequest, ListPolicyVersionsResponse, SetDefaultPolicyVersionRequest, TagPolicyRequest,
             UntagPolicyRequest,
         },
-        types::{PolicyScopeType, PolicyUsageType},
+        types::{EntityType, PolicyScopeType, PolicyUsageType},
     },
     std::ffi::OsString,
 };
@@ -103,6 +104,37 @@ pub(crate) struct GetPolicyVersionCommand {
     /// The version id to fetch, e.g. `v1`.
     #[clap(long)]
     pub version_id: String,
+}
+
+/// List the IAM entities (users, groups, roles) that a managed policy is attached to or that
+/// use the policy as a permissions boundary.
+#[derive(Debug, Parser)]
+pub(crate) struct ListEntitiesForPolicyCommand {
+    /// The ARN of the managed policy whose entities to list.
+    #[clap(long)]
+    pub policy_arn: String,
+
+    /// Optional entity type filter: `User`, `Role`, or `Group`. If unspecified, all three are
+    /// returned.
+    #[clap(long)]
+    pub entity_filter: Option<EntityType>,
+
+    /// Optional usage filter: `PermissionsPolicy` (default — list attached entities) or
+    /// `PermissionsBoundary` (list entities using the policy as a permissions boundary).
+    #[clap(long)]
+    pub policy_usage_filter: Option<PolicyUsageType>,
+
+    /// Path prefix for filtering the returned entities by their path.
+    #[clap(long)]
+    pub path_prefix: Option<String>,
+
+    /// Maximum number of entities to return across the combined groups/roles/users sections.
+    #[clap(long)]
+    pub max_items: Option<i32>,
+
+    /// Marker for paginating list results.
+    #[clap(long)]
+    pub marker: Option<String>,
 }
 
 /// List managed policies in an account in the Scratchstack IAM service.
@@ -278,6 +310,34 @@ impl Runnable for GetPolicyVersionCommand {
             .policy_arn(self.policy_arn.clone())
             .version_id(self.version_id.clone())
             .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for ListEntitiesForPolicyCommand {
+    type Result = ListEntitiesForPolicyResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let mut builder = ListEntitiesForPolicyRequest::builder().policy_arn(self.policy_arn.clone());
+        if let Some(filter) = self.entity_filter {
+            builder = builder.entity_filter(Some(filter));
+        }
+        if let Some(filter) = self.policy_usage_filter {
+            builder = builder.policy_usage_filter(Some(filter));
+        }
+        if let Some(path_prefix) = &self.path_prefix {
+            builder = builder.path_prefix(Some(path_prefix.clone()));
+        }
+        if let Some(max_items) = self.max_items {
+            builder = builder.max_items(Some(max_items));
+        }
+        if let Some(marker) = &self.marker {
+            builder = builder.marker(Some(marker.clone()));
+        }
+        let request = builder.build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }

@@ -35,8 +35,8 @@ use {
         partition::{GetCurrentPartitionCommand, SetCurrentPartitionCommand},
         policy::{
             CreatePolicyInternalCommand, CreatePolicyVersionCommand, DeletePolicyCommand, DeletePolicyVersionCommand,
-            GetPolicyCommand, GetPolicyVersionCommand, ListPoliciesInternalCommand, ListPolicyVersionsCommand,
-            SetDefaultPolicyVersionCommand, TagPolicyCommand, UntagPolicyCommand,
+            GetPolicyCommand, GetPolicyVersionCommand, ListEntitiesForPolicyCommand, ListPoliciesInternalCommand,
+            ListPolicyVersionsCommand, SetDefaultPolicyVersionCommand, TagPolicyCommand, UntagPolicyCommand,
         },
         role::{
             AttachRolePolicyInternalCommand, DetachRolePolicyInternalCommand, ListAttachedRolePoliciesInternalCommand,
@@ -212,6 +212,11 @@ enum Commands {
     #[command(name = "list-attached-user-policies")]
     ListAttachedUserPolicies(ListAttachedUserPoliciesInternalCommand),
 
+    /// List IAM entities (users, groups, roles) that a managed policy is attached to or that
+    /// use the policy as a permissions boundary.
+    #[command(name = "list-entities-for-policy")]
+    ListEntitiesForPolicy(ListEntitiesForPolicyCommand),
+
     /// List IAM groups in an account.
     #[command(name = "list-groups")]
     ListGroups(ListGroupsInternalCommand),
@@ -309,6 +314,7 @@ impl Commands {
             Commands::ListAttachedGroupPolicies(_) => "ListAttachedGroupPolicies",
             Commands::ListAttachedRolePolicies(_) => "ListAttachedRolePolicies",
             Commands::ListAttachedUserPolicies(_) => "ListAttachedUserPolicies",
+            Commands::ListEntitiesForPolicy(_) => "ListEntitiesForPolicy",
             Commands::ListGroups(_) => "ListGroups",
             Commands::ListGroupsForUser(_) => "ListGroupsForUser",
             Commands::ListPolicies(_) => "ListPolicies",
@@ -499,6 +505,13 @@ where
             })?
         }
         Commands::ListAttachedUserPolicies(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::ListEntitiesForPolicy(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");

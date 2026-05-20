@@ -20,6 +20,7 @@ const IAM_NO_INTERNAL_REQUEST_API: &[&str] = &[
     "DeletePolicyVersion",
     "GetPolicy",
     "GetPolicyVersion",
+    "ListEntitiesForPolicy",
     "ListPolicyTags",
     "ListPolicyVersions",
     "SetDefaultPolicyVersion",

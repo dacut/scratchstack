@@ -2318,6 +2318,78 @@ async fn test_policy_attachments(database: &TempDatabase) {
         .await
         .expect_err("Listing attached policies for nonexistent role should fail");
     assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // ListEntitiesForPolicy — at this point AttachTestPolicy is attached to both attach-test-user
+    // and AttachTestGroup (both re-attached above), so the default response should list both.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-entities-for-policy",
+            "--policy-arn",
+            policy_arn,
+        ])
+        .await
+        .expect("Failed to list entities for AttachTestPolicy");
+    assert!(result.contains("attach-test-user"), "Expected attach-test-user in output, got: {result}");
+    assert!(result.contains("AttachTestGroup"), "Expected AttachTestGroup in output, got: {result}");
+
+    // Filter to just users.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-entities-for-policy",
+            "--policy-arn",
+            policy_arn,
+            "--entity-filter",
+            "User",
+        ])
+        .await
+        .expect("Failed to list entities for AttachTestPolicy with User filter");
+    assert!(result.contains("attach-test-user"), "Expected attach-test-user in User-only output, got: {result}");
+    assert!(!result.contains("AttachTestGroup"), "AttachTestGroup must not appear under User filter: {result}");
+
+    // Filter to just groups.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-entities-for-policy",
+            "--policy-arn",
+            policy_arn,
+            "--entity-filter",
+            "Group",
+        ])
+        .await
+        .expect("Failed to list entities for AttachTestPolicy with Group filter");
+    assert!(result.contains("AttachTestGroup"), "Expected AttachTestGroup in Group-only output, got: {result}");
+    assert!(!result.contains("attach-test-user"), "attach-test-user must not appear under Group filter: {result}");
+
+    // A nonexistent policy ARN must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-entities-for-policy",
+            "--policy-arn",
+            "arn:aws:iam::777788889999:policy/NoSuchListEntitiesPolicy",
+        ])
+        .await
+        .expect_err("Listing entities for nonexistent policy should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
 }
 
 /// Convert a Vec<String-like> to a Vec<OsString>.

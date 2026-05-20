@@ -260,6 +260,19 @@ async fn test_database() {
     policy_query::test_list_policies_usage_filter_permissions_policy(&pool).await;
     policy_query::test_list_policies_pagination(&pool).await;
 
+    // -- ListEntitiesForPolicyRequest -----------------------------------------
+    policy_query::test_list_entities_for_policy_default(&pool).await;
+    policy_query::test_list_entities_for_policy_user_filter(&pool).await;
+    policy_query::test_list_entities_for_policy_group_filter(&pool).await;
+    policy_query::test_list_entities_for_policy_role_filter(&pool).await;
+    policy_query::test_list_entities_for_policy_pb_filter(&pool).await;
+    policy_query::test_list_entities_for_policy_pagination(&pool).await;
+    policy_query::test_list_entities_for_policy_nonexistent_policy(&pool).await;
+    policy_query::test_list_entities_for_policy_path_prefix(&pool).await;
+    policy_query::test_list_entities_for_policy_invalid_filter(&pool).await;
+    policy_query::test_list_entities_for_policy_cross_account_attachment(&pool).await;
+    policy_query::test_list_entities_for_policy_within_section_pagination(&pool).await;
+
     // -- DeletePolicyRequest --------------------------------------------------
     policy_delete::test_delete_policy_simple(&pool).await;
     policy_delete::test_delete_policy_cascade_tags_and_default_version(&pool).await;

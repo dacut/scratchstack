@@ -1,4 +1,5 @@
-//! Policy read-side test suite: GetPolicy, GetPolicyVersion, ListPolicyVersions, ListPolicies.
+//! Policy read-side test suite: GetPolicy, GetPolicyVersion, ListPolicyVersions, ListPolicies,
+//! ListEntitiesForPolicy.
 use {
     super::common::VALID_POLICY_DOCUMENT,
     pretty_assertions::assert_eq,
@@ -6,10 +7,12 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
-            CreatePolicyInternalRequest, GetPolicyRequest, GetPolicyVersionRequest, ListPoliciesInternalRequest,
+            AttachGroupPolicyInternalRequest, AttachRolePolicyInternalRequest, AttachUserPolicyInternalRequest,
+            CreateGroupInternalRequest, CreatePolicyInternalRequest, CreateUserInternalRequest, GetPolicyRequest,
+            GetPolicyVersionRequest, ListEntitiesForPolicyRequest, ListPoliciesInternalRequest,
             ListPolicyVersionsRequest,
         },
-        types::{PolicyScopeType, PolicyUsageType},
+        types::{EntityType, PolicyScopeType, PolicyUsageType},
     },
 };
 
@@ -526,4 +529,379 @@ pub async fn test_list_policies_pagination(pool: &sqlx::PgPool) {
     assert_eq!(all_names, expected, "Union of pages should cover all 5 policies");
 
     tx.rollback().await.expect("Failed to rollback transaction");
+}
+
+// -- ListEntitiesForPolicy tests ----------------------------------------------
+
+/// At this point in the test sequence, Example-Managed-Policy-1 is attached (via seed) to:
+///   * group Example-Group-1 (account 123456789012)
+///   * role  Example-Role-1  (account 123456789012)
+///   * user  Example-User-2  (account 210987654321)
+///
+/// Default filter is PermissionsPolicy, so the response includes one entity in each section.
+pub async fn test_list_entities_for_policy_default(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListEntitiesForPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build ListEntitiesForPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list entities for policy");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.policy_groups.len(), 1, "Expected one attached group");
+    assert_eq!(resp.policy_groups[0].group_name.as_deref(), Some("Example-Group-1"));
+    assert_eq!(resp.policy_groups[0].group_id.as_deref(), Some("AGPAEXAMPLEGROUPID123"));
+
+    assert_eq!(resp.policy_roles.len(), 1, "Expected one attached role");
+    assert_eq!(resp.policy_roles[0].role_name.as_deref(), Some("Example-Role-1"));
+    assert_eq!(resp.policy_roles[0].role_id.as_deref(), Some("AROAEXAMPLEROLEID123"));
+
+    assert_eq!(resp.policy_users.len(), 1, "Expected one attached user");
+    assert_eq!(resp.policy_users[0].user_name.as_deref(), Some("Example-User-2"));
+    assert_eq!(resp.policy_users[0].user_id.as_deref(), Some("AIDAEXAMPLEUSERID456"));
+
+    assert!(!resp.is_truncated.unwrap_or(false), "Result should not be truncated");
+    assert!(resp.marker.is_none(), "No marker expected for a single page");
+}
+
+pub async fn test_list_entities_for_policy_user_filter(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListEntitiesForPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .entity_filter(Some(EntityType::User))
+        .build()
+        .expect("Failed to build ListEntitiesForPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list entities for policy with user filter");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert!(resp.policy_groups.is_empty(), "Group section must be empty under User filter");
+    assert!(resp.policy_roles.is_empty(), "Role section must be empty under User filter");
+    assert_eq!(resp.policy_users.len(), 1);
+    assert_eq!(resp.policy_users[0].user_name.as_deref(), Some("Example-User-2"));
+}
+
+pub async fn test_list_entities_for_policy_group_filter(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListEntitiesForPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .entity_filter(Some(EntityType::Group))
+        .build()
+        .expect("Failed to build ListEntitiesForPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list entities for policy with group filter");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.policy_groups.len(), 1);
+    assert_eq!(resp.policy_groups[0].group_name.as_deref(), Some("Example-Group-1"));
+    assert!(resp.policy_roles.is_empty());
+    assert!(resp.policy_users.is_empty());
+}
+
+pub async fn test_list_entities_for_policy_role_filter(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListEntitiesForPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .entity_filter(Some(EntityType::Role))
+        .build()
+        .expect("Failed to build ListEntitiesForPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list entities for policy with role filter");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert!(resp.policy_groups.is_empty());
+    assert_eq!(resp.policy_roles.len(), 1);
+    assert_eq!(resp.policy_roles[0].role_name.as_deref(), Some("Example-Role-1"));
+    assert!(resp.policy_users.is_empty());
+}
+
+/// Example-Managed-Policy-1 is set as the permissions boundary of Example-User-1 (in seed) and
+/// of dave (created earlier in the test sequence via test_create_user_with_permissions_boundary).
+/// Under PermissionsBoundary filter we should get both users and no groups or roles.
+pub async fn test_list_entities_for_policy_pb_filter(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListEntitiesForPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .policy_usage_filter(Some(PolicyUsageType::PermissionsBoundary))
+        .build()
+        .expect("Failed to build ListEntitiesForPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list entities for policy with PB filter");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert!(resp.policy_groups.is_empty(), "Groups cannot have a permissions boundary");
+    assert!(resp.policy_roles.is_empty(), "No role uses Example-Managed-Policy-1 as PB at this point");
+
+    let user_names: Vec<String> = resp.policy_users.iter().filter_map(|u| u.user_name.clone()).collect();
+    assert!(user_names.contains(&"dave".to_string()), "Expected dave in PB users: {user_names:?}");
+    assert!(user_names.contains(&"Example-User-1".to_string()), "Expected Example-User-1 in PB users: {user_names:?}");
+}
+
+/// Walk the cross-section marker pagination path: attach Example-Managed-Policy-1's three seed
+/// entities with max_items=2, then verify page 1 returns 2 entities and a marker, and page 2
+/// returns the remaining 1 entity.
+pub async fn test_list_entities_for_policy_pagination(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+
+    let page1 = ListEntitiesForPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .max_items(Some(2))
+        .build()
+        .expect("Failed to build ListEntitiesForPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list entities (page 1)");
+
+    let page1_total = page1.policy_groups.len() + page1.policy_roles.len() + page1.policy_users.len();
+    assert_eq!(page1_total, 2, "Page 1 should hold 2 entities total");
+    // Section order is groups → roles → users, so page 1 picks up the group and the role.
+    assert_eq!(page1.policy_groups.len(), 1);
+    assert_eq!(page1.policy_roles.len(), 1);
+    assert!(page1.policy_users.is_empty());
+    assert_eq!(page1.is_truncated, Some(true));
+    let marker = page1.marker.expect("Page 1 should provide a continuation marker");
+
+    let page2 = ListEntitiesForPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .max_items(Some(2))
+        .marker(Some(marker))
+        .build()
+        .expect("Failed to build ListEntitiesForPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list entities (page 2)");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert!(page2.policy_groups.is_empty(), "Page 2 should have no groups");
+    assert!(page2.policy_roles.is_empty(), "Page 2 should have no roles");
+    assert_eq!(page2.policy_users.len(), 1, "Page 2 should hold the remaining user");
+    assert_eq!(page2.policy_users[0].user_name.as_deref(), Some("Example-User-2"));
+    assert!(!page2.is_truncated.unwrap_or(false), "Page 2 should not be truncated");
+    assert!(page2.marker.is_none(), "Page 2 should have no marker");
+}
+
+pub async fn test_list_entities_for_policy_nonexistent_policy(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = ListEntitiesForPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchListEntities".to_string())
+        .build()
+        .expect("Failed to build ListEntitiesForPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Listing entities for a nonexistent policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// path_prefix filters by the entity's path, not the policy's. Example-Group-1 is at "/"; a
+/// filter that does not match "/" should exclude it. We also attach a fresh group at
+/// "/engineering/" in the same transaction and confirm only it appears under the prefix filter.
+pub async fn test_list_entities_for_policy_path_prefix(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+
+    // Add a /engineering/ group attached to the policy in this transaction.
+    CreateGroupInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .group_name("EngineeringGroup".to_string())
+        .path(Some("/engineering/".to_string()))
+        .build()
+        .expect("Failed to build CreateGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create EngineeringGroup");
+    AttachGroupPolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .group_name("EngineeringGroup".to_string())
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build AttachGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to attach Example-Managed-Policy-1 to EngineeringGroup");
+
+    let resp = ListEntitiesForPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .path_prefix(Some("/engineering/".to_string()))
+        .build()
+        .expect("Failed to build ListEntitiesForPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list entities with path_prefix");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    // Only the /engineering/ group qualifies; Example-Group-1 (path "/") is excluded, and roles
+    // and users at "/" are also excluded.
+    assert_eq!(resp.policy_groups.len(), 1);
+    assert_eq!(resp.policy_groups[0].group_name.as_deref(), Some("EngineeringGroup"));
+    assert!(resp.policy_roles.is_empty(), "No /engineering/ roles attached");
+    assert!(resp.policy_users.is_empty(), "No /engineering/ users attached");
+}
+
+/// EntityFilter values that don't name an entity type (e.g. AWSManagedPolicy) must be rejected.
+pub async fn test_list_entities_for_policy_invalid_filter(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = ListEntitiesForPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .entity_filter(Some(EntityType::AWSManagedPolicy))
+        .build()
+        .expect("Failed to build ListEntitiesForPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("EntityFilter=AWSManagedPolicy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::ValidationError(_)), "Expected ValidationError, got: {err:?}");
+}
+
+/// Attaching a policy to one user in an account other than the policy's owning account must NOT
+/// be possible in normal flow (attach_user_policy blocks it). To exercise that ListEntitiesForPolicy
+/// would surface cross-account attachments if they existed, insert one directly via SQL and verify
+/// the entity shows up. This mirrors how real AWS-managed policies (account 000000000000) are
+/// attached to entities in any account.
+pub async fn test_list_entities_for_policy_cross_account_attachment(pool: &sqlx::PgPool) {
+    // Create an AWS-managed policy and a user in account 123456789012, then attach across accounts.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+
+    CreatePolicyInternalRequest::builder()
+        .policy_name("CrossAccountListEntities".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .account_id("000000000000".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create AWS-managed policy");
+    CreateUserInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .user_name("xacct-user".to_string())
+        .build()
+        .expect("Failed to build CreateUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create xacct-user");
+    CreateGroupInternalRequest::builder()
+        .account_id("210987654321".to_string())
+        .group_name("xacct-group".to_string())
+        .build()
+        .expect("Failed to build CreateGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create xacct-group");
+
+    AttachUserPolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .user_name("xacct-user".to_string())
+        .policy_arn("arn:aws:iam::aws:policy/CrossAccountListEntities".to_string())
+        .build()
+        .expect("Failed to build AttachUserPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to attach AWS-managed policy to xacct-user");
+    AttachGroupPolicyInternalRequest::builder()
+        .account_id("210987654321".to_string())
+        .group_name("xacct-group".to_string())
+        .policy_arn("arn:aws:iam::aws:policy/CrossAccountListEntities".to_string())
+        .build()
+        .expect("Failed to build AttachGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to attach AWS-managed policy to xacct-group");
+
+    // List entities — should return both the user (account 123456789012) and the group
+    // (account 210987654321), since AWS-managed policies attach across accounts.
+    let resp = ListEntitiesForPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::aws:policy/CrossAccountListEntities".to_string())
+        .build()
+        .expect("Failed to build ListEntitiesForPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list entities for cross-account policy");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.policy_groups.len(), 1);
+    assert_eq!(resp.policy_groups[0].group_name.as_deref(), Some("xacct-group"));
+    assert!(resp.policy_roles.is_empty());
+    assert_eq!(resp.policy_users.len(), 1);
+    assert_eq!(resp.policy_users[0].user_name.as_deref(), Some("xacct-user"));
+}
+
+/// Attaching the same managed policy to roles whose name happens to fall lexicographically
+/// between two attached roles must be reachable in pagination. We create three additional roles,
+/// attach all three to a fresh policy, and walk pages of size 2.
+pub async fn test_list_entities_for_policy_within_section_pagination(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+
+    CreatePolicyInternalRequest::builder()
+        .policy_name("WithinSectionPaginationPolicy".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create WithinSectionPaginationPolicy");
+
+    for (role_name, role_id) in [
+        ("ApolloRole", "WSPAPOLLOROLEIDXX1"),
+        ("BeagleRole", "WSPBEAGLEROLEIDXX2"),
+        ("CassiniRole", "WSPCASSINIROLEID3"),
+    ] {
+        sqlx::query(
+            "INSERT INTO iam.roles(role_id, account_id, role_name_lower, role_name_cased, path, \
+             assume_role_policy_document) VALUES ($1, $2, $3, $4, $5, $6)",
+        )
+        .bind(role_id)
+        .bind("123456789012")
+        .bind(role_name.to_lowercase())
+        .bind(role_name)
+        .bind("/")
+        .bind(r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}"#)
+        .execute(tx.as_mut())
+        .await
+        .unwrap_or_else(|e| panic!("Failed to insert {role_name}: {e}"));
+        AttachRolePolicyInternalRequest::builder()
+            .account_id("123456789012".to_string())
+            .role_name(role_name.to_string())
+            .policy_arn("arn:aws:iam::123456789012:policy/WithinSectionPaginationPolicy".to_string())
+            .build()
+            .expect("Failed to build AttachRolePolicyInternalRequest")
+            .execute(&mut tx)
+            .await
+            .unwrap_or_else(|e| panic!("Failed to attach to {role_name}: {e:?}"));
+    }
+
+    // Page through with max_items=2.
+    let page1 = ListEntitiesForPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/WithinSectionPaginationPolicy".to_string())
+        .max_items(Some(2))
+        .build()
+        .expect("Failed to build ListEntitiesForPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list entities (page 1)");
+    let marker = page1.marker.clone().expect("Page 1 should provide a continuation marker");
+
+    let page2 = ListEntitiesForPolicyRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/WithinSectionPaginationPolicy".to_string())
+        .max_items(Some(2))
+        .marker(Some(marker))
+        .build()
+        .expect("Failed to build ListEntitiesForPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list entities (page 2)");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    // Three roles split across two pages: 2 in page 1, 1 in page 2.
+    let mut role_names: Vec<String> =
+        page1.policy_roles.iter().chain(page2.policy_roles.iter()).filter_map(|r| r.role_name.clone()).collect();
+    role_names.sort();
+    assert_eq!(role_names, vec!["ApolloRole".to_string(), "BeagleRole".to_string(), "CassiniRole".to_string()]);
+    assert_eq!(page1.policy_roles.len(), 2, "Page 1 should contain 2 roles");
+    assert_eq!(page2.policy_roles.len(), 1, "Page 2 should contain 1 role");
 }

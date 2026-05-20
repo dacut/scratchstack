@@ -46,6 +46,9 @@ pub(crate) const OP_LIST_ATTACHED_ROLE_POLICIES: &str = "ListAttachedRolePolicie
 /// Operation name for ListAttachedUserPolicies
 pub(crate) const OP_LIST_ATTACHED_USER_POLICIES: &str = "ListAttachedUserPolicies";
 
+/// Operation name for ListEntitiesForPolicy
+pub(crate) const OP_LIST_ENTITIES_FOR_POLICY: &str = "ListEntitiesForPolicy";
+
 /// Operation name for ListGroups
 pub(crate) const OP_LIST_GROUPS: &str = "ListGroups";
 
