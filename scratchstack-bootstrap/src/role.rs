@@ -8,6 +8,7 @@ use {
             AttachRolePolicyInternalRequest, CreateRoleInternalRequest, CreateRoleResponse, DeleteRoleInternalRequest,
             DeleteRolePermissionsBoundaryInternalRequest, DetachRolePolicyInternalRequest, GetRoleInternalRequest,
             GetRoleResponse, ListAttachedRolePoliciesInternalRequest, ListAttachedRolePoliciesResponse,
+            ListRolesInternalRequest, ListRolesResponse,
         },
     },
     std::ffi::OsString,
@@ -264,6 +265,46 @@ impl Runnable for ListAttachedRolePoliciesInternalCommand {
         let request = ListAttachedRolePoliciesInternalRequest::builder()
             .account_id(self.account_id.clone())
             .role_name(self.role_name.clone())
+            .path_prefix(self.path_prefix.clone())
+            .max_items(self.max_items)
+            .marker(self.marker.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+/// List roles in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct ListRolesInternalCommand {
+    /// The unique identifier for the account to list roles from.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The path prefix for filtering the list of roles. Only roles with a path that starts with
+    /// this prefix will be included in the response.
+    #[clap(long)]
+    pub path_prefix: Option<String>,
+
+    /// The maximum number of roles to include in the response.
+    #[clap(long)]
+    pub max_items: Option<i32>,
+
+    /// A marker for paginating the list of roles. If the response from a previous ListRoles
+    /// request was truncated, the response will include a marker that you can use in a subsequent
+    /// ListRoles request to retrieve the next page of roles.
+    #[clap(long)]
+    pub marker: Option<String>,
+}
+
+impl Runnable for ListRolesInternalCommand {
+    type Result = ListRolesResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = ListRolesInternalRequest::builder()
+            .account_id(self.account_id.clone())
             .path_prefix(self.path_prefix.clone())
             .max_items(self.max_items)
             .marker(self.marker.clone())

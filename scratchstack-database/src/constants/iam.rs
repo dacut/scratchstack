@@ -64,6 +64,9 @@ pub(crate) const OP_LIST_POLICIES: &str = "ListPolicies";
 /// Operation name for ListPolicyVersions
 pub(crate) const OP_LIST_POLICY_VERSIONS: &str = "ListPolicyVersions";
 
+/// Operation name for ListRoles
+pub(crate) const OP_LIST_ROLES: &str = "ListRoles";
+
 /// Operation name for ListUsers
 pub(crate) const OP_LIST_USERS: &str = "ListUsers";
 

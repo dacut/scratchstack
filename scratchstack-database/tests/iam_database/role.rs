@@ -6,7 +6,7 @@ use {
         error_meta::Error as IamError,
         operation::{
             CreateRoleInternalRequest, DeleteRoleInternalRequest, DeleteRolePermissionsBoundaryInternalRequest,
-            GetRoleInternalRequest,
+            GetRoleInternalRequest, ListRolesInternalRequest,
         },
         types::{PermissionsBoundaryAttachmentType, Tag},
     },
@@ -731,4 +731,168 @@ pub fn test_get_role_invalid_name() {
         .account_id("123456789012".to_string())
         .build();
     assert!(result.is_err(), "Building a request with an invalid role name must fail");
+}
+
+/// List all roles in 123456789012. At this point in the suite the account holds Example-Role-1
+/// (seed) plus LambdaExecutor, DeployRole (under /service-roles/), and LongSessionRole — all
+/// committed by earlier create_role tests.
+pub async fn test_list_roles(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListRolesInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListRolesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list roles");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let names: Vec<&str> = resp.roles.iter().map(|r| r.role_name.as_str()).collect();
+    assert!(names.contains(&"Example-Role-1"), "Expected Example-Role-1 in list, got {names:?}");
+    assert!(names.contains(&"LambdaExecutor"), "Expected LambdaExecutor in list, got {names:?}");
+    assert!(names.contains(&"DeployRole"), "Expected DeployRole in list, got {names:?}");
+    assert!(names.contains(&"LongSessionRole"), "Expected LongSessionRole in list, got {names:?}");
+
+    // Ordering must be ascending by lowercased role name.
+    let lowercased: Vec<String> = resp.roles.iter().map(|r| r.role_name.to_lowercase()).collect();
+    let mut sorted = lowercased.clone();
+    sorted.sort();
+    assert_eq!(lowercased, sorted, "Roles must be ordered by lowercased name");
+
+    // Each Role payload must include the trust policy and an AROA-prefixed RoleId.
+    for role in &resp.roles {
+        assert!(role.role_id.starts_with("AROA"), "RoleId must start with AROA, got {}", role.role_id);
+        assert!(
+            role.assume_role_policy_document.is_some(),
+            "AssumeRolePolicyDocument must be present for {}",
+            role.role_name
+        );
+    }
+
+    // The truncation/marker fields must be unset when everything fits in one page.
+    assert!(resp.is_truncated != Some(true), "Expected no truncation, got {:?}", resp.is_truncated);
+    assert!(resp.marker.is_none(), "Expected no marker, got {:?}", resp.marker);
+}
+
+/// List roles filtered to a specific path prefix.
+pub async fn test_list_roles_with_path_prefix(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListRolesInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .path_prefix(Some("/service-roles/".to_string()))
+        .build()
+        .expect("Failed to build ListRolesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list roles with path prefix");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.roles.len(), 1, "Expected exactly 1 role under /service-roles/");
+    let role = &resp.roles[0];
+    assert_eq!(role.role_name, "DeployRole");
+    assert_eq!(role.path, "/service-roles/");
+}
+
+/// A path prefix that doesn't match any role must return an empty list (not an error).
+pub async fn test_list_roles_path_prefix_no_match(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListRolesInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .path_prefix(Some("/no-such-prefix/".to_string()))
+        .build()
+        .expect("Failed to build ListRolesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list roles with no-match path prefix");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(resp.roles.is_empty(), "Expected empty role list, got {} roles", resp.roles.len());
+}
+
+/// Listing roles in an account that has none must succeed and return an empty list.
+pub async fn test_list_roles_empty_account(pool: &sqlx::PgPool) {
+    // 876543210000 is one of the bulk accounts created by test_create_350_accounts and has no
+    // roles attached.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListRolesInternalRequest::builder()
+        .account_id("876543210000".to_string())
+        .build()
+        .expect("Failed to build ListRolesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list roles in empty account");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(resp.roles.is_empty(), "Expected empty role list, got {} roles", resp.roles.len());
+}
+
+/// Walk pagination: create 5 roles under a fresh path, page through them with max_items=2, then
+/// roll back so subsequent tests aren't affected.
+pub async fn test_list_roles_pagination(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+
+    for i in 0..5 {
+        CreateRoleInternalRequest::builder()
+            .role_name(format!("PaginationRole{i}"))
+            .path(Some("/pagination/".to_string()))
+            .account_id("123456789012".to_string())
+            .assume_role_policy_document(TRUST_POLICY.to_string())
+            .build()
+            .expect("Failed to build CreateRoleInternalRequest")
+            .execute(&mut tx)
+            .await
+            .unwrap_or_else(|e| panic!("Failed to create PaginationRole{i}: {e:?}"));
+    }
+
+    let list_page = async |tx: &mut sqlx::PgTransaction<'_>,
+                           marker: Option<String>|
+           -> scratchstack_shapes_iam::operation::ListRolesResponse {
+        let mut builder = ListRolesInternalRequest::builder()
+            .account_id("123456789012".to_string())
+            .path_prefix(Some("/pagination/".to_string()))
+            .max_items(Some(2));
+        if let Some(marker) = marker {
+            builder = builder.marker(Some(marker));
+        }
+        builder
+            .build()
+            .expect("Failed to build ListRolesInternalRequest")
+            .execute(tx)
+            .await
+            .expect("Failed to list roles page")
+    };
+
+    let page1 = list_page(&mut tx, None).await;
+    assert_eq!(page1.roles.len(), 2, "page 1 should have max_items=2 entries");
+    assert_eq!(page1.is_truncated, Some(true), "page 1 should be truncated");
+    let marker1 = page1.marker.clone().expect("page 1 should have a marker");
+
+    let page2 = list_page(&mut tx, Some(marker1)).await;
+    assert_eq!(page2.roles.len(), 2, "page 2 should have max_items=2 entries");
+    assert_eq!(page2.is_truncated, Some(true), "page 2 should be truncated");
+    let marker2 = page2.marker.clone().expect("page 2 should have a marker");
+
+    let page3 = list_page(&mut tx, Some(marker2)).await;
+    assert_eq!(page3.roles.len(), 1, "page 3 should have the remaining 1 entry");
+    assert!(page3.is_truncated != Some(true), "page 3 should not be truncated");
+    assert!(page3.marker.is_none(), "page 3 should have no marker");
+
+    let mut all_names: Vec<String> =
+        page1.roles.iter().chain(page2.roles.iter()).chain(page3.roles.iter()).map(|r| r.role_name.clone()).collect();
+    let unique: std::collections::HashSet<&String> = all_names.iter().collect();
+    assert_eq!(unique.len(), all_names.len(), "Pages must not contain duplicate role names: {all_names:?}");
+
+    all_names.sort();
+    let expected: Vec<String> = (0..5).map(|i| format!("PaginationRole{i}")).collect();
+    assert_eq!(all_names, expected, "Union of pages should cover all 5 roles");
+
+    tx.rollback().await.expect("Failed to rollback transaction");
+}
+
+/// Building a ListRoles request with a path prefix that lacks a leading slash must fail at the
+/// Smithy shape regex (^/...) before reaching the database.
+pub fn test_list_roles_invalid_path_prefix() {
+    let result = ListRolesInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .path_prefix(Some("no-leading-slash/".to_string()))
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid path prefix must fail");
 }

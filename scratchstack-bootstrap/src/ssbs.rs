@@ -41,7 +41,7 @@ use {
         role::{
             AttachRolePolicyInternalCommand, CreateRoleInternalCommand, DeleteRoleInternalCommand,
             DeleteRolePermissionsBoundaryInternalCommand, DetachRolePolicyInternalCommand, GetRoleInternalCommand,
-            ListAttachedRolePoliciesInternalCommand,
+            ListAttachedRolePoliciesInternalCommand, ListRolesInternalCommand,
         },
         user::{
             AttachUserPolicyInternalCommand, CreateUserInternalCommand, DeleteUserInternalCommand,
@@ -253,6 +253,10 @@ enum Commands {
     #[command(name = "list-policy-versions")]
     ListPolicyVersions(ListPolicyVersionsCommand),
 
+    /// List IAM roles in an account.
+    #[command(name = "list-roles")]
+    ListRoles(ListRolesInternalCommand),
+
     /// List IAM users in an account.
     #[command(name = "list-users")]
     ListUsers(ListUsersInternalCommand),
@@ -343,6 +347,7 @@ impl Commands {
             Commands::ListGroupsForUser(_) => "ListGroupsForUser",
             Commands::ListPolicies(_) => "ListPolicies",
             Commands::ListPolicyVersions(_) => "ListPolicyVersions",
+            Commands::ListRoles(_) => "ListRoles",
             Commands::ListUsers(_) => "ListUsers",
             Commands::ListUserTags(_) => "ListUserTags",
             Commands::Migrate(_) => "Migrate",
@@ -586,6 +591,13 @@ where
             })?
         }
         Commands::ListPolicyVersions(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::ListRoles(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");

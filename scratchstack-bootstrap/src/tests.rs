@@ -2139,6 +2139,112 @@ async fn test_roles(database: &TempDatabase) {
         .expect_err("get-role with an invalid role name should fail");
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 
+    // -- list-roles ------------------------------------------------------------
+    // 555566667777 currently has LambdaExecutor (path /) and DeployRole (path /service-roles/).
+    let result = database
+        .run(["ssbs", "--port", &port, "--username", "scratchstack", "list-roles", "--account-id", "555566667777"])
+        .await
+        .expect("Failed to list-roles in 555566667777");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-roles output");
+    let roles = json.get("Roles").and_then(JsonValue::as_array).expect("Roles should be an array");
+    let names: Vec<&str> = roles.iter().filter_map(|r| r.get("RoleName").and_then(JsonValue::as_str)).collect();
+    assert!(names.contains(&"LambdaExecutor"), "Expected LambdaExecutor in list-roles, got {names:?}");
+    assert!(names.contains(&"DeployRole"), "Expected DeployRole in list-roles, got {names:?}");
+
+    // Filter to /service-roles/ — should return only DeployRole.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-roles",
+            "--account-id",
+            "555566667777",
+            "--path-prefix",
+            "/service-roles/",
+        ])
+        .await
+        .expect("Failed to list-roles with /service-roles/ prefix");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-roles output");
+    let roles = json.get("Roles").and_then(JsonValue::as_array).expect("Roles should be an array");
+    assert_eq!(roles.len(), 1, "Expected exactly 1 role under /service-roles/, got {result}");
+    assert_eq!(roles[0].get("RoleName").and_then(JsonValue::as_str), Some("DeployRole"));
+
+    // max-items=1 must produce one page with IsTruncated=true and a Marker. The next page picks
+    // up the second role.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-roles",
+            "--account-id",
+            "555566667777",
+            "--max-items",
+            "1",
+        ])
+        .await
+        .expect("Failed to list-roles with max-items=1");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-roles output");
+    assert_eq!(json.get("Roles").and_then(JsonValue::as_array).map(Vec::len), Some(1));
+    assert_eq!(json.get("IsTruncated").and_then(JsonValue::as_bool), Some(true));
+    let marker = json.get("Marker").and_then(JsonValue::as_str).expect("Marker should be a string");
+
+    let page2 = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-roles",
+            "--account-id",
+            "555566667777",
+            "--max-items",
+            "1",
+            "--marker",
+            marker,
+        ])
+        .await
+        .expect("Failed to list-roles second page");
+    let json: JsonValue = serde_json::from_str(&page2).expect("Failed to parse list-roles page 2");
+    let roles = json.get("Roles").and_then(JsonValue::as_array).expect("Roles should be an array");
+    assert_eq!(roles.len(), 1, "Expected exactly 1 role on page 2, got {page2}");
+    // The two pages together must cover both roles without duplicates.
+    let page1_name = serde_json::from_str::<JsonValue>(&result)
+        .unwrap()
+        .get("Roles")
+        .and_then(JsonValue::as_array)
+        .and_then(|a| a.first())
+        .and_then(|r| r.get("RoleName"))
+        .and_then(JsonValue::as_str)
+        .unwrap()
+        .to_string();
+    let page2_name = roles[0].get("RoleName").and_then(JsonValue::as_str).unwrap().to_string();
+    assert_ne!(page1_name, page2_name, "Pagination produced duplicate roles");
+
+    // list-roles on an invalid path prefix must surface ValidationError.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-roles",
+            "--account-id",
+            "555566667777",
+            "--path-prefix",
+            "no-leading-slash/",
+        ])
+        .await
+        .expect_err("list-roles with an invalid path prefix should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
     // -- delete-role -----------------------------------------------------------
     // Create a fresh role and delete it. This leaves test_policy_attachments' role landscape
     // untouched.
