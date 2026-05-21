@@ -18,6 +18,7 @@ mod migrate;
 mod partition;
 mod policy;
 mod role;
+pub(crate) mod tag;
 mod user;
 
 #[cfg(test)]
