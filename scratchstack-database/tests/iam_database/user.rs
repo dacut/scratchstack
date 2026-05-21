@@ -7,7 +7,7 @@ use {
         operation::{
             CreateUserInternalRequest, DeleteUserInternalRequest, DeleteUserPermissionsBoundaryInternalRequest,
             GetUserInternalRequest, ListUserTagsInternalRequest, PutUserPermissionsBoundaryInternalRequest,
-            TagUserInternalRequest, UntagUserInternalRequest,
+            PutUserPolicyInternalRequest, TagUserInternalRequest, UntagUserInternalRequest,
         },
         types::Tag,
     },
@@ -669,4 +669,300 @@ pub fn test_put_user_permissions_boundary_invalid_name() {
         .permissions_boundary("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
         .build();
     assert!(result.is_err(), "Building a request with an invalid user name must fail");
+}
+
+const INLINE_POLICY_S3: &str =
+    r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#;
+const INLINE_POLICY_EC2: &str =
+    r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"ec2:Describe*","Resource":"*"}]}"#;
+const INLINE_POLICY_UNKNOWN_AWS_PRINCIPAL: &str = r#"{
+        "Version":"2012-10-17",
+        "Statement":[{
+            "Effect":"Allow",
+            "Principal":{"AWS":"arn:aws:iam::999999999999:user/nonexistent"},
+            "Action":"sts:AssumeRole",
+            "Resource":"*"
+        }]
+    }"#;
+
+/// PutUserPolicy attaches an inline policy to an existing user.
+pub async fn test_put_user_policy_simple(pool: &sqlx::PgPool) {
+    // bob was committed earlier; reuse him.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    PutUserPolicyInternalRequest::builder()
+        .user_name("bob".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("InlineRead".to_string())
+        .policy_document(INLINE_POLICY_S3.to_string())
+        .build()
+        .expect("Failed to build PutUserPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to put inline policy on bob");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Verify the row landed via raw SQL since there's no GetUserPolicy op yet.
+    let doc: String = sqlx::query_scalar(
+        "SELECT policy_document FROM iam.user_inline_policies \
+         WHERE user_id = (SELECT user_id FROM iam.users WHERE account_id = $1 AND user_name_lower = $2) \
+         AND policy_name_lower = $3",
+    )
+    .bind("123456789012")
+    .bind("bob")
+    .bind("inlineread")
+    .fetch_one(pool)
+    .await
+    .expect("Failed to fetch bob's inline policy");
+    assert_eq!(doc, INLINE_POLICY_S3);
+}
+
+/// PutUserPolicy with the same policy name replaces the document on the same row.
+pub async fn test_put_user_policy_replaces(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    PutUserPolicyInternalRequest::builder()
+        .user_name("bob".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("InlineRead".to_string())
+        .policy_document(INLINE_POLICY_EC2.to_string())
+        .build()
+        .expect("Failed to build PutUserPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to replace inline policy on bob");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let doc: String = sqlx::query_scalar(
+        "SELECT policy_document FROM iam.user_inline_policies \
+         WHERE user_id = (SELECT user_id FROM iam.users WHERE account_id = $1 AND user_name_lower = $2) \
+         AND policy_name_lower = $3",
+    )
+    .bind("123456789012")
+    .bind("bob")
+    .bind("inlineread")
+    .fetch_one(pool)
+    .await
+    .expect("Failed to fetch bob's inline policy after replace");
+    assert_eq!(doc, INLINE_POLICY_EC2);
+
+    // The total row count for bob's inline policies must still be exactly 1.
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM iam.user_inline_policies \
+         WHERE user_id = (SELECT user_id FROM iam.users WHERE account_id = $1 AND user_name_lower = $2)",
+    )
+    .bind("123456789012")
+    .bind("bob")
+    .fetch_one(pool)
+    .await
+    .expect("Failed to count bob's inline policies");
+    assert_eq!(count, 1, "Replacing must not create a new row");
+}
+
+/// A second policy name on the same user creates a new row, leaving the first one intact.
+pub async fn test_put_user_policy_additional_policy(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    PutUserPolicyInternalRequest::builder()
+        .user_name("bob".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("InlineCompute".to_string())
+        .policy_document(INLINE_POLICY_S3.to_string())
+        .build()
+        .expect("Failed to build PutUserPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to put second inline policy on bob");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM iam.user_inline_policies \
+         WHERE user_id = (SELECT user_id FROM iam.users WHERE account_id = $1 AND user_name_lower = $2)",
+    )
+    .bind("123456789012")
+    .bind("bob")
+    .fetch_one(pool)
+    .await
+    .expect("Failed to count bob's inline policies");
+    assert_eq!(count, 2, "A new policy name must create a new row");
+}
+
+/// A syntactically valid principal that references a non-existent user/account is still
+/// accepted (the entity-existence check is intentionally not performed).
+pub async fn test_put_user_policy_invalid_principal_accepted(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    PutUserPolicyInternalRequest::builder()
+        .user_name("bob".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("InlineWithMissingPrincipal".to_string())
+        .policy_document(INLINE_POLICY_UNKNOWN_AWS_PRINCIPAL.to_string())
+        .build()
+        .expect("Failed to build PutUserPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Policies referring to non-existent principals must still be accepted");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// A non-JSON / unparseable policy document must fail with MalformedPolicyDocument.
+pub async fn test_put_user_policy_invalid_document(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = PutUserPolicyInternalRequest::builder()
+        .user_name("bob".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("InlineBroken".to_string())
+        .policy_document("{ not valid aspen json }".to_string())
+        .build()
+        .expect("Failed to build PutUserPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("PutUserPolicy with malformed JSON must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(
+        matches!(err, IamError::MalformedPolicyDocumentException(_)),
+        "Expected MalformedPolicyDocumentException, got: {err:?}"
+    );
+}
+
+/// PutUserPolicy on a nonexistent user must fail with NoSuchEntity.
+pub async fn test_put_user_policy_nonexistent_user(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = PutUserPolicyInternalRequest::builder()
+        .user_name("nosuchputpolicyuser".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("AnyName".to_string())
+        .policy_document(INLINE_POLICY_S3.to_string())
+        .build()
+        .expect("Failed to build PutUserPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("PutUserPolicy on a nonexistent user must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building a PutUserPolicy request with an invalid user name must fail before touching the
+/// database.
+pub fn test_put_user_policy_invalid_name() {
+    let result = PutUserPolicyInternalRequest::builder()
+        .user_name("bad name!".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("AnyName".to_string())
+        .policy_document(INLINE_POLICY_S3.to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid user name must fail");
+}
+
+/// A user with an attached managed policy (and nothing else) must not be deletable.
+pub async fn test_delete_user_attached_policy_fails(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateUserInternalRequest::builder()
+        .user_name("DeleteMeAttachedUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreateUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create DeleteMeAttachedUser");
+    let user_id: String =
+        sqlx::query_scalar("SELECT user_id FROM iam.users WHERE account_id = $1 AND user_name_lower = $2")
+            .bind("123456789012")
+            .bind("deletemeattacheduser")
+            .fetch_one(tx.as_mut())
+            .await
+            .expect("Failed to fetch DeleteMeAttachedUser user_id");
+    // AAAABBBBCCCCDDDD is the seeded Example-Managed-Policy-1.
+    sqlx::query("INSERT INTO iam.user_attached_policies(user_id, managed_policy_id) VALUES ($1, $2)")
+        .bind(&user_id)
+        .bind("AAAABBBBCCCCDDDD")
+        .execute(tx.as_mut())
+        .await
+        .expect("Failed to attach Example-Managed-Policy-1 to DeleteMeAttachedUser");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteUserInternalRequest::builder()
+        .user_name("DeleteMeAttachedUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Deleting a user with an attached managed policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::DeleteConflictException(_)), "Expected DeleteConflict, got: {err:?}");
+
+    // Clean up: detach the policy, confirm DeleteUser now succeeds.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    sqlx::query("DELETE FROM iam.user_attached_policies WHERE user_id = $1")
+        .bind(&user_id)
+        .execute(tx.as_mut())
+        .await
+        .expect("Failed to detach managed policy");
+    DeleteUserInternalRequest::builder()
+        .user_name("DeleteMeAttachedUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete DeleteMeAttachedUser after detaching policy");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// A user with inline policies must not be deletable.
+pub async fn test_delete_user_inline_policy_fails(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateUserInternalRequest::builder()
+        .user_name("DeleteMeInlineUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreateUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create DeleteMeInlineUser");
+    let user_id: String =
+        sqlx::query_scalar("SELECT user_id FROM iam.users WHERE account_id = $1 AND user_name_lower = $2")
+            .bind("123456789012")
+            .bind("deletemeinlineuser")
+            .fetch_one(tx.as_mut())
+            .await
+            .expect("Failed to fetch DeleteMeInlineUser user_id");
+    sqlx::query(
+        "INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES ($1, $2, $3, $4)",
+    )
+    .bind(&user_id)
+    .bind("inline-blocker")
+    .bind("inline-blocker")
+    .bind(r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}"#)
+    .execute(tx.as_mut())
+    .await
+    .expect("Failed to insert inline policy for DeleteMeInlineUser");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteUserInternalRequest::builder()
+        .user_name("DeleteMeInlineUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Deleting a user with an inline policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::DeleteConflictException(_)), "Expected DeleteConflict, got: {err:?}");
+
+    // Clean up: remove the inline policy and confirm DeleteUser then succeeds.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    sqlx::query("DELETE FROM iam.user_inline_policies WHERE user_id = $1")
+        .bind(&user_id)
+        .execute(tx.as_mut())
+        .await
+        .expect("Failed to remove inline policy");
+    DeleteUserInternalRequest::builder()
+        .user_name("DeleteMeInlineUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete DeleteMeInlineUser after removing inline policy");
+    tx.commit().await.expect("Failed to commit transaction");
 }

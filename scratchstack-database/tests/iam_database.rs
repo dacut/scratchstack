@@ -130,6 +130,19 @@ async fn test_database() {
     user::test_put_user_permissions_boundary_invalid_arn(&pool).await;
     user::test_put_user_permissions_boundary_invalid_name();
 
+    // -- PutUserPolicyInternalRequest -----------------------------------------
+    user::test_put_user_policy_simple(&pool).await;
+    user::test_put_user_policy_replaces(&pool).await;
+    user::test_put_user_policy_additional_policy(&pool).await;
+    user::test_put_user_policy_invalid_principal_accepted(&pool).await;
+    user::test_put_user_policy_invalid_document(&pool).await;
+    user::test_put_user_policy_nonexistent_user(&pool).await;
+    user::test_put_user_policy_invalid_name();
+
+    // -- DeleteUserInternalRequest --------------------------------------------
+    user::test_delete_user_attached_policy_fails(&pool).await;
+    user::test_delete_user_inline_policy_fails(&pool).await;
+
     // -- CreateRoleInternalRequest --------------------------------------------
     role::test_create_role_simple(&pool).await;
     role::test_create_role_with_path(&pool).await;
@@ -173,6 +186,18 @@ async fn test_database() {
     group::test_remove_user_from_group(&pool).await;
     group::test_remove_user_from_group_not_member(&pool).await;
     group::test_remove_user_from_group_nonexistent_group(&pool).await;
+
+    // -- PutGroupPolicyInternalRequest ----------------------------------------
+    group::test_put_group_policy_simple(&pool).await;
+    group::test_put_group_policy_replaces(&pool).await;
+    group::test_put_group_policy_invalid_principal_accepted(&pool).await;
+    group::test_put_group_policy_invalid_document(&pool).await;
+    group::test_put_group_policy_nonexistent_group(&pool).await;
+    group::test_put_group_policy_invalid_name();
+
+    // -- DeleteGroupInternalRequest delete-conflict cases ---------------------
+    group::test_delete_group_attached_policy_fails(&pool).await;
+    group::test_delete_group_inline_policy_fails(&pool).await;
 
     // -- AttachUserPolicyInternalRequest / AttachGroupPolicyInternalRequest / AttachRolePolicyInternalRequest ---
     policy_attachment::test_attach_user_policy_simple(&pool).await;
@@ -393,6 +418,14 @@ async fn test_database() {
     role::test_put_role_permissions_boundary_nonexistent_policy(&pool).await;
     role::test_put_role_permissions_boundary_invalid_arn(&pool).await;
     role::test_put_role_permissions_boundary_invalid_name();
+
+    // -- PutRolePolicyInternalRequest -----------------------------------------
+    role::test_put_role_policy_simple(&pool).await;
+    role::test_put_role_policy_replaces(&pool).await;
+    role::test_put_role_policy_invalid_principal_accepted(&pool).await;
+    role::test_put_role_policy_invalid_document(&pool).await;
+    role::test_put_role_policy_nonexistent_role(&pool).await;
+    role::test_put_role_policy_invalid_name();
 
     iam::MIGRATOR.undo(&mut *c, 0).await.expect("Failed to undo database migrations");
 }
