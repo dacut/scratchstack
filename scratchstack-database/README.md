@@ -150,7 +150,7 @@ Scratchstack native database operations and types
 * [ ] TagMFADevice
 * [ ] TagOpenIDConnectProvider
 * [x] TagPolicy
-* [ ] TagRole
+* [x] TagRole
 * [ ] TagSAMLProvider
 * [ ] TagServerCertificate
 * [x] TagUser
@@ -158,7 +158,7 @@ Scratchstack native database operations and types
 * [ ] UntagMFADevice
 * [ ] UntagOpenIDConnectProvider
 * [x] UntagPolicy
-* [ ] UntagRole
+* [x] UntagRole
 * [ ] UntagSAMLProvider
 * [ ] UntagServerCertificate
 * [x] UntagUser
