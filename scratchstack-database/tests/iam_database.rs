@@ -272,6 +272,14 @@ async fn test_database() {
     policy_crud::test_untag_policy_empty(&pool).await;
     policy_crud::test_untag_policy_nonexistent(&pool).await;
 
+    // -- ListPolicyTagsRequest ------------------------------------------------
+    policy_query::test_list_policy_tags_simple(&pool).await;
+    policy_query::test_list_policy_tags_empty(&pool).await;
+    policy_query::test_list_policy_tags_nonexistent(&pool).await;
+    policy_query::test_list_policy_tags_invalid_arn(&pool).await;
+    policy_query::test_list_policy_tags_builder_arn_too_short();
+    policy_query::test_list_policy_tags_pagination(&pool).await;
+
     // -- ListPolicyVersionsRequest --------------------------------------------
     policy_query::test_list_policy_versions_simple(&pool).await;
     policy_query::test_list_policy_versions_nonexistent(&pool).await;

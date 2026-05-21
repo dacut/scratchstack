@@ -1,5 +1,5 @@
 //! Policy read-side test suite: GetPolicy, GetPolicyVersion, ListPolicyVersions, ListPolicies,
-//! ListEntitiesForPolicy.
+//! ListEntitiesForPolicy, ListPolicyTags.
 use {
     super::common::VALID_POLICY_DOCUMENT,
     pretty_assertions::assert_eq,
@@ -8,11 +8,11 @@ use {
         error_meta::Error as IamError,
         operation::{
             AttachGroupPolicyInternalRequest, AttachRolePolicyInternalRequest, AttachUserPolicyInternalRequest,
-            CreateGroupInternalRequest, CreatePolicyInternalRequest, CreateUserInternalRequest, GetPolicyRequest,
-            GetPolicyVersionRequest, ListEntitiesForPolicyRequest, ListPoliciesInternalRequest,
-            ListPolicyVersionsRequest,
+            CreateGroupInternalRequest, CreatePolicyInternalRequest, CreateUserInternalRequest, DeletePolicyRequest,
+            GetPolicyRequest, GetPolicyVersionRequest, ListEntitiesForPolicyRequest, ListPoliciesInternalRequest,
+            ListPolicyTagsRequest, ListPolicyVersionsRequest, TagPolicyRequest,
         },
-        types::{EntityType, PolicyScopeType, PolicyUsageType},
+        types::{EntityType, PolicyScopeType, PolicyUsageType, Tag},
     },
 };
 
@@ -904,4 +904,164 @@ pub async fn test_list_entities_for_policy_within_section_pagination(pool: &sqlx
     assert_eq!(role_names, vec!["ApolloRole".to_string(), "BeagleRole".to_string(), "CassiniRole".to_string()]);
     assert_eq!(page1.policy_roles.len(), 2, "Page 1 should contain 2 roles");
     assert_eq!(page2.policy_roles.len(), 1, "Page 2 should contain 1 role");
+}
+
+// -- ListPolicyTags tests -----------------------------------------------------
+
+/// List tags on `TestPolicy`. At this point in the suite the policy has only Env=Staging left
+/// after the tag/untag-policy tests.
+pub async fn test_list_policy_tags_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListPolicyTagsRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/TestPolicy".to_string())
+        .build()
+        .expect("Failed to build ListPolicyTagsRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list tags on TestPolicy");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.tags.len(), 1, "Expected 1 tag on TestPolicy, got: {:?}", resp.tags);
+    assert_eq!(resp.tags[0].key, "Env");
+    assert_eq!(resp.tags[0].value, "Staging");
+    assert!(resp.is_truncated != Some(true), "Expected no truncation, got {:?}", resp.is_truncated);
+    assert!(resp.marker.is_none(), "Expected no marker, got {:?}", resp.marker);
+}
+
+/// Listing tags on a policy with no tags must succeed and return an empty list. Example-Managed-
+/// Policy-1 has no tags in the seed data.
+pub async fn test_list_policy_tags_empty(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListPolicyTagsRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build ListPolicyTagsRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list tags on Example-Managed-Policy-1");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(resp.tags.is_empty(), "Expected empty tag list, got {} tags", resp.tags.len());
+}
+
+/// Listing tags on a nonexistent policy must fail with NoSuchEntity.
+pub async fn test_list_policy_tags_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = ListPolicyTagsRequest::builder()
+        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchPolicyTags".to_string())
+        .build()
+        .expect("Failed to build ListPolicyTagsRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Listing tags on a nonexistent policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Listing tags with an unparseable ARN must fail with ValidationError.
+pub async fn test_list_policy_tags_invalid_arn(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = ListPolicyTagsRequest::builder()
+        // Long enough to satisfy the Smithy >= 20 character length, but not a valid ARN.
+        .policy_arn("not-an-arn-but-long-enough-to-pass".to_string())
+        .build()
+        .expect("Failed to build ListPolicyTagsRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Listing tags with a bad ARN must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::ValidationError(_)), "Expected ValidationError, got: {err:?}");
+}
+
+/// Building a ListPolicyTags request with an ARN shorter than the Smithy minimum (20 chars) must
+/// fail at the builder before reaching the database.
+pub fn test_list_policy_tags_builder_arn_too_short() {
+    let result = ListPolicyTagsRequest::builder().policy_arn("short-arn".to_string()).build();
+    assert!(result.is_err(), "Building a request with an ARN under 20 chars must fail");
+}
+
+/// Walk pagination: create a fresh policy with 5 tags, page through them with max_items=2, then
+/// clean the policy up so subsequent tests aren't affected.
+pub async fn test_list_policy_tags_pagination(pool: &sqlx::PgPool) {
+    let pol_arn = "arn:test-partition:iam::123456789012:policy/PaginationTagsPolicy";
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreatePolicyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .policy_name("PaginationTagsPolicy".to_string())
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create PaginationTagsPolicy");
+    let tags: Vec<Tag> = (0..5)
+        .map(|i| {
+            Tag::builder()
+                .key(format!("Key{i}"))
+                .value(format!("Value{i}"))
+                .build()
+                .expect("Failed to build pagination tag")
+        })
+        .collect();
+    TagPolicyRequest::builder()
+        .policy_arn(pol_arn.to_string())
+        .tags(tags)
+        .build()
+        .expect("Failed to build TagPolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to tag PaginationTagsPolicy");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let list_page = async |tx: &mut sqlx::PgTransaction<'_>,
+                           marker: Option<String>|
+           -> scratchstack_shapes_iam::operation::ListPolicyTagsResponse {
+        let mut builder = ListPolicyTagsRequest::builder().policy_arn(pol_arn.to_string()).max_items(Some(2));
+        if let Some(marker) = marker {
+            builder = builder.marker(Some(marker));
+        }
+        builder
+            .build()
+            .expect("Failed to build ListPolicyTagsRequest")
+            .execute(tx)
+            .await
+            .expect("Failed to list policy tags page")
+    };
+
+    let page1 = list_page(&mut tx, None).await;
+    assert_eq!(page1.tags.len(), 2, "page 1 should have max_items=2 entries");
+    assert_eq!(page1.is_truncated, Some(true), "page 1 should be truncated");
+    let marker1 = page1.marker.clone().expect("page 1 should have a marker");
+
+    let page2 = list_page(&mut tx, Some(marker1)).await;
+    assert_eq!(page2.tags.len(), 2, "page 2 should have max_items=2 entries");
+    assert_eq!(page2.is_truncated, Some(true), "page 2 should be truncated");
+    let marker2 = page2.marker.clone().expect("page 2 should have a marker");
+
+    let page3 = list_page(&mut tx, Some(marker2)).await;
+    assert_eq!(page3.tags.len(), 1, "page 3 should have the remaining 1 entry");
+    assert!(page3.is_truncated != Some(true), "page 3 should not be truncated");
+    assert!(page3.marker.is_none(), "page 3 should have no marker");
+
+    let mut all_keys: Vec<String> =
+        page1.tags.iter().chain(page2.tags.iter()).chain(page3.tags.iter()).map(|t| t.key.clone()).collect();
+    let unique: std::collections::HashSet<&String> = all_keys.iter().collect();
+    assert_eq!(unique.len(), all_keys.len(), "Pages must not contain duplicate tag keys: {all_keys:?}");
+
+    all_keys.sort();
+    let expected: Vec<String> = (0..5).map(|i| format!("Key{i}")).collect();
+    assert_eq!(all_keys, expected, "Union of pages should cover all 5 tags");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    // Clean up the fresh policy outside the rolled-back transaction.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeletePolicyRequest::builder()
+        .policy_arn(pol_arn.to_string())
+        .build()
+        .expect("Failed to build DeletePolicyRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete PaginationTagsPolicy");
+    tx.commit().await.expect("Failed to commit transaction");
 }

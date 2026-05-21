@@ -1504,6 +1504,149 @@ async fn test_policies(database: &TempDatabase) {
         .expect_err("Tag on missing policy should fail");
     assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
 
+    // -- list-policy-tags ----------------------------------------------------
+    // DelVersionPolicy has one tag (Env=Prod) left after the tag/untag section above.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-policy-tags",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/DelVersionPolicy",
+        ])
+        .await
+        .expect("Failed to list-policy-tags for DelVersionPolicy");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-policy-tags output");
+    let tags = json.get("Tags").and_then(JsonValue::as_array).expect("Tags should be an array");
+    assert_eq!(tags.len(), 1);
+    assert_eq!(tags[0].get("Key").and_then(JsonValue::as_str), Some("Env"));
+    assert_eq!(tags[0].get("Value").and_then(JsonValue::as_str), Some("Prod"));
+
+    // Create a policy with multiple tags so we can exercise pagination, then clean it up.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-policy",
+            "--account-id",
+            "555566667777",
+            "--policy-name",
+            "ListTagsPaginationPolicy",
+            "--policy-document",
+            r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#,
+            "--tags",
+            "Key=Alpha,Value=1",
+            "Key=Beta,Value=2",
+            "Key=Gamma,Value=3",
+        ])
+        .await
+        .expect("Failed to create ListTagsPaginationPolicy");
+    let pagination_arn = "arn:test-partition:iam::555566667777:policy/ListTagsPaginationPolicy";
+
+    // Page 1: max-items=1.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-policy-tags",
+            "--policy-arn",
+            pagination_arn,
+            "--max-items",
+            "1",
+        ])
+        .await
+        .expect("Failed to list-policy-tags page 1");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse page 1");
+    assert_eq!(json.get("Tags").and_then(JsonValue::as_array).map(Vec::len), Some(1));
+    assert_eq!(json.get("IsTruncated").and_then(JsonValue::as_bool), Some(true));
+    let marker = json.get("Marker").and_then(JsonValue::as_str).expect("Marker should be present").to_string();
+    let page1_key = json
+        .get("Tags")
+        .and_then(JsonValue::as_array)
+        .and_then(|a| a.first())
+        .and_then(|t| t.get("Key"))
+        .and_then(JsonValue::as_str)
+        .unwrap()
+        .to_string();
+
+    // Page 2: continue from marker.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-policy-tags",
+            "--policy-arn",
+            pagination_arn,
+            "--max-items",
+            "1",
+            "--marker",
+            &marker,
+        ])
+        .await
+        .expect("Failed to list-policy-tags page 2");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse page 2");
+    let tags = json.get("Tags").and_then(JsonValue::as_array).expect("Tags should be present");
+    assert_eq!(tags.len(), 1);
+    let page2_key = tags[0].get("Key").and_then(JsonValue::as_str).unwrap().to_string();
+    assert_ne!(page1_key, page2_key, "Pagination produced duplicate tag keys");
+
+    // Clean up.
+    database
+        .run(["ssbs", "--port", &port, "--username", "scratchstack", "delete-policy", "--policy-arn", pagination_arn])
+        .await
+        .expect("Failed to delete ListTagsPaginationPolicy during cleanup");
+
+    // list-policy-tags on a nonexistent policy must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-policy-tags",
+            "--policy-arn",
+            "arn:test-partition:iam::555566667777:policy/NoSuchListTagsPolicy",
+        ])
+        .await
+        .expect_err("list-policy-tags on a nonexistent policy should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Malformed (but long enough) ARN must surface as ValidationError.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-policy-tags",
+            "--policy-arn",
+            "not-an-arn-but-long-enough-to-pass",
+        ])
+        .await
+        .expect_err("list-policy-tags with a bad ARN should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // ARN below the 20-character minimum is rejected at the Smithy builder.
+    let err = database
+        .run(["ssbs", "--port", &port, "--username", "scratchstack", "list-policy-tags", "--policy-arn", "short-arn"])
+        .await
+        .expect_err("list-policy-tags with a short ARN should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
     // -- delete-policy -------------------------------------------------------
     // Deleting a nonexistent policy must fail with NoSuchEntity.
     let err = database
