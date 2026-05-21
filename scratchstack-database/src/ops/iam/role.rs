@@ -906,7 +906,9 @@ struct ListRolesMarker {
     next_role_name_lower: String,
 }
 
-/// The rows returned by the ListRoles query.
+/// The rows returned by the ListRoles query. The `pb_*` columns come from a LEFT JOIN against
+/// iam.managed_policies on permissions_boundary_managed_policy_id, so the join keeps the row even
+/// when a role has no PB and the projection avoids the N+1 lookup per role.
 #[derive(FromRow)]
 struct ListRolesRow {
     role_id: String,
@@ -918,6 +920,8 @@ struct ListRolesRow {
     assume_role_policy_document: String,
     max_session_duration: Option<i32>,
     created_at: DateTime<Utc>,
+    pb_path: Option<String>,
+    pb_name_cased: Option<String>,
 }
 
 /// List roles in the account. Each result carries the same Role projection produced by GetRole,
@@ -944,17 +948,20 @@ pub async fn list_roles(
 
     let mut sql = QueryBuilder::new(
         r#"
-        SELECT role_id, role_name_lower, role_name_cased, path,
-            permissions_boundary_managed_policy_id, description, assume_role_policy_document,
-            max_session_duration, created_at
-        FROM iam.roles
-        WHERE account_id =
+        SELECT r.role_id, r.role_name_lower, r.role_name_cased, r.path,
+            r.permissions_boundary_managed_policy_id, r.description, r.assume_role_policy_document,
+            r.max_session_duration, r.created_at,
+            pb.path AS pb_path, pb.managed_policy_name_cased AS pb_name_cased
+        FROM iam.roles r
+        LEFT JOIN iam.managed_policies pb
+            ON pb.managed_policy_id = r.permissions_boundary_managed_policy_id
+        WHERE r.account_id =
     "#,
     );
     sql.push_bind(account_id);
 
     if let Some(path_prefix) = path_prefix {
-        sql.push(" AND path LIKE ");
+        sql.push(" AND r.path LIKE ");
         sql.push_bind(format!("{}%", path_prefix.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")));
     }
 
@@ -963,12 +970,12 @@ pub async fn list_roles(
             log::error!("Failed to decrypt pagination token for ListRoles: {e}");
             IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
         })?;
-        sql.push(" AND role_name_lower >= ");
+        sql.push(" AND r.role_name_lower >= ");
         sql.push_bind(info.next_role_name_lower);
     }
 
     // Request one more than max_items so we can determine if there are more results.
-    sql.push(" ORDER BY role_name_lower ASC LIMIT ");
+    sql.push(" ORDER BY r.role_name_lower ASC LIMIT ");
     sql.push_bind(max_items as i32 + 1);
 
     let rows = sql.build_query_as::<ListRolesRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
@@ -1006,27 +1013,16 @@ pub async fn list_roles(
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?;
 
-        let permissions_boundary = if let Some(pb_id) = row.permissions_boundary_managed_policy_id {
-            let pb_row = query(indoc! {"
-                    SELECT path, managed_policy_name_cased
-                    FROM iam.managed_policies
-                    WHERE managed_policy_id = $1
-                "})
-            .bind(&pb_id)
-            .fetch_optional(tx.as_mut())
-            .await
-            .map_err(|e| {
-                log::error!("Failed to fetch permissions boundary managed policy from database: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?;
-
-            let pb_row = pb_row.ok_or_else(|| {
-                log::error!("Role references missing permissions boundary managed policy ID: {pb_id}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?;
-
-            let pb_path: String = pb_row.get(0);
-            let pb_name_cased: String = pb_row.get(1);
+        let permissions_boundary = if let Some(pb_id) = row.permissions_boundary_managed_policy_id.as_deref() {
+            // The FK on permissions_boundary_managed_policy_id guarantees the joined row exists,
+            // so a missing pb_path/pb_name_cased here indicates DB corruption.
+            let (pb_path, pb_name_cased) = match (row.pb_path, row.pb_name_cased) {
+                (Some(p), Some(n)) => (p, n),
+                _ => {
+                    log::error!("Role references missing permissions boundary managed policy ID: {pb_id}");
+                    return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+                }
+            };
             let pb_arn = build_policy_arn(&partition, account_id, &pb_path, &pb_name_cased)?;
 
             Some(
