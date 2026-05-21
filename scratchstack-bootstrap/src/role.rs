@@ -9,7 +9,8 @@ use {
             DeleteRolePermissionsBoundaryInternalRequest, DetachRolePolicyInternalRequest, GetRoleInternalRequest,
             GetRoleResponse, ListAttachedRolePoliciesInternalRequest, ListAttachedRolePoliciesResponse,
             ListRoleTagsInternalRequest, ListRoleTagsResponse, ListRolesInternalRequest, ListRolesResponse,
-            TagRoleInternalRequest, UntagRoleInternalRequest,
+            TagRoleInternalRequest, UntagRoleInternalRequest, UpdateRoleDescriptionInternalRequest,
+            UpdateRoleDescriptionResponse, UpdateRoleInternalRequest, UpdateRoleResponse,
         },
     },
     std::ffi::OsString,
@@ -419,6 +420,77 @@ impl Runnable for UntagRoleInternalCommand {
             .account_id(self.account_id.clone())
             .role_name(self.role_name.clone())
             .tag_keys(self.tag_keys.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+/// Update the description and/or max session duration of a role in a given account in the
+/// Scratchstack IAM service. Fields that are not specified are left unchanged.
+#[derive(Debug, Parser)]
+pub(crate) struct UpdateRoleInternalCommand {
+    /// The unique identifier for the account the role belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The new description for the role.
+    #[clap(long)]
+    pub description: Option<String>,
+
+    /// The new maximum session duration (in seconds) for the role. Must be between 3600 (1 hour)
+    /// and 43200 (12 hours).
+    #[clap(long)]
+    pub max_session_duration: Option<i32>,
+
+    /// The name of the role to update.
+    #[clap(long)]
+    pub role_name: String,
+}
+
+/// Replace the description on a role in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct UpdateRoleDescriptionInternalCommand {
+    /// The unique identifier for the account the role belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The new description for the role. May be empty.
+    #[clap(long)]
+    pub description: String,
+
+    /// The name of the role to update.
+    #[clap(long)]
+    pub role_name: String,
+}
+
+impl Runnable for UpdateRoleInternalCommand {
+    type Result = UpdateRoleResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = UpdateRoleInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .description(self.description.clone())
+            .max_session_duration(self.max_session_duration)
+            .role_name(self.role_name.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for UpdateRoleDescriptionInternalCommand {
+    type Result = UpdateRoleDescriptionResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = UpdateRoleDescriptionInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .description(self.description.clone())
+            .role_name(self.role_name.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }

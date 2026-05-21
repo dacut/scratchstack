@@ -43,7 +43,8 @@ use {
             AttachRolePolicyInternalCommand, CreateRoleInternalCommand, DeleteRoleInternalCommand,
             DeleteRolePermissionsBoundaryInternalCommand, DetachRolePolicyInternalCommand, GetRoleInternalCommand,
             ListAttachedRolePoliciesInternalCommand, ListRoleTagsInternalCommand, ListRolesInternalCommand,
-            TagRoleInternalCommand, UntagRoleInternalCommand,
+            TagRoleInternalCommand, UntagRoleInternalCommand, UpdateRoleDescriptionInternalCommand,
+            UpdateRoleInternalCommand,
         },
         user::{
             AttachUserPolicyInternalCommand, CreateUserInternalCommand, DeleteUserInternalCommand,
@@ -319,6 +320,14 @@ enum Commands {
     #[command(name = "update-group")]
     UpdateGroup(UpdateGroupInternalCommand),
 
+    /// Update an IAM role's description and/or max session duration in an account.
+    #[command(name = "update-role")]
+    UpdateRole(UpdateRoleInternalCommand),
+
+    /// Replace the description on an IAM role in an account.
+    #[command(name = "update-role-description")]
+    UpdateRoleDescription(UpdateRoleDescriptionInternalCommand),
+
     /// Update an IAM user in an account.
     #[command(name = "update-user")]
     UpdateUser(UpdateUserInternalCommand),
@@ -382,6 +391,8 @@ impl Commands {
             Commands::UntagRole(_) => "UntagRole",
             Commands::UntagUser(_) => "UntagUser",
             Commands::UpdateGroup(_) => "UpdateGroup",
+            Commands::UpdateRole(_) => "UpdateRole",
+            Commands::UpdateRoleDescription(_) => "UpdateRoleDescription",
             Commands::UpdateUser(_) => "UpdateUser",
         }
     }
@@ -694,6 +705,17 @@ where
         Commands::UpdateGroup(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
+        }
+        Commands::UpdateRole(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::UpdateRoleDescription(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
         }
         Commands::UpdateUser(sub) => {
             sub.run(&cli, vars).await?;
