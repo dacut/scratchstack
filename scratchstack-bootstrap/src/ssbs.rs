@@ -43,14 +43,15 @@ use {
             AttachRolePolicyInternalCommand, CreateRoleInternalCommand, DeleteRoleInternalCommand,
             DeleteRolePermissionsBoundaryInternalCommand, DetachRolePolicyInternalCommand, GetRoleInternalCommand,
             ListAttachedRolePoliciesInternalCommand, ListRoleTagsInternalCommand, ListRolesInternalCommand,
-            TagRoleInternalCommand, UntagRoleInternalCommand, UpdateRoleDescriptionInternalCommand,
-            UpdateRoleInternalCommand,
+            PutRolePermissionsBoundaryInternalCommand, TagRoleInternalCommand, UntagRoleInternalCommand,
+            UpdateRoleDescriptionInternalCommand, UpdateRoleInternalCommand,
         },
         user::{
             AttachUserPolicyInternalCommand, CreateUserInternalCommand, DeleteUserInternalCommand,
             DeleteUserPermissionsBoundaryInternalCommand, DetachUserPolicyInternalCommand, GetUserInternalCommand,
             ListAttachedUserPoliciesInternalCommand, ListUserTagsInternalCommand, ListUsersInternalCommand,
-            TagUserInternalCommand, UntagUserInternalCommand, UpdateUserInternalCommand,
+            PutUserPermissionsBoundaryInternalCommand, TagUserInternalCommand, UntagUserInternalCommand,
+            UpdateUserInternalCommand,
         },
     },
     aws_smithy_types::error::metadata::ProvideErrorMetadata,
@@ -281,6 +282,14 @@ enum Commands {
     #[command(name = "migrate")]
     Migrate(migrate::MigrateCommand),
 
+    /// Set or replace the permissions boundary on an IAM role in an account.
+    #[command(name = "put-role-permissions-boundary")]
+    PutRolePermissionsBoundary(PutRolePermissionsBoundaryInternalCommand),
+
+    /// Set or replace the permissions boundary on an IAM user in an account.
+    #[command(name = "put-user-permissions-boundary")]
+    PutUserPermissionsBoundary(PutUserPermissionsBoundaryInternalCommand),
+
     /// Remove a user from a group in an account.
     #[command(name = "remove-user-from-group")]
     RemoveUserFromGroup(RemoveUserFromGroupInternalCommand),
@@ -381,6 +390,8 @@ impl Commands {
             Commands::ListUsers(_) => "ListUsers",
             Commands::ListUserTags(_) => "ListUserTags",
             Commands::Migrate(_) => "Migrate",
+            Commands::PutRolePermissionsBoundary(_) => "PutRolePermissionsBoundary",
+            Commands::PutUserPermissionsBoundary(_) => "PutUserPermissionsBoundary",
             Commands::RemoveUserFromGroup(_) => "RemoveUserFromGroup",
             Commands::SetCurrentPartition(_) => "SetCurrentPartition",
             Commands::SetDefaultPolicyVersion(_) => "SetDefaultPolicyVersion",
@@ -666,6 +677,14 @@ where
         Commands::Migrate(sub) => {
             sub.run(&cli, vars).await?;
             "Migration completed successfully.".to_string()
+        }
+        Commands::PutRolePermissionsBoundary(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::PutUserPermissionsBoundary(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
         }
         Commands::RemoveUserFromGroup(sub) => {
             sub.run(&cli, vars).await?;

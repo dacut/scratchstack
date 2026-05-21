@@ -8,14 +8,15 @@ mod get_role;
 mod list_attached_role_policies;
 mod list_role_tags;
 mod list_roles;
+mod put_role_permissions_boundary;
 mod tag_role;
 mod untag_role;
 mod update_role;
 mod update_role_description;
 pub use {
     attach_role_policy::*, create_role::*, delete_role::*, delete_role_permissions_boundary::*, detach_role_policy::*,
-    get_role::*, list_attached_role_policies::*, list_role_tags::*, list_roles::*, tag_role::*, untag_role::*,
-    update_role::*, update_role_description::*,
+    get_role::*, list_attached_role_policies::*, list_role_tags::*, list_roles::*, put_role_permissions_boundary::*,
+    tag_role::*, untag_role::*, update_role::*, update_role_description::*,
 };
 
 use crate::constants::iam::ARN_RESOURCE_PREFIX_ROLE;

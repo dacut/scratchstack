@@ -642,6 +642,220 @@ async fn test_users(database: &TempDatabase) {
         .await
         .expect_err("delete-user-permissions-boundary with an invalid user name should fail");
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // -- put-user-permissions-boundary -----------------------------------------
+    // Create a managed policy and a fresh user with no boundary, then set the boundary via the API.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-policy",
+            "--account-id",
+            "555566667777",
+            "--policy-name",
+            "PutUserPbPolicy",
+            "--policy-document",
+            r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#,
+        ])
+        .await
+        .expect("Failed to create PutUserPbPolicy");
+    let pb_arn = "arn:test-partition:iam::555566667777:policy/PutUserPbPolicy";
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPbUser",
+        ])
+        .await
+        .expect("Failed to create PutPbUser");
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-user-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPbUser",
+            "--permissions-boundary",
+            pb_arn,
+        ])
+        .await
+        .expect("Failed to put-user-permissions-boundary on PutPbUser");
+
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPbUser",
+        ])
+        .await
+        .expect("Failed to get-user for PutPbUser after put-user-permissions-boundary");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse get-user output");
+    let pb_arn_out = json
+        .get("User")
+        .and_then(|u| u.get("PermissionsBoundary"))
+        .and_then(|p| p.get("PermissionsBoundaryArn"))
+        .and_then(JsonValue::as_str)
+        .expect("PermissionsBoundary.PermissionsBoundaryArn should be present");
+    assert_eq!(pb_arn_out, pb_arn);
+
+    // Re-putting the same boundary must succeed.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-user-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPbUser",
+            "--permissions-boundary",
+            pb_arn,
+        ])
+        .await
+        .expect("Re-running put-user-permissions-boundary on PutPbUser should succeed");
+
+    // put-user-permissions-boundary on a nonexistent user must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-user-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "no-such-user",
+            "--permissions-boundary",
+            pb_arn,
+        ])
+        .await
+        .expect_err("put-user-permissions-boundary on a nonexistent user should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // PB ARN pointing to a nonexistent policy must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-user-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPbUser",
+            "--permissions-boundary",
+            "arn:test-partition:iam::555566667777:policy/NoSuchPolicy",
+        ])
+        .await
+        .expect_err("put-user-permissions-boundary with a nonexistent PB policy should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Malformed PB ARN must surface ValidationError.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-user-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPbUser",
+            "--permissions-boundary",
+            "not-an-arn-but-long-enough-to-pass",
+        ])
+        .await
+        .expect_err("put-user-permissions-boundary with an invalid PB ARN should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // Invalid user name must surface as ValidationError before reaching the database.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-user-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "bad name!",
+            "--permissions-boundary",
+            pb_arn,
+        ])
+        .await
+        .expect_err("put-user-permissions-boundary with an invalid user name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // Clean up: clear PB, delete the user and policy.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-user-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPbUser",
+        ])
+        .await
+        .expect("Failed to clear PutPbUser PB during cleanup");
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPbUser",
+        ])
+        .await
+        .expect("Failed to delete PutPbUser during cleanup");
+    database
+        .run(["ssbs", "--port", &port, "--username", "scratchstack", "delete-policy", "--policy-arn", pb_arn])
+        .await
+        .expect("Failed to delete PutUserPbPolicy during cleanup");
 }
 
 async fn test_policies(database: &TempDatabase) {
@@ -3325,6 +3539,222 @@ async fn test_roles(database: &TempDatabase) {
         .await
         .expect_err("update-role-description with an invalid role name should fail");
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // -- put-role-permissions-boundary -----------------------------------------
+    // Create a managed policy and a fresh role with no boundary, then set the boundary.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-policy",
+            "--account-id",
+            "555566667777",
+            "--policy-name",
+            "PutRolePbPolicy",
+            "--policy-document",
+            r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#,
+        ])
+        .await
+        .expect("Failed to create PutRolePbPolicy");
+    let pb_arn = "arn:test-partition:iam::555566667777:policy/PutRolePbPolicy";
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPbRole",
+            "--assume-role-policy-document",
+            trust_policy,
+        ])
+        .await
+        .expect("Failed to create PutPbRole");
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-role-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPbRole",
+            "--permissions-boundary",
+            pb_arn,
+        ])
+        .await
+        .expect("Failed to put-role-permissions-boundary on PutPbRole");
+
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPbRole",
+        ])
+        .await
+        .expect("Failed to get-role for PutPbRole after put-role-permissions-boundary");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse get-role output");
+    let pb_arn_out = json
+        .get("Role")
+        .and_then(|r| r.get("PermissionsBoundary"))
+        .and_then(|p| p.get("PermissionsBoundaryArn"))
+        .and_then(JsonValue::as_str)
+        .expect("PermissionsBoundary.PermissionsBoundaryArn should be present");
+    assert_eq!(pb_arn_out, pb_arn);
+
+    // Re-putting the same boundary must succeed.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-role-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPbRole",
+            "--permissions-boundary",
+            pb_arn,
+        ])
+        .await
+        .expect("Re-running put-role-permissions-boundary on PutPbRole should succeed");
+
+    // put-role-permissions-boundary on a nonexistent role must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-role-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "no-such-role",
+            "--permissions-boundary",
+            pb_arn,
+        ])
+        .await
+        .expect_err("put-role-permissions-boundary on a nonexistent role should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // PB ARN pointing to a nonexistent policy must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-role-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPbRole",
+            "--permissions-boundary",
+            "arn:test-partition:iam::555566667777:policy/NoSuchPolicy",
+        ])
+        .await
+        .expect_err("put-role-permissions-boundary with a nonexistent PB policy should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Malformed PB ARN must surface ValidationError.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-role-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPbRole",
+            "--permissions-boundary",
+            "not-an-arn-but-long-enough-to-pass",
+        ])
+        .await
+        .expect_err("put-role-permissions-boundary with an invalid PB ARN should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // Invalid role name must surface as ValidationError before reaching the database.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-role-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "bad role!",
+            "--permissions-boundary",
+            pb_arn,
+        ])
+        .await
+        .expect_err("put-role-permissions-boundary with an invalid role name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // Clean up: clear PB, delete the role and policy.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-role-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPbRole",
+        ])
+        .await
+        .expect("Failed to clear PutPbRole PB during cleanup");
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPbRole",
+        ])
+        .await
+        .expect("Failed to delete PutPbRole during cleanup");
+    database
+        .run(["ssbs", "--port", &port, "--username", "scratchstack", "delete-policy", "--policy-arn", pb_arn])
+        .await
+        .expect("Failed to delete PutRolePbPolicy during cleanup");
 }
 
 async fn test_policy_attachments(database: &TempDatabase) {

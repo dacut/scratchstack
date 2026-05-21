@@ -9,7 +9,8 @@ use {
             DeleteUserPermissionsBoundaryInternalRequest, DetachUserPolicyInternalRequest, GetUserInternalRequest,
             GetUserResponse, ListAttachedUserPoliciesInternalRequest, ListAttachedUserPoliciesResponse,
             ListUserTagsInternalRequest, ListUserTagsResponse, ListUsersInternalRequest, ListUsersResponse,
-            TagUserInternalRequest, UntagUserInternalRequest, UpdateUserInternalRequest,
+            PutUserPermissionsBoundaryInternalRequest, TagUserInternalRequest, UntagUserInternalRequest,
+            UpdateUserInternalRequest,
         },
     },
     std::ffi::OsString,
@@ -435,6 +436,39 @@ impl Runnable for UpdateUserInternalCommand {
             new_path: self.new_path.clone(),
             new_user_name: self.new_user_name.clone(),
         };
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+/// Set or replace the permissions boundary on a user in a given account in the Scratchstack IAM
+/// service.
+#[derive(Debug, Parser)]
+pub(crate) struct PutUserPermissionsBoundaryInternalCommand {
+    /// The unique identifier for the account the user belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The ARN of the managed policy used to set the permissions boundary for the user.
+    #[clap(long)]
+    pub permissions_boundary: String,
+
+    /// The name of the user to set the permissions boundary on.
+    #[clap(long)]
+    pub user_name: String,
+}
+
+impl Runnable for PutUserPermissionsBoundaryInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = PutUserPermissionsBoundaryInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .permissions_boundary(self.permissions_boundary.clone())
+            .user_name(self.user_name.clone())
+            .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }

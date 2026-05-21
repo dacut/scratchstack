@@ -6,7 +6,8 @@ use {
         error_meta::Error as IamError,
         operation::{
             CreateUserInternalRequest, DeleteUserInternalRequest, DeleteUserPermissionsBoundaryInternalRequest,
-            GetUserInternalRequest, ListUserTagsInternalRequest, TagUserInternalRequest, UntagUserInternalRequest,
+            GetUserInternalRequest, ListUserTagsInternalRequest, PutUserPermissionsBoundaryInternalRequest,
+            TagUserInternalRequest, UntagUserInternalRequest,
         },
         types::Tag,
     },
@@ -534,6 +535,138 @@ pub fn test_delete_user_permissions_boundary_invalid_name() {
     let result = DeleteUserPermissionsBoundaryInternalRequest::builder()
         .user_name("bad name!".to_string())
         .account_id("123456789012".to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid user name must fail");
+}
+
+/// PutUserPermissionsBoundary sets the boundary, and a second call replaces it (here using the
+/// same policy, exercising the UPDATE path on a row that already has the column populated).
+pub async fn test_put_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
+    let pb_arn = "arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1";
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateUserInternalRequest::builder()
+        .user_name("PutMePbUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreateUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create PutMePbUser");
+    PutUserPermissionsBoundaryInternalRequest::builder()
+        .user_name("PutMePbUser".to_string())
+        .account_id("123456789012".to_string())
+        .permissions_boundary(pb_arn.to_string())
+        .build()
+        .expect("Failed to build PutUserPermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to set PutMePbUser permissions boundary");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetUserInternalRequest::builder()
+        .user_name(Some("PutMePbUser".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build GetUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get PutMePbUser");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    let pb = resp.user.permissions_boundary.expect("User should have a permissions boundary");
+    assert_eq!(pb.permissions_boundary_arn.as_deref(), Some(pb_arn));
+
+    // Calling Put again on a user that already has a PB must succeed.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    PutUserPermissionsBoundaryInternalRequest::builder()
+        .user_name("PutMePbUser".to_string())
+        .account_id("123456789012".to_string())
+        .permissions_boundary(pb_arn.to_string())
+        .build()
+        .expect("Failed to build PutUserPermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Re-putting the same permissions boundary on PutMePbUser must succeed");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Clean up.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeleteUserPermissionsBoundaryInternalRequest::builder()
+        .user_name("PutMePbUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteUserPermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to clear PutMePbUser PB");
+    DeleteUserInternalRequest::builder()
+        .user_name("PutMePbUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete PutMePbUser");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// PutUserPermissionsBoundary on a nonexistent user must fail with NoSuchEntity.
+pub async fn test_put_user_permissions_boundary_nonexistent_user(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = PutUserPermissionsBoundaryInternalRequest::builder()
+        .user_name("nosuchputpbuser".to_string())
+        .account_id("123456789012".to_string())
+        .permissions_boundary("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build PutUserPermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("PutUserPermissionsBoundary on a nonexistent user must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// PutUserPermissionsBoundary with a PB ARN that refers to a nonexistent policy must fail with
+/// NoSuchEntity (raised by the permissions-boundary lookup helper).
+pub async fn test_put_user_permissions_boundary_nonexistent_policy(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = PutUserPermissionsBoundaryInternalRequest::builder()
+        .user_name("bob".to_string())
+        .account_id("123456789012".to_string())
+        .permissions_boundary("arn:test-partition:iam::123456789012:policy/NoSuchPolicy".to_string())
+        .build()
+        .expect("Failed to build PutUserPermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("PutUserPermissionsBoundary with a nonexistent PB policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// PutUserPermissionsBoundary with a malformed PB ARN must fail with ValidationError.
+pub async fn test_put_user_permissions_boundary_invalid_arn(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = PutUserPermissionsBoundaryInternalRequest::builder()
+        .user_name("bob".to_string())
+        .account_id("123456789012".to_string())
+        .permissions_boundary("not-an-arn-but-long-enough-to-pass".to_string())
+        .build()
+        .expect("Failed to build PutUserPermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("PutUserPermissionsBoundary with an invalid ARN must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::ValidationError(_)), "Expected ValidationError, got: {err:?}");
+}
+
+/// Building a PutUserPermissionsBoundary request with an invalid user name must fail before
+/// touching the database.
+pub fn test_put_user_permissions_boundary_invalid_name() {
+    let result = PutUserPermissionsBoundaryInternalRequest::builder()
+        .user_name("bad name!".to_string())
+        .account_id("123456789012".to_string())
+        .permissions_boundary("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
         .build();
     assert!(result.is_err(), "Building a request with an invalid user name must fail");
 }
