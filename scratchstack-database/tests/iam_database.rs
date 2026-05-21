@@ -139,6 +139,10 @@ async fn test_database() {
     user::test_put_user_policy_nonexistent_user(&pool).await;
     user::test_put_user_policy_invalid_name();
 
+    // -- DeleteUserInternalRequest --------------------------------------------
+    user::test_delete_user_attached_policy_fails(&pool).await;
+    user::test_delete_user_inline_policy_fails(&pool).await;
+
     // -- CreateRoleInternalRequest --------------------------------------------
     role::test_create_role_simple(&pool).await;
     role::test_create_role_with_path(&pool).await;
@@ -190,6 +194,10 @@ async fn test_database() {
     group::test_put_group_policy_invalid_document(&pool).await;
     group::test_put_group_policy_nonexistent_group(&pool).await;
     group::test_put_group_policy_invalid_name();
+
+    // -- DeleteGroupInternalRequest delete-conflict cases ---------------------
+    group::test_delete_group_attached_policy_fails(&pool).await;
+    group::test_delete_group_inline_policy_fails(&pool).await;
 
     // -- AttachUserPolicyInternalRequest / AttachGroupPolicyInternalRequest / AttachRolePolicyInternalRequest ---
     policy_attachment::test_attach_user_policy_simple(&pool).await;

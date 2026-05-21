@@ -849,3 +849,120 @@ pub fn test_put_user_policy_invalid_name() {
         .build();
     assert!(result.is_err(), "Building a request with an invalid user name must fail");
 }
+
+/// A user with an attached managed policy (and nothing else) must not be deletable.
+pub async fn test_delete_user_attached_policy_fails(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateUserInternalRequest::builder()
+        .user_name("DeleteMeAttachedUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreateUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create DeleteMeAttachedUser");
+    let user_id: String =
+        sqlx::query_scalar("SELECT user_id FROM iam.users WHERE account_id = $1 AND user_name_lower = $2")
+            .bind("123456789012")
+            .bind("deletemeattacheduser")
+            .fetch_one(tx.as_mut())
+            .await
+            .expect("Failed to fetch DeleteMeAttachedUser user_id");
+    // AAAABBBBCCCCDDDD is the seeded Example-Managed-Policy-1.
+    sqlx::query("INSERT INTO iam.user_attached_policies(user_id, managed_policy_id) VALUES ($1, $2)")
+        .bind(&user_id)
+        .bind("AAAABBBBCCCCDDDD")
+        .execute(tx.as_mut())
+        .await
+        .expect("Failed to attach Example-Managed-Policy-1 to DeleteMeAttachedUser");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteUserInternalRequest::builder()
+        .user_name("DeleteMeAttachedUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Deleting a user with an attached managed policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::DeleteConflictException(_)), "Expected DeleteConflict, got: {err:?}");
+
+    // Clean up: detach the policy, confirm DeleteUser now succeeds.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    sqlx::query("DELETE FROM iam.user_attached_policies WHERE user_id = $1")
+        .bind(&user_id)
+        .execute(tx.as_mut())
+        .await
+        .expect("Failed to detach managed policy");
+    DeleteUserInternalRequest::builder()
+        .user_name("DeleteMeAttachedUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete DeleteMeAttachedUser after detaching policy");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// A user with inline policies must not be deletable.
+pub async fn test_delete_user_inline_policy_fails(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateUserInternalRequest::builder()
+        .user_name("DeleteMeInlineUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreateUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create DeleteMeInlineUser");
+    let user_id: String =
+        sqlx::query_scalar("SELECT user_id FROM iam.users WHERE account_id = $1 AND user_name_lower = $2")
+            .bind("123456789012")
+            .bind("deletemeinlineuser")
+            .fetch_one(tx.as_mut())
+            .await
+            .expect("Failed to fetch DeleteMeInlineUser user_id");
+    sqlx::query(
+        "INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES ($1, $2, $3, $4)",
+    )
+    .bind(&user_id)
+    .bind("inline-blocker")
+    .bind("inline-blocker")
+    .bind(r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}"#)
+    .execute(tx.as_mut())
+    .await
+    .expect("Failed to insert inline policy for DeleteMeInlineUser");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteUserInternalRequest::builder()
+        .user_name("DeleteMeInlineUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Deleting a user with an inline policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::DeleteConflictException(_)), "Expected DeleteConflict, got: {err:?}");
+
+    // Clean up: remove the inline policy and confirm DeleteUser then succeeds.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    sqlx::query("DELETE FROM iam.user_inline_policies WHERE user_id = $1")
+        .bind(&user_id)
+        .execute(tx.as_mut())
+        .await
+        .expect("Failed to remove inline policy");
+    DeleteUserInternalRequest::builder()
+        .user_name("DeleteMeInlineUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete DeleteMeInlineUser after removing inline policy");
+    tx.commit().await.expect("Failed to commit transaction");
+}

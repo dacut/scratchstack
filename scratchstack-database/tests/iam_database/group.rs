@@ -635,3 +635,120 @@ pub fn test_put_group_policy_invalid_name() {
         .build();
     assert!(result.is_err(), "Building a request with an invalid group name must fail");
 }
+
+/// A group with an attached managed policy (and nothing else) must not be deletable.
+pub async fn test_delete_group_attached_policy_fails(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateGroupInternalRequest::builder()
+        .group_name("DeleteMeAttachedGroup".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreateGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create DeleteMeAttachedGroup");
+    let group_id: String =
+        sqlx::query_scalar("SELECT group_id FROM iam.groups WHERE account_id = $1 AND group_name_lower = $2")
+            .bind("123456789012")
+            .bind("deletemeattachedgroup")
+            .fetch_one(tx.as_mut())
+            .await
+            .expect("Failed to fetch DeleteMeAttachedGroup group_id");
+    // AAAABBBBCCCCDDDD is the seeded Example-Managed-Policy-1.
+    sqlx::query("INSERT INTO iam.group_attached_policies(group_id, managed_policy_id) VALUES ($1, $2)")
+        .bind(&group_id)
+        .bind("AAAABBBBCCCCDDDD")
+        .execute(tx.as_mut())
+        .await
+        .expect("Failed to attach Example-Managed-Policy-1 to DeleteMeAttachedGroup");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteGroupInternalRequest::builder()
+        .group_name("DeleteMeAttachedGroup".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Deleting a group with an attached managed policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::DeleteConflictException(_)), "Expected DeleteConflict, got: {err:?}");
+
+    // Clean up: detach the policy, confirm DeleteGroup now succeeds.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    sqlx::query("DELETE FROM iam.group_attached_policies WHERE group_id = $1")
+        .bind(&group_id)
+        .execute(tx.as_mut())
+        .await
+        .expect("Failed to detach managed policy");
+    DeleteGroupInternalRequest::builder()
+        .group_name("DeleteMeAttachedGroup".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete DeleteMeAttachedGroup after detaching policy");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// A group with inline policies must not be deletable.
+pub async fn test_delete_group_inline_policy_fails(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateGroupInternalRequest::builder()
+        .group_name("DeleteMeInlineGroup".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreateGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create DeleteMeInlineGroup");
+    let group_id: String =
+        sqlx::query_scalar("SELECT group_id FROM iam.groups WHERE account_id = $1 AND group_name_lower = $2")
+            .bind("123456789012")
+            .bind("deletemeinlinegroup")
+            .fetch_one(tx.as_mut())
+            .await
+            .expect("Failed to fetch DeleteMeInlineGroup group_id");
+    sqlx::query(
+        "INSERT INTO iam.group_inline_policies(group_id, policy_name_lower, policy_name_cased, policy_document) VALUES ($1, $2, $3, $4)",
+    )
+    .bind(&group_id)
+    .bind("inline-blocker")
+    .bind("inline-blocker")
+    .bind(r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}"#)
+    .execute(tx.as_mut())
+    .await
+    .expect("Failed to insert inline policy for DeleteMeInlineGroup");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteGroupInternalRequest::builder()
+        .group_name("DeleteMeInlineGroup".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Deleting a group with an inline policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::DeleteConflictException(_)), "Expected DeleteConflict, got: {err:?}");
+
+    // Clean up: remove the inline policy and confirm DeleteGroup then succeeds.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    sqlx::query("DELETE FROM iam.group_inline_policies WHERE group_id = $1")
+        .bind(&group_id)
+        .execute(tx.as_mut())
+        .await
+        .expect("Failed to remove inline policy");
+    DeleteGroupInternalRequest::builder()
+        .group_name("DeleteMeInlineGroup".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete DeleteMeInlineGroup after removing inline policy");
+    tx.commit().await.expect("Failed to commit transaction");
+}
