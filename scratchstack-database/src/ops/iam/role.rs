@@ -1089,6 +1089,7 @@ struct ListRoleTagsMarker {
 /// The rows returned by the ListRoleTags query.
 #[derive(FromRow)]
 struct ListRoleTagsRow {
+    key_lower: String,
     key_cased: String,
     value: String,
 }
@@ -1111,8 +1112,8 @@ pub async fn list_role_tags(
     let max_items = constrain_max_items(max_items)?;
     let partition = get_current_partition_or_fail(tx).await?;
 
-    let role_exists = query(indoc! {"
-        SELECT 1
+    let role_row = query(indoc! {"
+        SELECT role_id
         FROM iam.roles
         WHERE account_id = $1 AND role_name_lower = $2
         LIMIT 1
@@ -1125,39 +1126,36 @@ pub async fn list_role_tags(
         log::error!("Failed to check if role exists in database: {e}");
         IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
     })?;
-    if role_exists.is_none() {
-        return Err(NoSuchEntityException::builder()
-            .message(format!("The role with name {role_name} cannot be found."))
-            .build()
-            .into());
-    }
+
+    let role_id: String = match role_row {
+        Some(row) => row.get(0),
+        None => {
+            return Err(NoSuchEntityException::builder()
+                .message(format!("The role with name {role_name} cannot be found."))
+                .build()
+                .into());
+        }
+    };
 
     let paginator = make_paginator(&partition, OP_LIST_ROLE_TAGS)?;
 
-    let mut sql = QueryBuilder::new(
-        r#"
-        SELECT key_cased, value
-        FROM iam.role_tags t
-        INNER JOIN iam.roles r
-        ON t.role_id = r.role_id
-        WHERE r.account_id =
-        "#,
-    );
-    sql.push_bind(account_id);
-    sql.push(" AND r.role_name_lower = ");
-    sql.push_bind(role_name_lower);
+    let mut sql = QueryBuilder::new(indoc! {"
+        SELECT key_lower, key_cased, value
+        FROM iam.role_tags
+        WHERE role_id = "});
+    sql.push_bind(role_id);
 
     if let Some(marker) = marker {
         let m: ListRoleTagsMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListRoleTags: {e}");
             IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
         })?;
-        sql.push(" AND t.key_lower >= ");
+        sql.push("\nAND key_lower >= ");
         sql.push_bind(m.next_key_lower);
     }
 
     // Request one more than max_items so we can determine if there are more results.
-    sql.push(" ORDER BY t.key_lower ASC LIMIT ");
+    sql.push("\nORDER BY key_lower ASC LIMIT ");
     sql.push_bind(max_items as i32 + 1);
 
     let rows = sql.build_query_as::<ListRoleTagsRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
@@ -1172,7 +1170,7 @@ pub async fn list_role_tags(
             next_marker = Some(
                 paginator
                     .encrypt_token(&ListRoleTagsMarker {
-                        next_key_lower: row.key_cased.to_lowercase(),
+                        next_key_lower: row.key_lower,
                     })
                     .await
                     .map_err(|e| {
