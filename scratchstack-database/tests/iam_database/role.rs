@@ -613,19 +613,23 @@ pub async fn test_get_role_simple(pool: &sqlx::PgPool) {
 pub async fn test_get_role_with_path(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetRoleInternalRequest::builder()
-        .role_name("LongSessionRole".to_string())
+        .role_name("DeployRole".to_string())
         .account_id("123456789012".to_string())
         .build()
         .expect("Failed to build GetRoleInternalRequest")
         .execute(&mut tx)
         .await
-        .expect("Failed to get LongSessionRole");
+        .expect("Failed to get DeployRole");
     tx.rollback().await.expect("Failed to rollback transaction");
 
     let role = resp.role;
-    assert_eq!(role.role_name, "LongSessionRole");
-    assert_eq!(role.description.as_deref(), Some("Role for long-running batch jobs."));
-    assert_eq!(role.max_session_duration, Some(14400));
+    assert_eq!(role.role_name, "DeployRole");
+    assert_eq!(role.path, "/service-roles/");
+    assert!(
+        role.arn.ends_with(":role/service-roles/DeployRole"),
+        "Unexpected ARN: {}",
+        role.arn
+    );
 }
 
 /// Get a role committed earlier with tags. Tags must come back ordered by lowercased key.
