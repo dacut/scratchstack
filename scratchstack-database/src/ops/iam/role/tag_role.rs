@@ -84,7 +84,10 @@ pub async fn tag_role(
                 INSERT INTO iam.role_tags(role_id, key_lower, key_cased, value)
                 VALUES($1, $2, $3, $4)
                 ON CONFLICT (role_id, key_lower)
-                DO UPDATE SET key_cased = EXCLUDED.key_cased, value = EXCLUDED.value
+                DO UPDATE SET
+                    key_cased = EXCLUDED.key_cased,
+                    value = EXCLUDED.value,
+                    updated_at = CURRENT_TIMESTAMP
             "})
         .bind(&role_id)
         .bind(key_lower)
