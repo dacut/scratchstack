@@ -336,6 +336,13 @@ async fn test_database() {
     role::test_list_roles_pagination(&pool).await;
     role::test_list_roles_invalid_path_prefix();
 
+    // -- ListRoleTagsInternalRequest ------------------------------------------
+    role::test_list_role_tags(&pool).await;
+    role::test_list_role_tags_empty(&pool).await;
+    role::test_list_role_tags_pagination(&pool).await;
+    role::test_list_role_tags_nonexistent(&pool).await;
+    role::test_list_role_tags_invalid_name();
+
     iam::MIGRATOR.undo(&mut *c, 0).await.expect("Failed to undo database migrations");
 }
 
