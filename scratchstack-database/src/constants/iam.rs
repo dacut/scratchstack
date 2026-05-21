@@ -37,6 +37,9 @@ pub(crate) const MAX_POLICY_VERSIONS: i64 = 5;
 /// Error message: `"Internal failure"`.
 pub(crate) const MSG_INTERNAL_FAILURE: &str = "Internal failure";
 
+/// Operation name for ListAccessKeys
+pub(crate) const OP_LIST_ACCESS_KEYS: &str = "ListAccessKeys";
+
 /// Operation name for ListAccounts
 pub(crate) const OP_LIST_ACCOUNTS: &str = "ListAccounts";
 
