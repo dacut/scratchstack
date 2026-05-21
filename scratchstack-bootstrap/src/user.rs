@@ -9,8 +9,8 @@ use {
             DeleteUserPermissionsBoundaryInternalRequest, DetachUserPolicyInternalRequest, GetUserInternalRequest,
             GetUserResponse, ListAttachedUserPoliciesInternalRequest, ListAttachedUserPoliciesResponse,
             ListUserTagsInternalRequest, ListUserTagsResponse, ListUsersInternalRequest, ListUsersResponse,
-            PutUserPermissionsBoundaryInternalRequest, TagUserInternalRequest, UntagUserInternalRequest,
-            UpdateUserInternalRequest,
+            PutUserPermissionsBoundaryInternalRequest, PutUserPolicyInternalRequest, TagUserInternalRequest,
+            UntagUserInternalRequest, UpdateUserInternalRequest,
         },
     },
     std::ffi::OsString,
@@ -468,6 +468,43 @@ impl Runnable for PutUserPermissionsBoundaryInternalCommand {
             .account_id(self.account_id.clone())
             .permissions_boundary(self.permissions_boundary.clone())
             .user_name(self.user_name.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+/// Add or replace an inline policy on a user in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct PutUserPolicyInternalCommand {
+    /// The unique identifier for the account the user belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the user on which to set the inline policy.
+    #[clap(long)]
+    pub user_name: String,
+
+    /// The name of the inline policy to add or replace.
+    #[clap(long)]
+    pub policy_name: String,
+
+    /// The JSON policy document. Must parse as a valid Aspen policy.
+    #[clap(long)]
+    pub policy_document: String,
+}
+
+impl Runnable for PutUserPolicyInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = PutUserPolicyInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .user_name(self.user_name.clone())
+            .policy_name(self.policy_name.clone())
+            .policy_document(self.policy_document.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }

@@ -31,7 +31,7 @@ use {
             AddUserToGroupInternalCommand, AttachGroupPolicyInternalCommand, CreateGroupInternalCommand,
             DeleteGroupInternalCommand, DetachGroupPolicyInternalCommand, GetGroupInternalCommand,
             ListAttachedGroupPoliciesInternalCommand, ListGroupsForUserInternalCommand, ListGroupsInternalCommand,
-            RemoveUserFromGroupInternalCommand, UpdateGroupInternalCommand,
+            PutGroupPolicyInternalCommand, RemoveUserFromGroupInternalCommand, UpdateGroupInternalCommand,
         },
         partition::{GetCurrentPartitionCommand, SetCurrentPartitionCommand},
         policy::{
@@ -44,15 +44,15 @@ use {
             AttachRolePolicyInternalCommand, CreateRoleInternalCommand, DeleteRoleInternalCommand,
             DeleteRolePermissionsBoundaryInternalCommand, DetachRolePolicyInternalCommand, GetRoleInternalCommand,
             ListAttachedRolePoliciesInternalCommand, ListRoleTagsInternalCommand, ListRolesInternalCommand,
-            PutRolePermissionsBoundaryInternalCommand, TagRoleInternalCommand, UntagRoleInternalCommand,
-            UpdateRoleDescriptionInternalCommand, UpdateRoleInternalCommand,
+            PutRolePermissionsBoundaryInternalCommand, PutRolePolicyInternalCommand, TagRoleInternalCommand,
+            UntagRoleInternalCommand, UpdateRoleDescriptionInternalCommand, UpdateRoleInternalCommand,
         },
         user::{
             AttachUserPolicyInternalCommand, CreateUserInternalCommand, DeleteUserInternalCommand,
             DeleteUserPermissionsBoundaryInternalCommand, DetachUserPolicyInternalCommand, GetUserInternalCommand,
             ListAttachedUserPoliciesInternalCommand, ListUserTagsInternalCommand, ListUsersInternalCommand,
-            PutUserPermissionsBoundaryInternalCommand, TagUserInternalCommand, UntagUserInternalCommand,
-            UpdateUserInternalCommand,
+            PutUserPermissionsBoundaryInternalCommand, PutUserPolicyInternalCommand, TagUserInternalCommand,
+            UntagUserInternalCommand, UpdateUserInternalCommand,
         },
     },
     aws_smithy_types::error::metadata::ProvideErrorMetadata,
@@ -287,13 +287,25 @@ enum Commands {
     #[command(name = "migrate")]
     Migrate(migrate::MigrateCommand),
 
+    /// Add or replace an inline policy on an IAM group in an account.
+    #[command(name = "put-group-policy")]
+    PutGroupPolicy(PutGroupPolicyInternalCommand),
+
     /// Set or replace the permissions boundary on an IAM role in an account.
     #[command(name = "put-role-permissions-boundary")]
     PutRolePermissionsBoundary(PutRolePermissionsBoundaryInternalCommand),
 
+    /// Add or replace an inline policy on an IAM role in an account.
+    #[command(name = "put-role-policy")]
+    PutRolePolicy(PutRolePolicyInternalCommand),
+
     /// Set or replace the permissions boundary on an IAM user in an account.
     #[command(name = "put-user-permissions-boundary")]
     PutUserPermissionsBoundary(PutUserPermissionsBoundaryInternalCommand),
+
+    /// Add or replace an inline policy on an IAM user in an account.
+    #[command(name = "put-user-policy")]
+    PutUserPolicy(PutUserPolicyInternalCommand),
 
     /// Remove a user from a group in an account.
     #[command(name = "remove-user-from-group")]
@@ -396,8 +408,11 @@ impl Commands {
             Commands::ListUsers(_) => "ListUsers",
             Commands::ListUserTags(_) => "ListUserTags",
             Commands::Migrate(_) => "Migrate",
+            Commands::PutGroupPolicy(_) => "PutGroupPolicy",
             Commands::PutRolePermissionsBoundary(_) => "PutRolePermissionsBoundary",
+            Commands::PutRolePolicy(_) => "PutRolePolicy",
             Commands::PutUserPermissionsBoundary(_) => "PutUserPermissionsBoundary",
+            Commands::PutUserPolicy(_) => "PutUserPolicy",
             Commands::RemoveUserFromGroup(_) => "RemoveUserFromGroup",
             Commands::SetCurrentPartition(_) => "SetCurrentPartition",
             Commands::SetDefaultPolicyVersion(_) => "SetDefaultPolicyVersion",
@@ -691,11 +706,23 @@ where
             sub.run(&cli, vars).await?;
             "Migration completed successfully.".to_string()
         }
+        Commands::PutGroupPolicy(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
         Commands::PutRolePermissionsBoundary(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
         }
+        Commands::PutRolePolicy(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
         Commands::PutUserPermissionsBoundary(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::PutUserPolicy(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
         }

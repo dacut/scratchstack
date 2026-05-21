@@ -9,7 +9,7 @@ use {
             CreateGroupResponse, DeleteGroupInternalRequest, DetachGroupPolicyInternalRequest, GetGroupInternalRequest,
             GetGroupResponse, ListAttachedGroupPoliciesInternalRequest, ListAttachedGroupPoliciesResponse,
             ListGroupsForUserInternalRequest, ListGroupsForUserResponse, ListGroupsInternalRequest, ListGroupsResponse,
-            RemoveUserFromGroupInternalRequest, UpdateGroupInternalRequest,
+            PutGroupPolicyInternalRequest, RemoveUserFromGroupInternalRequest, UpdateGroupInternalRequest,
         },
     },
     std::ffi::OsString,
@@ -384,6 +384,43 @@ impl Runnable for DetachGroupPolicyInternalCommand {
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
             .policy_arn(self.policy_arn.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+/// Add or replace an inline policy on a group in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct PutGroupPolicyInternalCommand {
+    /// The unique identifier for the account the group belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the group on which to set the inline policy.
+    #[clap(long)]
+    pub group_name: String,
+
+    /// The name of the inline policy to add or replace.
+    #[clap(long)]
+    pub policy_name: String,
+
+    /// The JSON policy document. Must parse as a valid Aspen policy.
+    #[clap(long)]
+    pub policy_document: String,
+}
+
+impl Runnable for PutGroupPolicyInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = PutGroupPolicyInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .group_name(self.group_name.clone())
+            .policy_name(self.policy_name.clone())
+            .policy_document(self.policy_document.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }

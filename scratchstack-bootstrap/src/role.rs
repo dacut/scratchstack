@@ -9,9 +9,9 @@ use {
             DeleteRolePermissionsBoundaryInternalRequest, DetachRolePolicyInternalRequest, GetRoleInternalRequest,
             GetRoleResponse, ListAttachedRolePoliciesInternalRequest, ListAttachedRolePoliciesResponse,
             ListRoleTagsInternalRequest, ListRoleTagsResponse, ListRolesInternalRequest, ListRolesResponse,
-            PutRolePermissionsBoundaryInternalRequest, TagRoleInternalRequest, UntagRoleInternalRequest,
-            UpdateRoleDescriptionInternalRequest, UpdateRoleDescriptionResponse, UpdateRoleInternalRequest,
-            UpdateRoleResponse,
+            PutRolePermissionsBoundaryInternalRequest, PutRolePolicyInternalRequest, TagRoleInternalRequest,
+            UntagRoleInternalRequest, UpdateRoleDescriptionInternalRequest, UpdateRoleDescriptionResponse,
+            UpdateRoleInternalRequest, UpdateRoleResponse,
         },
     },
     std::ffi::OsString,
@@ -525,6 +525,43 @@ impl Runnable for PutRolePermissionsBoundaryInternalCommand {
             .account_id(self.account_id.clone())
             .permissions_boundary(self.permissions_boundary.clone())
             .role_name(self.role_name.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+/// Add or replace an inline policy on a role in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct PutRolePolicyInternalCommand {
+    /// The unique identifier for the account the role belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the role on which to set the inline policy.
+    #[clap(long)]
+    pub role_name: String,
+
+    /// The name of the inline policy to add or replace.
+    #[clap(long)]
+    pub policy_name: String,
+
+    /// The JSON policy document. Must parse as a valid Aspen policy.
+    #[clap(long)]
+    pub policy_document: String,
+}
+
+impl Runnable for PutRolePolicyInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = PutRolePolicyInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .role_name(self.role_name.clone())
+            .policy_name(self.policy_name.clone())
+            .policy_document(self.policy_document.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }

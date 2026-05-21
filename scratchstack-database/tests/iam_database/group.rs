@@ -2,10 +2,13 @@
 use {
     pretty_assertions::assert_eq,
     scratchstack_database::ops::RequestExecutor,
-    scratchstack_shapes_iam::operation::{
-        AddUserToGroupInternalRequest, CreateGroupInternalRequest, DeleteGroupInternalRequest, GetGroupInternalRequest,
-        ListGroupsForUserInternalRequest, ListGroupsInternalRequest, RemoveUserFromGroupInternalRequest,
-        UpdateGroupInternalRequest,
+    scratchstack_shapes_iam::{
+        error_meta::Error as IamError,
+        operation::{
+            AddUserToGroupInternalRequest, CreateGroupInternalRequest, DeleteGroupInternalRequest,
+            GetGroupInternalRequest, ListGroupsForUserInternalRequest, ListGroupsInternalRequest,
+            PutGroupPolicyInternalRequest, RemoveUserFromGroupInternalRequest, UpdateGroupInternalRequest,
+        },
     },
 };
 
@@ -482,4 +485,153 @@ pub async fn test_remove_user_from_group_nonexistent_group(pool: &sqlx::PgPool) 
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Removing user from nonexistent group must fail");
+}
+
+const INLINE_GROUP_POLICY_S3: &str =
+    r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#;
+const INLINE_GROUP_POLICY_EC2: &str =
+    r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"ec2:Describe*","Resource":"*"}]}"#;
+const INLINE_GROUP_POLICY_INVALID_PRINCIPAL: &str = r#"{
+        "Version":"2012-10-17",
+        "Statement":[{
+            "Effect":"Allow",
+            "Principal":{"AWS":"arn:aws:iam::999999999999:user/nonexistent"},
+            "Action":"sts:AssumeRole",
+            "Resource":"*"
+        }]
+    }"#;
+
+/// PutGroupPolicy attaches an inline policy to an existing group.
+pub async fn test_put_group_policy_simple(pool: &sqlx::PgPool) {
+    // "Administrators" was renamed from "Admins" in test_update_group_rename and survives.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    PutGroupPolicyInternalRequest::builder()
+        .group_name("Administrators".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("InlineRead".to_string())
+        .policy_document(INLINE_GROUP_POLICY_S3.to_string())
+        .build()
+        .expect("Failed to build PutGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to put inline policy on Administrators");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let doc: String = sqlx::query_scalar(
+        "SELECT policy_document FROM iam.group_inline_policies \
+         WHERE group_id = (SELECT group_id FROM iam.groups WHERE account_id = $1 AND group_name_lower = $2) \
+         AND policy_name_lower = $3",
+    )
+    .bind("123456789012")
+    .bind("administrators")
+    .bind("inlineread")
+    .fetch_one(pool)
+    .await
+    .expect("Failed to fetch Administrators inline policy");
+    assert_eq!(doc, INLINE_GROUP_POLICY_S3);
+}
+
+/// PutGroupPolicy with the same policy name replaces the document on the same row.
+pub async fn test_put_group_policy_replaces(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    PutGroupPolicyInternalRequest::builder()
+        .group_name("Administrators".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("InlineRead".to_string())
+        .policy_document(INLINE_GROUP_POLICY_EC2.to_string())
+        .build()
+        .expect("Failed to build PutGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to replace inline policy on Administrators");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let doc: String = sqlx::query_scalar(
+        "SELECT policy_document FROM iam.group_inline_policies \
+         WHERE group_id = (SELECT group_id FROM iam.groups WHERE account_id = $1 AND group_name_lower = $2) \
+         AND policy_name_lower = $3",
+    )
+    .bind("123456789012")
+    .bind("administrators")
+    .bind("inlineread")
+    .fetch_one(pool)
+    .await
+    .expect("Failed to fetch Administrators inline policy after replace");
+    assert_eq!(doc, INLINE_GROUP_POLICY_EC2);
+
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM iam.group_inline_policies \
+         WHERE group_id = (SELECT group_id FROM iam.groups WHERE account_id = $1 AND group_name_lower = $2)",
+    )
+    .bind("123456789012")
+    .bind("administrators")
+    .fetch_one(pool)
+    .await
+    .expect("Failed to count Administrators inline policies");
+    assert_eq!(count, 1, "Replacing must not create a new row");
+}
+
+/// A syntactically valid principal that references a non-existent account/user is still accepted.
+pub async fn test_put_group_policy_invalid_principal_accepted(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    PutGroupPolicyInternalRequest::builder()
+        .group_name("Administrators".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("InlineWithMissingPrincipal".to_string())
+        .policy_document(INLINE_GROUP_POLICY_INVALID_PRINCIPAL.to_string())
+        .build()
+        .expect("Failed to build PutGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Policies referring to non-existent principals must still be accepted");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// A non-JSON / unparseable policy document must fail with MalformedPolicyDocument.
+pub async fn test_put_group_policy_invalid_document(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = PutGroupPolicyInternalRequest::builder()
+        .group_name("Administrators".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("InlineBroken".to_string())
+        .policy_document("{ not valid aspen json }".to_string())
+        .build()
+        .expect("Failed to build PutGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("PutGroupPolicy with malformed JSON must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(
+        matches!(err, IamError::MalformedPolicyDocumentException(_)),
+        "Expected MalformedPolicyDocumentException, got: {err:?}"
+    );
+}
+
+/// PutGroupPolicy on a nonexistent group must fail with NoSuchEntity.
+pub async fn test_put_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = PutGroupPolicyInternalRequest::builder()
+        .group_name("NoSuchPutPolicyGroup".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("AnyName".to_string())
+        .policy_document(INLINE_GROUP_POLICY_S3.to_string())
+        .build()
+        .expect("Failed to build PutGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("PutGroupPolicy on a nonexistent group must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building a PutGroupPolicy request with an invalid group name must fail before touching the
+/// database.
+pub fn test_put_group_policy_invalid_name() {
+    let result = PutGroupPolicyInternalRequest::builder()
+        .group_name("bad name!".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("AnyName".to_string())
+        .policy_document(INLINE_GROUP_POLICY_S3.to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid group name must fail");
 }

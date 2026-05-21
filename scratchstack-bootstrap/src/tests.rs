@@ -856,6 +856,162 @@ async fn test_users(database: &TempDatabase) {
         .run(["ssbs", "--port", &port, "--username", "scratchstack", "delete-policy", "--policy-arn", pb_arn])
         .await
         .expect("Failed to delete PutUserPbPolicy during cleanup");
+
+    // -- put-user-policy ------------------------------------------------------
+    // Create a fresh user for inline-policy tests. The user can't be deleted while inline
+    // policies exist (no delete-user-policy command yet), so we just leave it in place.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPolicyUser",
+        ])
+        .await
+        .expect("Failed to create PutPolicyUser");
+
+    let policy_doc =
+        r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#;
+    let policy_doc_replaced =
+        r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"ec2:Describe*","Resource":"*"}]}"#;
+    let policy_doc_with_external_principal = r#"{
+        "Version":"2012-10-17",
+        "Statement":[{
+            "Effect":"Allow",
+            "Principal":{"AWS":"arn:aws:iam::999999999999:user/nonexistent"},
+            "Action":"sts:AssumeRole",
+            "Resource":"*"
+        }]
+    }"#;
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-user-policy",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPolicyUser",
+            "--policy-name",
+            "InlineRead",
+            "--policy-document",
+            policy_doc,
+        ])
+        .await
+        .expect("Failed to put-user-policy on PutPolicyUser");
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-user-policy",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPolicyUser",
+            "--policy-name",
+            "InlineRead",
+            "--policy-document",
+            policy_doc_replaced,
+        ])
+        .await
+        .expect("Replacing the inline policy on PutPolicyUser must succeed");
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-user-policy",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPolicyUser",
+            "--policy-name",
+            "InlineWithMissingPrincipal",
+            "--policy-document",
+            policy_doc_with_external_principal,
+        ])
+        .await
+        .expect("Policies referencing non-existent principals must still be accepted");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-user-policy",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPolicyUser",
+            "--policy-name",
+            "InlineBroken",
+            "--policy-document",
+            "{ not valid aspen json }",
+        ])
+        .await
+        .expect_err("put-user-policy with malformed JSON should fail");
+    assert_eq!(err.code(), Some("MalformedPolicyDocument"), "Expected MalformedPolicyDocument, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-user-policy",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "no-such-user",
+            "--policy-name",
+            "AnyName",
+            "--policy-document",
+            policy_doc,
+        ])
+        .await
+        .expect_err("put-user-policy on a nonexistent user should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-user-policy",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "bad name!",
+            "--policy-name",
+            "AnyName",
+            "--policy-document",
+            policy_doc,
+        ])
+        .await
+        .expect_err("put-user-policy with an invalid user name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 }
 
 async fn test_policies(database: &TempDatabase) {
@@ -2125,6 +2281,167 @@ async fn test_groups(database: &TempDatabase) {
         err.message().unwrap_or_default().contains("cannot be found"),
         "Expected 'cannot be found' in error message, got: {err}"
     );
+
+    // -- put-group-policy -----------------------------------------------------
+    // Create a fresh group for inline-policy tests. The group can't be deleted while inline
+    // policies exist (no delete-group-policy command yet), so we just leave it in place.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-group",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "PutPolicyGroup",
+        ])
+        .await
+        .expect("Failed to create PutPolicyGroup");
+
+    let policy_doc =
+        r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#;
+    let policy_doc_replaced =
+        r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"ec2:Describe*","Resource":"*"}]}"#;
+    let policy_doc_with_external_principal = r#"{
+        "Version":"2012-10-17",
+        "Statement":[{
+            "Effect":"Allow",
+            "Principal":{"AWS":"arn:aws:iam::999999999999:user/nonexistent"},
+            "Action":"sts:AssumeRole",
+            "Resource":"*"
+        }]
+    }"#;
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-group-policy",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "PutPolicyGroup",
+            "--policy-name",
+            "InlineRead",
+            "--policy-document",
+            policy_doc,
+        ])
+        .await
+        .expect("Failed to put-group-policy on PutPolicyGroup");
+
+    // Re-putting the same policy name with a different document must succeed (replacement).
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-group-policy",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "PutPolicyGroup",
+            "--policy-name",
+            "InlineRead",
+            "--policy-document",
+            policy_doc_replaced,
+        ])
+        .await
+        .expect("Replacing the inline policy on PutPolicyGroup must succeed");
+
+    // A policy with a syntactically valid principal pointing at a non-existent account is OK.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-group-policy",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "PutPolicyGroup",
+            "--policy-name",
+            "InlineWithMissingPrincipal",
+            "--policy-document",
+            policy_doc_with_external_principal,
+        ])
+        .await
+        .expect("Policies referencing non-existent principals must still be accepted");
+
+    // Malformed JSON must surface as MalformedPolicyDocument.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-group-policy",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "PutPolicyGroup",
+            "--policy-name",
+            "InlineBroken",
+            "--policy-document",
+            "{ not valid aspen json }",
+        ])
+        .await
+        .expect_err("put-group-policy with malformed JSON should fail");
+    assert_eq!(err.code(), Some("MalformedPolicyDocument"), "Expected MalformedPolicyDocument, got: {err}");
+
+    // put-group-policy on a nonexistent group must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-group-policy",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "no-such-group",
+            "--policy-name",
+            "AnyName",
+            "--policy-document",
+            policy_doc,
+        ])
+        .await
+        .expect_err("put-group-policy on a nonexistent group should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Invalid group name must surface as ValidationError before reaching the database.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-group-policy",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "bad name!",
+            "--policy-name",
+            "AnyName",
+            "--policy-document",
+            policy_doc,
+        ])
+        .await
+        .expect_err("put-group-policy with an invalid group name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 }
 
 async fn test_group_membership(database: &TempDatabase) {
@@ -3898,6 +4215,164 @@ async fn test_roles(database: &TempDatabase) {
         .run(["ssbs", "--port", &port, "--username", "scratchstack", "delete-policy", "--policy-arn", pb_arn])
         .await
         .expect("Failed to delete PutRolePbPolicy during cleanup");
+
+    // -- put-role-policy ------------------------------------------------------
+    // Create a fresh role for inline-policy tests. The role can't be deleted while inline
+    // policies exist (no delete-role-policy command yet), so we just leave it in place.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPolicyRole",
+            "--assume-role-policy-document",
+            trust_policy,
+        ])
+        .await
+        .expect("Failed to create PutPolicyRole");
+
+    let policy_doc =
+        r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#;
+    let policy_doc_replaced =
+        r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"ec2:Describe*","Resource":"*"}]}"#;
+    let policy_doc_with_external_principal = r#"{
+        "Version":"2012-10-17",
+        "Statement":[{
+            "Effect":"Allow",
+            "Principal":{"AWS":"arn:aws:iam::999999999999:user/nonexistent"},
+            "Action":"sts:AssumeRole",
+            "Resource":"*"
+        }]
+    }"#;
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-role-policy",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPolicyRole",
+            "--policy-name",
+            "InlineRead",
+            "--policy-document",
+            policy_doc,
+        ])
+        .await
+        .expect("Failed to put-role-policy on PutPolicyRole");
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-role-policy",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPolicyRole",
+            "--policy-name",
+            "InlineRead",
+            "--policy-document",
+            policy_doc_replaced,
+        ])
+        .await
+        .expect("Replacing the inline policy on PutPolicyRole must succeed");
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-role-policy",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPolicyRole",
+            "--policy-name",
+            "InlineWithMissingPrincipal",
+            "--policy-document",
+            policy_doc_with_external_principal,
+        ])
+        .await
+        .expect("Policies referencing non-existent principals must still be accepted");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-role-policy",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPolicyRole",
+            "--policy-name",
+            "InlineBroken",
+            "--policy-document",
+            "{ not valid aspen json }",
+        ])
+        .await
+        .expect_err("put-role-policy with malformed JSON should fail");
+    assert_eq!(err.code(), Some("MalformedPolicyDocument"), "Expected MalformedPolicyDocument, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-role-policy",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "no-such-role",
+            "--policy-name",
+            "AnyName",
+            "--policy-document",
+            policy_doc,
+        ])
+        .await
+        .expect_err("put-role-policy on a nonexistent role should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "put-role-policy",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "bad role!",
+            "--policy-name",
+            "AnyName",
+            "--policy-document",
+            policy_doc,
+        ])
+        .await
+        .expect_err("put-role-policy with an invalid role name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 }
 
 async fn test_policy_attachments(database: &TempDatabase) {

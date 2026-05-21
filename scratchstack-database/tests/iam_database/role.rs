@@ -7,8 +7,8 @@ use {
         operation::{
             CreateRoleInternalRequest, DeleteRoleInternalRequest, DeleteRolePermissionsBoundaryInternalRequest,
             GetRoleInternalRequest, ListRoleTagsInternalRequest, ListRolesInternalRequest,
-            PutRolePermissionsBoundaryInternalRequest, TagRoleInternalRequest, UntagRoleInternalRequest,
-            UpdateRoleDescriptionInternalRequest, UpdateRoleInternalRequest,
+            PutRolePermissionsBoundaryInternalRequest, PutRolePolicyInternalRequest, TagRoleInternalRequest,
+            UntagRoleInternalRequest, UpdateRoleDescriptionInternalRequest, UpdateRoleInternalRequest,
         },
         types::{PermissionsBoundaryAttachmentType, Tag},
     },
@@ -1590,6 +1590,154 @@ pub fn test_put_role_permissions_boundary_invalid_name() {
         .role_name("bad role!".to_string())
         .account_id("123456789012".to_string())
         .permissions_boundary("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid role name must fail");
+}
+
+const INLINE_ROLE_POLICY_S3: &str =
+    r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#;
+const INLINE_ROLE_POLICY_EC2: &str =
+    r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"ec2:Describe*","Resource":"*"}]}"#;
+const INLINE_ROLE_POLICY_INVALID_PRINCIPAL: &str = r#"{
+        "Version":"2012-10-17",
+        "Statement":[{
+            "Effect":"Allow",
+            "Principal":{"AWS":"arn:aws:iam::999999999999:user/nonexistent"},
+            "Action":"sts:AssumeRole",
+            "Resource":"*"
+        }]
+    }"#;
+
+/// PutRolePolicy attaches an inline policy to an existing role.
+pub async fn test_put_role_policy_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    PutRolePolicyInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("InlineRead".to_string())
+        .policy_document(INLINE_ROLE_POLICY_S3.to_string())
+        .build()
+        .expect("Failed to build PutRolePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to put inline policy on LambdaExecutor");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let doc: String = sqlx::query_scalar(
+        "SELECT policy_document FROM iam.role_inline_policies \
+         WHERE role_id = (SELECT role_id FROM iam.roles WHERE account_id = $1 AND role_name_lower = $2) \
+         AND policy_name_lower = $3",
+    )
+    .bind("123456789012")
+    .bind("lambdaexecutor")
+    .bind("inlineread")
+    .fetch_one(pool)
+    .await
+    .expect("Failed to fetch LambdaExecutor inline policy");
+    assert_eq!(doc, INLINE_ROLE_POLICY_S3);
+}
+
+/// PutRolePolicy with the same policy name replaces the document on the same row.
+pub async fn test_put_role_policy_replaces(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    PutRolePolicyInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("InlineRead".to_string())
+        .policy_document(INLINE_ROLE_POLICY_EC2.to_string())
+        .build()
+        .expect("Failed to build PutRolePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to replace inline policy on LambdaExecutor");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let doc: String = sqlx::query_scalar(
+        "SELECT policy_document FROM iam.role_inline_policies \
+         WHERE role_id = (SELECT role_id FROM iam.roles WHERE account_id = $1 AND role_name_lower = $2) \
+         AND policy_name_lower = $3",
+    )
+    .bind("123456789012")
+    .bind("lambdaexecutor")
+    .bind("inlineread")
+    .fetch_one(pool)
+    .await
+    .expect("Failed to fetch LambdaExecutor inline policy after replace");
+    assert_eq!(doc, INLINE_ROLE_POLICY_EC2);
+
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM iam.role_inline_policies \
+         WHERE role_id = (SELECT role_id FROM iam.roles WHERE account_id = $1 AND role_name_lower = $2)",
+    )
+    .bind("123456789012")
+    .bind("lambdaexecutor")
+    .fetch_one(pool)
+    .await
+    .expect("Failed to count LambdaExecutor inline policies");
+    assert_eq!(count, 1, "Replacing must not create a new row");
+}
+
+/// A syntactically valid principal that references a non-existent account/user is still accepted.
+pub async fn test_put_role_policy_invalid_principal_accepted(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    PutRolePolicyInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("InlineWithMissingPrincipal".to_string())
+        .policy_document(INLINE_ROLE_POLICY_INVALID_PRINCIPAL.to_string())
+        .build()
+        .expect("Failed to build PutRolePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Policies referring to non-existent principals must still be accepted");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// A non-JSON / unparseable policy document must fail with MalformedPolicyDocument.
+pub async fn test_put_role_policy_invalid_document(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = PutRolePolicyInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("InlineBroken".to_string())
+        .policy_document("{ not valid aspen json }".to_string())
+        .build()
+        .expect("Failed to build PutRolePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("PutRolePolicy with malformed JSON must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(
+        matches!(err, IamError::MalformedPolicyDocumentException(_)),
+        "Expected MalformedPolicyDocumentException, got: {err:?}"
+    );
+}
+
+/// PutRolePolicy on a nonexistent role must fail with NoSuchEntity.
+pub async fn test_put_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = PutRolePolicyInternalRequest::builder()
+        .role_name("NoSuchPutPolicyRole".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("AnyName".to_string())
+        .policy_document(INLINE_ROLE_POLICY_S3.to_string())
+        .build()
+        .expect("Failed to build PutRolePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("PutRolePolicy on a nonexistent role must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building a PutRolePolicy request with an invalid role name must fail before touching the
+/// database.
+pub fn test_put_role_policy_invalid_name() {
+    let result = PutRolePolicyInternalRequest::builder()
+        .role_name("bad role!".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("AnyName".to_string())
+        .policy_document(INLINE_ROLE_POLICY_S3.to_string())
         .build();
     assert!(result.is_err(), "Building a request with an invalid role name must fail");
 }
