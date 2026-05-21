@@ -7,8 +7,9 @@ use {
         operation::{
             AddUserToGroupInternalRequest, AttachGroupPolicyInternalRequest, CreateGroupInternalRequest,
             CreateGroupResponse, DeleteGroupInternalRequest, DeleteGroupPolicyInternalRequest,
-            DetachGroupPolicyInternalRequest, GetGroupInternalRequest, GetGroupResponse,
-            ListAttachedGroupPoliciesInternalRequest, ListAttachedGroupPoliciesResponse,
+            DetachGroupPolicyInternalRequest, GetGroupInternalRequest, GetGroupPolicyInternalRequest,
+            GetGroupPolicyResponse, GetGroupResponse, ListAttachedGroupPoliciesInternalRequest,
+            ListAttachedGroupPoliciesResponse, ListGroupPoliciesInternalRequest, ListGroupPoliciesResponse,
             ListGroupsForUserInternalRequest, ListGroupsForUserResponse, ListGroupsInternalRequest, ListGroupsResponse,
             PutGroupPolicyInternalRequest, RemoveUserFromGroupInternalRequest, UpdateGroupInternalRequest,
         },
@@ -104,6 +105,22 @@ pub(crate) struct GetGroupInternalCommand {
     pub group_name: String,
 }
 
+/// Retrieve the document of an inline policy attached to a group in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct GetGroupPolicyInternalCommand {
+    /// The unique identifier for the account the group belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the group the policy is associated with.
+    #[clap(long)]
+    pub group_name: String,
+
+    /// The name of the inline policy to retrieve.
+    #[clap(long)]
+    pub policy_name: String,
+}
+
 /// List managed policies attached to a group in a given account in the Scratchstack IAM service.
 #[derive(Debug, Parser)]
 pub(crate) struct ListAttachedGroupPoliciesInternalCommand {
@@ -128,6 +145,28 @@ pub(crate) struct ListAttachedGroupPoliciesInternalCommand {
     /// ListAttachedGroupPolicies request was truncated, the response will include a marker that
     /// you can use in a subsequent ListAttachedGroupPolicies request to retrieve the next set of
     /// attached policies.
+    #[clap(long)]
+    pub marker: Option<String>,
+}
+
+/// List the names of inline policies attached to a group in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct ListGroupPoliciesInternalCommand {
+    /// The unique identifier for the account the group belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the group to list inline policies for.
+    #[clap(long)]
+    pub group_name: String,
+
+    /// The maximum number of inline policies to include in the response.
+    #[clap(long)]
+    pub max_items: Option<i32>,
+
+    /// A marker for paginating the list of inline policies. If the response from a previous
+    /// ListGroupPolicies request was truncated, the response will include a marker that you can
+    /// use in a subsequent ListGroupPolicies request to retrieve the next set of inline policies.
     #[clap(long)]
     pub marker: Option<String>,
 }
@@ -237,6 +276,22 @@ impl Runnable for GetGroupInternalCommand {
     }
 }
 
+impl Runnable for GetGroupPolicyInternalCommand {
+    type Result = GetGroupPolicyResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = GetGroupPolicyInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .group_name(self.group_name.clone())
+            .policy_name(self.policy_name.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
 impl Runnable for ListAttachedGroupPoliciesInternalCommand {
     type Result = ListAttachedGroupPoliciesResponse;
 
@@ -248,6 +303,23 @@ impl Runnable for ListAttachedGroupPoliciesInternalCommand {
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
             .path_prefix(self.path_prefix.clone())
+            .max_items(self.max_items)
+            .marker(self.marker.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for ListGroupPoliciesInternalCommand {
+    type Result = ListGroupPoliciesResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = ListGroupPoliciesInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .group_name(self.group_name.clone())
             .max_items(self.max_items)
             .marker(self.marker.clone())
             .build()?;
