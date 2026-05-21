@@ -117,6 +117,12 @@ async fn test_database() {
     user::test_get_user_nonexistent(&pool).await;
     user::test_get_user_no_user_name(&pool).await;
 
+    // -- DeleteUserPermissionsBoundaryInternalRequest -------------------------
+    user::test_delete_user_permissions_boundary_simple(&pool).await;
+    user::test_delete_user_permissions_boundary_no_boundary(&pool).await;
+    user::test_delete_user_permissions_boundary_nonexistent(&pool).await;
+    user::test_delete_user_permissions_boundary_invalid_name();
+
     // -- CreateRoleInternalRequest --------------------------------------------
     role::test_create_role_simple(&pool).await;
     role::test_create_role_with_path(&pool).await;

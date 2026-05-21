@@ -3,9 +3,10 @@ use {
     pretty_assertions::assert_eq,
     scratchstack_database::ops::RequestExecutor,
     scratchstack_shapes_iam::{
+        error_meta::Error as IamError,
         operation::{
-            CreateUserInternalRequest, GetUserInternalRequest, ListUserTagsInternalRequest, TagUserInternalRequest,
-            UntagUserInternalRequest,
+            CreateUserInternalRequest, DeleteUserInternalRequest, DeleteUserPermissionsBoundaryInternalRequest,
+            GetUserInternalRequest, ListUserTagsInternalRequest, TagUserInternalRequest, UntagUserInternalRequest,
         },
         types::Tag,
     },
@@ -426,4 +427,113 @@ pub async fn test_get_user_no_user_name(pool: &sqlx::PgPool) {
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Getting a user without a user name must fail");
+}
+
+/// Clear a permissions boundary that is set on a user. The user exists and has a PB; afterwards
+/// the column must be NULL.
+pub async fn test_delete_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
+    // Set up: create a user with no PB, then attach a PB directly via SQL (the create_user API
+    // verifies the PB exists by name, but we just need any seeded managed_policy_id here).
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateUserInternalRequest::builder()
+        .user_name("DeleteMePbUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreateUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create DeleteMePbUser");
+    let user_id: String =
+        sqlx::query_scalar("SELECT user_id FROM iam.users WHERE account_id = $1 AND user_name_lower = $2")
+            .bind("123456789012")
+            .bind("deletemepbuser")
+            .fetch_one(tx.as_mut())
+            .await
+            .expect("Failed to fetch DeleteMePbUser user_id");
+    let managed_policy_id: String = sqlx::query_scalar(
+        "SELECT managed_policy_id FROM iam.managed_policies WHERE account_id = $1 AND managed_policy_name_lower = $2",
+    )
+    .bind("123456789012")
+    .bind("example-managed-policy-1")
+    .fetch_one(tx.as_mut())
+    .await
+    .expect("Failed to fetch Example-Managed-Policy-1 managed_policy_id");
+    sqlx::query("UPDATE iam.users SET permissions_boundary_managed_policy_id = $1 WHERE user_id = $2")
+        .bind(managed_policy_id)
+        .bind(&user_id)
+        .execute(tx.as_mut())
+        .await
+        .expect("Failed to set DeleteMePbUser permissions boundary");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeleteUserPermissionsBoundaryInternalRequest::builder()
+        .user_name("DeleteMePbUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteUserPermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete DeleteMePbUser permissions boundary");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let pb: Option<String> =
+        sqlx::query_scalar("SELECT permissions_boundary_managed_policy_id FROM iam.users WHERE user_id = $1")
+            .bind(&user_id)
+            .fetch_one(pool)
+            .await
+            .expect("Failed to fetch DeleteMePbUser permissions boundary after delete");
+    assert!(pb.is_none(), "permissions_boundary_managed_policy_id must be NULL after delete");
+
+    // Clean up.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeleteUserInternalRequest::builder()
+        .user_name("DeleteMePbUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete DeleteMePbUser");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// Calling DeleteUserPermissionsBoundary on a user that has no PB must succeed (idempotent).
+pub async fn test_delete_user_permissions_boundary_no_boundary(pool: &sqlx::PgPool) {
+    // bob was committed earlier in test_create_user_with_path with no PB.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeleteUserPermissionsBoundaryInternalRequest::builder()
+        .user_name("bob".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteUserPermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("DeleteUserPermissionsBoundary on a user with no PB must succeed");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// Calling DeleteUserPermissionsBoundary on a nonexistent user must fail with NoSuchEntity.
+pub async fn test_delete_user_permissions_boundary_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteUserPermissionsBoundaryInternalRequest::builder()
+        .user_name("nosuchpbuser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteUserPermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Clearing PB on a nonexistent user must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building a DeleteUserPermissionsBoundary request with an invalid user name must fail before
+/// touching the database.
+pub fn test_delete_user_permissions_boundary_invalid_name() {
+    let result = DeleteUserPermissionsBoundaryInternalRequest::builder()
+        .user_name("bad name!".to_string())
+        .account_id("123456789012".to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid user name must fail");
 }
