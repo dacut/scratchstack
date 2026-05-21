@@ -20,7 +20,7 @@ use {
         },
     },
     serde::{Deserialize, Serialize},
-    sqlx::{FromRow, QueryBuilder, Row as _, postgres::PgTransaction, query},
+    sqlx::{FromRow, QueryBuilder, postgres::PgTransaction, query_as},
 };
 
 impl RequestExecutor for ListAccessKeysInternalRequest {
@@ -44,6 +44,12 @@ struct ListAccessKeysRow {
     access_key_id: String,
     enabled: bool,
     created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(FromRow)]
+struct UserRow {
+    user_id: String,
+    user_name_cased: String,
 }
 
 /// List the access keys for a user. The user name is required by this implementation because
@@ -73,8 +79,8 @@ pub async fn list_access_keys(
     let max_items = constrain_max_items(max_items)?;
     let partition = get_current_partition_or_fail(tx).await?;
 
-    let user_id: String = match query(indoc! {"
-            SELECT user_id
+    let user_info: Option<UserRow> = query_as(indoc! {"
+            SELECT user_id, user_name_cased
             FROM iam.users
             WHERE account_id = $1 AND user_name_lower = $2
         "})
@@ -82,20 +88,19 @@ pub async fn list_access_keys(
     .bind(user_name.to_lowercase())
     .fetch_optional(tx.as_mut())
     .await
-    {
-        Ok(Some(row)) => row.get(0),
-        Ok(None) => {
-            return Err(NoSuchEntityException::builder()
-                .message(format!("The user with name {user_name} cannot be found."))
-                .build()
-                .into());
-        }
-        Err(e) => {
-            log::error!("Failed to look up user in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
-        }
-    };
+    .map_err(|e| {
+        log::error!("Failed to query user from database: {e}");
+        InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+    })?;
 
+    let Some(user_info) = user_info else {
+        return Err(NoSuchEntityException::builder()
+            .message(format!("The user with name {user_name} cannot be found."))
+            .build()
+            .into());
+    };
+    let user_id = user_info.user_id;
+    let user_name = user_info.user_name_cased;
     let paginator = make_paginator(&partition, OP_LIST_ACCESS_KEYS)?;
 
     let mut sql = QueryBuilder::new(indoc! {"

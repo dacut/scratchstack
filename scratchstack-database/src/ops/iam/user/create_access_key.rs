@@ -19,12 +19,14 @@ use {
             error::{InternalFailure, NoSuchEntityException, ValidationError},
         },
     },
-    sqlx::{Row as _, postgres::PgTransaction, query},
+    sqlx::{FromRow, Row as _, postgres::PgTransaction, query, query_as},
 };
 
 /// Alphabet of printable characters that AWS uses for secret access keys
 /// (matches the base64-without-padding character set: A–Z, a–z, 0–9, +, /).
 const SECRET_KEY_ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/// The length of AWS secret access keys.
 const SECRET_KEY_LENGTH: usize = 40;
 
 /// Generate a random 40-character secret access key.
@@ -42,6 +44,12 @@ impl RequestExecutor for CreateAccessKeyInternalRequest {
     async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
         create_access_key(tx, &self.account_id, self.user_name.as_deref()).await
     }
+}
+
+#[derive(FromRow)]
+struct UserRow {
+    user_id: String,
+    user_name_cased: String,
 }
 
 /// Create a new access key (access key id + secret key pair) for an IAM user. The user name is
@@ -67,8 +75,8 @@ pub async fn create_access_key(
     };
     validate_user_name(user_name)?;
 
-    let user_id: String = match query(indoc! {"
-            SELECT user_id
+    let user_info: Option<UserRow> = query_as(indoc! {"
+            SELECT user_id, user_name_cased
             FROM iam.users
             WHERE account_id = $1 AND user_name_lower = $2
         "})
@@ -76,20 +84,19 @@ pub async fn create_access_key(
     .bind(user_name.to_lowercase())
     .fetch_optional(tx.as_mut())
     .await
-    {
-        Ok(Some(row)) => row.get(0),
-        Ok(None) => {
-            return Err(NoSuchEntityException::builder()
-                .message(format!("The user with name {user_name} cannot be found."))
-                .build()
-                .into());
-        }
-        Err(e) => {
-            log::error!("Failed to look up user in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
-        }
-    };
+    .map_err(|e| {
+        log::error!("Failed to query user from database: {e}");
+        InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+    })?;
 
+    let Some(user_info) = user_info else {
+        return Err(NoSuchEntityException::builder()
+            .message(format!("The user with name {user_name} cannot be found."))
+            .build()
+            .into());
+    };
+    let user_id = user_info.user_id;
+    let user_name = user_info.user_name_cased;
     let access_key_id_full = IamId::new(IamResourceType::AccessKey, account_id.parse().unwrap()).to_string();
     let access_key_id_stored = access_key_id_full[4..].to_string();
     let secret_key = generate_secret_key();
