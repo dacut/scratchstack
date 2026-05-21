@@ -724,7 +724,10 @@ pub async fn get_role(
             IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
         })?;
 
-    Ok(GetRoleResponse::builder().role(role).build().unwrap())
+    GetRoleResponse::builder().role(role).build().map_err(|e| {
+        log::error!("Failed to construct get role response object: {e}");
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+    })
 }
 
 impl RequestExecutor for ListAttachedRolePoliciesInternalRequest {
