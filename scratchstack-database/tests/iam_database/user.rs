@@ -675,7 +675,7 @@ const INLINE_POLICY_S3: &str =
     r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#;
 const INLINE_POLICY_EC2: &str =
     r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"ec2:Describe*","Resource":"*"}]}"#;
-const INLINE_POLICY_INVALID_AWS_PRINCIPAL: &str = r#"{
+const INLINE_POLICY_UNKNOWN_AWS_PRINCIPAL: &str = r#"{
         "Version":"2012-10-17",
         "Statement":[{
             "Effect":"Allow",
@@ -792,7 +792,7 @@ pub async fn test_put_user_policy_invalid_principal_accepted(pool: &sqlx::PgPool
         .user_name("bob".to_string())
         .account_id("123456789012".to_string())
         .policy_name("InlineWithMissingPrincipal".to_string())
-        .policy_document(INLINE_POLICY_INVALID_AWS_PRINCIPAL.to_string())
+        .policy_document(INLINE_POLICY_UNKNOWN_AWS_PRINCIPAL.to_string())
         .build()
         .expect("Failed to build PutUserPolicyInternalRequest")
         .execute(&mut tx)
