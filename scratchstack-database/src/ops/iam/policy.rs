@@ -22,13 +22,14 @@ mod get_policy;
 mod get_policy_version;
 mod list_entities_for_policy;
 mod list_policies;
+mod list_policy_tags;
 mod list_policy_versions;
 mod set_default_policy_version;
 mod tag_policy;
 mod untag_policy;
 pub use {
     create_policy::*, create_policy_version::*, delete_policy::*, delete_policy_version::*, get_policy::*,
-    get_policy_version::*, list_entities_for_policy::*, list_policies::*, list_policy_versions::*,
+    get_policy_version::*, list_entities_for_policy::*, list_policies::*, list_policy_tags::*, list_policy_versions::*,
     set_default_policy_version::*, tag_policy::*, untag_policy::*,
 };
 

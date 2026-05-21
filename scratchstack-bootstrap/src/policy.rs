@@ -8,9 +8,9 @@ use {
             CreatePolicyInternalRequest, CreatePolicyResponse, CreatePolicyVersionRequest, CreatePolicyVersionResponse,
             DeletePolicyRequest, DeletePolicyVersionRequest, GetPolicyRequest, GetPolicyResponse,
             GetPolicyVersionRequest, GetPolicyVersionResponse, ListEntitiesForPolicyRequest,
-            ListEntitiesForPolicyResponse, ListPoliciesInternalRequest, ListPoliciesResponse,
-            ListPolicyVersionsRequest, ListPolicyVersionsResponse, SetDefaultPolicyVersionRequest, TagPolicyRequest,
-            UntagPolicyRequest,
+            ListEntitiesForPolicyResponse, ListPoliciesInternalRequest, ListPoliciesResponse, ListPolicyTagsRequest,
+            ListPolicyTagsResponse, ListPolicyVersionsRequest, ListPolicyVersionsResponse,
+            SetDefaultPolicyVersionRequest, TagPolicyRequest, UntagPolicyRequest,
         },
         types::{EntityType, PolicyScopeType, PolicyUsageType},
     },
@@ -161,6 +161,22 @@ pub(crate) struct ListPoliciesInternalCommand {
     pub policy_usage_filter: Option<PolicyUsageType>,
 
     /// Maximum number of policies to return.
+    #[clap(long)]
+    pub max_items: Option<i32>,
+
+    /// Marker for paginating list results.
+    #[clap(long)]
+    pub marker: Option<String>,
+}
+
+/// List the tags attached to a managed policy in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct ListPolicyTagsCommand {
+    /// The ARN of the managed policy whose tags to list.
+    #[clap(long)]
+    pub policy_arn: String,
+
+    /// Maximum number of tags to return.
     #[clap(long)]
     pub max_items: Option<i32>,
 
@@ -362,6 +378,25 @@ impl Runnable for ListPoliciesInternalCommand {
         if let Some(filter) = self.policy_usage_filter {
             builder = builder.policy_usage_filter(Some(filter));
         }
+        if let Some(max_items) = self.max_items {
+            builder = builder.max_items(Some(max_items));
+        }
+        if let Some(marker) = &self.marker {
+            builder = builder.marker(Some(marker.clone()));
+        }
+        let request = builder.build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for ListPolicyTagsCommand {
+    type Result = ListPolicyTagsResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let mut builder = ListPolicyTagsRequest::builder().policy_arn(self.policy_arn.clone());
         if let Some(max_items) = self.max_items {
             builder = builder.max_items(Some(max_items));
         }

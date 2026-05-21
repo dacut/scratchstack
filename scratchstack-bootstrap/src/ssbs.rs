@@ -37,7 +37,8 @@ use {
         policy::{
             CreatePolicyInternalCommand, CreatePolicyVersionCommand, DeletePolicyCommand, DeletePolicyVersionCommand,
             GetPolicyCommand, GetPolicyVersionCommand, ListEntitiesForPolicyCommand, ListPoliciesInternalCommand,
-            ListPolicyVersionsCommand, SetDefaultPolicyVersionCommand, TagPolicyCommand, UntagPolicyCommand,
+            ListPolicyTagsCommand, ListPolicyVersionsCommand, SetDefaultPolicyVersionCommand, TagPolicyCommand,
+            UntagPolicyCommand,
         },
         role::{
             AttachRolePolicyInternalCommand, CreateRoleInternalCommand, DeleteRoleInternalCommand,
@@ -258,6 +259,10 @@ enum Commands {
     #[command(name = "list-policies")]
     ListPolicies(ListPoliciesInternalCommand),
 
+    /// List the tags attached to an IAM managed policy.
+    #[command(name = "list-policy-tags")]
+    ListPolicyTags(ListPolicyTagsCommand),
+
     /// List the versions of an IAM managed policy.
     #[command(name = "list-policy-versions")]
     ListPolicyVersions(ListPolicyVersionsCommand),
@@ -384,6 +389,7 @@ impl Commands {
             Commands::ListGroups(_) => "ListGroups",
             Commands::ListGroupsForUser(_) => "ListGroupsForUser",
             Commands::ListPolicies(_) => "ListPolicies",
+            Commands::ListPolicyTags(_) => "ListPolicyTags",
             Commands::ListPolicyVersions(_) => "ListPolicyVersions",
             Commands::ListRoles(_) => "ListRoles",
             Commands::ListRoleTags(_) => "ListRoleTags",
@@ -633,6 +639,13 @@ where
             })?
         }
         Commands::ListPolicies(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::ListPolicyTags(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
