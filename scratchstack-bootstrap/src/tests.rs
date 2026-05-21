@@ -2520,6 +2520,236 @@ async fn test_roles(database: &TempDatabase) {
         .expect_err("list-role-tags with an invalid role name should fail");
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 
+    // -- tag-role / untag-role -------------------------------------------------
+    // LambdaExecutor in 555566667777 has no tags. Tag it with two tags.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "tag-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+            "--tags",
+            "Key=Environment,Value=Production",
+            "Key=Team,Value=Platform",
+        ])
+        .await
+        .expect("Failed to run tag-role for 555566667777/LambdaExecutor");
+
+    // Verify the tags via list-role-tags.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-role-tags",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+        ])
+        .await
+        .expect("Failed to run list-role-tags after tag-role");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-role-tags after tag-role");
+    let tags = json.get("Tags").and_then(JsonValue::as_array).expect("Tags should be an array");
+    assert_eq!(tags.len(), 2);
+    // Tags come back ordered by lowercased key.
+    assert_eq!(tags[0].get("Key").and_then(JsonValue::as_str), Some("Environment"));
+    assert_eq!(tags[0].get("Value").and_then(JsonValue::as_str), Some("Production"));
+    assert_eq!(tags[1].get("Key").and_then(JsonValue::as_str), Some("Team"));
+    assert_eq!(tags[1].get("Value").and_then(JsonValue::as_str), Some("Platform"));
+
+    // Re-tagging an existing key must update the value (upsert) and a new key adds a tag.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "tag-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+            "--tags",
+            "Key=Environment,Value=Staging",
+            "Key=Project,Value=Apollo",
+        ])
+        .await
+        .expect("Failed to run tag-role upsert for 555566667777/LambdaExecutor");
+
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-role-tags",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+        ])
+        .await
+        .expect("Failed to run list-role-tags after tag-role upsert");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-role-tags after upsert");
+    let tags = json.get("Tags").and_then(JsonValue::as_array).expect("Tags should be an array");
+    assert_eq!(tags.len(), 3, "Expected 3 tags after upsert (Environment updated, Project added, Team unchanged)");
+    assert_eq!(tags[0].get("Key").and_then(JsonValue::as_str), Some("Environment"));
+    assert_eq!(tags[0].get("Value").and_then(JsonValue::as_str), Some("Staging"));
+    assert_eq!(tags[1].get("Key").and_then(JsonValue::as_str), Some("Project"));
+    assert_eq!(tags[1].get("Value").and_then(JsonValue::as_str), Some("Apollo"));
+    assert_eq!(tags[2].get("Key").and_then(JsonValue::as_str), Some("Team"));
+    assert_eq!(tags[2].get("Value").and_then(JsonValue::as_str), Some("Platform"));
+
+    // Untag the role — remove Environment and Project.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "untag-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+            "--tag-keys",
+            "Environment",
+            "Project",
+        ])
+        .await
+        .expect("Failed to run untag-role for 555566667777/LambdaExecutor");
+
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-role-tags",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+        ])
+        .await
+        .expect("Failed to run list-role-tags after untag-role");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-role-tags after untag-role");
+    let tags = json.get("Tags").and_then(JsonValue::as_array).expect("Tags should be an array");
+    assert_eq!(tags.len(), 1, "Expected 1 tag after untag-role");
+    assert_eq!(tags[0].get("Key").and_then(JsonValue::as_str), Some("Team"));
+    assert_eq!(tags[0].get("Value").and_then(JsonValue::as_str), Some("Platform"));
+
+    // Untagging a key that does not exist must succeed silently.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "untag-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+            "--tag-keys",
+            "NoSuchKey",
+        ])
+        .await
+        .expect("Untagging a nonexistent key should succeed silently");
+
+    // Tagging a nonexistent role must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "tag-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "no-such-role",
+            "--tags",
+            "Key=Foo,Value=Bar",
+        ])
+        .await
+        .expect_err("tag-role on a nonexistent role should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Untagging a nonexistent role must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "untag-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "no-such-role",
+            "--tag-keys",
+            "Foo",
+        ])
+        .await
+        .expect_err("untag-role on a nonexistent role should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Invalid role name must surface ValidationError before reaching the database.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "tag-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "bad role!",
+            "--tags",
+            "Key=Foo,Value=Bar",
+        ])
+        .await
+        .expect_err("tag-role with an invalid role name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "untag-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "bad role!",
+            "--tag-keys",
+            "Foo",
+        ])
+        .await
+        .expect_err("untag-role with an invalid role name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
     // -- delete-role -----------------------------------------------------------
     // Create a fresh role and delete it. This leaves test_policy_attachments' role landscape
     // untouched.

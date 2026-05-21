@@ -43,6 +43,7 @@ use {
             AttachRolePolicyInternalCommand, CreateRoleInternalCommand, DeleteRoleInternalCommand,
             DeleteRolePermissionsBoundaryInternalCommand, DetachRolePolicyInternalCommand, GetRoleInternalCommand,
             ListAttachedRolePoliciesInternalCommand, ListRoleTagsInternalCommand, ListRolesInternalCommand,
+            TagRoleInternalCommand, UntagRoleInternalCommand,
         },
         user::{
             AttachUserPolicyInternalCommand, CreateUserInternalCommand, DeleteUserInternalCommand,
@@ -298,6 +299,10 @@ enum Commands {
     #[command(name = "tag-policy")]
     TagPolicy(TagPolicyCommand),
 
+    /// Add or update tags on an IAM role in an account.
+    #[command(name = "tag-role")]
+    TagRole(TagRoleInternalCommand),
+
     /// Add or update tags on an IAM user in an account.
     #[command(name = "tag-user")]
     TagUser(TagUserInternalCommand),
@@ -305,6 +310,10 @@ enum Commands {
     /// Remove tags from an IAM managed policy.
     #[command(name = "untag-policy")]
     UntagPolicy(UntagPolicyCommand),
+
+    /// Remove tags from an IAM role in an account.
+    #[command(name = "untag-role")]
+    UntagRole(UntagRoleInternalCommand),
 
     /// Update an IAM group in an account.
     #[command(name = "update-group")]
@@ -367,8 +376,10 @@ impl Commands {
             Commands::SetCurrentPartition(_) => "SetCurrentPartition",
             Commands::SetDefaultPolicyVersion(_) => "SetDefaultPolicyVersion",
             Commands::TagPolicy(_) => "TagPolicy",
+            Commands::TagRole(_) => "TagRole",
             Commands::TagUser(_) => "TagUser",
             Commands::UntagPolicy(_) => "UntagPolicy",
+            Commands::UntagRole(_) => "UntagRole",
             Commands::UntagUser(_) => "UntagUser",
             Commands::UpdateGroup(_) => "UpdateGroup",
             Commands::UpdateUser(_) => "UpdateUser",
@@ -664,11 +675,19 @@ where
             sub.run(&cli, vars).await?;
             "".to_string()
         }
+        Commands::TagRole(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
         Commands::TagUser(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
         }
         Commands::UntagPolicy(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::UntagRole(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
         }

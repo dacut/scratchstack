@@ -9,6 +9,7 @@ use {
             DeleteRolePermissionsBoundaryInternalRequest, DetachRolePolicyInternalRequest, GetRoleInternalRequest,
             GetRoleResponse, ListAttachedRolePoliciesInternalRequest, ListAttachedRolePoliciesResponse,
             ListRoleTagsInternalRequest, ListRoleTagsResponse, ListRolesInternalRequest, ListRolesResponse,
+            TagRoleInternalRequest, UntagRoleInternalRequest,
         },
     },
     std::ffi::OsString,
@@ -347,6 +348,77 @@ impl Runnable for ListRoleTagsInternalCommand {
             .role_name(self.role_name.clone())
             .max_items(self.max_items)
             .marker(self.marker.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+/// Add or update tags on a role in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct TagRoleInternalCommand {
+    /// The unique identifier for the account the role belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the role to tag.
+    #[clap(long)]
+    pub role_name: String,
+
+    /// A list of tags to associate with the role. Each tag must use AWS CLI-style shorthand,
+    /// for example: `Key=Environment,Value=Production`.
+    /// Multiple tags may be passed as multiple `--tags` arguments and/or as a bracketed list,
+    /// for example:
+    /// `--tags Key=Environment,Value=Production --tags Key=Team,Value=Platform`
+    /// or
+    /// `--tags "[{Key=Environment,Value=Production},{Key=Team,Value=Platform}]"`.
+    #[clap(long, num_args = 1..)]
+    pub tags: Vec<String>,
+}
+
+/// Remove tags from a role in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct UntagRoleInternalCommand {
+    /// The unique identifier for the account the role belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the role to untag.
+    #[clap(long)]
+    pub role_name: String,
+
+    /// A list of tag keys to remove from the role.
+    #[clap(long, num_args = 1..)]
+    pub tag_keys: Vec<String>,
+}
+
+impl Runnable for TagRoleInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let tags = tags_from_shorthand(&self.tags)?;
+        let request = TagRoleInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .role_name(self.role_name.clone())
+            .tags(tags)
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for UntagRoleInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = UntagRoleInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .role_name(self.role_name.clone())
+            .tag_keys(self.tag_keys.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
