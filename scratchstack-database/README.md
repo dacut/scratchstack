@@ -33,7 +33,7 @@ Scratchstack native database operations and types
 * [ ] DeleteAccountAlias
 * [ ] DeleteAccountPasswordPolicy
 * [x] DeleteGroup
-* [ ] DeleteGroupPolicy
+* [x] DeleteGroupPolicy
 * [ ] DeleteInstanceProfile
 * [ ] DeleteLoginProfile
 * [ ] DeleteOpenIDConnectProvider
@@ -41,7 +41,7 @@ Scratchstack native database operations and types
 * [x] DeletePolicyVersion
 * [x] DeleteRole
 * [x] DeleteRolePermissionsBoundary
-* [ ] DeleteRolePolicy
+* [x] DeleteRolePolicy
 * [ ] DeleteSAMLProvider
 * [ ] DeleteServerCertificate
 * [ ] DeleteServiceLinkedRole
@@ -50,7 +50,7 @@ Scratchstack native database operations and types
 * [ ] DeleteSSHPublicKey
 * [x] DeleteUser
 * [x] DeleteUserPermissionsBoundary
-* [ ] DeleteUserPolicy
+* [x] DeleteUserPolicy
 * [ ] DeleteVirtualMFADevice
 * [x] DetachGroupPolicy
 * [x] DetachRolePolicy
@@ -74,7 +74,7 @@ Scratchstack native database operations and types
 * [ ] GetCredentialReport
 * [ ] GetDelegationRequest
 * [x] GetGroup
-* [ ] GetGroupPolicy
+* [x] GetGroupPolicy
 * [ ] GetHumanReadableSummary
 * [ ] GetInstanceProfile
 * [ ] GetLoginProfile
@@ -85,7 +85,7 @@ Scratchstack native database operations and types
 * [x] GetPolicy
 * [x] GetPolicyVersion
 * [x] GetRole
-* [ ] GetRolePolicy
+* [x] GetRolePolicy
 * [ ] GetSAMLProvider
 * [ ] GetServerCertificate
 * [ ] GetServiceLastAccessedDetails
@@ -93,7 +93,7 @@ Scratchstack native database operations and types
 * [ ] GetServiceLinkedRoleDeletionStatus
 * [ ] GetSSHPublicKey
 * [x] GetUser
-* [ ] GetUserPolicy
+* [x] GetUserPolicy
 * [ ] ListAccessKeys
 * [ ] ListAccountAliases
 * [x] ListAttachedGroupPolicies
@@ -114,9 +114,9 @@ Scratchstack native database operations and types
 * [ ] ListOrganizationsFeatures
 * [x] ListPolicies
 * [ ] ListPoliciesGrantingServiceAccess
-* [ ] ListPolicyTags
+* [x] ListPolicyTags
 * [x] ListPolicyVersions
-* [ ] ListRolePolicies
+* [x] ListRolePolicies
 * [x] ListRoles
 * [x] ListRoleTags
 * [ ] ListSAMLProviders
@@ -126,15 +126,15 @@ Scratchstack native database operations and types
 * [ ] ListServiceSpecificCredentials
 * [ ] ListSigningCertificates
 * [ ] ListSSHPublicKeys
-* [ ] ListUserPolicies
+* [x] ListUserPolicies
 * [x] ListUsers
 * [x] ListUserTags
 * [ ] ListVirtualMFADevices
-* [ ] PutGroupPolicy
-* [ ] PutRolePermissionsBoundary
-* [ ] PutRolePolicy
-* [ ] PutUserPermissionsBoundary
-* [ ] PutUserPolicy
+* [x] PutGroupPolicy
+* [x] PutRolePermissionsBoundary
+* [x] PutRolePolicy
+* [x] PutUserPermissionsBoundary
+* [x] PutUserPolicy
 * [ ] RejectDelegationRequest
 * [ ] RemoveClientIDFromOpenIDConnectProvider
 * [ ] RemoveRoleFromInstanceProfile
