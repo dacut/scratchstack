@@ -6,7 +6,8 @@ use {
         error_meta::Error as IamError,
         operation::{
             CreateRoleInternalRequest, DeleteRoleInternalRequest, DeleteRolePermissionsBoundaryInternalRequest,
-            GetRoleInternalRequest, ListRoleTagsInternalRequest, ListRolesInternalRequest,
+            GetRoleInternalRequest, ListRoleTagsInternalRequest, ListRolesInternalRequest, TagRoleInternalRequest,
+            UntagRoleInternalRequest,
         },
         types::{PermissionsBoundaryAttachmentType, Tag},
     },
@@ -1026,4 +1027,196 @@ pub fn test_list_role_tags_invalid_name() {
         .account_id("123456789012".to_string())
         .build();
     assert!(result.is_err(), "Building a request with an invalid role name must fail");
+}
+
+/// Tag an existing role and verify the tags appear in ListRoleTags.
+pub async fn test_tag_role(pool: &sqlx::PgPool) {
+    // LambdaExecutor was created in account 123456789012 by test_create_role_simple with no tags.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    TagRoleInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .tags(vec![
+            Tag::builder()
+                .key("Dept".to_string())
+                .value("Engineering".to_string())
+                .build()
+                .expect("Failed to build tag"),
+            Tag::builder()
+                .key("CostCenter".to_string())
+                .value("1234".to_string())
+                .build()
+                .expect("Failed to build tag"),
+        ])
+        .build()
+        .expect("Failed to build TagRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to tag role");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Verify tags via ListRoleTags.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListRoleTagsInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListRoleTagsInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list role tags");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.tags.len(), 2, "Expected 2 tags on LambdaExecutor");
+    // Tags are returned sorted by key_lower.
+    assert_eq!(resp.tags[0].key, "CostCenter");
+    assert_eq!(resp.tags[0].value, "1234");
+    assert_eq!(resp.tags[1].key, "Dept");
+    assert_eq!(resp.tags[1].value, "Engineering");
+}
+
+/// Tagging with an existing key should update the value (upsert).
+pub async fn test_tag_role_upsert(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    TagRoleInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .tags(vec![
+            Tag::builder().key("Dept".to_string()).value("Finance".to_string()).build().expect("Failed to build tag"),
+        ])
+        .build()
+        .expect("Failed to build TagRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to upsert tag on role");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Verify the value was updated and the other tag is still present.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListRoleTagsInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListRoleTagsInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list role tags after upsert");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.tags.len(), 2, "Expected 2 tags on LambdaExecutor after upsert");
+    assert_eq!(resp.tags[0].key, "CostCenter");
+    assert_eq!(resp.tags[0].value, "1234");
+    assert_eq!(resp.tags[1].key, "Dept");
+    assert_eq!(resp.tags[1].value, "Finance");
+}
+
+/// Tagging a nonexistent role must fail with NoSuchEntityException.
+pub async fn test_tag_role_nonexistent_role(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = TagRoleInternalRequest::builder()
+        .role_name("NoSuchTagRole".to_string())
+        .account_id("123456789012".to_string())
+        .tags(vec![
+            Tag::builder().key("Key".to_string()).value("Value".to_string()).build().expect("Failed to build tag"),
+        ])
+        .build()
+        .expect("Failed to build TagRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Tagging a nonexistent role must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Tagging with an empty tag list must fail.
+pub async fn test_tag_role_empty_tags(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = TagRoleInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .tags(vec![])
+        .build()
+        .expect("Failed to build TagRoleInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Tagging with an empty tag list must fail");
+}
+
+/// Untag an existing role and verify the tag is removed.
+pub async fn test_untag_role(pool: &sqlx::PgPool) {
+    // LambdaExecutor currently has CostCenter and Dept tags from the tag/upsert tests.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UntagRoleInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .tag_keys(vec!["Dept".to_string()])
+        .build()
+        .expect("Failed to build UntagRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to untag role");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Verify only CostCenter remains.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListRoleTagsInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListRoleTagsInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list role tags after untag");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.tags.len(), 1, "Expected 1 tag on LambdaExecutor after removing Dept");
+    assert_eq!(resp.tags[0].key, "CostCenter");
+    assert_eq!(resp.tags[0].value, "1234");
+}
+
+/// Untagging a key that does not exist on the role should succeed silently.
+pub async fn test_untag_role_nonexistent_key(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UntagRoleInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .tag_keys(vec!["NoSuchTag".to_string()])
+        .build()
+        .expect("Failed to build UntagRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Untagging a nonexistent key should succeed silently");
+    tx.rollback().await.expect("Failed to rollback transaction");
+}
+
+/// Untagging with an empty tag key list must fail.
+pub async fn test_untag_role_empty_keys(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = UntagRoleInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .tag_keys(vec![])
+        .build()
+        .expect("Failed to build UntagRoleInternalRequest")
+        .execute(&mut tx)
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Untagging with an empty tag key list must fail");
+}
+
+/// Untagging a nonexistent role must fail with NoSuchEntityException.
+pub async fn test_untag_role_nonexistent_role(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = UntagRoleInternalRequest::builder()
+        .role_name("NoSuchUntagRole".to_string())
+        .account_id("123456789012".to_string())
+        .tag_keys(vec!["Key".to_string()])
+        .build()
+        .expect("Failed to build UntagRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Untagging a nonexistent role must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
 }

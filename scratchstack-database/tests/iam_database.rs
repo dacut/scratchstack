@@ -349,6 +349,16 @@ async fn test_database() {
     role::test_list_role_tags_nonexistent(&pool).await;
     role::test_list_role_tags_invalid_name();
 
+    // -- TagRoleInternalRequest / UntagRoleInternalRequest --------------------
+    role::test_tag_role(&pool).await;
+    role::test_tag_role_upsert(&pool).await;
+    role::test_tag_role_empty_tags(&pool).await;
+    role::test_tag_role_nonexistent_role(&pool).await;
+    role::test_untag_role(&pool).await;
+    role::test_untag_role_empty_keys(&pool).await;
+    role::test_untag_role_nonexistent_key(&pool).await;
+    role::test_untag_role_nonexistent_role(&pool).await;
+
     iam::MIGRATOR.undo(&mut *c, 0).await.expect("Failed to undo database migrations");
 }
 
