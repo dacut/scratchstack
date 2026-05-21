@@ -123,6 +123,13 @@ async fn test_database() {
     user::test_delete_user_permissions_boundary_nonexistent(&pool).await;
     user::test_delete_user_permissions_boundary_invalid_name();
 
+    // -- PutUserPermissionsBoundaryInternalRequest ----------------------------
+    user::test_put_user_permissions_boundary_simple(&pool).await;
+    user::test_put_user_permissions_boundary_nonexistent_user(&pool).await;
+    user::test_put_user_permissions_boundary_nonexistent_policy(&pool).await;
+    user::test_put_user_permissions_boundary_invalid_arn(&pool).await;
+    user::test_put_user_permissions_boundary_invalid_name();
+
     // -- CreateRoleInternalRequest --------------------------------------------
     role::test_create_role_simple(&pool).await;
     role::test_create_role_with_path(&pool).await;
@@ -371,6 +378,13 @@ async fn test_database() {
     role::test_update_role_description_empty(&pool).await;
     role::test_update_role_description_nonexistent(&pool).await;
     role::test_update_role_description_invalid_name();
+
+    // -- PutRolePermissionsBoundaryInternalRequest ----------------------------
+    role::test_put_role_permissions_boundary_simple(&pool).await;
+    role::test_put_role_permissions_boundary_nonexistent_role(&pool).await;
+    role::test_put_role_permissions_boundary_nonexistent_policy(&pool).await;
+    role::test_put_role_permissions_boundary_invalid_arn(&pool).await;
+    role::test_put_role_permissions_boundary_invalid_name();
 
     iam::MIGRATOR.undo(&mut *c, 0).await.expect("Failed to undo database migrations");
 }

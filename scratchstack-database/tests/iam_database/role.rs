@@ -6,8 +6,9 @@ use {
         error_meta::Error as IamError,
         operation::{
             CreateRoleInternalRequest, DeleteRoleInternalRequest, DeleteRolePermissionsBoundaryInternalRequest,
-            GetRoleInternalRequest, ListRoleTagsInternalRequest, ListRolesInternalRequest, TagRoleInternalRequest,
-            UntagRoleInternalRequest, UpdateRoleDescriptionInternalRequest, UpdateRoleInternalRequest,
+            GetRoleInternalRequest, ListRoleTagsInternalRequest, ListRolesInternalRequest,
+            PutRolePermissionsBoundaryInternalRequest, TagRoleInternalRequest, UntagRoleInternalRequest,
+            UpdateRoleDescriptionInternalRequest, UpdateRoleInternalRequest,
         },
         types::{PermissionsBoundaryAttachmentType, Tag},
     },
@@ -1454,6 +1455,141 @@ pub fn test_update_role_description_invalid_name() {
         .role_name("bad role!".to_string())
         .account_id("123456789012".to_string())
         .description("ok".to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid role name must fail");
+}
+
+/// PutRolePermissionsBoundary sets the boundary, and a second call replaces it (here using the
+/// same policy, exercising the UPDATE path on a row that already has the column populated).
+pub async fn test_put_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
+    let pb_arn = "arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1";
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateRoleInternalRequest::builder()
+        .role_name("PutMePbRole".to_string())
+        .account_id("123456789012".to_string())
+        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .build()
+        .expect("Failed to build CreateRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create PutMePbRole");
+    PutRolePermissionsBoundaryInternalRequest::builder()
+        .role_name("PutMePbRole".to_string())
+        .account_id("123456789012".to_string())
+        .permissions_boundary(pb_arn.to_string())
+        .build()
+        .expect("Failed to build PutRolePermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to set PutMePbRole permissions boundary");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetRoleInternalRequest::builder()
+        .role_name("PutMePbRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build GetRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get PutMePbRole");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    let pb = resp.role.permissions_boundary.expect("Role should have a permissions boundary");
+    assert_eq!(pb.permissions_boundary_type, Some(PermissionsBoundaryAttachmentType::Policy));
+    assert_eq!(pb.permissions_boundary_arn.as_deref(), Some(pb_arn));
+
+    // Calling Put again on a role that already has a PB must succeed.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    PutRolePermissionsBoundaryInternalRequest::builder()
+        .role_name("PutMePbRole".to_string())
+        .account_id("123456789012".to_string())
+        .permissions_boundary(pb_arn.to_string())
+        .build()
+        .expect("Failed to build PutRolePermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Re-putting the same permissions boundary on PutMePbRole must succeed");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Clean up.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeleteRolePermissionsBoundaryInternalRequest::builder()
+        .role_name("PutMePbRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteRolePermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to clear PutMePbRole PB");
+    DeleteRoleInternalRequest::builder()
+        .role_name("PutMePbRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete PutMePbRole");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// PutRolePermissionsBoundary on a nonexistent role must fail with NoSuchEntity.
+pub async fn test_put_role_permissions_boundary_nonexistent_role(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = PutRolePermissionsBoundaryInternalRequest::builder()
+        .role_name("NoSuchPutPbRole".to_string())
+        .account_id("123456789012".to_string())
+        .permissions_boundary("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .build()
+        .expect("Failed to build PutRolePermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("PutRolePermissionsBoundary on a nonexistent role must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// PutRolePermissionsBoundary with a PB ARN that refers to a nonexistent policy must fail with
+/// NoSuchEntity (raised by the permissions-boundary lookup helper).
+pub async fn test_put_role_permissions_boundary_nonexistent_policy(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = PutRolePermissionsBoundaryInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .permissions_boundary("arn:test-partition:iam::123456789012:policy/NoSuchPolicy".to_string())
+        .build()
+        .expect("Failed to build PutRolePermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("PutRolePermissionsBoundary with a nonexistent PB policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// PutRolePermissionsBoundary with a malformed PB ARN must fail with ValidationError.
+pub async fn test_put_role_permissions_boundary_invalid_arn(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = PutRolePermissionsBoundaryInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        // Long enough to pass the shape's min-length check, but not a valid ARN.
+        .permissions_boundary("not-an-arn-but-long-enough-to-pass".to_string())
+        .build()
+        .expect("Failed to build PutRolePermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("PutRolePermissionsBoundary with an invalid ARN must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::ValidationError(_)), "Expected ValidationError, got: {err:?}");
+}
+
+/// Building a PutRolePermissionsBoundary request with an invalid role name must fail before
+/// touching the database.
+pub fn test_put_role_permissions_boundary_invalid_name() {
+    let result = PutRolePermissionsBoundaryInternalRequest::builder()
+        .role_name("bad role!".to_string())
+        .account_id("123456789012".to_string())
+        .permissions_boundary("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
         .build();
     assert!(result.is_err(), "Building a request with an invalid role name must fail");
 }
