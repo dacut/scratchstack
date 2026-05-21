@@ -2245,6 +2245,143 @@ async fn test_roles(database: &TempDatabase) {
         .expect_err("list-roles with an invalid path prefix should fail");
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 
+    // -- list-role-tags --------------------------------------------------------
+    // DeployRole in 555566667777 was created above with two tags (Environment/Team).
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-role-tags",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "DeployRole",
+        ])
+        .await
+        .expect("Failed to list-role-tags for DeployRole");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-role-tags output");
+    let tags = json.get("Tags").and_then(JsonValue::as_array).expect("Tags should be an array");
+    assert_eq!(tags.len(), 2);
+    assert_eq!(tags[0].get("Key").and_then(JsonValue::as_str), Some("Environment"));
+    assert_eq!(tags[0].get("Value").and_then(JsonValue::as_str), Some("Production"));
+    assert_eq!(tags[1].get("Key").and_then(JsonValue::as_str), Some("Team"));
+    assert_eq!(tags[1].get("Value").and_then(JsonValue::as_str), Some("Platform"));
+
+    // LambdaExecutor has no tags.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-role-tags",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+        ])
+        .await
+        .expect("Failed to list-role-tags for LambdaExecutor");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list-role-tags output");
+    let tags = json.get("Tags").and_then(JsonValue::as_array).expect("Tags should be an array");
+    assert!(tags.is_empty(), "Expected no tags on LambdaExecutor, got {result}");
+
+    // max-items=1 + marker pagination across DeployRole's two tags.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-role-tags",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "DeployRole",
+            "--max-items",
+            "1",
+        ])
+        .await
+        .expect("Failed to list-role-tags page 1");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse page 1");
+    assert_eq!(json.get("Tags").and_then(JsonValue::as_array).map(Vec::len), Some(1));
+    assert_eq!(json.get("IsTruncated").and_then(JsonValue::as_bool), Some(true));
+    let marker = json.get("Marker").and_then(JsonValue::as_str).expect("Marker should be a string").to_string();
+    let page1_key = json
+        .get("Tags")
+        .and_then(JsonValue::as_array)
+        .and_then(|a| a.first())
+        .and_then(|t| t.get("Key"))
+        .and_then(JsonValue::as_str)
+        .unwrap()
+        .to_string();
+
+    let page2 = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-role-tags",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "DeployRole",
+            "--max-items",
+            "1",
+            "--marker",
+            &marker,
+        ])
+        .await
+        .expect("Failed to list-role-tags page 2");
+    let json: JsonValue = serde_json::from_str(&page2).expect("Failed to parse page 2");
+    let tags = json.get("Tags").and_then(JsonValue::as_array).expect("Tags should be an array");
+    assert_eq!(tags.len(), 1);
+    let page2_key = tags[0].get("Key").and_then(JsonValue::as_str).unwrap().to_string();
+    assert_ne!(page1_key, page2_key, "Pagination produced duplicate tag keys");
+
+    // list-role-tags on a nonexistent role must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-role-tags",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "no-such-role",
+        ])
+        .await
+        .expect_err("list-role-tags on a nonexistent role should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Invalid role name must surface ValidationError before reaching the database.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-role-tags",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "bad role!",
+        ])
+        .await
+        .expect_err("list-role-tags with an invalid role name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
     // -- delete-role -----------------------------------------------------------
     // Create a fresh role and delete it. This leaves test_policy_attachments' role landscape
     // untouched.

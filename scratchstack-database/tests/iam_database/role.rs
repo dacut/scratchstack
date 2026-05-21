@@ -6,7 +6,7 @@ use {
         error_meta::Error as IamError,
         operation::{
             CreateRoleInternalRequest, DeleteRoleInternalRequest, DeleteRolePermissionsBoundaryInternalRequest,
-            GetRoleInternalRequest, ListRolesInternalRequest,
+            GetRoleInternalRequest, ListRoleTagsInternalRequest, ListRolesInternalRequest,
         },
         types::{PermissionsBoundaryAttachmentType, Tag},
     },
@@ -895,4 +895,135 @@ pub fn test_list_roles_invalid_path_prefix() {
         .path_prefix(Some("no-leading-slash/".to_string()))
         .build();
     assert!(result.is_err(), "Building a request with an invalid path prefix must fail");
+}
+
+/// List tags on `TaggedRole`, which was created earlier in the suite with two tags. Both must
+/// come back ordered by lowercased key.
+pub async fn test_list_role_tags(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListRoleTagsInternalRequest::builder()
+        .role_name("TaggedRole".to_string())
+        .account_id("210987654321".to_string())
+        .build()
+        .expect("Failed to build ListRoleTagsInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list tags for TaggedRole");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.tags.len(), 2);
+    assert_eq!(resp.tags[0].key, "Environment");
+    assert_eq!(resp.tags[0].value, "Production");
+    assert_eq!(resp.tags[1].key, "Team");
+    assert_eq!(resp.tags[1].value, "Platform");
+    assert!(resp.is_truncated != Some(true), "Expected no truncation, got {:?}", resp.is_truncated);
+    assert!(resp.marker.is_none(), "Expected no marker, got {:?}", resp.marker);
+}
+
+/// Listing tags for a role with no tags must succeed and return an empty list.
+pub async fn test_list_role_tags_empty(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListRoleTagsInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListRoleTagsInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list tags for LambdaExecutor");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(resp.tags.is_empty(), "Expected empty tag list, got {} tags", resp.tags.len());
+}
+
+/// Walk pagination: create a role with 5 tags, page through them with max_items=2.
+pub async fn test_list_role_tags_pagination(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let tags: Vec<Tag> = (0..5)
+        .map(|i| {
+            Tag::builder()
+                .key(format!("Key{i}"))
+                .value(format!("Value{i}"))
+                .build()
+                .expect("Failed to build pagination tag")
+        })
+        .collect();
+    CreateRoleInternalRequest::builder()
+        .role_name("PaginationTagsRole".to_string())
+        .account_id("123456789012".to_string())
+        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .tags(tags)
+        .build()
+        .expect("Failed to build CreateRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create PaginationTagsRole");
+
+    let list_page = async |tx: &mut sqlx::PgTransaction<'_>,
+                           marker: Option<String>|
+           -> scratchstack_shapes_iam::operation::ListRoleTagsResponse {
+        let mut builder = ListRoleTagsInternalRequest::builder()
+            .role_name("PaginationTagsRole".to_string())
+            .account_id("123456789012".to_string())
+            .max_items(Some(2));
+        if let Some(marker) = marker {
+            builder = builder.marker(Some(marker));
+        }
+        builder
+            .build()
+            .expect("Failed to build ListRoleTagsInternalRequest")
+            .execute(tx)
+            .await
+            .expect("Failed to list role tags page")
+    };
+
+    let page1 = list_page(&mut tx, None).await;
+    assert_eq!(page1.tags.len(), 2, "page 1 should have max_items=2 entries");
+    assert_eq!(page1.is_truncated, Some(true), "page 1 should be truncated");
+    let marker1 = page1.marker.clone().expect("page 1 should have a marker");
+
+    let page2 = list_page(&mut tx, Some(marker1)).await;
+    assert_eq!(page2.tags.len(), 2, "page 2 should have max_items=2 entries");
+    assert_eq!(page2.is_truncated, Some(true), "page 2 should be truncated");
+    let marker2 = page2.marker.clone().expect("page 2 should have a marker");
+
+    let page3 = list_page(&mut tx, Some(marker2)).await;
+    assert_eq!(page3.tags.len(), 1, "page 3 should have the remaining 1 entry");
+    assert!(page3.is_truncated != Some(true), "page 3 should not be truncated");
+    assert!(page3.marker.is_none(), "page 3 should have no marker");
+
+    let mut all_keys: Vec<String> =
+        page1.tags.iter().chain(page2.tags.iter()).chain(page3.tags.iter()).map(|t| t.key.clone()).collect();
+    let unique: std::collections::HashSet<&String> = all_keys.iter().collect();
+    assert_eq!(unique.len(), all_keys.len(), "Pages must not contain duplicate tag keys: {all_keys:?}");
+
+    all_keys.sort();
+    let expected: Vec<String> = (0..5).map(|i| format!("Key{i}")).collect();
+    assert_eq!(all_keys, expected, "Union of pages should cover all 5 tags");
+
+    tx.rollback().await.expect("Failed to rollback transaction");
+}
+
+/// Listing tags for a nonexistent role must fail with NoSuchEntity.
+pub async fn test_list_role_tags_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = ListRoleTagsInternalRequest::builder()
+        .role_name("NoSuchTagsRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListRoleTagsInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Listing tags for a nonexistent role must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building a ListRoleTags request with an invalid role name must fail before touching the
+/// database.
+pub fn test_list_role_tags_invalid_name() {
+    let result = ListRoleTagsInternalRequest::builder()
+        .role_name("bad role!".to_string())
+        .account_id("123456789012".to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid role name must fail");
 }
