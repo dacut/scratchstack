@@ -8,7 +8,7 @@ use {
             CreateRoleInternalRequest, DeleteRoleInternalRequest, DeleteRolePermissionsBoundaryInternalRequest,
             GetRoleInternalRequest,
         },
-        types::Tag,
+        types::{PermissionsBoundaryAttachmentType, Tag},
     },
 };
 
@@ -625,11 +625,7 @@ pub async fn test_get_role_with_path(pool: &sqlx::PgPool) {
     let role = resp.role;
     assert_eq!(role.role_name, "DeployRole");
     assert_eq!(role.path, "/service-roles/");
-    assert!(
-        role.arn.ends_with(":role/service-roles/DeployRole"),
-        "Unexpected ARN: {}",
-        role.arn
-    );
+    assert!(role.arn.ends_with(":role/service-roles/DeployRole"), "Unexpected ARN: {}", role.arn);
 }
 
 /// Get a role committed earlier with tags. Tags must come back ordered by lowercased key.
@@ -654,31 +650,27 @@ pub async fn test_get_role_with_tags(pool: &sqlx::PgPool) {
     assert_eq!(role.tags[1].value, "Platform");
 }
 
-/// Get a role that has a permissions boundary set. The response must surface the PB as a Policy.
+/// Get a role that has a permissions boundary set. Builds the role through the normal API path
+/// (CreateRoleInternalRequest with the PB ARN), then asserts the get_role response surfaces the
+/// PB with the policy's true ARN (name+path resolved from the managed_policy_id).
+///
+/// Safe to commit this role with `Example-Managed-Policy-1` as its PB because the
+/// `policy_query::test_list_policies_usage_filter_pb` assertions ran much earlier in the suite;
+/// the role is removed before the test returns.
 pub async fn test_get_role_with_permissions_boundary(pool: &sqlx::PgPool) {
+    let pb_arn = "arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1";
+
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateRoleInternalRequest::builder()
         .role_name("GetMePbRole".to_string())
         .account_id("123456789012".to_string())
         .assume_role_policy_document(TRUST_POLICY.to_string())
+        .permissions_boundary(Some(pb_arn.to_string()))
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx)
         .await
-        .expect("Failed to create GetMePbRole");
-    let role_id: String =
-        sqlx::query_scalar("SELECT role_id FROM iam.roles WHERE account_id = $1 AND role_name_lower = $2")
-            .bind("123456789012")
-            .bind("getmepbrole")
-            .fetch_one(tx.as_mut())
-            .await
-            .expect("Failed to fetch GetMePbRole role_id");
-    sqlx::query("UPDATE iam.roles SET permissions_boundary_managed_policy_id = $1 WHERE role_id = $2")
-        .bind("AAAABBBBCCCCDDDD")
-        .bind(&role_id)
-        .execute(tx.as_mut())
-        .await
-        .expect("Failed to set GetMePbRole permissions boundary");
+        .expect("Failed to create GetMePbRole with permissions boundary");
     tx.commit().await.expect("Failed to commit transaction");
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
@@ -693,13 +685,17 @@ pub async fn test_get_role_with_permissions_boundary(pool: &sqlx::PgPool) {
     tx.rollback().await.expect("Failed to rollback transaction");
 
     let pb = resp.role.permissions_boundary.expect("Role should have a permissions boundary");
-    assert!(pb.permissions_boundary_arn.as_deref().unwrap_or("").contains("AAAABBBBCCCCDDDD"));
+    assert_eq!(pb.permissions_boundary_type, Some(PermissionsBoundaryAttachmentType::Policy));
+    assert_eq!(pb.permissions_boundary_arn.as_deref(), Some(pb_arn));
 
-    // Clean up.
+    // Clean up through the API.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
-    sqlx::query("UPDATE iam.roles SET permissions_boundary_managed_policy_id = NULL WHERE role_id = $1")
-        .bind(&role_id)
-        .execute(tx.as_mut())
+    DeleteRolePermissionsBoundaryInternalRequest::builder()
+        .role_name("GetMePbRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteRolePermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
         .await
         .expect("Failed to clear GetMePbRole PB");
     DeleteRoleInternalRequest::builder()

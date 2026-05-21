@@ -659,9 +659,7 @@ pub async fn get_role(
         })?;
 
         let pb_row = pb_row.ok_or_else(|| {
-            log::error!(
-                "Role references missing permissions boundary managed policy ID: {pb_id}"
-            );
+            log::error!("Role references missing permissions boundary managed policy ID: {pb_id}");
             IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
         })?;
 
@@ -671,7 +669,7 @@ pub async fn get_role(
 
         Some(
             AttachedPermissionsBoundary::builder()
-                .permissions_boundary_arn(Some(pb_arn))
+                .permissions_boundary_arn(Some(pb_arn.to_string()))
                 .permissions_boundary_type(Some(PermissionsBoundaryAttachmentType::Policy))
                 .build()
                 .map_err(|e| {

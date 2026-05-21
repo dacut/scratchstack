@@ -298,15 +298,31 @@ pub async fn get_user(
         })?;
 
     let permissions_boundary = if let Some(pb_id) = permissions_boundary_id {
-        // FIXME: The ARN here is incorrect; we need to translate the managed policy ID back into
-        // its path and name.
-        log::warn!(
-            "Permissions boundary ARN for user is incorrect because we don't have the policy name and path available"
-        );
-        let pb_arn = format!("arn:{partition}:{SERVICE_KEY_IAM}::{account_id}:{ARN_RESOURCE_PREFIX_POLICY}{pb_id}");
+        let pb_row = query(indoc! {"
+                SELECT path, managed_policy_name_cased
+                FROM iam.managed_policies
+                WHERE managed_policy_id = $1
+            "})
+        .bind(&pb_id)
+        .fetch_optional(tx.as_mut())
+        .await
+        .map_err(|e| {
+            log::error!("Failed to fetch permissions boundary managed policy from database: {e}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })?;
+
+        let pb_row = pb_row.ok_or_else(|| {
+            log::error!("User references missing permissions boundary managed policy ID: {pb_id}");
+            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        })?;
+
+        let pb_path: String = pb_row.get(0);
+        let pb_name_cased: String = pb_row.get(1);
+        let pb_arn = build_policy_arn(&partition, account_id, &pb_path, &pb_name_cased)?;
+
         Some(
             AttachedPermissionsBoundary::builder()
-                .permissions_boundary_arn(Some(pb_arn))
+                .permissions_boundary_arn(Some(pb_arn.to_string()))
                 .permissions_boundary_type(Some(PermissionsBoundaryAttachmentType::Policy))
                 .build()
                 .map_err(|e| {
