@@ -6,9 +6,9 @@ use {
         error_meta::Error as IamError,
         operation::{
             AddUserToGroupInternalRequest, CreateGroupInternalRequest, DeleteGroupInternalRequest,
-            DeleteGroupPolicyInternalRequest, GetGroupInternalRequest, ListGroupsForUserInternalRequest,
-            ListGroupsInternalRequest, PutGroupPolicyInternalRequest, RemoveUserFromGroupInternalRequest,
-            UpdateGroupInternalRequest,
+            DeleteGroupPolicyInternalRequest, GetGroupInternalRequest, GetGroupPolicyInternalRequest,
+            ListGroupPoliciesInternalRequest, ListGroupsForUserInternalRequest, ListGroupsInternalRequest,
+            PutGroupPolicyInternalRequest, RemoveUserFromGroupInternalRequest, UpdateGroupInternalRequest,
         },
     },
 };
@@ -633,6 +633,196 @@ pub fn test_put_group_policy_invalid_name() {
         .account_id("123456789012".to_string())
         .policy_name("AnyName".to_string())
         .policy_document(INLINE_GROUP_POLICY_S3.to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid group name must fail");
+}
+
+/// GetGroupPolicy returns the policy document set via PutGroupPolicy.
+pub async fn test_get_group_policy_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetGroupPolicyInternalRequest::builder()
+        .group_name("Administrators".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("InlineRead".to_string())
+        .build()
+        .expect("Failed to build GetGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get inline policy on Administrators");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.group_name, "Administrators");
+    assert_eq!(resp.policy_name, "InlineRead");
+    assert_eq!(resp.policy_document, INLINE_GROUP_POLICY_EC2);
+}
+
+/// GetGroupPolicy returns the document under the original case for the policy name even when
+/// looked up using a different case.
+pub async fn test_get_group_policy_case_insensitive_lookup(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetGroupPolicyInternalRequest::builder()
+        .group_name("administrators".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("inlineread".to_string())
+        .build()
+        .expect("Failed to build GetGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get inline policy via case-insensitive lookup");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert_eq!(resp.group_name, "Administrators");
+    assert_eq!(resp.policy_name, "InlineRead");
+}
+
+/// GetGroupPolicy on a nonexistent inline policy must fail with NoSuchEntity.
+pub async fn test_get_group_policy_nonexistent_policy(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = GetGroupPolicyInternalRequest::builder()
+        .group_name("Administrators".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("NotAttached".to_string())
+        .build()
+        .expect("Failed to build GetGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("GetGroupPolicy with no matching policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// GetGroupPolicy on a nonexistent group must fail with NoSuchEntity.
+pub async fn test_get_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = GetGroupPolicyInternalRequest::builder()
+        .group_name("NoSuchGetPolicyGroup".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("AnyName".to_string())
+        .build()
+        .expect("Failed to build GetGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("GetGroupPolicy on a nonexistent group must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building a GetGroupPolicy request with an invalid group name must fail before touching the
+/// database.
+pub fn test_get_group_policy_invalid_name() {
+    let result = GetGroupPolicyInternalRequest::builder()
+        .group_name("bad name!".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("AnyName".to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid group name must fail");
+}
+
+/// ListGroupPolicies returns the policy names attached to a group in sorted (case-insensitive)
+/// order.
+pub async fn test_list_group_policies_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListGroupPoliciesInternalRequest::builder()
+        .group_name("Administrators".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListGroupPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list inline policies on Administrators");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.policy_names, vec!["InlineRead".to_string(), "InlineWithMissingPrincipal".to_string()]);
+    assert_eq!(resp.is_truncated, None);
+    assert_eq!(resp.marker, None);
+}
+
+/// ListGroupPolicies returns an empty list when the group has no inline policies attached.
+pub async fn test_list_group_policies_empty(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateGroupInternalRequest::builder()
+        .group_name("ListPoliciesEmptyGroup".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreateGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create ListPoliciesEmptyGroup");
+    let resp = ListGroupPoliciesInternalRequest::builder()
+        .group_name("ListPoliciesEmptyGroup".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListGroupPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list inline policies on empty group");
+    assert!(resp.policy_names.is_empty(), "Expected no inline policies, got: {:?}", resp.policy_names);
+    assert_eq!(resp.is_truncated, None);
+
+    DeleteGroupInternalRequest::builder()
+        .group_name("ListPoliciesEmptyGroup".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteGroupInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete ListPoliciesEmptyGroup");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// ListGroupPolicies honors `max_items` and emits a usable marker for the next page.
+pub async fn test_list_group_policies_pagination(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let page1 = ListGroupPoliciesInternalRequest::builder()
+        .group_name("Administrators".to_string())
+        .account_id("123456789012".to_string())
+        .max_items(Some(1))
+        .build()
+        .expect("Failed to build ListGroupPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list inline policies on Administrators (page 1)");
+    assert_eq!(page1.policy_names, vec!["InlineRead".to_string()]);
+    assert_eq!(page1.is_truncated, Some(true));
+    let marker = page1.marker.clone().expect("Expected a pagination marker");
+
+    let page2 = ListGroupPoliciesInternalRequest::builder()
+        .group_name("Administrators".to_string())
+        .account_id("123456789012".to_string())
+        .max_items(Some(1))
+        .marker(Some(marker))
+        .build()
+        .expect("Failed to build ListGroupPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list inline policies on Administrators (page 2)");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(page2.policy_names, vec!["InlineWithMissingPrincipal".to_string()]);
+    assert_eq!(page2.is_truncated, None);
+    assert_eq!(page2.marker, None);
+}
+
+/// ListGroupPolicies on a nonexistent group must fail with NoSuchEntity.
+pub async fn test_list_group_policies_nonexistent_group(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = ListGroupPoliciesInternalRequest::builder()
+        .group_name("NoSuchListPoliciesGroup".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListGroupPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("ListGroupPolicies on a nonexistent group must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building a ListGroupPolicies request with an invalid group name must fail before touching the
+/// database.
+pub fn test_list_group_policies_invalid_name() {
+    let result = ListGroupPoliciesInternalRequest::builder()
+        .group_name("bad name!".to_string())
+        .account_id("123456789012".to_string())
         .build();
     assert!(result.is_err(), "Building a request with an invalid group name must fail");
 }

@@ -6,10 +6,10 @@ use {
         error_meta::Error as IamError,
         operation::{
             CreateRoleInternalRequest, DeleteRoleInternalRequest, DeleteRolePermissionsBoundaryInternalRequest,
-            DeleteRolePolicyInternalRequest, GetRoleInternalRequest, ListRoleTagsInternalRequest,
-            ListRolesInternalRequest, PutRolePermissionsBoundaryInternalRequest, PutRolePolicyInternalRequest,
-            TagRoleInternalRequest, UntagRoleInternalRequest, UpdateRoleDescriptionInternalRequest,
-            UpdateRoleInternalRequest,
+            DeleteRolePolicyInternalRequest, GetRoleInternalRequest, GetRolePolicyInternalRequest,
+            ListRolePoliciesInternalRequest, ListRoleTagsInternalRequest, ListRolesInternalRequest,
+            PutRolePermissionsBoundaryInternalRequest, PutRolePolicyInternalRequest, TagRoleInternalRequest,
+            UntagRoleInternalRequest, UpdateRoleDescriptionInternalRequest, UpdateRoleInternalRequest,
         },
         types::{PermissionsBoundaryAttachmentType, Tag},
     },
@@ -1739,6 +1739,197 @@ pub fn test_put_role_policy_invalid_name() {
         .account_id("123456789012".to_string())
         .policy_name("AnyName".to_string())
         .policy_document(INLINE_ROLE_POLICY_S3.to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid role name must fail");
+}
+
+/// GetRolePolicy returns the policy document set via PutRolePolicy.
+pub async fn test_get_role_policy_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetRolePolicyInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("InlineRead".to_string())
+        .build()
+        .expect("Failed to build GetRolePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get inline policy on LambdaExecutor");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.role_name, "LambdaExecutor");
+    assert_eq!(resp.policy_name, "InlineRead");
+    assert_eq!(resp.policy_document, INLINE_ROLE_POLICY_EC2);
+}
+
+/// GetRolePolicy returns the document under the original case for the policy name even when
+/// looked up using a different case.
+pub async fn test_get_role_policy_case_insensitive_lookup(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetRolePolicyInternalRequest::builder()
+        .role_name("lambdaexecutor".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("inlineread".to_string())
+        .build()
+        .expect("Failed to build GetRolePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get inline policy via case-insensitive lookup");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert_eq!(resp.role_name, "LambdaExecutor");
+    assert_eq!(resp.policy_name, "InlineRead");
+}
+
+/// GetRolePolicy on a nonexistent inline policy must fail with NoSuchEntity.
+pub async fn test_get_role_policy_nonexistent_policy(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = GetRolePolicyInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("NotAttached".to_string())
+        .build()
+        .expect("Failed to build GetRolePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("GetRolePolicy with no matching policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// GetRolePolicy on a nonexistent role must fail with NoSuchEntity.
+pub async fn test_get_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = GetRolePolicyInternalRequest::builder()
+        .role_name("NoSuchGetPolicyRole".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("AnyName".to_string())
+        .build()
+        .expect("Failed to build GetRolePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("GetRolePolicy on a nonexistent role must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building a GetRolePolicy request with an invalid role name must fail before touching the
+/// database.
+pub fn test_get_role_policy_invalid_name() {
+    let result = GetRolePolicyInternalRequest::builder()
+        .role_name("bad role!".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("AnyName".to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid role name must fail");
+}
+
+/// ListRolePolicies returns the policy names attached to a role in sorted (case-insensitive)
+/// order.
+pub async fn test_list_role_policies_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListRolePoliciesInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListRolePoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list inline policies on LambdaExecutor");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.policy_names, vec!["InlineRead".to_string(), "InlineWithMissingPrincipal".to_string()]);
+    assert_eq!(resp.is_truncated, None);
+    assert_eq!(resp.marker, None);
+}
+
+/// ListRolePolicies returns an empty list when the role has no inline policies attached.
+pub async fn test_list_role_policies_empty(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateRoleInternalRequest::builder()
+        .role_name("ListPoliciesEmptyRole".to_string())
+        .account_id("123456789012".to_string())
+        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .build()
+        .expect("Failed to build CreateRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create ListPoliciesEmptyRole");
+    let resp = ListRolePoliciesInternalRequest::builder()
+        .role_name("ListPoliciesEmptyRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListRolePoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list inline policies on empty role");
+    assert!(resp.policy_names.is_empty(), "Expected no inline policies, got: {:?}", resp.policy_names);
+    assert_eq!(resp.is_truncated, None);
+
+    DeleteRoleInternalRequest::builder()
+        .role_name("ListPoliciesEmptyRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete ListPoliciesEmptyRole");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// ListRolePolicies honors `max_items` and emits a usable marker for the next page.
+pub async fn test_list_role_policies_pagination(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let page1 = ListRolePoliciesInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .max_items(Some(1))
+        .build()
+        .expect("Failed to build ListRolePoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list inline policies on LambdaExecutor (page 1)");
+    assert_eq!(page1.policy_names, vec!["InlineRead".to_string()]);
+    assert_eq!(page1.is_truncated, Some(true));
+    let marker = page1.marker.clone().expect("Expected a pagination marker");
+
+    let page2 = ListRolePoliciesInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .max_items(Some(1))
+        .marker(Some(marker))
+        .build()
+        .expect("Failed to build ListRolePoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list inline policies on LambdaExecutor (page 2)");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(page2.policy_names, vec!["InlineWithMissingPrincipal".to_string()]);
+    assert_eq!(page2.is_truncated, None);
+    assert_eq!(page2.marker, None);
+}
+
+/// ListRolePolicies on a nonexistent role must fail with NoSuchEntity.
+pub async fn test_list_role_policies_nonexistent_role(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = ListRolePoliciesInternalRequest::builder()
+        .role_name("NoSuchListPoliciesRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListRolePoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("ListRolePolicies on a nonexistent role must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building a ListRolePolicies request with an invalid role name must fail before touching the
+/// database.
+pub fn test_list_role_policies_invalid_name() {
+    let result = ListRolePoliciesInternalRequest::builder()
+        .role_name("bad role!".to_string())
+        .account_id("123456789012".to_string())
         .build();
     assert!(result.is_err(), "Building a request with an invalid role name must fail");
 }

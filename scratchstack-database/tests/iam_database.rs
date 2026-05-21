@@ -139,6 +139,20 @@ async fn test_database() {
     user::test_put_user_policy_nonexistent_user(&pool).await;
     user::test_put_user_policy_invalid_name();
 
+    // -- GetUserPolicyInternalRequest -----------------------------------------
+    user::test_get_user_policy_simple(&pool).await;
+    user::test_get_user_policy_case_insensitive_lookup(&pool).await;
+    user::test_get_user_policy_nonexistent_policy(&pool).await;
+    user::test_get_user_policy_nonexistent_user(&pool).await;
+    user::test_get_user_policy_invalid_name();
+
+    // -- ListUserPoliciesInternalRequest --------------------------------------
+    user::test_list_user_policies_simple(&pool).await;
+    user::test_list_user_policies_empty(&pool).await;
+    user::test_list_user_policies_pagination(&pool).await;
+    user::test_list_user_policies_nonexistent_user(&pool).await;
+    user::test_list_user_policies_invalid_name();
+
     // -- DeleteUserPolicyInternalRequest --------------------------------------
     user::test_delete_user_policy_simple(&pool).await;
     user::test_delete_user_policy_nonexistent_policy(&pool).await;
@@ -200,6 +214,20 @@ async fn test_database() {
     group::test_put_group_policy_invalid_document(&pool).await;
     group::test_put_group_policy_nonexistent_group(&pool).await;
     group::test_put_group_policy_invalid_name();
+
+    // -- GetGroupPolicyInternalRequest ----------------------------------------
+    group::test_get_group_policy_simple(&pool).await;
+    group::test_get_group_policy_case_insensitive_lookup(&pool).await;
+    group::test_get_group_policy_nonexistent_policy(&pool).await;
+    group::test_get_group_policy_nonexistent_group(&pool).await;
+    group::test_get_group_policy_invalid_name();
+
+    // -- ListGroupPoliciesInternalRequest -------------------------------------
+    group::test_list_group_policies_simple(&pool).await;
+    group::test_list_group_policies_empty(&pool).await;
+    group::test_list_group_policies_pagination(&pool).await;
+    group::test_list_group_policies_nonexistent_group(&pool).await;
+    group::test_list_group_policies_invalid_name();
 
     // -- DeleteGroupPolicyInternalRequest -------------------------------------
     group::test_delete_group_policy_simple(&pool).await;
@@ -438,6 +466,20 @@ async fn test_database() {
     role::test_put_role_policy_invalid_document(&pool).await;
     role::test_put_role_policy_nonexistent_role(&pool).await;
     role::test_put_role_policy_invalid_name();
+
+    // -- GetRolePolicyInternalRequest -----------------------------------------
+    role::test_get_role_policy_simple(&pool).await;
+    role::test_get_role_policy_case_insensitive_lookup(&pool).await;
+    role::test_get_role_policy_nonexistent_policy(&pool).await;
+    role::test_get_role_policy_nonexistent_role(&pool).await;
+    role::test_get_role_policy_invalid_name();
+
+    // -- ListRolePoliciesInternalRequest --------------------------------------
+    role::test_list_role_policies_simple(&pool).await;
+    role::test_list_role_policies_empty(&pool).await;
+    role::test_list_role_policies_pagination(&pool).await;
+    role::test_list_role_policies_nonexistent_role(&pool).await;
+    role::test_list_role_policies_invalid_name();
 
     // -- DeleteRolePolicyInternalRequest --------------------------------------
     role::test_delete_role_policy_simple(&pool).await;

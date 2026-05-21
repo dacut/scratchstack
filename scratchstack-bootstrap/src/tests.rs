@@ -1013,6 +1013,161 @@ async fn test_users(database: &TempDatabase) {
         .expect_err("put-user-policy with an invalid user name should fail");
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 
+    // -- get-user-policy ------------------------------------------------------
+    let get_resp = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-user-policy",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPolicyUser",
+            "--policy-name",
+            "InlineRead",
+        ])
+        .await
+        .expect("Failed to get-user-policy on PutPolicyUser");
+    assert!(get_resp.contains("\"UserName\": \"PutPolicyUser\""), "Expected UserName in response, got: {get_resp}");
+    assert!(get_resp.contains("\"PolicyName\": \"InlineRead\""), "Expected PolicyName in response, got: {get_resp}");
+    assert!(get_resp.contains("ec2:Describe*"), "Expected replaced document in response, got: {get_resp}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-user-policy",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPolicyUser",
+            "--policy-name",
+            "NotAttached",
+        ])
+        .await
+        .expect_err("get-user-policy for a policy that is not attached should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-user-policy",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "no-such-user",
+            "--policy-name",
+            "AnyName",
+        ])
+        .await
+        .expect_err("get-user-policy on a nonexistent user should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-user-policy",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "bad name!",
+            "--policy-name",
+            "AnyName",
+        ])
+        .await
+        .expect_err("get-user-policy with an invalid user name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // -- list-user-policies ---------------------------------------------------
+    let list_resp = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-user-policies",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPolicyUser",
+        ])
+        .await
+        .expect("Failed to list-user-policies on PutPolicyUser");
+    assert!(list_resp.contains("\"InlineRead\""), "Expected InlineRead in response, got: {list_resp}");
+    assert!(
+        list_resp.contains("\"InlineWithMissingPrincipal\""),
+        "Expected InlineWithMissingPrincipal in response, got: {list_resp}"
+    );
+
+    let list_resp = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-user-policies",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPolicyUser",
+            "--max-items",
+            "1",
+        ])
+        .await
+        .expect("Failed to list-user-policies with pagination on PutPolicyUser");
+    assert!(list_resp.contains("\"IsTruncated\": true"), "Expected IsTruncated=true in response, got: {list_resp}");
+    assert!(list_resp.contains("\"Marker\""), "Expected Marker in response, got: {list_resp}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-user-policies",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "no-such-user",
+        ])
+        .await
+        .expect_err("list-user-policies on a nonexistent user should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-user-policies",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "bad name!",
+        ])
+        .await
+        .expect_err("list-user-policies with an invalid user name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
     // -- delete-user-policy ---------------------------------------------------
     database
         .run([
@@ -2517,6 +2672,161 @@ async fn test_groups(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-group-policy with an invalid group name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // -- get-group-policy -----------------------------------------------------
+    let get_resp = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-group-policy",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "PutPolicyGroup",
+            "--policy-name",
+            "InlineRead",
+        ])
+        .await
+        .expect("Failed to get-group-policy on PutPolicyGroup");
+    assert!(get_resp.contains("\"GroupName\": \"PutPolicyGroup\""), "Expected GroupName in response, got: {get_resp}");
+    assert!(get_resp.contains("\"PolicyName\": \"InlineRead\""), "Expected PolicyName in response, got: {get_resp}");
+    assert!(get_resp.contains("ec2:Describe*"), "Expected replaced document in response, got: {get_resp}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-group-policy",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "PutPolicyGroup",
+            "--policy-name",
+            "NotAttached",
+        ])
+        .await
+        .expect_err("get-group-policy for a policy that is not attached should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-group-policy",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "no-such-group",
+            "--policy-name",
+            "AnyName",
+        ])
+        .await
+        .expect_err("get-group-policy on a nonexistent group should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-group-policy",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "bad name!",
+            "--policy-name",
+            "AnyName",
+        ])
+        .await
+        .expect_err("get-group-policy with an invalid group name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // -- list-group-policies --------------------------------------------------
+    let list_resp = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-group-policies",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "PutPolicyGroup",
+        ])
+        .await
+        .expect("Failed to list-group-policies on PutPolicyGroup");
+    assert!(list_resp.contains("\"InlineRead\""), "Expected InlineRead in response, got: {list_resp}");
+    assert!(
+        list_resp.contains("\"InlineWithMissingPrincipal\""),
+        "Expected InlineWithMissingPrincipal in response, got: {list_resp}"
+    );
+
+    let list_resp = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-group-policies",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "PutPolicyGroup",
+            "--max-items",
+            "1",
+        ])
+        .await
+        .expect("Failed to list-group-policies with pagination on PutPolicyGroup");
+    assert!(list_resp.contains("\"IsTruncated\": true"), "Expected IsTruncated=true in response, got: {list_resp}");
+    assert!(list_resp.contains("\"Marker\""), "Expected Marker in response, got: {list_resp}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-group-policies",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "no-such-group",
+        ])
+        .await
+        .expect_err("list-group-policies on a nonexistent group should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-group-policies",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "bad name!",
+        ])
+        .await
+        .expect_err("list-group-policies with an invalid group name should fail");
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 
     // -- delete-group-policy --------------------------------------------------
@@ -4524,6 +4834,161 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-role-policy with an invalid role name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // -- get-role-policy ------------------------------------------------------
+    let get_resp = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-role-policy",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPolicyRole",
+            "--policy-name",
+            "InlineRead",
+        ])
+        .await
+        .expect("Failed to get-role-policy on PutPolicyRole");
+    assert!(get_resp.contains("\"RoleName\": \"PutPolicyRole\""), "Expected RoleName in response, got: {get_resp}");
+    assert!(get_resp.contains("\"PolicyName\": \"InlineRead\""), "Expected PolicyName in response, got: {get_resp}");
+    assert!(get_resp.contains("ec2:Describe*"), "Expected replaced document in response, got: {get_resp}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-role-policy",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPolicyRole",
+            "--policy-name",
+            "NotAttached",
+        ])
+        .await
+        .expect_err("get-role-policy for a policy that is not attached should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-role-policy",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "no-such-role",
+            "--policy-name",
+            "AnyName",
+        ])
+        .await
+        .expect_err("get-role-policy on a nonexistent role should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-role-policy",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "bad role!",
+            "--policy-name",
+            "AnyName",
+        ])
+        .await
+        .expect_err("get-role-policy with an invalid role name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // -- list-role-policies ---------------------------------------------------
+    let list_resp = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-role-policies",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPolicyRole",
+        ])
+        .await
+        .expect("Failed to list-role-policies on PutPolicyRole");
+    assert!(list_resp.contains("\"InlineRead\""), "Expected InlineRead in response, got: {list_resp}");
+    assert!(
+        list_resp.contains("\"InlineWithMissingPrincipal\""),
+        "Expected InlineWithMissingPrincipal in response, got: {list_resp}"
+    );
+
+    let list_resp = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-role-policies",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPolicyRole",
+            "--max-items",
+            "1",
+        ])
+        .await
+        .expect("Failed to list-role-policies with pagination on PutPolicyRole");
+    assert!(list_resp.contains("\"IsTruncated\": true"), "Expected IsTruncated=true in response, got: {list_resp}");
+    assert!(list_resp.contains("\"Marker\""), "Expected Marker in response, got: {list_resp}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-role-policies",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "no-such-role",
+        ])
+        .await
+        .expect_err("list-role-policies on a nonexistent role should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-role-policies",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "bad role!",
+        ])
+        .await
+        .expect_err("list-role-policies with an invalid role name should fail");
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 
     // -- delete-role-policy ---------------------------------------------------

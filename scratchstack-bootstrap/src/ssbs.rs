@@ -30,9 +30,9 @@ use {
         group::{
             AddUserToGroupInternalCommand, AttachGroupPolicyInternalCommand, CreateGroupInternalCommand,
             DeleteGroupInternalCommand, DeleteGroupPolicyInternalCommand, DetachGroupPolicyInternalCommand,
-            GetGroupInternalCommand, ListAttachedGroupPoliciesInternalCommand, ListGroupsForUserInternalCommand,
-            ListGroupsInternalCommand, PutGroupPolicyInternalCommand, RemoveUserFromGroupInternalCommand,
-            UpdateGroupInternalCommand,
+            GetGroupInternalCommand, GetGroupPolicyInternalCommand, ListAttachedGroupPoliciesInternalCommand,
+            ListGroupPoliciesInternalCommand, ListGroupsForUserInternalCommand, ListGroupsInternalCommand,
+            PutGroupPolicyInternalCommand, RemoveUserFromGroupInternalCommand, UpdateGroupInternalCommand,
         },
         partition::{GetCurrentPartitionCommand, SetCurrentPartitionCommand},
         policy::{
@@ -44,17 +44,19 @@ use {
         role::{
             AttachRolePolicyInternalCommand, CreateRoleInternalCommand, DeleteRoleInternalCommand,
             DeleteRolePermissionsBoundaryInternalCommand, DeleteRolePolicyInternalCommand,
-            DetachRolePolicyInternalCommand, GetRoleInternalCommand, ListAttachedRolePoliciesInternalCommand,
-            ListRoleTagsInternalCommand, ListRolesInternalCommand, PutRolePermissionsBoundaryInternalCommand,
-            PutRolePolicyInternalCommand, TagRoleInternalCommand, UntagRoleInternalCommand,
-            UpdateRoleDescriptionInternalCommand, UpdateRoleInternalCommand,
+            DetachRolePolicyInternalCommand, GetRoleInternalCommand, GetRolePolicyInternalCommand,
+            ListAttachedRolePoliciesInternalCommand, ListRolePoliciesInternalCommand, ListRoleTagsInternalCommand,
+            ListRolesInternalCommand, PutRolePermissionsBoundaryInternalCommand, PutRolePolicyInternalCommand,
+            TagRoleInternalCommand, UntagRoleInternalCommand, UpdateRoleDescriptionInternalCommand,
+            UpdateRoleInternalCommand,
         },
         user::{
             AttachUserPolicyInternalCommand, CreateUserInternalCommand, DeleteUserInternalCommand,
             DeleteUserPermissionsBoundaryInternalCommand, DeleteUserPolicyInternalCommand,
-            DetachUserPolicyInternalCommand, GetUserInternalCommand, ListAttachedUserPoliciesInternalCommand,
-            ListUserTagsInternalCommand, ListUsersInternalCommand, PutUserPermissionsBoundaryInternalCommand,
-            PutUserPolicyInternalCommand, TagUserInternalCommand, UntagUserInternalCommand, UpdateUserInternalCommand,
+            DetachUserPolicyInternalCommand, GetUserInternalCommand, GetUserPolicyInternalCommand,
+            ListAttachedUserPoliciesInternalCommand, ListUserPoliciesInternalCommand, ListUserTagsInternalCommand,
+            ListUsersInternalCommand, PutUserPermissionsBoundaryInternalCommand, PutUserPolicyInternalCommand,
+            TagUserInternalCommand, UntagUserInternalCommand, UpdateUserInternalCommand,
         },
     },
     aws_smithy_types::error::metadata::ProvideErrorMetadata,
@@ -224,6 +226,10 @@ enum Commands {
     #[command(name = "get-group")]
     GetGroup(GetGroupInternalCommand),
 
+    /// Retrieve an inline policy document attached to an IAM group.
+    #[command(name = "get-group-policy")]
+    GetGroupPolicy(GetGroupPolicyInternalCommand),
+
     /// Get information about an IAM managed policy.
     #[command(name = "get-policy")]
     GetPolicy(GetPolicyCommand),
@@ -236,9 +242,17 @@ enum Commands {
     #[command(name = "get-role")]
     GetRole(GetRoleInternalCommand),
 
+    /// Retrieve an inline policy document attached to an IAM role.
+    #[command(name = "get-role-policy")]
+    GetRolePolicy(GetRolePolicyInternalCommand),
+
     /// Get information about an IAM user in an account.
     #[command(name = "get-user")]
     GetUser(GetUserInternalCommand),
+
+    /// Retrieve an inline policy document attached to an IAM user.
+    #[command(name = "get-user-policy")]
+    GetUserPolicy(GetUserPolicyInternalCommand),
 
     /// List IAM accounts.
     #[command(name = "list-accounts")]
@@ -261,6 +275,10 @@ enum Commands {
     #[command(name = "list-entities-for-policy")]
     ListEntitiesForPolicy(ListEntitiesForPolicyCommand),
 
+    /// List the names of inline policies attached to an IAM group.
+    #[command(name = "list-group-policies")]
+    ListGroupPolicies(ListGroupPoliciesInternalCommand),
+
     /// List IAM groups in an account.
     #[command(name = "list-groups")]
     ListGroups(ListGroupsInternalCommand),
@@ -281,6 +299,10 @@ enum Commands {
     #[command(name = "list-policy-versions")]
     ListPolicyVersions(ListPolicyVersionsCommand),
 
+    /// List the names of inline policies attached to an IAM role.
+    #[command(name = "list-role-policies")]
+    ListRolePolicies(ListRolePoliciesInternalCommand),
+
     /// List IAM roles in an account.
     #[command(name = "list-roles")]
     ListRoles(ListRolesInternalCommand),
@@ -288,6 +310,10 @@ enum Commands {
     /// List tags for an IAM role in an account.
     #[command(name = "list-role-tags")]
     ListRoleTags(ListRoleTagsInternalCommand),
+
+    /// List the names of inline policies attached to an IAM user.
+    #[command(name = "list-user-policies")]
+    ListUserPolicies(ListUserPoliciesInternalCommand),
 
     /// List IAM users in an account.
     #[command(name = "list-users")]
@@ -406,22 +432,28 @@ impl Commands {
             Commands::DetachUserPolicy(_) => "DetachUserPolicy",
             Commands::GetCurrentPartition(_) => "GetCurrentPartition",
             Commands::GetGroup(_) => "GetGroup",
+            Commands::GetGroupPolicy(_) => "GetGroupPolicy",
             Commands::GetPolicy(_) => "GetPolicy",
             Commands::GetPolicyVersion(_) => "GetPolicyVersion",
             Commands::GetRole(_) => "GetRole",
+            Commands::GetRolePolicy(_) => "GetRolePolicy",
             Commands::GetUser(_) => "GetUser",
+            Commands::GetUserPolicy(_) => "GetUserPolicy",
             Commands::ListAccounts(_) => "ListAccounts",
             Commands::ListAttachedGroupPolicies(_) => "ListAttachedGroupPolicies",
             Commands::ListAttachedRolePolicies(_) => "ListAttachedRolePolicies",
             Commands::ListAttachedUserPolicies(_) => "ListAttachedUserPolicies",
             Commands::ListEntitiesForPolicy(_) => "ListEntitiesForPolicy",
+            Commands::ListGroupPolicies(_) => "ListGroupPolicies",
             Commands::ListGroups(_) => "ListGroups",
             Commands::ListGroupsForUser(_) => "ListGroupsForUser",
             Commands::ListPolicies(_) => "ListPolicies",
             Commands::ListPolicyTags(_) => "ListPolicyTags",
             Commands::ListPolicyVersions(_) => "ListPolicyVersions",
+            Commands::ListRolePolicies(_) => "ListRolePolicies",
             Commands::ListRoles(_) => "ListRoles",
             Commands::ListRoleTags(_) => "ListRoleTags",
+            Commands::ListUserPolicies(_) => "ListUserPolicies",
             Commands::ListUsers(_) => "ListUsers",
             Commands::ListUserTags(_) => "ListUserTags",
             Commands::Migrate(_) => "Migrate",
@@ -605,6 +637,13 @@ where
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
+        Commands::GetGroupPolicy(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
         Commands::GetPolicy(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
@@ -626,7 +665,21 @@ where
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
+        Commands::GetRolePolicy(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
         Commands::GetUser(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::GetUserPolicy(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
@@ -668,6 +721,13 @@ where
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
+        Commands::ListGroupPolicies(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
         Commands::ListGroups(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
@@ -703,6 +763,13 @@ where
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
+        Commands::ListRolePolicies(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
         Commands::ListRoles(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
@@ -711,6 +778,13 @@ where
             })?
         }
         Commands::ListRoleTags(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::ListUserPolicies(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");

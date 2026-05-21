@@ -52,6 +52,9 @@ pub(crate) const OP_LIST_ATTACHED_USER_POLICIES: &str = "ListAttachedUserPolicie
 /// Operation name for ListEntitiesForPolicy
 pub(crate) const OP_LIST_ENTITIES_FOR_POLICY: &str = "ListEntitiesForPolicy";
 
+/// Operation name for ListGroupPolicies
+pub(crate) const OP_LIST_GROUP_POLICIES: &str = "ListGroupPolicies";
+
 /// Operation name for ListGroups
 pub(crate) const OP_LIST_GROUPS: &str = "ListGroups";
 
@@ -67,11 +70,17 @@ pub(crate) const OP_LIST_POLICY_TAGS: &str = "ListPolicyTags";
 /// Operation name for ListPolicyVersions
 pub(crate) const OP_LIST_POLICY_VERSIONS: &str = "ListPolicyVersions";
 
+/// Operation name for ListRolePolicies
+pub(crate) const OP_LIST_ROLE_POLICIES: &str = "ListRolePolicies";
+
 /// Operation name for ListRoles
 pub(crate) const OP_LIST_ROLES: &str = "ListRoles";
 
 /// Operation name for ListRoleTags
 pub(crate) const OP_LIST_ROLE_TAGS: &str = "ListRoleTags";
+
+/// Operation name for ListUserPolicies
+pub(crate) const OP_LIST_USER_POLICIES: &str = "ListUserPolicies";
 
 /// Operation name for ListUsers
 pub(crate) const OP_LIST_USERS: &str = "ListUsers";

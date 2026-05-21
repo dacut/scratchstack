@@ -6,9 +6,9 @@ use {
         error_meta::Error as IamError,
         operation::{
             CreateUserInternalRequest, DeleteUserInternalRequest, DeleteUserPermissionsBoundaryInternalRequest,
-            DeleteUserPolicyInternalRequest, GetUserInternalRequest, ListUserTagsInternalRequest,
-            PutUserPermissionsBoundaryInternalRequest, PutUserPolicyInternalRequest, TagUserInternalRequest,
-            UntagUserInternalRequest,
+            DeleteUserPolicyInternalRequest, GetUserInternalRequest, GetUserPolicyInternalRequest,
+            ListUserPoliciesInternalRequest, ListUserTagsInternalRequest, PutUserPermissionsBoundaryInternalRequest,
+            PutUserPolicyInternalRequest, TagUserInternalRequest, UntagUserInternalRequest,
         },
         types::Tag,
     },
@@ -847,6 +847,199 @@ pub fn test_put_user_policy_invalid_name() {
         .account_id("123456789012".to_string())
         .policy_name("AnyName".to_string())
         .policy_document(INLINE_POLICY_S3.to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid user name must fail");
+}
+
+/// GetUserPolicy returns the policy document set via PutUserPolicy.
+pub async fn test_get_user_policy_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetUserPolicyInternalRequest::builder()
+        .user_name("bob".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("InlineRead".to_string())
+        .build()
+        .expect("Failed to build GetUserPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get inline policy on bob");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.user_name, "bob");
+    assert_eq!(resp.policy_name, "InlineRead");
+    assert_eq!(resp.policy_document, INLINE_POLICY_EC2);
+}
+
+/// GetUserPolicy returns the document under the original case for the policy name even when
+/// looked up using a different case.
+pub async fn test_get_user_policy_case_insensitive_lookup(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetUserPolicyInternalRequest::builder()
+        .user_name("BOB".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("INLINEREAD".to_string())
+        .build()
+        .expect("Failed to build GetUserPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get inline policy via case-insensitive lookup");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert_eq!(resp.user_name, "bob");
+    assert_eq!(resp.policy_name, "InlineRead");
+}
+
+/// GetUserPolicy on a nonexistent inline policy must fail with NoSuchEntity.
+pub async fn test_get_user_policy_nonexistent_policy(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = GetUserPolicyInternalRequest::builder()
+        .user_name("bob".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("NotAttached".to_string())
+        .build()
+        .expect("Failed to build GetUserPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("GetUserPolicy with no matching policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// GetUserPolicy on a nonexistent user must fail with NoSuchEntity.
+pub async fn test_get_user_policy_nonexistent_user(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = GetUserPolicyInternalRequest::builder()
+        .user_name("nosuchgetpolicyuser".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("AnyName".to_string())
+        .build()
+        .expect("Failed to build GetUserPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("GetUserPolicy on a nonexistent user must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building a GetUserPolicy request with an invalid user name must fail before touching the
+/// database.
+pub fn test_get_user_policy_invalid_name() {
+    let result = GetUserPolicyInternalRequest::builder()
+        .user_name("bad name!".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("AnyName".to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid user name must fail");
+}
+
+/// ListUserPolicies returns the policy names attached to a user in sorted (case-insensitive)
+/// order.
+pub async fn test_list_user_policies_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListUserPoliciesInternalRequest::builder()
+        .user_name("bob".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListUserPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list inline policies on bob");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(
+        resp.policy_names,
+        vec!["InlineCompute".to_string(), "InlineRead".to_string(), "InlineWithMissingPrincipal".to_string()]
+    );
+    assert_eq!(resp.is_truncated, None);
+    assert_eq!(resp.marker, None);
+}
+
+/// ListUserPolicies returns an empty list when the user has no inline policies attached.
+pub async fn test_list_user_policies_empty(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateUserInternalRequest::builder()
+        .user_name("ListPoliciesEmptyUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreateUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create ListPoliciesEmptyUser");
+    let resp = ListUserPoliciesInternalRequest::builder()
+        .user_name("ListPoliciesEmptyUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListUserPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list inline policies on empty user");
+    assert!(resp.policy_names.is_empty(), "Expected no inline policies, got: {:?}", resp.policy_names);
+    assert_eq!(resp.is_truncated, None);
+
+    DeleteUserInternalRequest::builder()
+        .user_name("ListPoliciesEmptyUser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteUserInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete ListPoliciesEmptyUser");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// ListUserPolicies honors `max_items` and emits a usable marker for the next page.
+pub async fn test_list_user_policies_pagination(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let page1 = ListUserPoliciesInternalRequest::builder()
+        .user_name("bob".to_string())
+        .account_id("123456789012".to_string())
+        .max_items(Some(2))
+        .build()
+        .expect("Failed to build ListUserPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list inline policies on bob (page 1)");
+    assert_eq!(page1.policy_names, vec!["InlineCompute".to_string(), "InlineRead".to_string()]);
+    assert_eq!(page1.is_truncated, Some(true));
+    let marker = page1.marker.clone().expect("Expected a pagination marker");
+
+    let page2 = ListUserPoliciesInternalRequest::builder()
+        .user_name("bob".to_string())
+        .account_id("123456789012".to_string())
+        .max_items(Some(2))
+        .marker(Some(marker))
+        .build()
+        .expect("Failed to build ListUserPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list inline policies on bob (page 2)");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(page2.policy_names, vec!["InlineWithMissingPrincipal".to_string()]);
+    assert_eq!(page2.is_truncated, None);
+    assert_eq!(page2.marker, None);
+}
+
+/// ListUserPolicies on a nonexistent user must fail with NoSuchEntity.
+pub async fn test_list_user_policies_nonexistent_user(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = ListUserPoliciesInternalRequest::builder()
+        .user_name("nosuchlistpoliciesuser".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListUserPoliciesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("ListUserPolicies on a nonexistent user must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building a ListUserPolicies request with an invalid user name must fail before touching the
+/// database.
+pub fn test_list_user_policies_invalid_name() {
+    let result = ListUserPoliciesInternalRequest::builder()
+        .user_name("bad name!".to_string())
+        .account_id("123456789012".to_string())
         .build();
     assert!(result.is_err(), "Building a request with an invalid user name must fail");
 }

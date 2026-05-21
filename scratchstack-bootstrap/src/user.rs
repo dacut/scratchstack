@@ -7,9 +7,10 @@ use {
         operation::{
             AttachUserPolicyInternalRequest, CreateUserInternalRequest, CreateUserResponse, DeleteUserInternalRequest,
             DeleteUserPermissionsBoundaryInternalRequest, DeleteUserPolicyInternalRequest,
-            DetachUserPolicyInternalRequest, GetUserInternalRequest, GetUserResponse,
-            ListAttachedUserPoliciesInternalRequest, ListAttachedUserPoliciesResponse, ListUserTagsInternalRequest,
-            ListUserTagsResponse, ListUsersInternalRequest, ListUsersResponse,
+            DetachUserPolicyInternalRequest, GetUserInternalRequest, GetUserPolicyInternalRequest,
+            GetUserPolicyResponse, GetUserResponse, ListAttachedUserPoliciesInternalRequest,
+            ListAttachedUserPoliciesResponse, ListUserPoliciesInternalRequest, ListUserPoliciesResponse,
+            ListUserTagsInternalRequest, ListUserTagsResponse, ListUsersInternalRequest, ListUsersResponse,
             PutUserPermissionsBoundaryInternalRequest, PutUserPolicyInternalRequest, TagUserInternalRequest,
             UntagUserInternalRequest, UpdateUserInternalRequest,
         },
@@ -127,6 +128,22 @@ pub(crate) struct GetUserInternalCommand {
     pub user_name: String,
 }
 
+/// Retrieve the document of an inline policy attached to a user in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct GetUserPolicyInternalCommand {
+    /// The unique identifier for the account the user belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the user the policy is associated with.
+    #[clap(long)]
+    pub user_name: String,
+
+    /// The name of the inline policy to retrieve.
+    #[clap(long)]
+    pub policy_name: String,
+}
+
 /// List managed policies attached to a user in a given account in the Scratchstack IAM service.
 #[derive(Debug, Parser)]
 pub(crate) struct ListAttachedUserPoliciesInternalCommand {
@@ -151,6 +168,28 @@ pub(crate) struct ListAttachedUserPoliciesInternalCommand {
     /// ListAttachedUserPolicies request was truncated, the response will include a marker that
     /// you can use in a subsequent ListAttachedUserPolicies request to retrieve the next set of
     /// attached policies.
+    #[clap(long)]
+    pub marker: Option<String>,
+}
+
+/// List the names of inline policies attached to a user in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct ListUserPoliciesInternalCommand {
+    /// The unique identifier for the account the user belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the user to list inline policies for.
+    #[clap(long)]
+    pub user_name: String,
+
+    /// The maximum number of inline policies to include in the response.
+    #[clap(long)]
+    pub max_items: Option<i32>,
+
+    /// A marker for paginating the list of inline policies. If the response from a previous
+    /// ListUserPolicies request was truncated, the response will include a marker that you can
+    /// use in a subsequent ListUserPolicies request to retrieve the next set of inline policies.
     #[clap(long)]
     pub marker: Option<String>,
 }
@@ -371,6 +410,22 @@ impl Runnable for GetUserInternalCommand {
     }
 }
 
+impl Runnable for GetUserPolicyInternalCommand {
+    type Result = GetUserPolicyResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = GetUserPolicyInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .user_name(self.user_name.clone())
+            .policy_name(self.policy_name.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
 impl Runnable for ListAttachedUserPoliciesInternalCommand {
     type Result = ListAttachedUserPoliciesResponse;
 
@@ -382,6 +437,23 @@ impl Runnable for ListAttachedUserPoliciesInternalCommand {
             .account_id(self.account_id.clone())
             .user_name(self.user_name.clone())
             .path_prefix(self.path_prefix.clone())
+            .max_items(self.max_items)
+            .marker(self.marker.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for ListUserPoliciesInternalCommand {
+    type Result = ListUserPoliciesResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = ListUserPoliciesInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .user_name(self.user_name.clone())
             .max_items(self.max_items)
             .marker(self.marker.clone())
             .build()?;
