@@ -13,7 +13,7 @@ Scratchstack native database operations and types
 * [x] AttachRolePolicy
 * [x] AttachUserPolicy
 * [ ] ChangePassword
-* [ ] CreateAccessKey
+* [x] CreateAccessKey
 * [ ] CreateAccountAlias
 * [ ] CreateDelegationRequest
 * [x] CreateGroup
@@ -29,7 +29,7 @@ Scratchstack native database operations and types
 * [x] CreateUser
 * [ ] CreateVirtualMFADevice
 * [ ] DeactivateMFADevice
-* [ ] DeleteAccessKey
+* [x] DeleteAccessKey
 * [ ] DeleteAccountAlias
 * [ ] DeleteAccountPasswordPolicy
 * [x] DeleteGroup
@@ -94,7 +94,7 @@ Scratchstack native database operations and types
 * [ ] GetSSHPublicKey
 * [x] GetUser
 * [x] GetUserPolicy
-* [ ] ListAccessKeys
+* [x] ListAccessKeys
 * [ ] ListAccountAliases
 * [x] ListAttachedGroupPolicies
 * [x] ListAttachedRolePolicies
@@ -162,7 +162,7 @@ Scratchstack native database operations and types
 * [ ] UntagSAMLProvider
 * [ ] UntagServerCertificate
 * [x] UntagUser
-* [ ] UpdateAccessKey
+* [x] UpdateAccessKey
 * [ ] UpdateAccountPasswordPolicy
 * [ ] UpdateAssumeRolePolicy
 * [ ] UpdateDelegationRequest

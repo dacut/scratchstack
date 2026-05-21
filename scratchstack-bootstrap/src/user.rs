@@ -5,15 +5,18 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
-            AttachUserPolicyInternalRequest, CreateUserInternalRequest, CreateUserResponse, DeleteUserInternalRequest,
+            AttachUserPolicyInternalRequest, CreateAccessKeyInternalRequest, CreateAccessKeyResponse,
+            CreateUserInternalRequest, CreateUserResponse, DeleteAccessKeyInternalRequest, DeleteUserInternalRequest,
             DeleteUserPermissionsBoundaryInternalRequest, DeleteUserPolicyInternalRequest,
             DetachUserPolicyInternalRequest, GetUserInternalRequest, GetUserPolicyInternalRequest,
-            GetUserPolicyResponse, GetUserResponse, ListAttachedUserPoliciesInternalRequest,
-            ListAttachedUserPoliciesResponse, ListUserPoliciesInternalRequest, ListUserPoliciesResponse,
-            ListUserTagsInternalRequest, ListUserTagsResponse, ListUsersInternalRequest, ListUsersResponse,
-            PutUserPermissionsBoundaryInternalRequest, PutUserPolicyInternalRequest, TagUserInternalRequest,
-            UntagUserInternalRequest, UpdateUserInternalRequest,
+            GetUserPolicyResponse, GetUserResponse, ListAccessKeysInternalRequest, ListAccessKeysResponse,
+            ListAttachedUserPoliciesInternalRequest, ListAttachedUserPoliciesResponse, ListUserPoliciesInternalRequest,
+            ListUserPoliciesResponse, ListUserTagsInternalRequest, ListUserTagsResponse, ListUsersInternalRequest,
+            ListUsersResponse, PutUserPermissionsBoundaryInternalRequest, PutUserPolicyInternalRequest,
+            TagUserInternalRequest, UntagUserInternalRequest, UpdateAccessKeyInternalRequest,
+            UpdateUserInternalRequest,
         },
+        types::StatusType,
     },
     std::ffi::OsString,
 };
@@ -30,6 +33,19 @@ pub(crate) struct AttachUserPolicyInternalCommand {
     pub policy_arn: String,
 
     /// The name of the user to attach the policy to.
+    #[clap(long)]
+    pub user_name: String,
+}
+
+/// Create a new access key (access key id + secret key pair) for an IAM user in the Scratchstack
+/// IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct CreateAccessKeyInternalCommand {
+    /// The unique identifier for the account the user belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the user to create the access key for.
     #[clap(long)]
     pub user_name: String,
 }
@@ -58,6 +74,23 @@ pub(crate) struct CreateUserInternalCommand {
     /// `Key1=Value1,Key2=Value2`.
     #[clap(long, num_args = 1..)]
     pub tags: Vec<String>,
+}
+
+/// Delete an access key from an IAM user in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct DeleteAccessKeyInternalCommand {
+    /// The unique identifier for the account the user belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The access key id to delete (the full 20-character `AKIA...` form).
+    #[clap(long)]
+    pub access_key_id: String,
+
+    /// The name of the user that owns the access key. Optional; if specified, the access key
+    /// must belong to this user.
+    #[clap(long)]
+    pub user_name: Option<String>,
 }
 
 /// Delete a user from the given account in the Scratchstack IAM service.
@@ -142,6 +175,26 @@ pub(crate) struct GetUserPolicyInternalCommand {
     /// The name of the inline policy to retrieve.
     #[clap(long)]
     pub policy_name: String,
+}
+
+/// List the access keys attached to an IAM user in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct ListAccessKeysInternalCommand {
+    /// The unique identifier for the account the user belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the user to list access keys for.
+    #[clap(long)]
+    pub user_name: String,
+
+    /// The maximum number of access keys to include in the response.
+    #[clap(long)]
+    pub max_items: Option<i32>,
+
+    /// A marker for paginating the list of access keys.
+    #[clap(long)]
+    pub marker: Option<String>,
 }
 
 /// List managed policies attached to a user in a given account in the Scratchstack IAM service.
@@ -277,6 +330,27 @@ pub(crate) struct UntagUserInternalCommand {
     pub tag_keys: Vec<String>,
 }
 
+/// Change the status (Active or Inactive) of an access key in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct UpdateAccessKeyInternalCommand {
+    /// The unique identifier for the account the user belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The access key id to update (the full 20-character `AKIA...` form).
+    #[clap(long)]
+    pub access_key_id: String,
+
+    /// The new status for the access key.
+    #[clap(long, value_enum)]
+    pub status: StatusType,
+
+    /// The name of the user that owns the access key. Optional; if specified, the access key
+    /// must belong to this user.
+    #[clap(long)]
+    pub user_name: Option<String>,
+}
+
 /// Update a user in a given account in the Scratchstack IAM service.
 #[derive(Debug, Parser)]
 pub(crate) struct UpdateUserInternalCommand {
@@ -313,6 +387,21 @@ impl Runnable for AttachUserPolicyInternalCommand {
     }
 }
 
+impl Runnable for CreateAccessKeyInternalCommand {
+    type Result = CreateAccessKeyResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = CreateAccessKeyInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .user_name(Some(self.user_name.clone()))
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
 impl Runnable for CreateUserInternalCommand {
     type Result = CreateUserResponse;
 
@@ -329,6 +418,22 @@ impl Runnable for CreateUserInternalCommand {
         builder = builder.tags(tags);
 
         let request = builder.build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for DeleteAccessKeyInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = DeleteAccessKeyInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .access_key_id(self.access_key_id.clone())
+            .user_name(self.user_name.clone())
+            .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -421,6 +526,23 @@ impl Runnable for GetUserPolicyInternalCommand {
             .account_id(self.account_id.clone())
             .user_name(self.user_name.clone())
             .policy_name(self.policy_name.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for ListAccessKeysInternalCommand {
+    type Result = ListAccessKeysResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = ListAccessKeysInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .user_name(Some(self.user_name.clone()))
+            .max_items(self.max_items)
+            .marker(self.marker.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -523,6 +645,23 @@ impl Runnable for UntagUserInternalCommand {
             .account_id(self.account_id.clone())
             .user_name(self.user_name.clone())
             .tag_keys(self.tag_keys.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for UpdateAccessKeyInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = UpdateAccessKeyInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .access_key_id(self.access_key_id.clone())
+            .status(self.status)
+            .user_name(self.user_name.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }

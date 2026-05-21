@@ -163,6 +163,35 @@ async fn test_database() {
     user::test_delete_user_attached_policy_fails(&pool).await;
     user::test_delete_user_inline_policy_fails(&pool).await;
 
+    // -- CreateAccessKeyInternalRequest ---------------------------------------
+    user::test_create_access_key_simple(&pool).await;
+    user::test_create_access_key_second(&pool).await;
+    user::test_create_access_key_no_user_name(&pool).await;
+    user::test_create_access_key_nonexistent_user(&pool).await;
+    user::test_create_access_key_invalid_user_name();
+
+    // -- ListAccessKeysInternalRequest ----------------------------------------
+    user::test_list_access_keys_simple(&pool).await;
+    user::test_list_access_keys_seeded(&pool).await;
+    user::test_list_access_keys_empty(&pool).await;
+    user::test_list_access_keys_pagination(&pool).await;
+    user::test_list_access_keys_no_user_name(&pool).await;
+    user::test_list_access_keys_nonexistent_user(&pool).await;
+
+    // -- UpdateAccessKeyInternalRequest ---------------------------------------
+    user::test_update_access_key_status_roundtrip(&pool).await;
+    user::test_update_access_key_expired_status_rejected(&pool).await;
+    user::test_update_access_key_mismatched_user(&pool).await;
+    user::test_update_access_key_nonexistent(&pool).await;
+    user::test_update_access_key_bad_prefix(&pool).await;
+
+    // -- DeleteAccessKeyInternalRequest ---------------------------------------
+    user::test_delete_access_key_simple(&pool).await;
+    user::test_delete_access_key_without_user_name(&pool).await;
+    user::test_delete_access_key_mismatched_user(&pool).await;
+    user::test_delete_access_key_nonexistent(&pool).await;
+    user::test_delete_access_key_bad_prefix(&pool).await;
+
     // -- CreateRoleInternalRequest --------------------------------------------
     role::test_create_role_simple(&pool).await;
     role::test_create_role_with_path(&pool).await;

@@ -51,12 +51,13 @@ use {
             UpdateRoleInternalCommand,
         },
         user::{
-            AttachUserPolicyInternalCommand, CreateUserInternalCommand, DeleteUserInternalCommand,
-            DeleteUserPermissionsBoundaryInternalCommand, DeleteUserPolicyInternalCommand,
-            DetachUserPolicyInternalCommand, GetUserInternalCommand, GetUserPolicyInternalCommand,
-            ListAttachedUserPoliciesInternalCommand, ListUserPoliciesInternalCommand, ListUserTagsInternalCommand,
-            ListUsersInternalCommand, PutUserPermissionsBoundaryInternalCommand, PutUserPolicyInternalCommand,
-            TagUserInternalCommand, UntagUserInternalCommand, UpdateUserInternalCommand,
+            AttachUserPolicyInternalCommand, CreateAccessKeyInternalCommand, CreateUserInternalCommand,
+            DeleteAccessKeyInternalCommand, DeleteUserInternalCommand, DeleteUserPermissionsBoundaryInternalCommand,
+            DeleteUserPolicyInternalCommand, DetachUserPolicyInternalCommand, GetUserInternalCommand,
+            GetUserPolicyInternalCommand, ListAccessKeysInternalCommand, ListAttachedUserPoliciesInternalCommand,
+            ListUserPoliciesInternalCommand, ListUserTagsInternalCommand, ListUsersInternalCommand,
+            PutUserPermissionsBoundaryInternalCommand, PutUserPolicyInternalCommand, TagUserInternalCommand,
+            UntagUserInternalCommand, UpdateAccessKeyInternalCommand, UpdateUserInternalCommand,
         },
     },
     aws_smithy_types::error::metadata::ProvideErrorMetadata,
@@ -138,6 +139,11 @@ enum Commands {
     #[command(name = "attach-user-policy")]
     AttachUserPolicy(AttachUserPolicyInternalCommand),
 
+    /// Create a new access key for an IAM user. The response includes the access key id and
+    /// the (one-time-shown) secret access key.
+    #[command(name = "create-access-key")]
+    CreateAccessKey(CreateAccessKeyInternalCommand),
+
     /// Create an IAM account.
     #[command(name = "create-account")]
     CreateAccount(CreateAccountCommand),
@@ -161,6 +167,10 @@ enum Commands {
     /// Create an IAM user in an account.
     #[command(name = "create-user")]
     CreateUser(CreateUserInternalCommand),
+
+    /// Delete an access key from an IAM user.
+    #[command(name = "delete-access-key")]
+    DeleteAccessKey(DeleteAccessKeyInternalCommand),
 
     /// Delete an IAM group from an account.
     #[command(name = "delete-group")]
@@ -253,6 +263,10 @@ enum Commands {
     /// Retrieve an inline policy document attached to an IAM user.
     #[command(name = "get-user-policy")]
     GetUserPolicy(GetUserPolicyInternalCommand),
+
+    /// List the access keys attached to an IAM user.
+    #[command(name = "list-access-keys")]
+    ListAccessKeys(ListAccessKeysInternalCommand),
 
     /// List IAM accounts.
     #[command(name = "list-accounts")]
@@ -382,6 +396,10 @@ enum Commands {
     #[command(name = "untag-role")]
     UntagRole(UntagRoleInternalCommand),
 
+    /// Change the status (Active or Inactive) of an access key.
+    #[command(name = "update-access-key")]
+    UpdateAccessKey(UpdateAccessKeyInternalCommand),
+
     /// Update an IAM group in an account.
     #[command(name = "update-group")]
     UpdateGroup(UpdateGroupInternalCommand),
@@ -411,12 +429,14 @@ impl Commands {
             Commands::AttachGroupPolicy(_) => "AttachGroupPolicy",
             Commands::AttachRolePolicy(_) => "AttachRolePolicy",
             Commands::AttachUserPolicy(_) => "AttachUserPolicy",
+            Commands::CreateAccessKey(_) => "CreateAccessKey",
             Commands::CreateAccount(_) => "CreateAccount",
             Commands::CreateGroup(_) => "CreateGroup",
             Commands::CreatePolicy(_) => "CreatePolicy",
             Commands::CreatePolicyVersion(_) => "CreatePolicyVersion",
             Commands::CreateRole(_) => "CreateRole",
             Commands::CreateUser(_) => "CreateUser",
+            Commands::DeleteAccessKey(_) => "DeleteAccessKey",
             Commands::DeleteGroup(_) => "DeleteGroup",
             Commands::DeleteGroupPolicy(_) => "DeleteGroupPolicy",
             Commands::DeletePolicy(_) => "DeletePolicy",
@@ -439,6 +459,7 @@ impl Commands {
             Commands::GetRolePolicy(_) => "GetRolePolicy",
             Commands::GetUser(_) => "GetUser",
             Commands::GetUserPolicy(_) => "GetUserPolicy",
+            Commands::ListAccessKeys(_) => "ListAccessKeys",
             Commands::ListAccounts(_) => "ListAccounts",
             Commands::ListAttachedGroupPolicies(_) => "ListAttachedGroupPolicies",
             Commands::ListAttachedRolePolicies(_) => "ListAttachedRolePolicies",
@@ -471,6 +492,7 @@ impl Commands {
             Commands::UntagPolicy(_) => "UntagPolicy",
             Commands::UntagRole(_) => "UntagRole",
             Commands::UntagUser(_) => "UntagUser",
+            Commands::UpdateAccessKey(_) => "UpdateAccessKey",
             Commands::UpdateGroup(_) => "UpdateGroup",
             Commands::UpdateRole(_) => "UpdateRole",
             Commands::UpdateRoleDescription(_) => "UpdateRoleDescription",
@@ -529,6 +551,13 @@ where
             sub.run(&cli, vars).await?;
             "".to_string()
         }
+        Commands::CreateAccessKey(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
         Commands::CreateAccount(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
@@ -570,6 +599,10 @@ where
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
+        }
+        Commands::DeleteAccessKey(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
         }
         Commands::DeleteGroup(sub) => {
             sub.run(&cli, vars).await?;
@@ -680,6 +713,13 @@ where
             })?
         }
         Commands::GetUserPolicy(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::ListAccessKeys(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
@@ -861,6 +901,10 @@ where
             "".to_string()
         }
         Commands::UntagRole(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::UpdateAccessKey(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
         }

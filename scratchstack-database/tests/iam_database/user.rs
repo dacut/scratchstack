@@ -5,12 +5,14 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
-            CreateUserInternalRequest, DeleteUserInternalRequest, DeleteUserPermissionsBoundaryInternalRequest,
-            DeleteUserPolicyInternalRequest, GetUserInternalRequest, GetUserPolicyInternalRequest,
+            CreateAccessKeyInternalRequest, CreateUserInternalRequest, DeleteAccessKeyInternalRequest,
+            DeleteUserInternalRequest, DeleteUserPermissionsBoundaryInternalRequest, DeleteUserPolicyInternalRequest,
+            GetUserInternalRequest, GetUserPolicyInternalRequest, ListAccessKeysInternalRequest,
             ListUserPoliciesInternalRequest, ListUserTagsInternalRequest, PutUserPermissionsBoundaryInternalRequest,
             PutUserPolicyInternalRequest, TagUserInternalRequest, UntagUserInternalRequest,
+            UpdateAccessKeyInternalRequest,
         },
-        types::Tag,
+        types::{StatusType, Tag},
     },
 };
 
@@ -1243,4 +1245,444 @@ pub async fn test_delete_user_inline_policy_fails(pool: &sqlx::PgPool) {
         .await
         .expect("Failed to delete DeleteMeInlineUser after removing inline policy");
     tx.commit().await.expect("Failed to commit transaction");
+}
+
+// -- Access key tests --------------------------------------------------------
+
+/// CreateAccessKey for bob returns a new key whose id starts with "AKIA", whose secret is 40
+/// characters long, and whose status is `Active`.
+pub async fn test_create_access_key_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = CreateAccessKeyInternalRequest::builder()
+        .user_name(Some("bob".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreateAccessKeyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create access key for bob");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let access_key = resp.access_key;
+    assert_eq!(access_key.user_name, "bob");
+    assert!(
+        access_key.access_key_id.starts_with("AKIA"),
+        "Access key id must start with AKIA, got {}",
+        access_key.access_key_id
+    );
+    assert_eq!(access_key.access_key_id.len(), 20, "Access key id must be 20 chars total");
+    assert_eq!(access_key.secret_access_key.len(), 40, "Secret access key must be 40 chars long");
+    assert!(matches!(access_key.status, StatusType::Active), "New key must be Active");
+    assert!(access_key.create_date.is_some(), "create_date must be populated");
+}
+
+/// CreateAccessKey can be called multiple times for the same user; AWS allows up to two active
+/// keys, which we don't enforce — but two should certainly succeed.
+pub async fn test_create_access_key_second(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = CreateAccessKeyInternalRequest::builder()
+        .user_name(Some("bob".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreateAccessKeyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create second access key for bob");
+    tx.commit().await.expect("Failed to commit transaction");
+    assert!(resp.access_key.access_key_id.starts_with("AKIA"));
+}
+
+/// CreateAccessKey without a user name must fail with ValidationError, since the implementation
+/// has no caller identity to fall back to.
+pub async fn test_create_access_key_no_user_name(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = CreateAccessKeyInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreateAccessKeyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("CreateAccessKey without UserName must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::ValidationError(_)), "Expected ValidationError, got: {err:?}");
+}
+
+/// CreateAccessKey on a nonexistent user must fail with NoSuchEntity.
+pub async fn test_create_access_key_nonexistent_user(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = CreateAccessKeyInternalRequest::builder()
+        .user_name(Some("nosuchaccesskeyuser".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build CreateAccessKeyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("CreateAccessKey on a nonexistent user must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building a CreateAccessKey request with an invalid user name must fail before touching the
+/// database.
+pub fn test_create_access_key_invalid_user_name() {
+    let result = CreateAccessKeyInternalRequest::builder()
+        .user_name(Some("bad name!".to_string()))
+        .account_id("123456789012".to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid user name must fail");
+}
+
+/// ListAccessKeys returns the two keys that the previous CreateAccessKey tests added for bob.
+pub async fn test_list_access_keys_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListAccessKeysInternalRequest::builder()
+        .user_name(Some("bob".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListAccessKeysInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list access keys for bob");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.access_key_metadata.len(), 2, "Expected 2 access keys for bob");
+    for meta in &resp.access_key_metadata {
+        assert_eq!(meta.user_name.as_deref(), Some("bob"));
+        assert!(meta.access_key_id.as_deref().unwrap().starts_with("AKIA"));
+        assert!(matches!(meta.status, Some(StatusType::Active)));
+        assert!(meta.create_date.is_some());
+    }
+    assert_eq!(resp.is_truncated, None);
+}
+
+/// ListAccessKeys returns the seeded access key for Example-User-1.
+pub async fn test_list_access_keys_seeded(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListAccessKeysInternalRequest::builder()
+        .user_name(Some("Example-User-1".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListAccessKeysInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list access keys for Example-User-1");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.access_key_metadata.len(), 1, "Expected 1 seeded access key");
+    let meta = &resp.access_key_metadata[0];
+    assert_eq!(meta.user_name.as_deref(), Some("Example-User-1"));
+    assert_eq!(meta.access_key_id.as_deref(), Some("AKIAEXAMPLEACCESSKEYID123"));
+    assert!(matches!(meta.status, Some(StatusType::Active)));
+}
+
+/// ListAccessKeys returns an empty list for a user who has none.
+pub async fn test_list_access_keys_empty(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListAccessKeysInternalRequest::builder()
+        .user_name(Some("alice".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListAccessKeysInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list access keys for alice");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(resp.access_key_metadata.is_empty(), "Expected no access keys for alice");
+}
+
+/// ListAccessKeys honors `max_items` and returns a usable continuation marker.
+pub async fn test_list_access_keys_pagination(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let page1 = ListAccessKeysInternalRequest::builder()
+        .user_name(Some("bob".to_string()))
+        .account_id("123456789012".to_string())
+        .max_items(Some(1))
+        .build()
+        .expect("Failed to build ListAccessKeysInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list access keys for bob (page 1)");
+    assert_eq!(page1.access_key_metadata.len(), 1);
+    assert_eq!(page1.is_truncated, Some(true));
+    let marker = page1.marker.clone().expect("Expected a pagination marker");
+
+    let page2 = ListAccessKeysInternalRequest::builder()
+        .user_name(Some("bob".to_string()))
+        .account_id("123456789012".to_string())
+        .max_items(Some(1))
+        .marker(Some(marker))
+        .build()
+        .expect("Failed to build ListAccessKeysInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list access keys for bob (page 2)");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(page2.access_key_metadata.len(), 1);
+    assert_eq!(page2.is_truncated, None);
+    let id1 = page1.access_key_metadata[0].access_key_id.as_deref().unwrap();
+    let id2 = page2.access_key_metadata[0].access_key_id.as_deref().unwrap();
+    assert_ne!(id1, id2, "Each page must return a distinct access key");
+}
+
+/// ListAccessKeys without a user name must fail with ValidationError.
+pub async fn test_list_access_keys_no_user_name(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = ListAccessKeysInternalRequest::builder()
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListAccessKeysInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("ListAccessKeys without UserName must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::ValidationError(_)), "Expected ValidationError, got: {err:?}");
+}
+
+/// ListAccessKeys on a nonexistent user must fail with NoSuchEntity.
+pub async fn test_list_access_keys_nonexistent_user(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = ListAccessKeysInternalRequest::builder()
+        .user_name(Some("nosuchlistaccesskeyuser".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListAccessKeysInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("ListAccessKeys on a nonexistent user must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// UpdateAccessKey flips the seeded access key to Inactive and back to Active.
+pub async fn test_update_access_key_status_roundtrip(pool: &sqlx::PgPool) {
+    let access_key_id = "AKIAEXAMPLEACCESSKEYID123";
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UpdateAccessKeyInternalRequest::builder()
+        .access_key_id(access_key_id.to_string())
+        .status(StatusType::Inactive)
+        .user_name(Some("Example-User-1".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build UpdateAccessKeyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to deactivate seeded access key");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListAccessKeysInternalRequest::builder()
+        .user_name(Some("Example-User-1".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListAccessKeysInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list access keys for Example-User-1");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(resp.access_key_metadata[0].status, Some(StatusType::Inactive)));
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UpdateAccessKeyInternalRequest::builder()
+        .access_key_id(access_key_id.to_string())
+        .status(StatusType::Active)
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build UpdateAccessKeyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to reactivate seeded access key without user name");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListAccessKeysInternalRequest::builder()
+        .user_name(Some("Example-User-1".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListAccessKeysInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list access keys for Example-User-1");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(resp.access_key_metadata[0].status, Some(StatusType::Active)));
+}
+
+/// UpdateAccessKey rejects the `Expired` status with ValidationError.
+pub async fn test_update_access_key_expired_status_rejected(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = UpdateAccessKeyInternalRequest::builder()
+        .access_key_id("AKIAEXAMPLEACCESSKEYID123".to_string())
+        .status(StatusType::Expired)
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build UpdateAccessKeyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("UpdateAccessKey with Expired status must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::ValidationError(_)), "Expected ValidationError, got: {err:?}");
+}
+
+/// UpdateAccessKey with a user name that doesn't own the key must fail with NoSuchEntity.
+pub async fn test_update_access_key_mismatched_user(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = UpdateAccessKeyInternalRequest::builder()
+        .access_key_id("AKIAEXAMPLEACCESSKEYID123".to_string())
+        .status(StatusType::Inactive)
+        .user_name(Some("alice".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build UpdateAccessKeyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("UpdateAccessKey with a user that doesn't own the key must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// UpdateAccessKey for a nonexistent key must fail with NoSuchEntity.
+pub async fn test_update_access_key_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = UpdateAccessKeyInternalRequest::builder()
+        .access_key_id("AKIANOSUCHKEYIDXXXX1".to_string())
+        .status(StatusType::Inactive)
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build UpdateAccessKeyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("UpdateAccessKey on a nonexistent key must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// UpdateAccessKey with an id missing the `AKIA` prefix must fail with ValidationError.
+pub async fn test_update_access_key_bad_prefix(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = UpdateAccessKeyInternalRequest::builder()
+        .access_key_id("ASIAEXAMPLEACCESSKEYID123".to_string())
+        .status(StatusType::Inactive)
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build UpdateAccessKeyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("UpdateAccessKey for a non-AKIA prefix must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::ValidationError(_)), "Expected ValidationError, got: {err:?}");
+}
+
+/// DeleteAccessKey removes a key created by one of the earlier tests.
+pub async fn test_delete_access_key_simple(pool: &sqlx::PgPool) {
+    // Find one of bob's keys to delete.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let list = ListAccessKeysInternalRequest::builder()
+        .user_name(Some("bob".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListAccessKeysInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list bob's access keys");
+    let target_id = list.access_key_metadata[0].access_key_id.clone().expect("Expected an access key id");
+    let initial_count = list.access_key_metadata.len();
+
+    DeleteAccessKeyInternalRequest::builder()
+        .access_key_id(target_id.clone())
+        .user_name(Some("bob".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteAccessKeyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete bob's access key");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let after = ListAccessKeysInternalRequest::builder()
+        .user_name(Some("bob".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListAccessKeysInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to re-list bob's access keys");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(after.access_key_metadata.len(), initial_count - 1, "One key should be gone");
+    assert!(
+        !after.access_key_metadata.iter().any(|m| m.access_key_id.as_deref() == Some(target_id.as_str())),
+        "Deleted key must not appear in the list"
+    );
+}
+
+/// DeleteAccessKey works without a user name; the user is inferred from the access key id.
+pub async fn test_delete_access_key_without_user_name(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let list = ListAccessKeysInternalRequest::builder()
+        .user_name(Some("bob".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build ListAccessKeysInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list bob's access keys");
+    let target_id = list.access_key_metadata[0].access_key_id.clone().expect("Expected an access key id");
+
+    DeleteAccessKeyInternalRequest::builder()
+        .access_key_id(target_id.clone())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteAccessKeyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete bob's access key without user name");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// DeleteAccessKey with a mismatched user name must fail with NoSuchEntity.
+pub async fn test_delete_access_key_mismatched_user(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteAccessKeyInternalRequest::builder()
+        .access_key_id("AKIAEXAMPLEACCESSKEYID123".to_string())
+        .user_name(Some("alice".to_string()))
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteAccessKeyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("DeleteAccessKey with a mismatched user must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// DeleteAccessKey on a nonexistent key must fail with NoSuchEntity.
+pub async fn test_delete_access_key_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteAccessKeyInternalRequest::builder()
+        .access_key_id("AKIANOSUCHKEYIDXXXX2".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteAccessKeyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("DeleteAccessKey on a nonexistent key must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// DeleteAccessKey with an id missing the `AKIA` prefix must fail with ValidationError.
+pub async fn test_delete_access_key_bad_prefix(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteAccessKeyInternalRequest::builder()
+        .access_key_id("ASIAEXAMPLEACCESSKEYID123".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteAccessKeyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("DeleteAccessKey for a non-AKIA prefix must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::ValidationError(_)), "Expected ValidationError, got: {err:?}");
 }

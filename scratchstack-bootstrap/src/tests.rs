@@ -21,6 +21,7 @@ async fn test_ssdb_ops() {
     test_partition(&database).await;
     test_accounts(&database).await;
     test_users(&database).await;
+    test_access_keys(&database).await;
     test_policies(&database).await;
     test_groups(&database).await;
     test_group_membership(&database).await;
@@ -1243,6 +1244,416 @@ async fn test_users(database: &TempDatabase) {
         .await
         .expect_err("delete-user-policy with an invalid user name should fail");
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+}
+
+async fn test_access_keys(database: &TempDatabase) {
+    let port = database.port_str();
+
+    // Create a dedicated user for these tests.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "AccessKeyTestUser",
+        ])
+        .await
+        .expect("Failed to create AccessKeyTestUser");
+
+    // -- create-access-key ----------------------------------------------------
+    let resp1 = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-access-key",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "AccessKeyTestUser",
+        ])
+        .await
+        .expect("Failed to create-access-key for AccessKeyTestUser");
+    let json1: JsonValue = serde_json::from_str(&resp1).expect("create-access-key output must be JSON");
+    let key1_id = json1["AccessKey"]["AccessKeyId"].as_str().expect("AccessKeyId must be a string");
+    assert!(key1_id.starts_with("AKIA"), "AccessKeyId must start with AKIA, got {key1_id}");
+    assert_eq!(key1_id.len(), 20);
+    assert_eq!(json1["AccessKey"]["UserName"].as_str(), Some("AccessKeyTestUser"));
+    assert_eq!(json1["AccessKey"]["Status"].as_str(), Some("Active"));
+    let secret1 = json1["AccessKey"]["SecretAccessKey"].as_str().expect("SecretAccessKey must be a string");
+    assert_eq!(secret1.len(), 40);
+
+    let resp2 = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-access-key",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "AccessKeyTestUser",
+        ])
+        .await
+        .expect("Failed to create second access key");
+    let json2: JsonValue = serde_json::from_str(&resp2).expect("create-access-key output must be JSON");
+    let key2_id = json2["AccessKey"]["AccessKeyId"].as_str().unwrap().to_string();
+    assert_ne!(key2_id, key1_id);
+
+    // create-access-key on a nonexistent user must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-access-key",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "no-such-user",
+        ])
+        .await
+        .expect_err("create-access-key on a nonexistent user should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-access-key",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "bad name!",
+        ])
+        .await
+        .expect_err("create-access-key with an invalid user name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // -- list-access-keys -----------------------------------------------------
+    let list_resp = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-access-keys",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "AccessKeyTestUser",
+        ])
+        .await
+        .expect("Failed to list-access-keys for AccessKeyTestUser");
+    let list_json: JsonValue = serde_json::from_str(&list_resp).expect("list-access-keys output must be JSON");
+    let metadata = list_json["AccessKeyMetadata"].as_array().expect("AccessKeyMetadata must be an array");
+    assert_eq!(metadata.len(), 2);
+    let listed_ids: HashSet<String> = metadata.iter().map(|m| m["AccessKeyId"].as_str().unwrap().to_string()).collect();
+    assert!(listed_ids.contains(key1_id));
+    assert!(listed_ids.contains(key2_id.as_str()));
+    for m in metadata {
+        assert_eq!(m["Status"].as_str(), Some("Active"));
+        assert_eq!(m["UserName"].as_str(), Some("AccessKeyTestUser"));
+    }
+
+    let list_resp = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-access-keys",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "AccessKeyTestUser",
+            "--max-items",
+            "1",
+        ])
+        .await
+        .expect("Failed to list-access-keys with pagination");
+    assert!(list_resp.contains("\"IsTruncated\": true"), "Expected IsTruncated=true, got: {list_resp}");
+    assert!(list_resp.contains("\"Marker\""), "Expected a Marker, got: {list_resp}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-access-keys",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "no-such-user",
+        ])
+        .await
+        .expect_err("list-access-keys on a nonexistent user should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-access-keys",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "bad name!",
+        ])
+        .await
+        .expect_err("list-access-keys with an invalid user name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // -- update-access-key ----------------------------------------------------
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-access-key",
+            "--account-id",
+            "555566667777",
+            "--access-key-id",
+            key1_id,
+            "--status",
+            "Inactive",
+            "--user-name",
+            "AccessKeyTestUser",
+        ])
+        .await
+        .expect("Failed to update-access-key to Inactive");
+
+    let list_resp = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-access-keys",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "AccessKeyTestUser",
+        ])
+        .await
+        .expect("Failed to list-access-keys after update");
+    let list_json: JsonValue = serde_json::from_str(&list_resp).unwrap();
+    let updated_status = list_json["AccessKeyMetadata"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["AccessKeyId"].as_str() == Some(key1_id))
+        .and_then(|m| m["Status"].as_str());
+    assert_eq!(updated_status, Some("Inactive"));
+
+    // Back to Active (without --user-name).
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-access-key",
+            "--account-id",
+            "555566667777",
+            "--access-key-id",
+            key1_id,
+            "--status",
+            "Active",
+        ])
+        .await
+        .expect("Failed to update-access-key to Active without --user-name");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-access-key",
+            "--account-id",
+            "555566667777",
+            "--access-key-id",
+            key1_id,
+            "--status",
+            "Expired",
+        ])
+        .await
+        .expect_err("update-access-key with Expired status should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-access-key",
+            "--account-id",
+            "555566667777",
+            "--access-key-id",
+            "AKIANOSUCHKEYIDXXX1",
+            "--status",
+            "Inactive",
+        ])
+        .await
+        .expect_err("update-access-key with an id that's the wrong length should fail");
+    // Smithy shape regex requires len >= 16; 19 chars passes the regex, so the access key just
+    // doesn't exist.
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-access-key",
+            "--account-id",
+            "555566667777",
+            "--access-key-id",
+            "ASIAEXAMPLEACCESSKEYID123",
+            "--status",
+            "Inactive",
+        ])
+        .await
+        .expect_err("update-access-key with a non-AKIA prefix should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // -- delete-access-key ----------------------------------------------------
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-access-key",
+            "--account-id",
+            "555566667777",
+            "--access-key-id",
+            key1_id,
+            "--user-name",
+            "AccessKeyTestUser",
+        ])
+        .await
+        .expect("Failed to delete-access-key for AccessKeyTestUser");
+
+    // delete-access-key without --user-name (auto-detect via key id).
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-access-key",
+            "--account-id",
+            "555566667777",
+            "--access-key-id",
+            &key2_id,
+        ])
+        .await
+        .expect("Failed to delete-access-key without --user-name");
+
+    // Both keys are now gone; the user has no remaining keys.
+    let list_resp = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-access-keys",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "AccessKeyTestUser",
+        ])
+        .await
+        .expect("Failed to list-access-keys after delete");
+    let list_json: JsonValue = serde_json::from_str(&list_resp).unwrap();
+    assert!(list_json["AccessKeyMetadata"].as_array().unwrap().is_empty());
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-access-key",
+            "--account-id",
+            "555566667777",
+            "--access-key-id",
+            "AKIANOSUCHKEYIDXXXXX",
+        ])
+        .await
+        .expect_err("delete-access-key on a nonexistent key should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-access-key",
+            "--account-id",
+            "555566667777",
+            "--access-key-id",
+            "ASIAEXAMPLEACCESSKEYID123",
+        ])
+        .await
+        .expect_err("delete-access-key with a non-AKIA prefix should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // Clean up: the user is empty now, delete it.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "AccessKeyTestUser",
+        ])
+        .await
+        .expect("Failed to delete AccessKeyTestUser");
 }
 
 async fn test_policies(database: &TempDatabase) {
