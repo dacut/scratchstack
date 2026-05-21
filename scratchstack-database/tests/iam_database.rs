@@ -359,6 +359,19 @@ async fn test_database() {
     role::test_untag_role_nonexistent_key(&pool).await;
     role::test_untag_role_nonexistent_role(&pool).await;
 
+    // -- UpdateRoleInternalRequest / UpdateRoleDescriptionInternalRequest -----
+    role::test_update_role_description_only(&pool).await;
+    role::test_update_role_max_session_duration_only(&pool).await;
+    role::test_update_role_both_fields(&pool).await;
+    role::test_update_role_no_fields(&pool).await;
+    role::test_update_role_nonexistent(&pool).await;
+    role::test_update_role_invalid_max_session_duration();
+    role::test_update_role_invalid_name();
+    role::test_update_role_description_simple(&pool).await;
+    role::test_update_role_description_empty(&pool).await;
+    role::test_update_role_description_nonexistent(&pool).await;
+    role::test_update_role_description_invalid_name();
+
     iam::MIGRATOR.undo(&mut *c, 0).await.expect("Failed to undo database migrations");
 }
 

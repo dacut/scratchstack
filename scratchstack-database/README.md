@@ -169,8 +169,8 @@ Scratchstack native database operations and types
 * [x] UpdateGroup
 * [ ] UpdateLoginProfile
 * [ ] UpdateOpenIDConnectProviderThumbprint
-* [ ] UpdateRole
-* [ ] UpdateRoleDescription
+* [x] UpdateRole
+* [x] UpdateRoleDescription
 * [ ] UpdateSAMLProvider
 * [ ] UpdateServerCertificate
 * [ ] UpdateServiceSpecificCredential

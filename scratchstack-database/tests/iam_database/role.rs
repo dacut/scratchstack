@@ -7,7 +7,7 @@ use {
         operation::{
             CreateRoleInternalRequest, DeleteRoleInternalRequest, DeleteRolePermissionsBoundaryInternalRequest,
             GetRoleInternalRequest, ListRoleTagsInternalRequest, ListRolesInternalRequest, TagRoleInternalRequest,
-            UntagRoleInternalRequest,
+            UntagRoleInternalRequest, UpdateRoleDescriptionInternalRequest, UpdateRoleInternalRequest,
         },
         types::{PermissionsBoundaryAttachmentType, Tag},
     },
@@ -1219,4 +1219,241 @@ pub async fn test_untag_role_nonexistent_role(pool: &sqlx::PgPool) {
         .expect_err("Untagging a nonexistent role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// UpdateRole with only the description: column is changed, max_session_duration is left as-is.
+pub async fn test_update_role_description_only(pool: &sqlx::PgPool) {
+    // LambdaExecutor was committed earlier with no description and no max_session_duration.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UpdateRoleInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .description(Some("Description set via UpdateRole.".to_string()))
+        .build()
+        .expect("Failed to build UpdateRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to update LambdaExecutor description");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetRoleInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build GetRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get LambdaExecutor after UpdateRole");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert_eq!(resp.role.description.as_deref(), Some("Description set via UpdateRole."));
+    assert!(resp.role.max_session_duration.is_none(), "max_session_duration must remain NULL");
+}
+
+/// UpdateRole with only the max_session_duration: column is changed, description is left as-is.
+pub async fn test_update_role_max_session_duration_only(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UpdateRoleInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .max_session_duration(Some(7200))
+        .build()
+        .expect("Failed to build UpdateRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to update LambdaExecutor max_session_duration");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetRoleInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build GetRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get LambdaExecutor after UpdateRole");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert_eq!(resp.role.max_session_duration, Some(7200));
+    // The description set in the previous test must be preserved.
+    assert_eq!(resp.role.description.as_deref(), Some("Description set via UpdateRole."));
+}
+
+/// UpdateRole with both fields specified.
+pub async fn test_update_role_both_fields(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UpdateRoleInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .description(Some("Updated again.".to_string()))
+        .max_session_duration(Some(10800))
+        .build()
+        .expect("Failed to build UpdateRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to update both fields on LambdaExecutor");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetRoleInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build GetRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get LambdaExecutor after UpdateRole");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert_eq!(resp.role.description.as_deref(), Some("Updated again."));
+    assert_eq!(resp.role.max_session_duration, Some(10800));
+}
+
+/// UpdateRole with neither field specified must still succeed when the role exists (no-op).
+pub async fn test_update_role_no_fields(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UpdateRoleInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build UpdateRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("UpdateRole with no fields on an existing role must succeed");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    // Confirm the previous values are still in place.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetRoleInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build GetRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get LambdaExecutor after no-op UpdateRole");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert_eq!(resp.role.description.as_deref(), Some("Updated again."));
+    assert_eq!(resp.role.max_session_duration, Some(10800));
+}
+
+/// UpdateRole on a nonexistent role must fail with NoSuchEntity.
+pub async fn test_update_role_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = UpdateRoleInternalRequest::builder()
+        .role_name("NoSuchUpdateRole".to_string())
+        .account_id("123456789012".to_string())
+        .description(Some("Will not be applied.".to_string()))
+        .build()
+        .expect("Failed to build UpdateRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("UpdateRole on a nonexistent role must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building an UpdateRole request with a max_session_duration outside the allowed range must
+/// fail at the Smithy builder before reaching the database.
+pub fn test_update_role_invalid_max_session_duration() {
+    let result = UpdateRoleInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .max_session_duration(Some(60))
+        .build();
+    assert!(result.is_err(), "Building a request with max_session_duration below 3600 must fail");
+
+    let result = UpdateRoleInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .max_session_duration(Some(100000))
+        .build();
+    assert!(result.is_err(), "Building a request with max_session_duration above 43200 must fail");
+}
+
+/// Building an UpdateRole request with an invalid role name must fail before touching the database.
+pub fn test_update_role_invalid_name() {
+    let result = UpdateRoleInternalRequest::builder()
+        .role_name("bad role!".to_string())
+        .account_id("123456789012".to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid role name must fail");
+}
+
+/// UpdateRoleDescription replaces the description and returns the updated role.
+pub async fn test_update_role_description_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = UpdateRoleDescriptionInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .description("Description set via UpdateRoleDescription.".to_string())
+        .build()
+        .expect("Failed to build UpdateRoleDescriptionInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to update LambdaExecutor description");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let role = resp.role.expect("UpdateRoleDescriptionResponse should include the role");
+    assert_eq!(role.role_name, "LambdaExecutor");
+    assert_eq!(role.description.as_deref(), Some("Description set via UpdateRoleDescription."));
+    // max_session_duration set earlier in test_update_role_both_fields must be preserved.
+    assert_eq!(role.max_session_duration, Some(10800));
+
+    // Double-check via GetRole that the change persisted.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let get_resp = GetRoleInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build GetRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get LambdaExecutor after UpdateRoleDescription");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert_eq!(get_resp.role.description.as_deref(), Some("Description set via UpdateRoleDescription."));
+}
+
+/// UpdateRoleDescription with an empty string replaces the description with an empty string.
+pub async fn test_update_role_description_empty(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = UpdateRoleDescriptionInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .description(String::new())
+        .build()
+        .expect("Failed to build UpdateRoleDescriptionInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to update LambdaExecutor description to empty");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let role = resp.role.expect("UpdateRoleDescriptionResponse should include the role");
+    assert_eq!(role.description.as_deref(), Some(""));
+}
+
+/// UpdateRoleDescription on a nonexistent role must fail with NoSuchEntity.
+pub async fn test_update_role_description_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = UpdateRoleDescriptionInternalRequest::builder()
+        .role_name("NoSuchUpdateDescRole".to_string())
+        .account_id("123456789012".to_string())
+        .description("anything".to_string())
+        .build()
+        .expect("Failed to build UpdateRoleDescriptionInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("UpdateRoleDescription on a nonexistent role must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building an UpdateRoleDescription request with an invalid role name must fail before touching
+/// the database.
+pub fn test_update_role_description_invalid_name() {
+    let result = UpdateRoleDescriptionInternalRequest::builder()
+        .role_name("bad role!".to_string())
+        .account_id("123456789012".to_string())
+        .description("ok".to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid role name must fail");
 }

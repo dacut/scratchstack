@@ -3078,6 +3078,253 @@ async fn test_roles(database: &TempDatabase) {
         .await
         .expect_err("delete-role-permissions-boundary with an invalid role name should fail");
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // -- update-role / update-role-description ---------------------------------
+    // LambdaExecutor in 555566667777 currently has the "Team=Platform" tag (from tag-role tests)
+    // and no description or max_session_duration set.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+            "--description",
+            "Set via update-role.",
+            "--max-session-duration",
+            "7200",
+        ])
+        .await
+        .expect("Failed to run update-role for LambdaExecutor");
+
+    // Verify both fields were applied via get-role.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+        ])
+        .await
+        .expect("Failed to get-role for LambdaExecutor after update-role");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse get-role output");
+    let role = json.get("Role").expect("Role should be present");
+    assert_eq!(role.get("Description").and_then(JsonValue::as_str), Some("Set via update-role."));
+    assert_eq!(role.get("MaxSessionDuration").and_then(JsonValue::as_i64), Some(7200));
+
+    // update-role with only --description leaves max_session_duration unchanged.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+            "--description",
+            "Updated description only.",
+        ])
+        .await
+        .expect("Failed to run update-role description only");
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+        ])
+        .await
+        .expect("Failed to get-role after description-only update");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse get-role output");
+    let role = json.get("Role").expect("Role should be present");
+    assert_eq!(role.get("Description").and_then(JsonValue::as_str), Some("Updated description only."));
+    assert_eq!(role.get("MaxSessionDuration").and_then(JsonValue::as_i64), Some(7200));
+
+    // update-role with neither field must still succeed (no-op) so long as the role exists.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+        ])
+        .await
+        .expect("update-role with no field flags must succeed on an existing role");
+
+    // update-role on a nonexistent role must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "no-such-role",
+            "--description",
+            "ignored",
+        ])
+        .await
+        .expect_err("update-role on a nonexistent role should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Out-of-range max_session_duration must surface as ValidationError before reaching the
+    // database (the Smithy builder rejects the value).
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+            "--max-session-duration",
+            "60",
+        ])
+        .await
+        .expect_err("update-role with max_session_duration below 3600 should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // Invalid role name must surface as ValidationError before reaching the database.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "bad role!",
+            "--description",
+            "ignored",
+        ])
+        .await
+        .expect_err("update-role with an invalid role name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // update-role-description replaces the description and prints the updated role.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-role-description",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+            "--description",
+            "Replaced via update-role-description.",
+        ])
+        .await
+        .expect("Failed to run update-role-description");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse update-role-description output");
+    let role = json.get("Role").expect("Role should be present");
+    assert_eq!(role.get("RoleName").and_then(JsonValue::as_str), Some("LambdaExecutor"));
+    assert_eq!(role.get("Description").and_then(JsonValue::as_str), Some("Replaced via update-role-description."));
+    // The max_session_duration set via update-role above must be preserved.
+    assert_eq!(role.get("MaxSessionDuration").and_then(JsonValue::as_i64), Some(7200));
+
+    // An empty description string is allowed.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-role-description",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "LambdaExecutor",
+            "--description",
+            "",
+        ])
+        .await
+        .expect("Failed to run update-role-description with an empty description");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse output");
+    let role = json.get("Role").expect("Role should be present");
+    assert_eq!(role.get("Description").and_then(JsonValue::as_str), Some(""));
+
+    // update-role-description on a nonexistent role must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-role-description",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "no-such-role",
+            "--description",
+            "ignored",
+        ])
+        .await
+        .expect_err("update-role-description on a nonexistent role should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Invalid role name must surface as ValidationError before reaching the database.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-role-description",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "bad role!",
+            "--description",
+            "ignored",
+        ])
+        .await
+        .expect_err("update-role-description with an invalid role name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 }
 
 async fn test_policy_attachments(database: &TempDatabase) {
