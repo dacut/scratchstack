@@ -26,6 +26,18 @@ mod user;
 
 pub use {account::*, group::*, partition::*, policy::*, role::*, user::*};
 
+/// Return an ARN resource string for a group with the given path and name.
+/// 
+/// The path is expected to start and end with a slash, but this function will trim extra slashes if needed.
+fn group_arn_resource(path: &str, group_name: &str) -> String {
+    let resource_path = path.trim_matches('/');
+    if resource_path.is_empty() {
+        format!("{ARN_RESOURCE_PREFIX_GROUP}{group_name}")
+    } else {
+        format!("{ARN_RESOURCE_PREFIX_GROUP}{resource_path}/{group_name}")
+    }
+}
+
 /// Construct an `OperationPaginator` for a policy-related list operation.
 pub(crate) fn make_paginator(
     partition: &str,
