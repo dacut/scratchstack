@@ -30,7 +30,7 @@ pub use {account::*, group::*, partition::*, policy::*, role::*, user::*};
 ///
 /// The path is expected to start and end with a slash, but this function will trim extra slashes
 /// if needed.
-fn group_arn_resource(path: &str, group_name: &str) -> String {
+pub(crate) fn group_arn_resource(path: &str, group_name: &str) -> String {
     let resource_path = path.trim_matches('/');
     if resource_path.is_empty() {
         format!("{ARN_RESOURCE_PREFIX_GROUP}{group_name}")
@@ -51,6 +51,16 @@ pub(crate) fn make_paginator(
             log::error!("Failed to create paginator for {operation_name}: {e}");
             IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
         })
+}
+
+/// Return an ARN resource string for a role with the given path and name.
+pub(crate) fn role_arn_resource(path: &str, role_name: &str) -> String {
+    let resource_path = path.trim_matches('/');
+    if resource_path.is_empty() {
+        format!("{ARN_RESOURCE_PREFIX_ROLE}{role_name}")
+    } else {
+        format!("{ARN_RESOURCE_PREFIX_ROLE}{resource_path}/{role_name}")
+    }
 }
 
 /// Return an ARN resource string for a user with the given path and name.
