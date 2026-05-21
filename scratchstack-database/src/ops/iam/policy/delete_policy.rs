@@ -24,7 +24,8 @@ impl RequestExecutor for DeletePolicyRequest {
 
 /// Delete a managed policy. The policy must have no attachments to users, groups, or roles, must
 /// not be used as a permissions boundary, and must have only the default version remaining (all
-/// other versions must have been deleted via [`delete_policy_version`] first). On success the
+/// other versions must have been deleted via
+/// [`delete_policy_version`][crate::ops::iam::delete_policy_version] first). On success the
 /// remaining default version and all tags are removed along with the policy via FK cascade.
 pub async fn delete_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Result<(), IamError> {
     /// The row returned by the lookup query against iam.managed_policies.
