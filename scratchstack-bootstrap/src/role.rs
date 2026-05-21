@@ -6,9 +6,10 @@ use {
         error_meta::Error as IamError,
         operation::{
             AttachRolePolicyInternalRequest, CreateRoleInternalRequest, CreateRoleResponse, DeleteRoleInternalRequest,
-            DeleteRolePermissionsBoundaryInternalRequest, DetachRolePolicyInternalRequest, GetRoleInternalRequest,
-            GetRoleResponse, ListAttachedRolePoliciesInternalRequest, ListAttachedRolePoliciesResponse,
-            ListRoleTagsInternalRequest, ListRoleTagsResponse, ListRolesInternalRequest, ListRolesResponse,
+            DeleteRolePermissionsBoundaryInternalRequest, DeleteRolePolicyInternalRequest,
+            DetachRolePolicyInternalRequest, GetRoleInternalRequest, GetRoleResponse,
+            ListAttachedRolePoliciesInternalRequest, ListAttachedRolePoliciesResponse, ListRoleTagsInternalRequest,
+            ListRoleTagsResponse, ListRolesInternalRequest, ListRolesResponse,
             PutRolePermissionsBoundaryInternalRequest, PutRolePolicyInternalRequest, TagRoleInternalRequest,
             UntagRoleInternalRequest, UpdateRoleDescriptionInternalRequest, UpdateRoleDescriptionResponse,
             UpdateRoleInternalRequest, UpdateRoleResponse,
@@ -101,6 +102,22 @@ pub(crate) struct DeleteRolePermissionsBoundaryInternalCommand {
     /// The name of the role to remove the permissions boundary from.
     #[clap(long)]
     pub role_name: String,
+}
+
+/// Delete an inline policy from a role in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct DeleteRolePolicyInternalCommand {
+    /// The unique identifier for the account the role belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the role to remove the inline policy from.
+    #[clap(long)]
+    pub role_name: String,
+
+    /// The name of the inline policy to delete.
+    #[clap(long)]
+    pub policy_name: String,
 }
 
 /// Detach a managed policy from a role in a given account in the Scratchstack IAM service.
@@ -222,6 +239,22 @@ impl Runnable for DeleteRolePermissionsBoundaryInternalCommand {
         let request = DeleteRolePermissionsBoundaryInternalRequest::builder()
             .account_id(self.account_id.clone())
             .role_name(self.role_name.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for DeleteRolePolicyInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = DeleteRolePolicyInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .role_name(self.role_name.clone())
+            .policy_name(self.policy_name.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }

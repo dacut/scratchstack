@@ -3,6 +3,7 @@ mod attach_user_policy;
 mod create_user;
 mod delete_user;
 mod delete_user_permissions_boundary;
+mod delete_user_policy;
 mod detach_user_policy;
 mod get_user;
 mod list_attached_user_policies;
@@ -15,9 +16,9 @@ mod untag_user;
 mod update_user;
 
 pub use {
-    attach_user_policy::*, create_user::*, delete_user::*, delete_user_permissions_boundary::*, detach_user_policy::*,
-    get_user::*, list_attached_user_policies::*, list_user_tags::*, list_users::*, put_user_permissions_boundary::*,
-    put_user_policy::*, tag_user::*, untag_user::*, update_user::*,
+    attach_user_policy::*, create_user::*, delete_user::*, delete_user_permissions_boundary::*, delete_user_policy::*,
+    detach_user_policy::*, get_user::*, list_attached_user_policies::*, list_user_tags::*, list_users::*,
+    put_user_permissions_boundary::*, put_user_policy::*, tag_user::*, untag_user::*, update_user::*,
 };
 
 use crate::constants::iam::ARN_RESOURCE_PREFIX_USER;

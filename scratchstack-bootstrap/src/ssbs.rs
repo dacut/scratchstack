@@ -29,9 +29,10 @@ use {
         account::{CreateAccountCommand, ListAccountsCommand},
         group::{
             AddUserToGroupInternalCommand, AttachGroupPolicyInternalCommand, CreateGroupInternalCommand,
-            DeleteGroupInternalCommand, DetachGroupPolicyInternalCommand, GetGroupInternalCommand,
-            ListAttachedGroupPoliciesInternalCommand, ListGroupsForUserInternalCommand, ListGroupsInternalCommand,
-            PutGroupPolicyInternalCommand, RemoveUserFromGroupInternalCommand, UpdateGroupInternalCommand,
+            DeleteGroupInternalCommand, DeleteGroupPolicyInternalCommand, DetachGroupPolicyInternalCommand,
+            GetGroupInternalCommand, ListAttachedGroupPoliciesInternalCommand, ListGroupsForUserInternalCommand,
+            ListGroupsInternalCommand, PutGroupPolicyInternalCommand, RemoveUserFromGroupInternalCommand,
+            UpdateGroupInternalCommand,
         },
         partition::{GetCurrentPartitionCommand, SetCurrentPartitionCommand},
         policy::{
@@ -42,17 +43,18 @@ use {
         },
         role::{
             AttachRolePolicyInternalCommand, CreateRoleInternalCommand, DeleteRoleInternalCommand,
-            DeleteRolePermissionsBoundaryInternalCommand, DetachRolePolicyInternalCommand, GetRoleInternalCommand,
-            ListAttachedRolePoliciesInternalCommand, ListRoleTagsInternalCommand, ListRolesInternalCommand,
-            PutRolePermissionsBoundaryInternalCommand, PutRolePolicyInternalCommand, TagRoleInternalCommand,
-            UntagRoleInternalCommand, UpdateRoleDescriptionInternalCommand, UpdateRoleInternalCommand,
+            DeleteRolePermissionsBoundaryInternalCommand, DeleteRolePolicyInternalCommand,
+            DetachRolePolicyInternalCommand, GetRoleInternalCommand, ListAttachedRolePoliciesInternalCommand,
+            ListRoleTagsInternalCommand, ListRolesInternalCommand, PutRolePermissionsBoundaryInternalCommand,
+            PutRolePolicyInternalCommand, TagRoleInternalCommand, UntagRoleInternalCommand,
+            UpdateRoleDescriptionInternalCommand, UpdateRoleInternalCommand,
         },
         user::{
             AttachUserPolicyInternalCommand, CreateUserInternalCommand, DeleteUserInternalCommand,
-            DeleteUserPermissionsBoundaryInternalCommand, DetachUserPolicyInternalCommand, GetUserInternalCommand,
-            ListAttachedUserPoliciesInternalCommand, ListUserTagsInternalCommand, ListUsersInternalCommand,
-            PutUserPermissionsBoundaryInternalCommand, PutUserPolicyInternalCommand, TagUserInternalCommand,
-            UntagUserInternalCommand, UpdateUserInternalCommand,
+            DeleteUserPermissionsBoundaryInternalCommand, DeleteUserPolicyInternalCommand,
+            DetachUserPolicyInternalCommand, GetUserInternalCommand, ListAttachedUserPoliciesInternalCommand,
+            ListUserTagsInternalCommand, ListUsersInternalCommand, PutUserPermissionsBoundaryInternalCommand,
+            PutUserPolicyInternalCommand, TagUserInternalCommand, UntagUserInternalCommand, UpdateUserInternalCommand,
         },
     },
     aws_smithy_types::error::metadata::ProvideErrorMetadata,
@@ -162,6 +164,10 @@ enum Commands {
     #[command(name = "delete-group")]
     DeleteGroup(DeleteGroupInternalCommand),
 
+    /// Delete an inline policy from an IAM group in an account.
+    #[command(name = "delete-group-policy")]
+    DeleteGroupPolicy(DeleteGroupPolicyInternalCommand),
+
     /// Delete an IAM managed policy. The policy must have no attachments, no permissions-boundary
     /// usages, and no non-default versions remaining.
     #[command(name = "delete-policy")]
@@ -181,6 +187,10 @@ enum Commands {
     #[command(name = "delete-role-permissions-boundary")]
     DeleteRolePermissionsBoundary(DeleteRolePermissionsBoundaryInternalCommand),
 
+    /// Delete an inline policy from an IAM role in an account.
+    #[command(name = "delete-role-policy")]
+    DeleteRolePolicy(DeleteRolePolicyInternalCommand),
+
     /// Delete an IAM user from an account.
     #[command(name = "delete-user")]
     DeleteUser(DeleteUserInternalCommand),
@@ -189,6 +199,10 @@ enum Commands {
     /// permissions boundary set.
     #[command(name = "delete-user-permissions-boundary")]
     DeleteUserPermissionsBoundary(DeleteUserPermissionsBoundaryInternalCommand),
+
+    /// Delete an inline policy from an IAM user in an account.
+    #[command(name = "delete-user-policy")]
+    DeleteUserPolicy(DeleteUserPolicyInternalCommand),
 
     /// Detach a managed policy from a group in an account.
     #[command(name = "detach-group-policy")]
@@ -378,12 +392,15 @@ impl Commands {
             Commands::CreateRole(_) => "CreateRole",
             Commands::CreateUser(_) => "CreateUser",
             Commands::DeleteGroup(_) => "DeleteGroup",
+            Commands::DeleteGroupPolicy(_) => "DeleteGroupPolicy",
             Commands::DeletePolicy(_) => "DeletePolicy",
             Commands::DeletePolicyVersion(_) => "DeletePolicyVersion",
             Commands::DeleteRole(_) => "DeleteRole",
             Commands::DeleteRolePermissionsBoundary(_) => "DeleteRolePermissionsBoundary",
+            Commands::DeleteRolePolicy(_) => "DeleteRolePolicy",
             Commands::DeleteUser(_) => "DeleteUser",
             Commands::DeleteUserPermissionsBoundary(_) => "DeleteUserPermissionsBoundary",
+            Commands::DeleteUserPolicy(_) => "DeleteUserPolicy",
             Commands::DetachGroupPolicy(_) => "DetachGroupPolicy",
             Commands::DetachRolePolicy(_) => "DetachRolePolicy",
             Commands::DetachUserPolicy(_) => "DetachUserPolicy",
@@ -526,6 +543,10 @@ where
             sub.run(&cli, vars).await?;
             "".to_string()
         }
+        Commands::DeleteGroupPolicy(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
         Commands::DeletePolicy(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
@@ -542,11 +563,19 @@ where
             sub.run(&cli, vars).await?;
             "".to_string()
         }
+        Commands::DeleteRolePolicy(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
         Commands::DeleteUserPermissionsBoundary(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
         }
         Commands::DeleteUser(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::DeleteUserPolicy(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
         }

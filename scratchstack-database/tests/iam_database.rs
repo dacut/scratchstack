@@ -139,6 +139,12 @@ async fn test_database() {
     user::test_put_user_policy_nonexistent_user(&pool).await;
     user::test_put_user_policy_invalid_name();
 
+    // -- DeleteUserPolicyInternalRequest --------------------------------------
+    user::test_delete_user_policy_simple(&pool).await;
+    user::test_delete_user_policy_nonexistent_policy(&pool).await;
+    user::test_delete_user_policy_nonexistent_user(&pool).await;
+    user::test_delete_user_policy_invalid_name();
+
     // -- DeleteUserInternalRequest --------------------------------------------
     user::test_delete_user_attached_policy_fails(&pool).await;
     user::test_delete_user_inline_policy_fails(&pool).await;
@@ -194,6 +200,12 @@ async fn test_database() {
     group::test_put_group_policy_invalid_document(&pool).await;
     group::test_put_group_policy_nonexistent_group(&pool).await;
     group::test_put_group_policy_invalid_name();
+
+    // -- DeleteGroupPolicyInternalRequest -------------------------------------
+    group::test_delete_group_policy_simple(&pool).await;
+    group::test_delete_group_policy_nonexistent_policy(&pool).await;
+    group::test_delete_group_policy_nonexistent_group(&pool).await;
+    group::test_delete_group_policy_invalid_name();
 
     // -- DeleteGroupInternalRequest delete-conflict cases ---------------------
     group::test_delete_group_attached_policy_fails(&pool).await;
@@ -426,6 +438,12 @@ async fn test_database() {
     role::test_put_role_policy_invalid_document(&pool).await;
     role::test_put_role_policy_nonexistent_role(&pool).await;
     role::test_put_role_policy_invalid_name();
+
+    // -- DeleteRolePolicyInternalRequest --------------------------------------
+    role::test_delete_role_policy_simple(&pool).await;
+    role::test_delete_role_policy_nonexistent_policy(&pool).await;
+    role::test_delete_role_policy_nonexistent_role(&pool).await;
+    role::test_delete_role_policy_invalid_name();
 
     iam::MIGRATOR.undo(&mut *c, 0).await.expect("Failed to undo database migrations");
 }

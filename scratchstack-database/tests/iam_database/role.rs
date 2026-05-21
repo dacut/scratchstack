@@ -6,9 +6,10 @@ use {
         error_meta::Error as IamError,
         operation::{
             CreateRoleInternalRequest, DeleteRoleInternalRequest, DeleteRolePermissionsBoundaryInternalRequest,
-            GetRoleInternalRequest, ListRoleTagsInternalRequest, ListRolesInternalRequest,
-            PutRolePermissionsBoundaryInternalRequest, PutRolePolicyInternalRequest, TagRoleInternalRequest,
-            UntagRoleInternalRequest, UpdateRoleDescriptionInternalRequest, UpdateRoleInternalRequest,
+            DeleteRolePolicyInternalRequest, GetRoleInternalRequest, ListRoleTagsInternalRequest,
+            ListRolesInternalRequest, PutRolePermissionsBoundaryInternalRequest, PutRolePolicyInternalRequest,
+            TagRoleInternalRequest, UntagRoleInternalRequest, UpdateRoleDescriptionInternalRequest,
+            UpdateRoleInternalRequest,
         },
         types::{PermissionsBoundaryAttachmentType, Tag},
     },
@@ -1738,6 +1739,90 @@ pub fn test_put_role_policy_invalid_name() {
         .account_id("123456789012".to_string())
         .policy_name("AnyName".to_string())
         .policy_document(INLINE_ROLE_POLICY_S3.to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid role name must fail");
+}
+
+/// DeleteRolePolicy removes an inline policy previously attached via PutRolePolicy.
+pub async fn test_delete_role_policy_simple(pool: &sqlx::PgPool) {
+    // The "InlineWithMissingPrincipal" inline policy was added in test_put_role_policy_invalid_principal_accepted.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeleteRolePolicyInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("InlineWithMissingPrincipal".to_string())
+        .build()
+        .expect("Failed to build DeleteRolePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete inline policy on LambdaExecutor");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM iam.role_inline_policies \
+         WHERE role_id = (SELECT role_id FROM iam.roles WHERE account_id = $1 AND role_name_lower = $2) \
+         AND policy_name_lower = $3",
+    )
+    .bind("123456789012")
+    .bind("lambdaexecutor")
+    .bind("inlinewithmissingprincipal")
+    .fetch_one(pool)
+    .await
+    .expect("Failed to count LambdaExecutor inline policy after delete");
+    assert_eq!(count, 0, "Deleted inline policy must be gone");
+
+    // The other policy ("InlineRead") must still be present.
+    let remaining: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM iam.role_inline_policies \
+         WHERE role_id = (SELECT role_id FROM iam.roles WHERE account_id = $1 AND role_name_lower = $2)",
+    )
+    .bind("123456789012")
+    .bind("lambdaexecutor")
+    .fetch_one(pool)
+    .await
+    .expect("Failed to count remaining LambdaExecutor inline policies");
+    assert_eq!(remaining, 1, "Only the targeted inline policy must be removed");
+}
+
+/// DeleteRolePolicy with a policy name that is not attached must fail with NoSuchEntity.
+pub async fn test_delete_role_policy_nonexistent_policy(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteRolePolicyInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("NotAttached".to_string())
+        .build()
+        .expect("Failed to build DeleteRolePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("DeleteRolePolicy with no matching policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// DeleteRolePolicy on a nonexistent role must fail with NoSuchEntity.
+pub async fn test_delete_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteRolePolicyInternalRequest::builder()
+        .role_name("NoSuchDeletePolicyRole".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("AnyName".to_string())
+        .build()
+        .expect("Failed to build DeleteRolePolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("DeleteRolePolicy on a nonexistent role must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building a DeleteRolePolicy request with an invalid role name must fail before touching the
+/// database.
+pub fn test_delete_role_policy_invalid_name() {
+    let result = DeleteRolePolicyInternalRequest::builder()
+        .role_name("bad role!".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("AnyName".to_string())
         .build();
     assert!(result.is_err(), "Building a request with an invalid role name must fail");
 }

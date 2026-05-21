@@ -859,7 +859,7 @@ async fn test_users(database: &TempDatabase) {
 
     // -- put-user-policy ------------------------------------------------------
     // Create a fresh user for inline-policy tests. The user can't be deleted while inline
-    // policies exist (no delete-user-policy command yet), so we just leave it in place.
+    // policies exist; the delete-user-policy block below removes them at the end.
     database
         .run([
             "ssbs",
@@ -1011,6 +1011,82 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-user-policy with an invalid user name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // -- delete-user-policy ---------------------------------------------------
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-user-policy",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPolicyUser",
+            "--policy-name",
+            "InlineWithMissingPrincipal",
+        ])
+        .await
+        .expect("Failed to delete-user-policy on PutPolicyUser");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-user-policy",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PutPolicyUser",
+            "--policy-name",
+            "NotAttached",
+        ])
+        .await
+        .expect_err("delete-user-policy for a policy that is not attached should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-user-policy",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "no-such-user",
+            "--policy-name",
+            "AnyName",
+        ])
+        .await
+        .expect_err("delete-user-policy on a nonexistent user should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-user-policy",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "bad name!",
+            "--policy-name",
+            "AnyName",
+        ])
+        .await
+        .expect_err("delete-user-policy with an invalid user name should fail");
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 }
 
@@ -2284,7 +2360,7 @@ async fn test_groups(database: &TempDatabase) {
 
     // -- put-group-policy -----------------------------------------------------
     // Create a fresh group for inline-policy tests. The group can't be deleted while inline
-    // policies exist (no delete-group-policy command yet), so we just leave it in place.
+    // policies exist; the delete-group-policy block below removes them at the end.
     database
         .run([
             "ssbs",
@@ -2441,6 +2517,82 @@ async fn test_groups(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-group-policy with an invalid group name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // -- delete-group-policy --------------------------------------------------
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-group-policy",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "PutPolicyGroup",
+            "--policy-name",
+            "InlineWithMissingPrincipal",
+        ])
+        .await
+        .expect("Failed to delete-group-policy on PutPolicyGroup");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-group-policy",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "PutPolicyGroup",
+            "--policy-name",
+            "NotAttached",
+        ])
+        .await
+        .expect_err("delete-group-policy for a policy that is not attached should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-group-policy",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "no-such-group",
+            "--policy-name",
+            "AnyName",
+        ])
+        .await
+        .expect_err("delete-group-policy on a nonexistent group should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-group-policy",
+            "--account-id",
+            "555566667777",
+            "--group-name",
+            "bad name!",
+            "--policy-name",
+            "AnyName",
+        ])
+        .await
+        .expect_err("delete-group-policy with an invalid group name should fail");
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 }
 
@@ -4218,7 +4370,7 @@ async fn test_roles(database: &TempDatabase) {
 
     // -- put-role-policy ------------------------------------------------------
     // Create a fresh role for inline-policy tests. The role can't be deleted while inline
-    // policies exist (no delete-role-policy command yet), so we just leave it in place.
+    // policies exist; the delete-role-policy block below removes them at the end.
     database
         .run([
             "ssbs",
@@ -4372,6 +4524,82 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-role-policy with an invalid role name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // -- delete-role-policy ---------------------------------------------------
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-role-policy",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPolicyRole",
+            "--policy-name",
+            "InlineWithMissingPrincipal",
+        ])
+        .await
+        .expect("Failed to delete-role-policy on PutPolicyRole");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-role-policy",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PutPolicyRole",
+            "--policy-name",
+            "NotAttached",
+        ])
+        .await
+        .expect_err("delete-role-policy for a policy that is not attached should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-role-policy",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "no-such-role",
+            "--policy-name",
+            "AnyName",
+        ])
+        .await
+        .expect_err("delete-role-policy on a nonexistent role should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-role-policy",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "bad role!",
+            "--policy-name",
+            "AnyName",
+        ])
+        .await
+        .expect_err("delete-role-policy with an invalid role name should fail");
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 }
 
