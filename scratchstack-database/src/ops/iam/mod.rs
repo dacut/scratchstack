@@ -27,8 +27,9 @@ mod user;
 pub use {account::*, group::*, partition::*, policy::*, role::*, user::*};
 
 /// Return an ARN resource string for a group with the given path and name.
-/// 
-/// The path is expected to start and end with a slash, but this function will trim extra slashes if needed.
+///
+/// The path is expected to start and end with a slash, but this function will trim extra slashes
+/// if needed.
 fn group_arn_resource(path: &str, group_name: &str) -> String {
     let resource_path = path.trim_matches('/');
     if resource_path.is_empty() {
@@ -50,6 +51,19 @@ pub(crate) fn make_paginator(
             log::error!("Failed to create paginator for {operation_name}: {e}");
             IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
         })
+}
+
+/// Return an ARN resource string for a user with the given path and name.
+///
+/// The path is expected to start and end with a slash, but this function will trim extra slashes
+/// if needed.
+fn user_arn_resource(path: &str, user_name: &str) -> String {
+    let resource_path = path.trim_matches('/');
+    if resource_path.is_empty() {
+        format!("{ARN_RESOURCE_PREFIX_USER}{user_name}")
+    } else {
+        format!("{ARN_RESOURCE_PREFIX_USER}{resource_path}/{user_name}")
+    }
 }
 
 /// Validate that the account id is valid.
