@@ -24,6 +24,7 @@ impl RequestExecutor for DeleteUserPermissionsBoundaryInternalRequest {
         delete_user_permissions_boundary(tx, &self.account_id, &self.user_name).await
     }
 }
+
 /// Clear the permissions boundary on a user. If the user exists but has no permissions boundary,
 /// the call is a no-op (matches AWS DeleteUserPermissionsBoundary semantics). If the user does not
 /// exist, returns NoSuchEntityException.
