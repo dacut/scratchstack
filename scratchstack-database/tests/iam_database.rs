@@ -328,6 +328,14 @@ async fn test_database() {
     role::test_get_role_nonexistent(&pool).await;
     role::test_get_role_invalid_name();
 
+    // -- ListRolesInternalRequest ---------------------------------------------
+    role::test_list_roles(&pool).await;
+    role::test_list_roles_with_path_prefix(&pool).await;
+    role::test_list_roles_path_prefix_no_match(&pool).await;
+    role::test_list_roles_empty_account(&pool).await;
+    role::test_list_roles_pagination(&pool).await;
+    role::test_list_roles_invalid_path_prefix();
+
     iam::MIGRATOR.undo(&mut *c, 0).await.expect("Failed to undo database migrations");
 }
 
