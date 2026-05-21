@@ -6,8 +6,9 @@ use {
         error_meta::Error as IamError,
         operation::{
             CreateRoleInternalRequest, DeleteRoleInternalRequest, DeleteRolePermissionsBoundaryInternalRequest,
+            GetRoleInternalRequest,
         },
-        types::Tag,
+        types::{PermissionsBoundaryAttachmentType, Tag},
     },
 };
 
@@ -576,6 +577,156 @@ pub async fn test_delete_role_permissions_boundary_nonexistent(pool: &sqlx::PgPo
 /// touching the database.
 pub fn test_delete_role_permissions_boundary_invalid_name() {
     let result = DeleteRolePermissionsBoundaryInternalRequest::builder()
+        .role_name("bad role!".to_string())
+        .account_id("123456789012".to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid role name must fail");
+}
+
+/// Get a role created earlier in the suite with no PB, tags, or extras. Validates the basic
+/// projection (ARN, role_id prefix, path, trust policy).
+pub async fn test_get_role_simple(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetRoleInternalRequest::builder()
+        .role_name("LambdaExecutor".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build GetRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get LambdaExecutor");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let role = resp.role;
+    assert_eq!(role.role_name, "LambdaExecutor");
+    assert_eq!(role.path, "/");
+    assert!(role.arn.ends_with(":role/LambdaExecutor"), "Unexpected ARN: {}", role.arn);
+    assert!(role.role_id.starts_with("AROA"), "RoleId must start with AROA, got {}", role.role_id);
+    assert_eq!(role.assume_role_policy_document.as_deref(), Some(TRUST_POLICY));
+    assert!(role.permissions_boundary.is_none());
+    assert!(role.tags.is_empty());
+    assert!(role.description.is_none());
+    assert!(role.max_session_duration.is_none());
+}
+
+/// Get a role created with a non-default path; the projected ARN must include the path.
+pub async fn test_get_role_with_path(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetRoleInternalRequest::builder()
+        .role_name("DeployRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build GetRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get DeployRole");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let role = resp.role;
+    assert_eq!(role.role_name, "DeployRole");
+    assert_eq!(role.path, "/service-roles/");
+    assert!(role.arn.ends_with(":role/service-roles/DeployRole"), "Unexpected ARN: {}", role.arn);
+}
+
+/// Get a role committed earlier with tags. Tags must come back ordered by lowercased key.
+pub async fn test_get_role_with_tags(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetRoleInternalRequest::builder()
+        .role_name("TaggedRole".to_string())
+        .account_id("210987654321".to_string())
+        .build()
+        .expect("Failed to build GetRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get TaggedRole");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let role = resp.role;
+    assert_eq!(role.role_name, "TaggedRole");
+    assert_eq!(role.tags.len(), 2);
+    assert_eq!(role.tags[0].key, "Environment");
+    assert_eq!(role.tags[0].value, "Production");
+    assert_eq!(role.tags[1].key, "Team");
+    assert_eq!(role.tags[1].value, "Platform");
+}
+
+/// Get a role that has a permissions boundary set. Builds the role through the normal API path
+/// (CreateRoleInternalRequest with the PB ARN), then asserts the get_role response surfaces the
+/// PB with the policy's true ARN (name+path resolved from the managed_policy_id).
+///
+/// Safe to commit this role with `Example-Managed-Policy-1` as its PB because the
+/// `policy_query::test_list_policies_usage_filter_pb` assertions ran much earlier in the suite;
+/// the role is removed before the test returns.
+pub async fn test_get_role_with_permissions_boundary(pool: &sqlx::PgPool) {
+    let pb_arn = "arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1";
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateRoleInternalRequest::builder()
+        .role_name("GetMePbRole".to_string())
+        .account_id("123456789012".to_string())
+        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .permissions_boundary(Some(pb_arn.to_string()))
+        .build()
+        .expect("Failed to build CreateRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create GetMePbRole with permissions boundary");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetRoleInternalRequest::builder()
+        .role_name("GetMePbRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build GetRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to get GetMePbRole");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let pb = resp.role.permissions_boundary.expect("Role should have a permissions boundary");
+    assert_eq!(pb.permissions_boundary_type, Some(PermissionsBoundaryAttachmentType::Policy));
+    assert_eq!(pb.permissions_boundary_arn.as_deref(), Some(pb_arn));
+
+    // Clean up through the API.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeleteRolePermissionsBoundaryInternalRequest::builder()
+        .role_name("GetMePbRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteRolePermissionsBoundaryInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to clear GetMePbRole PB");
+    DeleteRoleInternalRequest::builder()
+        .role_name("GetMePbRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build DeleteRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete GetMePbRole");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// Getting a nonexistent role must fail with NoSuchEntity.
+pub async fn test_get_role_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = GetRoleInternalRequest::builder()
+        .role_name("NoSuchGetRole".to_string())
+        .account_id("123456789012".to_string())
+        .build()
+        .expect("Failed to build GetRoleInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("Getting a nonexistent role must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building a GetRole request with an invalid role name must fail before touching the database.
+pub fn test_get_role_invalid_name() {
+    let result = GetRoleInternalRequest::builder()
         .role_name("bad role!".to_string())
         .account_id("123456789012".to_string())
         .build();
