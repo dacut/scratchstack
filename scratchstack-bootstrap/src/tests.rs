@@ -504,6 +504,144 @@ async fn test_users(database: &TempDatabase) {
         err.message().unwrap_or_default().contains("cannot be found"),
         "Expected 'cannot be found' in error message, got: {err}"
     );
+
+    // -- delete-user-permissions-boundary --------------------------------------
+    // Create a managed policy and a user that uses it as its permissions boundary.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-policy",
+            "--account-id",
+            "555566667777",
+            "--policy-name",
+            "UserPbPolicy",
+            "--policy-document",
+            r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#,
+        ])
+        .await
+        .expect("Failed to create UserPbPolicy");
+    let pb_arn = "arn:test-partition:iam::555566667777:policy/UserPbPolicy";
+
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PbUser",
+            "--permissions-boundary",
+            pb_arn,
+        ])
+        .await
+        .expect("Failed to create PbUser with permissions boundary");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse create-user output");
+    let pb_arn_out = json
+        .get("User")
+        .and_then(|u| u.get("PermissionsBoundary"))
+        .and_then(|p| p.get("PermissionsBoundaryArn"))
+        .and_then(JsonValue::as_str)
+        .expect("PermissionsBoundary.PermissionsBoundaryArn should be present");
+    assert_eq!(pb_arn_out, pb_arn);
+
+    // Clear the boundary.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-user-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PbUser",
+        ])
+        .await
+        .expect("Failed to delete-user-permissions-boundary on PbUser");
+
+    // Re-running on a user with no PB must still succeed (idempotent).
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-user-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PbUser",
+        ])
+        .await
+        .expect("delete-user-permissions-boundary must be idempotent");
+
+    // Now we should be able to delete the user and then the (no-longer-PB) policy.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-user",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "PbUser",
+        ])
+        .await
+        .expect("Failed to delete PbUser");
+    database
+        .run(["ssbs", "--port", &port, "--username", "scratchstack", "delete-policy", "--policy-arn", pb_arn])
+        .await
+        .expect("Failed to delete UserPbPolicy");
+
+    // delete-user-permissions-boundary on a nonexistent user must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-user-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "no-such-user",
+        ])
+        .await
+        .expect_err("delete-user-permissions-boundary on a nonexistent user should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Invalid user name must surface as ValidationError before reaching the database.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "delete-user-permissions-boundary",
+            "--account-id",
+            "555566667777",
+            "--user-name",
+            "bad name!",
+        ])
+        .await
+        .expect_err("delete-user-permissions-boundary with an invalid user name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 }
 
 async fn test_policies(database: &TempDatabase) {

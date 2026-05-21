@@ -6,10 +6,10 @@ use {
         error_meta::Error as IamError,
         operation::{
             AttachUserPolicyInternalRequest, CreateUserInternalRequest, CreateUserResponse, DeleteUserInternalRequest,
-            DetachUserPolicyInternalRequest, GetUserInternalRequest, GetUserResponse,
-            ListAttachedUserPoliciesInternalRequest, ListAttachedUserPoliciesResponse, ListUserTagsInternalRequest,
-            ListUserTagsResponse, ListUsersInternalRequest, ListUsersResponse, TagUserInternalRequest,
-            UntagUserInternalRequest, UpdateUserInternalRequest,
+            DeleteUserPermissionsBoundaryInternalRequest, DetachUserPolicyInternalRequest, GetUserInternalRequest,
+            GetUserResponse, ListAttachedUserPoliciesInternalRequest, ListAttachedUserPoliciesResponse,
+            ListUserTagsInternalRequest, ListUserTagsResponse, ListUsersInternalRequest, ListUsersResponse,
+            TagUserInternalRequest, UntagUserInternalRequest, UpdateUserInternalRequest,
         },
     },
     std::ffi::OsString,
@@ -65,6 +65,18 @@ pub(crate) struct DeleteUserInternalCommand {
     pub account_id: String,
 
     /// The name of the user to delete.
+    #[clap(long)]
+    pub user_name: String,
+}
+
+/// Delete the permissions boundary from a user in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct DeleteUserPermissionsBoundaryInternalCommand {
+    /// The unique identifier for the account the user belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the user to delete the permissions boundary from.
     #[clap(long)]
     pub user_name: String,
 }
@@ -272,6 +284,21 @@ impl Runnable for DeleteUserInternalCommand {
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
         let request = DeleteUserInternalRequest {
+            account_id: self.account_id.clone(),
+            user_name: self.user_name.clone(),
+        };
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for DeleteUserPermissionsBoundaryInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = DeleteUserPermissionsBoundaryInternalRequest {
             account_id: self.account_id.clone(),
             user_name: self.user_name.clone(),
         };

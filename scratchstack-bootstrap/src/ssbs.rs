@@ -46,9 +46,9 @@ use {
         },
         user::{
             AttachUserPolicyInternalCommand, CreateUserInternalCommand, DeleteUserInternalCommand,
-            DetachUserPolicyInternalCommand, GetUserInternalCommand, ListAttachedUserPoliciesInternalCommand,
-            ListUserTagsInternalCommand, ListUsersInternalCommand, TagUserInternalCommand, UntagUserInternalCommand,
-            UpdateUserInternalCommand,
+            DeleteUserPermissionsBoundaryInternalCommand, DetachUserPolicyInternalCommand, GetUserInternalCommand,
+            ListAttachedUserPoliciesInternalCommand, ListUserTagsInternalCommand, ListUsersInternalCommand,
+            TagUserInternalCommand, UntagUserInternalCommand, UpdateUserInternalCommand,
         },
     },
     aws_smithy_types::error::metadata::ProvideErrorMetadata,
@@ -180,6 +180,11 @@ enum Commands {
     /// Delete an IAM user from an account.
     #[command(name = "delete-user")]
     DeleteUser(DeleteUserInternalCommand),
+
+    /// Remove the permissions boundary from an IAM user. Succeeds whether or not the user has a
+    /// permissions boundary set.
+    #[command(name = "delete-user-permissions-boundary")]
+    DeleteUserPermissionsBoundary(DeleteUserPermissionsBoundaryInternalCommand),
 
     /// Detach a managed policy from a group in an account.
     #[command(name = "detach-group-policy")]
@@ -334,6 +339,7 @@ impl Commands {
             Commands::DeleteRole(_) => "DeleteRole",
             Commands::DeleteRolePermissionsBoundary(_) => "DeleteRolePermissionsBoundary",
             Commands::DeleteUser(_) => "DeleteUser",
+            Commands::DeleteUserPermissionsBoundary(_) => "DeleteUserPermissionsBoundary",
             Commands::DetachGroupPolicy(_) => "DetachGroupPolicy",
             Commands::DetachRolePolicy(_) => "DetachRolePolicy",
             Commands::DetachUserPolicy(_) => "DetachUserPolicy",
@@ -479,6 +485,10 @@ where
             "".to_string()
         }
         Commands::DeleteRolePermissionsBoundary(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
+        }
+        Commands::DeleteUserPermissionsBoundary(sub) => {
             sub.run(&cli, vars).await?;
             "".to_string()
         }
