@@ -5,7 +5,7 @@ use {
         ops::{
             RequestExecutor,
             iam::{
-                build_policy_arn, get_current_partition_or_fail, user_arn_resource, validate_account_id,
+                build_policy_arn, get_current_partition_or_fail, user::user_arn_resource, validate_account_id,
                 validate_user_name,
             },
         },

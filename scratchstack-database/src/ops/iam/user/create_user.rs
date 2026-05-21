@@ -6,8 +6,8 @@ use {
         ops::{
             RequestExecutor,
             iam::{
-                get_current_partition_or_fail, get_permissions_boundary_id, user_arn_resource, validate_account_id,
-                validate_path, validate_tag_key, validate_tag_value, validate_user_name,
+                get_current_partition_or_fail, get_permissions_boundary_id, user::user_arn_resource,
+                validate_account_id, validate_path, validate_tag_key, validate_tag_value, validate_user_name,
             },
         },
     },
