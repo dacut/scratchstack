@@ -48,31 +48,54 @@ pub async fn update_role(
         return Err(ValidationError::builder().message(message).build().into());
     }
 
-    let result = match query(indoc! {"
-            UPDATE iam.roles
-            SET description = COALESCE($3, description),
-                max_session_duration = COALESCE($4, max_session_duration)
-            WHERE account_id = $1 AND role_name_lower = $2
-        "})
-    .bind(account_id)
-    .bind(role_name.to_lowercase())
-    .bind(description)
-    .bind(max_session_duration)
-    .execute(tx.as_mut())
-    .await
-    {
-        Ok(result) => result,
-        Err(e) => {
-            log::error!("Failed to update role in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
-        }
-    };
+    if description.is_some() || max_session_duration.is_some() {
+        let result = match query(indoc! {"
+                UPDATE iam.roles
+                SET description = COALESCE($3, description),
+                    max_session_duration = COALESCE($4, max_session_duration)
+                WHERE account_id = $1 AND role_name_lower = $2
+            "})
+        .bind(account_id)
+        .bind(role_name.to_lowercase())
+        .bind(description)
+        .bind(max_session_duration)
+        .execute(tx.as_mut())
+        .await
+        {
+            Ok(result) => result,
+            Err(e) => {
+                log::error!("Failed to update role in database: {e}");
+                return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            }
+        };
 
-    if result.rows_affected() == 0 {
-        return Err(NoSuchEntityException::builder()
-            .message(format!("The role with name {role_name} cannot be found."))
-            .build()
-            .into());
+        if result.rows_affected() == 0 {
+            return Err(NoSuchEntityException::builder()
+                .message(format!("The role with name {role_name} cannot be found."))
+                .build()
+                .into());
+        }
+    } else {
+        let result = query(indoc! {"
+                SELECT 1
+                FROM iam.roles
+                WHERE account_id = $1 AND role_name_lower = $2
+            "})
+        .bind(account_id)
+        .bind(role_name.to_lowercase())
+        .fetch_optional(tx.as_mut())
+        .await
+        .map_err(|e| {
+            log::error!("Failed to query role in database: {e}");
+            InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+        })?;
+
+        if result.is_none() {
+            return Err(NoSuchEntityException::builder()
+                .message(format!("The role with name {role_name} cannot be found."))
+                .build()
+                .into());
+        }
     }
 
     UpdateRoleResponse::builder().build().map_err(|e| {
