@@ -1,6 +1,6 @@
 //! Scratchstack bootstrap policy subcommands
 use {
-    crate::{Cli, Runnable, execute_in_transaction, user::tags_from_shorthand},
+    crate::{Cli, Runnable, execute_in_transaction, tag::tags_from_shorthand},
     clap::Parser,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
