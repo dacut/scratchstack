@@ -6,9 +6,10 @@ use {
         error_meta::Error as IamError,
         operation::{
             AttachUserPolicyInternalRequest, CreateUserInternalRequest, CreateUserResponse, DeleteUserInternalRequest,
-            DeleteUserPermissionsBoundaryInternalRequest, DetachUserPolicyInternalRequest, GetUserInternalRequest,
-            GetUserResponse, ListAttachedUserPoliciesInternalRequest, ListAttachedUserPoliciesResponse,
-            ListUserTagsInternalRequest, ListUserTagsResponse, ListUsersInternalRequest, ListUsersResponse,
+            DeleteUserPermissionsBoundaryInternalRequest, DeleteUserPolicyInternalRequest,
+            DetachUserPolicyInternalRequest, GetUserInternalRequest, GetUserResponse,
+            ListAttachedUserPoliciesInternalRequest, ListAttachedUserPoliciesResponse, ListUserTagsInternalRequest,
+            ListUserTagsResponse, ListUsersInternalRequest, ListUsersResponse,
             PutUserPermissionsBoundaryInternalRequest, PutUserPolicyInternalRequest, TagUserInternalRequest,
             UntagUserInternalRequest, UpdateUserInternalRequest,
         },
@@ -80,6 +81,22 @@ pub(crate) struct DeleteUserPermissionsBoundaryInternalCommand {
     /// The name of the user to delete the permissions boundary from.
     #[clap(long)]
     pub user_name: String,
+}
+
+/// Delete an inline policy from a user in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct DeleteUserPolicyInternalCommand {
+    /// The unique identifier for the account the user belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the user to remove the inline policy from.
+    #[clap(long)]
+    pub user_name: String,
+
+    /// The name of the inline policy to delete.
+    #[clap(long)]
+    pub policy_name: String,
 }
 
 /// Detach a managed policy from a user in a given account in the Scratchstack IAM service.
@@ -303,6 +320,22 @@ impl Runnable for DeleteUserPermissionsBoundaryInternalCommand {
             account_id: self.account_id.clone(),
             user_name: self.user_name.clone(),
         };
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for DeleteUserPolicyInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = DeleteUserPolicyInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .user_name(self.user_name.clone())
+            .policy_name(self.policy_name.clone())
+            .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }

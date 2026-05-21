@@ -6,8 +6,9 @@ use {
         error_meta::Error as IamError,
         operation::{
             AddUserToGroupInternalRequest, CreateGroupInternalRequest, DeleteGroupInternalRequest,
-            GetGroupInternalRequest, ListGroupsForUserInternalRequest, ListGroupsInternalRequest,
-            PutGroupPolicyInternalRequest, RemoveUserFromGroupInternalRequest, UpdateGroupInternalRequest,
+            DeleteGroupPolicyInternalRequest, GetGroupInternalRequest, ListGroupsForUserInternalRequest,
+            ListGroupsInternalRequest, PutGroupPolicyInternalRequest, RemoveUserFromGroupInternalRequest,
+            UpdateGroupInternalRequest,
         },
     },
 };
@@ -632,6 +633,90 @@ pub fn test_put_group_policy_invalid_name() {
         .account_id("123456789012".to_string())
         .policy_name("AnyName".to_string())
         .policy_document(INLINE_GROUP_POLICY_S3.to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid group name must fail");
+}
+
+/// DeleteGroupPolicy removes an inline policy previously attached via PutGroupPolicy.
+pub async fn test_delete_group_policy_simple(pool: &sqlx::PgPool) {
+    // The "InlineWithMissingPrincipal" inline policy was added in test_put_group_policy_invalid_principal_accepted.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeleteGroupPolicyInternalRequest::builder()
+        .group_name("Administrators".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("InlineWithMissingPrincipal".to_string())
+        .build()
+        .expect("Failed to build DeleteGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to delete inline policy on Administrators");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM iam.group_inline_policies \
+         WHERE group_id = (SELECT group_id FROM iam.groups WHERE account_id = $1 AND group_name_lower = $2) \
+         AND policy_name_lower = $3",
+    )
+    .bind("123456789012")
+    .bind("administrators")
+    .bind("inlinewithmissingprincipal")
+    .fetch_one(pool)
+    .await
+    .expect("Failed to count Administrators inline policy after delete");
+    assert_eq!(count, 0, "Deleted inline policy must be gone");
+
+    // The other policy ("InlineRead") must still be present.
+    let remaining: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM iam.group_inline_policies \
+         WHERE group_id = (SELECT group_id FROM iam.groups WHERE account_id = $1 AND group_name_lower = $2)",
+    )
+    .bind("123456789012")
+    .bind("administrators")
+    .fetch_one(pool)
+    .await
+    .expect("Failed to count remaining Administrators inline policies");
+    assert_eq!(remaining, 1, "Only the targeted inline policy must be removed");
+}
+
+/// DeleteGroupPolicy with a policy name that is not attached must fail with NoSuchEntity.
+pub async fn test_delete_group_policy_nonexistent_policy(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteGroupPolicyInternalRequest::builder()
+        .group_name("Administrators".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("NotAttached".to_string())
+        .build()
+        .expect("Failed to build DeleteGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("DeleteGroupPolicy with no matching policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// DeleteGroupPolicy on a nonexistent group must fail with NoSuchEntity.
+pub async fn test_delete_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = DeleteGroupPolicyInternalRequest::builder()
+        .group_name("NoSuchDeletePolicyGroup".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("AnyName".to_string())
+        .build()
+        .expect("Failed to build DeleteGroupPolicyInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("DeleteGroupPolicy on a nonexistent group must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building a DeleteGroupPolicy request with an invalid group name must fail before touching the
+/// database.
+pub fn test_delete_group_policy_invalid_name() {
+    let result = DeleteGroupPolicyInternalRequest::builder()
+        .group_name("bad name!".to_string())
+        .account_id("123456789012".to_string())
+        .policy_name("AnyName".to_string())
         .build();
     assert!(result.is_err(), "Building a request with an invalid group name must fail");
 }

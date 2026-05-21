@@ -6,8 +6,9 @@ use {
         error_meta::Error as IamError,
         operation::{
             AddUserToGroupInternalRequest, AttachGroupPolicyInternalRequest, CreateGroupInternalRequest,
-            CreateGroupResponse, DeleteGroupInternalRequest, DetachGroupPolicyInternalRequest, GetGroupInternalRequest,
-            GetGroupResponse, ListAttachedGroupPoliciesInternalRequest, ListAttachedGroupPoliciesResponse,
+            CreateGroupResponse, DeleteGroupInternalRequest, DeleteGroupPolicyInternalRequest,
+            DetachGroupPolicyInternalRequest, GetGroupInternalRequest, GetGroupResponse,
+            ListAttachedGroupPoliciesInternalRequest, ListAttachedGroupPoliciesResponse,
             ListGroupsForUserInternalRequest, ListGroupsForUserResponse, ListGroupsInternalRequest, ListGroupsResponse,
             PutGroupPolicyInternalRequest, RemoveUserFromGroupInternalRequest, UpdateGroupInternalRequest,
         },
@@ -57,6 +58,22 @@ pub(crate) struct DeleteGroupInternalCommand {
     /// The name of the group to delete.
     #[clap(long)]
     pub group_name: String,
+}
+
+/// Delete an inline policy from a group in a given account in the Scratchstack IAM service.
+#[derive(Debug, Parser)]
+pub(crate) struct DeleteGroupPolicyInternalCommand {
+    /// The unique identifier for the account the group belongs to.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The name of the group to remove the inline policy from.
+    #[clap(long)]
+    pub group_name: String,
+
+    /// The name of the inline policy to delete.
+    #[clap(long)]
+    pub policy_name: String,
 }
 
 /// Detach a managed policy from a group in a given account in the Scratchstack IAM service.
@@ -184,6 +201,22 @@ impl Runnable for DeleteGroupInternalCommand {
         let request = DeleteGroupInternalRequest::builder()
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for DeleteGroupPolicyInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = DeleteGroupPolicyInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .group_name(self.group_name.clone())
+            .policy_name(self.policy_name.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
