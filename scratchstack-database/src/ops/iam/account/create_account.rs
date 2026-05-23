@@ -2,7 +2,10 @@
 use {
     crate::{
         constants::iam::*,
-        ops::{RequestExecutor, iam::validate_account_id},
+        ops::{
+            RequestExecutor,
+            iam::{account::is_alias_unique_violation, validate_account_alias, validate_account_id},
+        },
     },
     indoc::indoc,
     rand::random_range,
@@ -11,7 +14,7 @@ use {
         operation::{CreateAccountRequest, CreateAccountResponse},
         types::{
             Account,
-            error::{InternalFailure, ValidationError},
+            error::{EntityAlreadyExistsException, InternalFailure, ValidationError},
         },
     },
     sqlx::{Acquire as _, postgres::PgTransaction, query},
@@ -67,20 +70,9 @@ async fn create_account_with_id(
     account_alias: Option<String>,
 ) -> Result<CreateAccountResponse, IamError> {
     validate_account_id(&account_id)?;
-
-    let account_alias = if let Some(account_alias) = account_alias {
-        if !ACCOUNT_ALIAS_REGEX.is_match(&account_alias) || account_alias.len() < 3 || account_alias.len() > 63 {
-            return Err(ValidationError::builder()
-                .message(
-                    "Account alias must be 3-63 characters long and consist of lowercase letters, digits, and dashes. The alias cannot start or end with a dash and cannot contain consecutive dashes."
-                )
-                .build()
-                .into());
-        }
-        Some(account_alias)
-    } else {
-        None
-    };
+    if let Some(account_alias) = account_alias.as_ref() {
+        validate_account_alias(account_alias)?;
+    }
 
     if let Err(e) = query(indoc! {"
         INSERT INTO iam.accounts(account_id, email, alias)
@@ -92,6 +84,13 @@ async fn create_account_with_id(
     .execute(tx.as_mut())
     .await
     {
+        if is_alias_unique_violation(&e) {
+            let alias = account_alias.unwrap_or_default();
+            return Err(EntityAlreadyExistsException::builder()
+                .message(format!("Account alias {alias} is already in use."))
+                .build()
+                .into());
+        }
         log::error!("Failed to insert account into database: {e}");
         return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
     }
@@ -105,7 +104,7 @@ async fn create_account_with_id(
     }
     let account = acct_builder.build().map_err(|e| {
         log::error!("Failed to build Account: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
     })?;
     Ok(CreateAccountResponse {
         account,

@@ -165,6 +165,229 @@ async fn test_accounts(database: &TempDatabase) {
             account_ids
         );
     }
+
+    // -- list-account-aliases / create-account-alias --------------------------
+    // 555566667777 was created without an alias above.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-account-aliases",
+            "--account-id",
+            "555566667777",
+        ])
+        .await
+        .expect("Failed to run list-account-aliases for account without an alias");
+    let json: JsonValue = serde_json::from_str(&result).expect("list-account-aliases output must be JSON");
+    let aliases = json["AccountAliases"].as_array().expect("AccountAliases must be an array");
+    assert!(aliases.is_empty(), "Expected no aliases, got {aliases:?}");
+    assert_eq!(json["IsTruncated"], JsonValue::Bool(false));
+
+    // Set an alias on 555566667777.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-account-alias",
+            "--account-id",
+            "555566667777",
+            "--account-alias",
+            "five-sixes-seven-sevens",
+        ])
+        .await
+        .expect("Failed to run create-account-alias");
+
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-account-aliases",
+            "--account-id",
+            "555566667777",
+        ])
+        .await
+        .expect("Failed to run list-account-aliases after create");
+    let json: JsonValue = serde_json::from_str(&result).expect("list-account-aliases output must be JSON");
+    let aliases = json["AccountAliases"].as_array().expect("AccountAliases must be an array");
+    assert_eq!(aliases, &vec![JsonValue::String("five-sixes-seven-sevens".to_string())]);
+
+    // Replacing the alias on the same account must succeed and overwrite the prior value.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-account-alias",
+            "--account-id",
+            "555566667777",
+            "--account-alias",
+            "renamed-account-alias",
+        ])
+        .await
+        .expect("Failed to run create-account-alias to replace existing alias");
+
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-account-aliases",
+            "--account-id",
+            "555566667777",
+        ])
+        .await
+        .expect("Failed to run list-account-aliases after replace");
+    let json: JsonValue = serde_json::from_str(&result).expect("list-account-aliases output must be JSON");
+    let aliases = json["AccountAliases"].as_array().expect("AccountAliases must be an array");
+    assert_eq!(aliases, &vec![JsonValue::String("renamed-account-alias".to_string())]);
+
+    // create-account-alias on a nonexistent account must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-account-alias",
+            "--account-id",
+            "999999999999",
+            "--account-alias",
+            "orphan-alias",
+        ])
+        .await
+        .expect_err("create-account-alias on a nonexistent account should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // create-account-alias with an alias that fails the Smithy regex must fail with
+    // ValidationError before reaching the database.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-account-alias",
+            "--account-id",
+            "555566667777",
+            "--account-alias",
+            "BadAlias",
+        ])
+        .await
+        .expect_err("create-account-alias with an invalid alias should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // create-account-alias with an invalid account id must fail with ValidationError.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-account-alias",
+            "--account-id",
+            "12345",
+            "--account-alias",
+            "valid-alias",
+        ])
+        .await
+        .expect_err("create-account-alias with an invalid account id should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // list-account-aliases on a nonexistent account must fail with NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-account-aliases",
+            "--account-id",
+            "999999999999",
+        ])
+        .await
+        .expect_err("list-account-aliases on a nonexistent account should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // list-account-aliases with an invalid account id must fail with ValidationError.
+    let err = database
+        .run(["ssbs", "--port", &port, "--username", "scratchstack", "list-account-aliases", "--account-id", "12345"])
+        .await
+        .expect_err("list-account-aliases with an invalid account id should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // -- alias uniqueness -----------------------------------------------------
+    // The 200 bulk accounts above already use aliases of the form `account-alias-00000`. Creating
+    // a new account that tries to reuse one of those aliases must fail with EntityAlreadyExists.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-account",
+            "--account-alias",
+            "account-alias-00042",
+        ])
+        .await
+        .expect_err("create-account with an in-use alias should fail");
+    assert_eq!(err.code(), Some("EntityAlreadyExists"), "Expected EntityAlreadyExists, got: {err}");
+
+    // create-account-alias setting an alias that another account already holds must also fail
+    // with EntityAlreadyExists. 555566667777 currently holds "renamed-account-alias"; try to
+    // give that alias to a different account (the random-id one created at the top of this
+    // function, which has no alias of its own).
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-account-alias",
+            "--account-id",
+            account_id1_str,
+            "--account-alias",
+            "renamed-account-alias",
+        ])
+        .await
+        .expect_err("create-account-alias claiming another account's alias should fail");
+    assert_eq!(err.code(), Some("EntityAlreadyExists"), "Expected EntityAlreadyExists, got: {err}");
+
+    // Re-asserting the same alias on the same account is a no-op (the UPDATE writes the same
+    // value); it must succeed.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-account-alias",
+            "--account-id",
+            "555566667777",
+            "--account-alias",
+            "renamed-account-alias",
+        ])
+        .await
+        .expect("create-account-alias on the same account with the same alias should be a no-op");
 }
 
 async fn test_users(database: &TempDatabase) {

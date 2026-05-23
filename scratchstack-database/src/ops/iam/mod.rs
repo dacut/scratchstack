@@ -24,6 +24,23 @@ mod user;
 
 pub use {account::*, group::*, partition::*, policy::*, role::*, user::*};
 
+/// Ensure that the max_items parameter is valid, converting it to a usize if it is.
+pub fn constrain_max_items(max_items: Option<i32>) -> Result<usize, ValidationError> {
+    if let Some(max_items) = max_items {
+        if max_items <= 0 {
+            let message = "max_items must be a positive integer.".to_string();
+            Err(ValidationError::builder().message(message).build())
+        } else if max_items > 1000 {
+            let message = "max_items must be at most 1000.".to_string();
+            Err(ValidationError::builder().message(message).build())
+        } else {
+            Ok(max_items as usize)
+        }
+    } else {
+        Ok(100)
+    }
+}
+
 /// Construct an `OperationPaginator` for a policy-related list operation.
 pub(crate) fn make_paginator(
     partition: &str,
@@ -36,6 +53,23 @@ pub(crate) fn make_paginator(
             log::error!("Failed to create paginator for {operation_name}: {e}");
             IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
         })
+}
+
+/// Validate that the account alias is valid according to AWS IAM rules.
+///
+/// Account aliases must be between 3 and 63 characters long, can contain lowercase letters, digits,
+/// and hyphens. They cannot start or end with a hyphen and cannot contain consecutive hyphens.
+pub fn validate_account_alias(account_alias: impl AsRef<str>) -> Result<(), ValidationError> {
+    let account_alias = account_alias.as_ref();
+    if !ACCOUNT_ALIAS_REGEX.is_match(account_alias) || account_alias.len() < 3 || account_alias.len() > 63 {
+        Err(ValidationError::builder()
+            .message(
+                "Account alias must be 3-63 characters long and consist of lowercase letters, digits, and dashes. The alias cannot start or end with a dash and cannot contain consecutive dashes."
+            )
+            .build())
+    } else {
+        Ok(())
+    }
 }
 
 /// Validate that the account id is valid.
@@ -95,6 +129,29 @@ pub fn validate_path_prefix(path_prefix: impl AsRef<str>) -> Result<(), Validati
     }
 }
 
+/// Validate that the policy name is valid according to AWS IAM rules.
+pub fn validate_policy_name(policy_name: impl AsRef<str>) -> Result<(), ValidationError> {
+    let policy_name = policy_name.as_ref();
+    if !ENTITY_NAME_REGEX.is_match(policy_name) || policy_name.is_empty() || policy_name.len() > 128 {
+        let message = "Policy name must contain only alphanumeric characters or the following symbols: =,.@-_ and must be between 1 and 128 characters long.".to_string();
+        Err(ValidationError::builder().message(message).build())
+    } else {
+        Ok(())
+    }
+}
+
+/// Validate that the role name is valid according to AWS IAM rules.
+pub fn validate_role_name(role_name: impl AsRef<str>) -> Result<(), ValidationError> {
+    let role_name = role_name.as_ref();
+    let is_full_match = ENTITY_NAME_REGEX.find(role_name).is_some_and(|m| m.as_str() == role_name);
+    if !is_full_match || role_name.is_empty() || role_name.len() > 64 {
+        let message = "Role name must contain only alphanumeric characters or the following symbols: +=,.@-_ and must be between 1 and 64 characters long.".to_string();
+        Err(ValidationError::builder().message(message).build())
+    } else {
+        Ok(())
+    }
+}
+
 /// Validate that the tag key is valid according to AWS IAM rules.
 ///
 /// Note that tag key rules vary between AWS services.
@@ -121,29 +178,6 @@ pub fn validate_tag_value(tag_value: impl AsRef<str>) -> Result<(), ValidationEr
     }
 }
 
-/// Validate that the policy name is valid according to AWS IAM rules.
-pub fn validate_policy_name(policy_name: impl AsRef<str>) -> Result<(), ValidationError> {
-    let policy_name = policy_name.as_ref();
-    if !ENTITY_NAME_REGEX.is_match(policy_name) || policy_name.is_empty() || policy_name.len() > 128 {
-        let message = "Policy name must contain only alphanumeric characters or the following symbols: =,.@-_ and must be between 1 and 128 characters long.".to_string();
-        Err(ValidationError::builder().message(message).build())
-    } else {
-        Ok(())
-    }
-}
-
-/// Validate that the role name is valid according to AWS IAM rules.
-pub fn validate_role_name(role_name: impl AsRef<str>) -> Result<(), ValidationError> {
-    let role_name = role_name.as_ref();
-    let is_full_match = ENTITY_NAME_REGEX.find(role_name).is_some_and(|m| m.as_str() == role_name);
-    if !is_full_match || role_name.is_empty() || role_name.len() > 64 {
-        let message = "Role name must contain only alphanumeric characters or the following symbols: +=,.@-_ and must be between 1 and 64 characters long.".to_string();
-        Err(ValidationError::builder().message(message).build())
-    } else {
-        Ok(())
-    }
-}
-
 /// Validate that the user name is valid according to AWS IAM rules.
 pub fn validate_user_name(user_name: impl AsRef<str>) -> Result<(), ValidationError> {
     let user_name = user_name.as_ref();
@@ -152,22 +186,5 @@ pub fn validate_user_name(user_name: impl AsRef<str>) -> Result<(), ValidationEr
         Err(ValidationError::builder().message(message).build())
     } else {
         Ok(())
-    }
-}
-
-/// Ensure that the max_items parameter is valid, converting it to a usize if it is.
-pub fn constrain_max_items(max_items: Option<i32>) -> Result<usize, ValidationError> {
-    if let Some(max_items) = max_items {
-        if max_items <= 0 {
-            let message = "max_items must be a positive integer.".to_string();
-            Err(ValidationError::builder().message(message).build())
-        } else if max_items > 1000 {
-            let message = "max_items must be at most 1000.".to_string();
-            Err(ValidationError::builder().message(message).build())
-        } else {
-            Ok(max_items as usize)
-        }
-    } else {
-        Ok(100)
     }
 }

@@ -5,11 +5,27 @@ use {
     scratchstack_cli_utils::{ShorthandValue, parse_shorthand},
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
-        operation::{CreateAccountRequest, CreateAccountResponse, ListAccountsRequest, ListAccountsResponse},
+        operation::{
+            CreateAccountAliasInternalRequest, CreateAccountRequest, CreateAccountResponse,
+            ListAccountAliasesInternalRequest, ListAccountAliasesResponse, ListAccountsRequest, ListAccountsResponse,
+        },
         types::{ListAccountsFilter, ListAccountsFilterName, error::ValidationError},
     },
     std::{collections::HashMap, ffi::OsString, str::FromStr as _},
 };
+
+/// Set the alias for an account in the Scratchstack IAM service. Each account supports at most
+/// one alias; if one already exists, it is replaced.
+#[derive(Debug, Parser)]
+pub(crate) struct CreateAccountAliasInternalCommand {
+    /// The account id to set the alias on.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The new alias to set.
+    #[clap(long)]
+    pub account_alias: String,
+}
 
 /// Create a new account in the Scratchstack IAM service.
 #[derive(Debug, Parser)]
@@ -38,6 +54,23 @@ pub(crate) struct CreateAccountCommand {
     pub account_alias: Option<String>,
 }
 
+/// List the aliases of an account in the Scratchstack IAM service. AWS accounts support at most
+/// one alias, so the result is always a single-element or empty list.
+#[derive(Debug, Parser)]
+pub(crate) struct ListAccountAliasesInternalCommand {
+    /// The account id whose aliases should be listed.
+    #[clap(long)]
+    pub account_id: String,
+
+    /// The maximum number of aliases to return.
+    #[clap(long)]
+    pub max_items: Option<i32>,
+
+    /// A marker for paginating the list of aliases.
+    #[clap(long)]
+    pub marker: Option<String>,
+}
+
 /// List accounts in the Scratchstack IAM service.
 #[derive(Debug, Parser)]
 pub(crate) struct ListAccountsCommand {
@@ -52,6 +85,21 @@ pub(crate) struct ListAccountsCommand {
     /// The token to use for pagination.
     #[clap(long)]
     pub marker: Option<String>,
+}
+
+impl Runnable for CreateAccountAliasInternalCommand {
+    type Result = ();
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = CreateAccountAliasInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .account_alias(self.account_alias.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
 }
 
 impl Runnable for CreateAccountCommand {
@@ -71,6 +119,22 @@ impl Runnable for CreateAccountCommand {
         }
 
         let request = builder.build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for ListAccountAliasesInternalCommand {
+    type Result = ListAccountAliasesResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = ListAccountAliasesInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .max_items(self.max_items)
+            .marker(self.marker.clone())
+            .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }

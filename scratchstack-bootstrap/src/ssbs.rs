@@ -26,7 +26,10 @@ mod tests;
 
 use {
     crate::{
-        account::{CreateAccountCommand, ListAccountsCommand},
+        account::{
+            CreateAccountAliasInternalCommand, CreateAccountCommand, ListAccountAliasesInternalCommand,
+            ListAccountsCommand,
+        },
         group::{
             AddUserToGroupInternalCommand, AttachGroupPolicyInternalCommand, CreateGroupInternalCommand,
             DeleteGroupInternalCommand, DeleteGroupPolicyInternalCommand, DetachGroupPolicyInternalCommand,
@@ -148,6 +151,10 @@ enum Commands {
     #[command(name = "create-account")]
     CreateAccount(CreateAccountCommand),
 
+    /// Set the alias for an IAM account. Replaces any existing alias.
+    #[command(name = "create-account-alias")]
+    CreateAccountAlias(CreateAccountAliasInternalCommand),
+
     /// Create an IAM group in an account.
     #[command(name = "create-group")]
     CreateGroup(CreateGroupInternalCommand),
@@ -267,6 +274,10 @@ enum Commands {
     /// List the access keys attached to an IAM user.
     #[command(name = "list-access-keys")]
     ListAccessKeys(ListAccessKeysInternalCommand),
+
+    /// List the aliases attached to an IAM account (always one or zero).
+    #[command(name = "list-account-aliases")]
+    ListAccountAliases(ListAccountAliasesInternalCommand),
 
     /// List IAM accounts.
     #[command(name = "list-accounts")]
@@ -431,6 +442,7 @@ impl Commands {
             Commands::AttachUserPolicy(_) => "AttachUserPolicy",
             Commands::CreateAccessKey(_) => "CreateAccessKey",
             Commands::CreateAccount(_) => "CreateAccount",
+            Commands::CreateAccountAlias(_) => "CreateAccountAlias",
             Commands::CreateGroup(_) => "CreateGroup",
             Commands::CreatePolicy(_) => "CreatePolicy",
             Commands::CreatePolicyVersion(_) => "CreatePolicyVersion",
@@ -460,6 +472,7 @@ impl Commands {
             Commands::GetUser(_) => "GetUser",
             Commands::GetUserPolicy(_) => "GetUserPolicy",
             Commands::ListAccessKeys(_) => "ListAccessKeys",
+            Commands::ListAccountAliases(_) => "ListAccountAliases",
             Commands::ListAccounts(_) => "ListAccounts",
             Commands::ListAttachedGroupPolicies(_) => "ListAttachedGroupPolicies",
             Commands::ListAttachedRolePolicies(_) => "ListAttachedRolePolicies",
@@ -564,6 +577,10 @@ where
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
+        }
+        Commands::CreateAccountAlias(sub) => {
+            sub.run(&cli, vars).await?;
+            "".to_string()
         }
         Commands::CreateGroup(sub) => {
             let response = sub.run(&cli, vars).await?;
@@ -720,6 +737,13 @@ where
             })?
         }
         Commands::ListAccessKeys(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::ListAccountAliases(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
