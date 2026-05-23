@@ -58,7 +58,7 @@ pub(crate) fn make_paginator(
 /// Validate that the account alias is valid according to AWS IAM rules.
 ///
 /// Account aliases must be between 3 and 63 characters long, can contain lowercase letters, digits,
-/// and hyphens, and must start with a letter and end with a letter or digit.
+/// and hyphens. They cannot start or end with a hyphen and cannot contain consecutive hyphens.
 pub fn validate_account_alias(account_alias: impl AsRef<str>) -> Result<(), ValidationError> {
     let account_alias = account_alias.as_ref();
     if !ACCOUNT_ALIAS_REGEX.is_match(account_alias) || account_alias.len() < 3 || account_alias.len() > 63 {
