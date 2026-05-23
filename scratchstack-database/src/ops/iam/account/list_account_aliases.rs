@@ -36,7 +36,9 @@ pub async fn list_account_aliases(
         .fetch_optional(tx.as_mut())
         .await
         .map_err(|e| {
-            log::error!("Failed to create account alias for account {account_id}: {e}");
+            log::error!(
+                "ListAccountAliases query failed for account {account_id} (query: SELECT alias FROM iam.accounts WHERE account_id = $1): {e}"
+            );
             IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
         })?;
 
