@@ -91,6 +91,17 @@ async fn test_database() {
     account::test_list_accounts_filter_combined_no_match(&pool).await;
     account::test_list_accounts_filter_nonexistent(&pool).await;
 
+    // -- ListAccountAliasesInternalRequest / CreateAccountAliasInternalRequest ---
+    account::test_list_account_aliases_with_alias(&pool).await;
+    account::test_list_account_aliases_without_alias(&pool).await;
+    account::test_list_account_aliases_nonexistent_account(&pool).await;
+    account::test_list_account_aliases_invalid_account_id();
+    account::test_create_account_alias_simple(&pool).await;
+    account::test_create_account_alias_replaces(&pool).await;
+    account::test_create_account_alias_nonexistent_account(&pool).await;
+    account::test_create_account_alias_invalid_alias();
+    account::test_create_account_alias_invalid_account_id();
+
     // -- CreateUserRequestInternal --------------------------------------------
     user::test_create_user_simple(&pool).await;
     user::test_create_user_with_path(&pool).await;

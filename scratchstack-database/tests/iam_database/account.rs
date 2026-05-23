@@ -3,7 +3,11 @@ use {
     pretty_assertions::assert_eq,
     scratchstack_database::ops::RequestExecutor,
     scratchstack_shapes_iam::{
-        operation::{CreateAccountRequest, ListAccountsRequest},
+        error_meta::Error as IamError,
+        operation::{
+            CreateAccountAliasInternalRequest, CreateAccountRequest, ListAccountAliasesInternalRequest,
+            ListAccountsRequest,
+        },
         types::{ListAccountsFilter, ListAccountsFilterName},
     },
 };
@@ -450,4 +454,152 @@ pub async fn test_list_accounts_filter_nonexistent(pool: &sqlx::PgPool) {
 
     assert_eq!(resp.accounts.len(), 0, "Expected no accounts for a nonexistent account ID");
     assert_eq!(resp.marker, None);
+}
+
+// -- ListAccountAliases / CreateAccountAlias tests ---------------------------
+
+/// ListAccountAliases on an account that has an alias returns the single alias.
+pub async fn test_list_account_aliases_with_alias(pool: &sqlx::PgPool) {
+    // 100000000002 was created with alias "example-corp" in test_create_account_with_email_and_alias.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListAccountAliasesInternalRequest::builder()
+        .account_id("100000000002".to_string())
+        .build()
+        .expect("Failed to build ListAccountAliasesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list account aliases");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.account_aliases, vec!["example-corp".to_string()]);
+    assert_eq!(resp.is_truncated, Some(false));
+    assert_eq!(resp.marker, None);
+}
+
+/// ListAccountAliases on an account without an alias returns an empty list.
+pub async fn test_list_account_aliases_without_alias(pool: &sqlx::PgPool) {
+    // 100000000001 was created without an alias in test_create_account_specific_id.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListAccountAliasesInternalRequest::builder()
+        .account_id("100000000001".to_string())
+        .build()
+        .expect("Failed to build ListAccountAliasesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list account aliases for un-aliased account");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert!(resp.account_aliases.is_empty(), "Expected no aliases, got {:?}", resp.account_aliases);
+    assert_eq!(resp.is_truncated, Some(false));
+    assert_eq!(resp.marker, None);
+}
+
+/// ListAccountAliases on a nonexistent account must fail with NoSuchEntity.
+pub async fn test_list_account_aliases_nonexistent_account(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = ListAccountAliasesInternalRequest::builder()
+        .account_id("999999999999".to_string())
+        .build()
+        .expect("Failed to build ListAccountAliasesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("ListAccountAliases on a nonexistent account must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Building a ListAccountAliases request with an invalid account id must fail before touching
+/// the database. The Smithy builder rejects anything that isn't 12 digits.
+pub fn test_list_account_aliases_invalid_account_id() {
+    let result = ListAccountAliasesInternalRequest::builder().account_id("not-a-number".to_string()).build();
+    assert!(result.is_err(), "Building a request with an invalid account id must fail");
+}
+
+/// CreateAccountAlias on an account that has no alias sets it; ListAccountAliases reflects the
+/// new alias.
+pub async fn test_create_account_alias_simple(pool: &sqlx::PgPool) {
+    // 100000000001 currently has no alias.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateAccountAliasInternalRequest::builder()
+        .account_id("100000000001".to_string())
+        .account_alias("my-new-alias".to_string())
+        .build()
+        .expect("Failed to build CreateAccountAliasInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to create account alias");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListAccountAliasesInternalRequest::builder()
+        .account_id("100000000001".to_string())
+        .build()
+        .expect("Failed to build ListAccountAliasesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list account aliases after create");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert_eq!(resp.account_aliases, vec!["my-new-alias".to_string()]);
+}
+
+/// CreateAccountAlias on an account that already has an alias replaces it; AWS accounts only
+/// support a single alias.
+pub async fn test_create_account_alias_replaces(pool: &sqlx::PgPool) {
+    // 100000000002 currently has alias "example-corp".
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateAccountAliasInternalRequest::builder()
+        .account_id("100000000002".to_string())
+        .account_alias("replacement-alias".to_string())
+        .build()
+        .expect("Failed to build CreateAccountAliasInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to replace account alias");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListAccountAliasesInternalRequest::builder()
+        .account_id("100000000002".to_string())
+        .build()
+        .expect("Failed to build ListAccountAliasesInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect("Failed to list account aliases after replace");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert_eq!(resp.account_aliases, vec!["replacement-alias".to_string()]);
+}
+
+/// CreateAccountAlias on a nonexistent account must fail with NoSuchEntity.
+pub async fn test_create_account_alias_nonexistent_account(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = CreateAccountAliasInternalRequest::builder()
+        .account_id("999999999999".to_string())
+        .account_alias("orphan-alias".to_string())
+        .build()
+        .expect("Failed to build CreateAccountAliasInternalRequest")
+        .execute(&mut tx)
+        .await
+        .expect_err("CreateAccountAlias on a nonexistent account must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// CreateAccountAlias with an alias that violates the format rules must fail with
+/// ValidationError. The Smithy regex rejects uppercase, so this is caught by the builder.
+pub fn test_create_account_alias_invalid_alias() {
+    let result = CreateAccountAliasInternalRequest::builder()
+        .account_id("100000000001".to_string())
+        .account_alias("BadAlias".to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid alias must fail");
+}
+
+/// Building a CreateAccountAlias request with an invalid account id must fail before touching
+/// the database.
+pub fn test_create_account_alias_invalid_account_id() {
+    let result = CreateAccountAliasInternalRequest::builder()
+        .account_id("12345".to_string())
+        .account_alias("valid-alias".to_string())
+        .build();
+    assert!(result.is_err(), "Building a request with an invalid account id must fail");
 }
