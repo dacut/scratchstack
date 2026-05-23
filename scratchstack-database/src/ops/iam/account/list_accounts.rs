@@ -130,7 +130,7 @@ pub async fn list_accounts(
 
 #[cfg(test)]
 mod tests {
-    use {super::*, scratchstack_shapes_iam::types::ListAccountsFilter};
+    use super::*;
 
     // -- ListAccountsFilterName::from_str -------------------------------------
 
