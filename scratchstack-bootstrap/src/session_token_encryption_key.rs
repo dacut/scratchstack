@@ -39,11 +39,11 @@ pub(crate) struct CreateSessionTokenEncryptionKeyCommand {
 #[derive(Debug, Parser)]
 pub(crate) struct ListSessionTokenEncryptionKeysCommand {
     /// Filters to apply when listing session token encryption keys. Each filter is a
-    /// `Name=<filter-name>,Values=<fitler-values>` structure.
+    /// `Name=<filter-name>,Values=<filter-values>` structure.
     ///
-    /// Valid filter names are `issue-valid-start-time`, `issue-valid-end-time`,
-    /// `accept-valid-start-time`, and `accept-valid-end-time`. The corresponding filter values are
-    /// RFC3339 timestamps.
+    /// Valid filter names are `issue-valid-from-start-time`, `issue-valid-from-end-time`,
+    /// `issue-expires-at-start-time`, `issue-expires-at-end-time`, `accept-expires-at-start-time`,
+    /// and `accept-expires-at-end-time`. The corresponding filter values are RFC3339 timestamps.
     #[clap(long, num_args = 1..)]
     pub filters: Vec<String>,
 
