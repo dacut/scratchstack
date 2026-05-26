@@ -10,11 +10,9 @@ edition.workspace = true
 version.workspace = true
 
 [features]
-default = ["dump", "gsk-direct", "iam", "load", "sts", "utils"]
-dump = []
+default = ["gsk-direct", "iam", "sts", "utils"]
 gsk-direct = ["iam", "dep:scratchstack-arn"]
 iam = ["dep:scratchstack-aspen", "dep:scratchstack-shapes-iam"]
-load = []
 sts = ["dep:scratchstack-shapes-sts"]
 utils = ["dep:postgresql_commands", "dep:postgresql_embedded", "dep:tempfile"]
 
