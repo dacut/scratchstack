@@ -70,9 +70,7 @@ fn generate_sts_shapes() {
     model.generate(&mut writers).expect("Failed to generate shapes");
 }
 
-/// Returns a name-to-definition map of the common exception types listed in the
-/// [AWS IAM API Reference](https://docs.aws.amazon.com/IAM/latest/APIReference/CommonErrors.html)
-/// but are not included in the model for some reason.
+/// Returns a name-to-definition map of common AWSQuery exception types that are missing from the model.
 fn get_common_exception_shapes() -> JsonValue {
     json!({
         "com.amazonaws.sts#AccessDeniedException": {
