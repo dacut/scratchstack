@@ -109,15 +109,9 @@ pub(crate) fn list_session_token_encryption_keys_filters_from_shorthand(
 
     for value in values {
         let value = value.as_ref();
-        let parsed = parse_shorthand(value)
-            .map_err(|e| {
-                IamError::from(
-                    ValidationError::builder().message(format!("Invalid filter format: {value:?}: {e}")).build(),
-                )
-            })
-            .map_err(|e| {
-                ValidationError::builder().message(format!("Invalid filter format: {value:?}: {e}")).build()
-            })?;
+        let parsed = parse_shorthand(value).map_err(|e| {
+            IamError::from(ValidationError::builder().message(format!("Invalid filter format: {value:?}: {e}")).build())
+        })?;
 
         match parsed {
             ShorthandValue::List(values) => {
