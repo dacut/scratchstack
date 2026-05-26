@@ -1,9 +1,10 @@
 use {
-    crate::run,
+    crate::{run, session_token_encryption_key::list_session_token_encryption_keys_filters_from_shorthand},
     aws_smithy_types::error::metadata::ProvideErrorMetadata,
+    chrono::{DateTime, Utc},
     pretty_assertions::assert_eq,
     scratchstack_database::utils::TempDatabase,
-    scratchstack_shapes_iam::error_meta::Error as IamError,
+    scratchstack_shapes_iam::{error_meta::Error as IamError, types::ListSessionTokenEncryptionKeysFilterName},
     serde_json::Value as JsonValue,
     std::{collections::HashSet, ffi::OsString, future::Future},
 };
@@ -27,6 +28,7 @@ async fn test_ssdb_ops() {
     test_group_membership(&database).await;
     test_roles(&database).await;
     test_policy_attachments(&database).await;
+    test_session_token_encryption_keys(&database).await;
 }
 
 async fn test_migrate_database(database: &TempDatabase) {
@@ -6191,6 +6193,326 @@ async fn test_policy_attachments(database: &TempDatabase) {
     assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
 }
 
+async fn test_session_token_encryption_keys(database: &TempDatabase) {
+    let port = database.port_str();
+
+    // Create a key with the minimum set of arguments. The default lifetime fills in the other timestamps.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-session-token-encryption-key",
+            "--issue-valid-from",
+            "2030-01-01T00:00:00Z",
+        ])
+        .await
+        .expect("Failed to create session token encryption key with minimum args");
+    let json: JsonValue =
+        serde_json::from_str(&result).expect("Failed to parse create-session-token-encryption-key output as JSON");
+    let key =
+        json.get("SessionTokenEncryptionKey").expect("SessionTokenEncryptionKey should be present in create response");
+    let key_id = key
+        .get("SessionTokenEncryptionKeyId")
+        .and_then(JsonValue::as_str)
+        .expect("SessionTokenEncryptionKeyId should be a string");
+    assert!(key_id.starts_with("STEK"), "Key id should start with STEK, got {key_id}");
+    assert_eq!(key.get("EncryptionAlgorithm").and_then(JsonValue::as_str), Some("Aes256Gcm"));
+    assert_eq!(parse_dt(key, "IssueValidFrom"), "2030-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
+    // Default issue lifetime is 24h, default accept extends by max session duration (12h) + 15m skew.
+    assert_eq!(parse_dt(key, "IssueExpiresAt"), "2030-01-02T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
+    assert_eq!(parse_dt(key, "AcceptExpiresAt"), "2030-01-02T12:15:00Z".parse::<DateTime<Utc>>().unwrap());
+    let key1_id = key_id.to_string();
+
+    // Create a key with all of the optional arguments specified.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-session-token-encryption-key",
+            "--encryption-algorithm",
+            "AES256-GCM",
+            "--issue-valid-from",
+            "2030-02-01T00:00:00Z",
+            "--issue-expires-at",
+            "2030-02-08T00:00:00Z",
+            "--accept-expires-at",
+            "2030-02-09T00:00:00Z",
+        ])
+        .await
+        .expect("Failed to create session token encryption key with full args");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse full-args create output as JSON");
+    let key = json.get("SessionTokenEncryptionKey").expect("SessionTokenEncryptionKey should be present");
+    assert_eq!(parse_dt(key, "IssueValidFrom"), "2030-02-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
+    assert_eq!(parse_dt(key, "IssueExpiresAt"), "2030-02-08T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
+    assert_eq!(parse_dt(key, "AcceptExpiresAt"), "2030-02-09T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
+    let key2_id = key
+        .get("SessionTokenEncryptionKeyId")
+        .and_then(JsonValue::as_str)
+        .expect("Key id should be a string")
+        .to_string();
+
+    // issue_expires_at < issue_valid_from must fail with ValidationError.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-session-token-encryption-key",
+            "--issue-valid-from",
+            "2030-03-01T00:00:00Z",
+            "--issue-expires-at",
+            "2030-02-01T00:00:00Z",
+        ])
+        .await
+        .expect_err("issue-expires-at before issue-valid-from should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // accept_expires_at < issue_expires_at must fail with ValidationError.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-session-token-encryption-key",
+            "--issue-valid-from",
+            "2030-04-01T00:00:00Z",
+            "--issue-expires-at",
+            "2030-04-15T00:00:00Z",
+            "--accept-expires-at",
+            "2030-04-10T00:00:00Z",
+        ])
+        .await
+        .expect_err("accept-expires-at before issue-expires-at should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // List with no filters; should include both keys we created above.
+    let result = database
+        .run(["ssbs", "--port", &port, "--username", "scratchstack", "list-session-token-encryption-keys"])
+        .await
+        .expect("Failed to list session token encryption keys");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse list output as JSON");
+    let keys = json
+        .get("SessionTokenEncryptionKeys")
+        .and_then(JsonValue::as_array)
+        .expect("SessionTokenEncryptionKeys should be a JSON array");
+    let listed_ids: HashSet<String> =
+        keys.iter().filter_map(|k| k.get("SessionTokenEncryptionKeyId")?.as_str().map(str::to_string)).collect();
+    assert!(listed_ids.contains(&key1_id), "Listing should include {key1_id}");
+    assert!(listed_ids.contains(&key2_id), "Listing should include {key2_id}");
+
+    // List with a filter that only matches the second key (issue_valid_from >= 2030-02-01).
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-session-token-encryption-keys",
+            "--filters",
+            "Name=issue-valid-from-start-time,Values=2030-02-01T00:00:00Z",
+        ])
+        .await
+        .expect("Failed to list session token encryption keys with filter");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse filtered list output as JSON");
+    let keys = json
+        .get("SessionTokenEncryptionKeys")
+        .and_then(JsonValue::as_array)
+        .expect("SessionTokenEncryptionKeys should be a JSON array");
+    let filtered_ids: HashSet<String> =
+        keys.iter().filter_map(|k| k.get("SessionTokenEncryptionKeyId")?.as_str().map(str::to_string)).collect();
+    assert!(filtered_ids.contains(&key2_id), "Filtered listing should include {key2_id}");
+    assert!(!filtered_ids.contains(&key1_id), "Filtered listing should not include {key1_id}");
+
+    // --max-items truncation: page 1 should hold exactly one entry, IsTruncated=true, and a Marker.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-session-token-encryption-keys",
+            "--max-items",
+            "1",
+        ])
+        .await
+        .expect("Failed to list with --max-items 1");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse paginated list output as JSON");
+    let keys =
+        json.get("SessionTokenEncryptionKeys").and_then(JsonValue::as_array).expect("SessionTokenEncryptionKeys array");
+    assert_eq!(keys.len(), 1, "Page should hold exactly one entry");
+    assert_eq!(json.get("IsTruncated").and_then(JsonValue::as_bool), Some(true), "Page should be truncated");
+    let marker =
+        json.get("Marker").and_then(JsonValue::as_str).expect("Marker should be returned when truncated").to_string();
+    let first_page_id = keys[0]
+        .get("SessionTokenEncryptionKeyId")
+        .and_then(JsonValue::as_str)
+        .expect("Page entry should expose key id")
+        .to_string();
+
+    // Page 2: follow the marker. Should yield the remaining key with IsTruncated=false.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-session-token-encryption-keys",
+            "--max-items",
+            "1",
+            "--marker",
+            &marker,
+        ])
+        .await
+        .expect("Failed to list second page");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse second page output");
+    let keys =
+        json.get("SessionTokenEncryptionKeys").and_then(JsonValue::as_array).expect("SessionTokenEncryptionKeys array");
+    assert_eq!(keys.len(), 1, "Second page should hold exactly one entry");
+    assert_eq!(
+        json.get("IsTruncated").and_then(JsonValue::as_bool),
+        Some(false),
+        "Second page should not be truncated"
+    );
+    assert!(json.get("Marker").is_none(), "Second page should not include a Marker");
+    let second_page_id = keys[0]
+        .get("SessionTokenEncryptionKeyId")
+        .and_then(JsonValue::as_str)
+        .expect("Second page entry should expose key id");
+    assert_ne!(second_page_id, first_page_id, "Second page should advance past the first page");
+    let paginated_ids: HashSet<String> = [first_page_id, second_page_id.to_string()].into_iter().collect();
+    assert!(paginated_ids.contains(&key1_id), "Pagination should yield {key1_id}");
+    assert!(paginated_ids.contains(&key2_id), "Pagination should yield {key2_id}");
+
+    // Invalid filter name should surface as ValidationError.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-session-token-encryption-keys",
+            "--filters",
+            "Name=not-a-real-filter,Values=2030-01-01T00:00:00Z",
+        ])
+        .await
+        .expect_err("Invalid filter name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // Malformed filter shorthand should surface as ValidationError.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "list-session-token-encryption-keys",
+            "--filters",
+            "not-a-shorthand-keyval",
+        ])
+        .await
+        .expect_err("Malformed filter shorthand should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+}
+
+#[test]
+fn list_stek_filters_empty() {
+    let filters: &[&str] = &[];
+    let result = list_session_token_encryption_keys_filters_from_shorthand(filters).expect("empty input parses");
+    assert!(result.is_empty());
+}
+
+#[test]
+fn list_stek_filters_single_map_single_value() {
+    let filters = ["Name=issue-valid-from-start-time,Values=2030-01-01T00:00:00Z"];
+    let result =
+        list_session_token_encryption_keys_filters_from_shorthand(&filters).expect("single map shorthand parses");
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].name, ListSessionTokenEncryptionKeysFilterName::IssueValidFromStartTime);
+    assert_eq!(result[0].values, vec!["2030-01-01T00:00:00Z".to_string()]);
+}
+
+#[test]
+fn list_stek_filters_single_map_multiple_values() {
+    let filters = ["Name=accept-expires-at-end-time,Values=[2030-01-01T00:00:00Z,2030-12-31T23:59:59Z]"];
+    let result =
+        list_session_token_encryption_keys_filters_from_shorthand(&filters).expect("explicit value list parses");
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].name, ListSessionTokenEncryptionKeysFilterName::AcceptExpiresAtEndTime);
+    assert_eq!(result[0].values, vec!["2030-01-01T00:00:00Z".to_string(), "2030-12-31T23:59:59Z".to_string()]);
+}
+
+#[test]
+fn list_stek_filters_top_level_list_rejected() {
+    // The shorthand grammar only allows `key=value` at the top level, so a bare `[ ... ]` cannot
+    // appear there. Filters that want multiple entries must be passed as separate CLI args.
+    let filters = ["[{Name=issue-valid-from-start-time,Values=2030-01-01T00:00:00Z},\
+          {Name=issue-valid-from-end-time,Values=2030-12-31T23:59:59Z}]"];
+    let err = list_session_token_encryption_keys_filters_from_shorthand(&filters)
+        .expect_err("top-level list shorthand is not supported");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+}
+
+#[test]
+fn list_stek_filters_multiple_input_strings() {
+    let filters = [
+        "Name=issue-valid-from-start-time,Values=2030-01-01T00:00:00Z",
+        "Name=issue-expires-at-end-time,Values=2030-06-30T00:00:00Z",
+    ];
+    let result =
+        list_session_token_encryption_keys_filters_from_shorthand(&filters).expect("multiple separate filters parse");
+    assert_eq!(result.len(), 2);
+    let names: HashSet<_> = result.iter().map(|f| f.name).collect();
+    assert!(names.contains(&ListSessionTokenEncryptionKeysFilterName::IssueValidFromStartTime));
+    assert!(names.contains(&ListSessionTokenEncryptionKeysFilterName::IssueExpiresAtEndTime));
+}
+
+#[test]
+fn list_stek_filters_malformed_shorthand() {
+    let filters = ["not-a-shorthand-keyval"];
+    let err = list_session_token_encryption_keys_filters_from_shorthand(&filters)
+        .expect_err("malformed shorthand should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+}
+
+#[test]
+fn list_stek_filters_invalid_filter_name() {
+    let filters = ["Name=not-a-real-filter,Values=2030-01-01T00:00:00Z"];
+    let err = list_session_token_encryption_keys_filters_from_shorthand(&filters)
+        .expect_err("invalid filter name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+}
+
+#[test]
+fn list_stek_filters_missing_name() {
+    let filters = ["Values=2030-01-01T00:00:00Z"];
+    let err = list_session_token_encryption_keys_filters_from_shorthand(&filters)
+        .expect_err("missing Name field should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+}
+
+#[test]
+fn list_stek_filters_unknown_field() {
+    let filters = ["Name=issue-valid-from-start-time,Values=2030-01-01T00:00:00Z,Bogus=foo"];
+    let err =
+        list_session_token_encryption_keys_filters_from_shorthand(&filters).expect_err("unknown field should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+}
+
 /// Convert a Vec<String-like> to a Vec<OsString>.
 fn cli<I, S>(args: I) -> Vec<OsString>
 where
@@ -6198,6 +6520,14 @@ where
     S: Into<OsString>,
 {
     args.into_iter().map(Into::into).collect()
+}
+
+/// Pull a JSON field, parse it as an RFC3339 `DateTime<Utc>`, and panic with context on failure.
+/// Used so the timestamp assertions don't depend on chrono's serde format choosing `Z` vs `+00:00`.
+fn parse_dt(value: &JsonValue, field: &str) -> DateTime<Utc> {
+    let raw =
+        value.get(field).and_then(JsonValue::as_str).unwrap_or_else(|| panic!("{field} should be a string in {value}"));
+    raw.parse::<DateTime<Utc>>().unwrap_or_else(|e| panic!("{field}={raw} should parse as DateTime<Utc>: {e}"))
 }
 
 /// Useful utilities to annotate to the TempDatabase type.

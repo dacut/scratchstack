@@ -19,6 +19,10 @@ pub enum TraitId {
     #[strum(serialize = "aws.auth#sigv4")]
     AwsAuthSigV4,
 
+    /// AWS SigV4a authentication trait: `aws.auth#sigv4a`
+    #[strum(serialize = "aws.auth#sigv4a")]
+    AwsAuthSigV4a,
+
     /// AWSQuery protocol marker trait: `aws.protocols#awsQuery`
     #[strum(serialize = "aws.protocols#awsQuery")]
     AwsProtocolsAwsQuery,
@@ -30,6 +34,10 @@ pub enum TraitId {
     /// Added default trait (service-generated default): `smithy.api#addedDefault`
     #[strum(serialize = "smithy.api#addedDefault")]
     SmithyApiAddedDefault,
+
+    /// Authentication trait: `smithy.api#auth`
+    #[strum(serialize = "smithy.api#auth")]
+    SmithyApiAuth,
 
     /// Default value trait: `smithy.api#default`
     #[strum(serialize = "smithy.api#default")]
@@ -62,6 +70,10 @@ pub enum TraitId {
     /// Length constraint trait: `smithy.api#length`
     #[strum(serialize = "smithy.api#length")]
     SmithyApiLength,
+
+    /// Optional authentication trait: `smithy.api#optionalAuth`
+    #[strum(serialize = "smithy.api#optionalAuth")]
+    SmithyApiOptionalAuth,
 
     /// Output marker trait: `smithy.api#output`
     #[strum(serialize = "smithy.api#output")]

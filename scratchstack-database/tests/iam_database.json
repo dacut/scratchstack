@@ -168,13 +168,14 @@
             "PolicyDocument": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"lambda:*\",\"Resource\":\"*\"}]}"
         }
     ],
-    "RoleSessionTokenKeys": [
+    "SessionTokenEncryptionKeys": [
         {
-            "RoleSessionTokenKeyId": "TK1",
+            "SessionTokenEncryptionKeyId": "TK1",
             "EncryptionAlgorithm": "AES256GCM",
             "EncryptionKey": "exampleencryptionkey",
-            "ValidFrom": "2024-01-01T00:00:00Z",
-            "ExpiresAt": "2024-01-02T00:00:00Z"
+            "IssueValidFrom": "2024-01-01T00:00:00Z",
+            "IssueExpiresAt": "2024-01-02T00:00:00Z",
+            "AcceptExpiresAt": "2024-01-02T12:00:00Z"
         }
     ]
 }

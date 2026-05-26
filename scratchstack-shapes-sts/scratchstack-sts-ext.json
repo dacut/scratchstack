@@ -1,0 +1,44 @@
+{
+    "smithy": "2.0",
+    "shapes": {
+
+        "com.amazonaws.sts#markerType": {
+            "type": "string",
+            "traits": {
+                "smithy.api#length": {
+                    "min": 1,
+                    "max": 320
+                },
+                "smithy.api#pattern": "^[\\u0020-\\u00FF]+$"
+            }
+        },
+        "com.amazonaws.sts#maxItemsType": {
+            "type": "integer",
+            "traits": {
+                "smithy.api#range": {
+                    "min": 1,
+                    "max": 1000
+                }
+            }
+        },
+        "com.amazonaws.sts#idType": {
+            "type": "string",
+            "traits": {
+                "smithy.api#length": {
+                    "min": 16,
+                    "max": 128
+                },
+                "smithy.api#pattern": "^[\\w]+$"
+            }
+        },
+        "com.amazonaws.sts#booleanType": {
+            "type": "boolean",
+            "traits": {
+                "smithy.api#default": false
+            }
+        },
+        "com.amazonaws.sts#stringType": {
+            "type": "string"
+        }
+    }
+}

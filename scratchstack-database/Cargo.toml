@@ -10,11 +10,12 @@ edition.workspace = true
 version.workspace = true
 
 [features]
-default = ["dump", "gsk-direct", "iam", "load", "utils"]
+default = ["dump", "gsk-direct", "iam", "load", "sts", "utils"]
 dump = []
 gsk-direct = ["iam", "dep:scratchstack-arn"]
 iam = ["dep:scratchstack-aspen", "dep:scratchstack-shapes-iam"]
 load = []
+sts = ["dep:scratchstack-shapes-sts"]
 utils = ["dep:postgresql_commands", "dep:postgresql_embedded", "dep:tempfile"]
 
 [dependencies]
@@ -24,6 +25,7 @@ clap = { workspace = true, optional = true, features = ["derive"] }
 chrono = { workspace = true, features = ["clock", "serde", "std"] }
 derive_builder.workspace = true
 futures.workspace = true
+hex.workspace = true
 indoc.workspace = true
 log.workspace = true
 pct-str.workspace = true
@@ -39,6 +41,7 @@ scratchstack-cli-utils.path = "../scratchstack-cli-utils"
 scratchstack-errors.path = "../scratchstack-errors"
 scratchstack-pagination.path = "../scratchstack-pagination"
 scratchstack-shapes-iam = { path = "../scratchstack-shapes-iam", optional = true }
+scratchstack-shapes-sts = { path = "../scratchstack-shapes-sts", optional = true }
 serde = { workspace = true, features = ["derive"] }
 sqlx = { workspace = true, features = [
     "chrono",

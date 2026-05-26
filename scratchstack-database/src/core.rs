@@ -1,24 +1,5 @@
 //! Database loading and dumping utilities.
-use {
-    pct_str::{PctString, UriReserved},
-    sqlx::postgres::PgConnection,
-};
-
-/// Trait that allows a model object to be dumped from a database.
-#[cfg(feature = "load")]
-pub trait Dumpable: Sized {
-    /// Dump a table containing the specified objects from the database.
-    fn dump_from(database: &mut PgConnection) -> impl std::future::Future<Output = Result<Vec<Self>, sqlx::Error>>;
-}
-
-/// Trait that allows a model object to be loaded into a database.
-#[cfg(feature = "load")]
-pub trait Loadable {
-    /// Load the model object into the database.
-    ///
-    /// On success, returns the number of records inserted into the database.
-    fn load_into(&self, conn: &mut PgConnection) -> impl std::future::Future<Output = Result<usize, sqlx::Error>>;
-}
+use pct_str::{PctString, UriReserved};
 
 /// Create a connection URL programmatically.
 #[derive(Clone, Debug, Default)]

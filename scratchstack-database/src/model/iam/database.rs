@@ -85,10 +85,6 @@ pub struct Database {
     /// IAM role inline policies
     #[serde(default)]
     pub role_inline_policies: Vec<RoleInlinePolicy>,
-
-    /// IAM role session token encryption keys
-    #[serde(default)]
-    pub role_session_token_keys: Vec<RoleSessionTokenKey>,
 }
 
 /// Migrations for the Scratchstack IAM database

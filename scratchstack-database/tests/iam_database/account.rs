@@ -1,7 +1,7 @@
 //! Account test suite.
 use {
     pretty_assertions::assert_eq,
-    scratchstack_database::ops::RequestExecutor,
+    scratchstack_database::RequestExecutor,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
