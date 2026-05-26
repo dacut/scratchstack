@@ -1,4 +1,4 @@
-//! Scratchstack bootsrap session token encryption key subcommands
+//! Scratchstack bootstrap session token encryption key subcommands
 use {
     crate::{Cli, Runnable, execute_in_transaction},
     chrono::{DateTime, Utc},
