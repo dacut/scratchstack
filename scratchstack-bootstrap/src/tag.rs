@@ -5,13 +5,13 @@ use {
         error_meta::Error as IamError,
         types::{Tag, error::ValidationError},
     },
-    std::collections::HashMap,
+    std::collections::{HashMap, HashSet},
 };
 
 /// Convert a list of shorthand values to a `Vec<Tag>`.
 pub(crate) fn tags_from_shorthand(values: &[impl AsRef<str>]) -> Result<Vec<Tag>, IamError> {
     let mut tags = Vec::with_capacity(values.len());
-    let mut tag_keys_lower = Vec::with_capacity(values.len());
+    let mut tag_keys_lower = HashSet::with_capacity(values.len());
 
     for value in values {
         let value = value.as_ref();
@@ -37,7 +37,7 @@ pub(crate) fn tags_from_shorthand(values: &[impl AsRef<str>]) -> Result<Vec<Tag>
                             .build()
                             .into());
                     }
-                    tag_keys_lower.push(tag_key_lower);
+                    tag_keys_lower.insert(tag_key_lower);
                     tags.push(tag);
                 }
             }
@@ -50,7 +50,7 @@ pub(crate) fn tags_from_shorthand(values: &[impl AsRef<str>]) -> Result<Vec<Tag>
                         .build()
                         .into());
                 }
-                tag_keys_lower.push(tag_key_lower);
+                tag_keys_lower.insert(tag_key_lower);
                 tags.push(tag);
             }
             _ => {
@@ -68,54 +68,7 @@ pub(crate) fn tags_from_shorthand(values: &[impl AsRef<str>]) -> Result<Vec<Tag>
 
 /// Convert a map of keys to shorthand values to a [`Tag`].
 fn tag_from_shorthand(map: &HashMap<String, ShorthandValue>) -> Result<Tag, IamError> {
-    let mut tag_key = None;
-    let mut tag_value = None;
-
-    for (key, value) in map {
-        match key.as_str() {
-            "Key" => {
-                tag_key = Some(value.as_str().ok_or_else(|| {
-                    IamError::from(
-                        ValidationError::builder()
-                            .message(format!("Invalid tag format: {map:?}. 'Key' must be a string"))
-                            .build(),
-                    )
-                })?);
-            }
-            "Value" => {
-                tag_value = Some(value.as_str().ok_or_else(|| {
-                    IamError::from(
-                        ValidationError::builder()
-                            .message(format!("Invalid tag format: {map:?}. 'Value' must be a string"))
-                            .build(),
-                    )
-                })?);
-            }
-            _ => {
-                return Err(ValidationError::builder()
-                    .message(format!("Invalid tag format: {map:?}. Tags must only contain 'Key' and 'Value' fields"))
-                    .build()
-                    .into());
-            }
-        }
-    }
-
-    let Some(tag_key) = tag_key else {
-        return Err(ValidationError::builder()
-            .message(format!("Invalid tag format: {map:?}. Missing 'Key' field"))
-            .build()
-            .into());
-    };
-
-    let Some(tag_value) = tag_value else {
-        return Err(ValidationError::builder()
-            .message(format!("Invalid tag format: {map:?}. Missing 'Value' field"))
-            .build()
-            .into());
-    };
-
-    Ok(Tag {
-        key: tag_key.to_string(),
-        value: tag_value.to_string(),
+    Tag::try_from(map).map_err(|e| {
+        IamError::from(ValidationError::builder().message(format!("Invalid tag format: {map:?}: {e}")).build())
     })
 }

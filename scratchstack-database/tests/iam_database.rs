@@ -17,8 +17,8 @@
 #![cfg_attr(doc, feature(doc_cfg))]
 
 use {
-    pretty_assertions::{assert_eq, assert_ne},
-    scratchstack_database::{Loadable, model::iam, utils::TempDatabase},
+    scratchstack_database::{iam::MIGRATOR, utils::TempDatabase},
+    sqlx::raw_sql,
 };
 
 #[path = "iam_database/account.rs"]
@@ -42,34 +42,26 @@ mod role;
 #[path = "iam_database/user.rs"]
 mod user;
 
+const IAM_DATA: &str = include_str!("iam_database.sql");
+
 /// Test all of the features of the database.
 ///
 /// We do this instead of more granular testing because the database we're running against is typically stateful.
 #[test_log::test(tokio::test)]
 async fn test_database() {
-    let iam_data: iam::Database =
-        serde_json::from_str(TEST_DATA).expect("Failed to deserialize test data into IAM database model");
-
     let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
     database.bootstrap().await.expect("Failed to set up, start, and bootstrap PostgreSQL database");
     let pool =
         database.get_scratchstack_pool().await.expect("Failed to get PostgreSQL connection pool for scratchstack user");
 
     let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
-    iam::MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
-    let rows_affected = iam_data.load_into(&mut c).await.expect("Failed to load IAM data into database");
-    eprintln!("Loaded {rows_affected} rows of IAM data into database");
+    MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
+    raw_sql(IAM_DATA).execute(&mut *c).await.expect("Failed to load IAM data into database");
 
     // -- SetCurrentPartition and GetCurrentPartition --------------------------
     partition::test_invalid_set_current_partition(&pool).await;
     partition::test_set_current_partition(&pool).await;
     partition::test_get_current_partition(&pool).await;
-
-    let iam_dump = iam::Database::dump_from(&mut c).await.expect("Failed to dump IAM data from database");
-    assert_ne!(iam_data, iam_dump, "Dumped IAM data should not be equal to original IAM data due to created_at fields");
-    let iam_dump2 =
-        iam::Database::dump_from(&mut c).await.expect("Failed to dump IAM data from database a second time");
-    assert_eq!(iam_dump, iam_dump2, "Dumped IAM data should be equal across multiple dumps");
 
     // -- CreateAccountRequest -------------------------------------------------
     account::test_create_account_specific_id(&pool).await;
@@ -527,7 +519,5 @@ async fn test_database() {
     role::test_delete_role_policy_nonexistent_role(&pool).await;
     role::test_delete_role_policy_invalid_name();
 
-    iam::MIGRATOR.undo(&mut *c, 0).await.expect("Failed to undo database migrations");
+    MIGRATOR.undo(&mut *c, 0).await.expect("Failed to undo database migrations");
 }
-
-const TEST_DATA: &str = include_str!("iam_database.json");

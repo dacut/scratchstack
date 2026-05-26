@@ -1,8 +1,10 @@
-//! Constants (and quasi-constants) used for IAM related activities.
-
+//! Constants (and quasi-constants) used for IAM-related activities.
 use {regex::Regex, scratchstack_pagination::PAGINATION_KEY_SIZE, std::sync::LazyLock, uuid::Uuid};
 
 // True constants
+
+/// The number of bytes in an AES256 key.
+pub(crate) const AES256_KEY_SIZE_BYTES: usize = 32;
 
 /// The resource prefix for IAM groups in an ARN.
 pub(crate) const ARN_RESOURCE_PREFIX_GROUP: &str = "group/";
@@ -25,6 +27,9 @@ pub(crate) const AWS_ACCOUNT_ID: &str = "aws";
 /// The numeric account id for the AWS account.
 pub(crate) const AWS_ACCOUNT_ID_NUMERIC: &str = "000000000000";
 
+/// Default lifetime for session encryption tokens (1 day).
+pub(crate) const DEFAULT_SESSION_ENCRYPTION_TOKEN_LIFETIME_SECS: i64 = 24 * 60 * 60;
+
 /// The current version of the IAM API implemented.
 pub(crate) const IAM_API_VERSION: &str = "2010-05-08";
 
@@ -33,6 +38,12 @@ pub const MSG_ACCESS_KEY_PROVIDED_DOES_NOT_EXIST: &str = "The AWS access key pro
 
 /// The maximum number of versions allowed per managed policy.
 pub(crate) const MAX_POLICY_VERSIONS: i64 = 5;
+
+/// The maximum allowed duration for sessions (12 hours).
+pub(crate) const MAX_SESSION_TOKEN_DURATION_SECS: i64 = 12 * 60 * 60;
+
+/// The maximum allowed timestamp error for decrypting session tokens (15 minutes).
+pub(crate) const MAX_SESSION_TOKEN_TIMESTAMP_ERROR_SECS: i64 = 15 * 60;
 
 /// Error message: `"Internal failure"`.
 pub(crate) const MSG_INTERNAL_FAILURE: &str = "Internal failure";
@@ -81,6 +92,9 @@ pub(crate) const OP_LIST_ROLES: &str = "ListRoles";
 
 /// Operation name for ListRoleTags
 pub(crate) const OP_LIST_ROLE_TAGS: &str = "ListRoleTags";
+
+/// Operation name for ListSessionTokenEncryptionKeys
+pub(crate) const OP_LIST_SESSION_TOKEN_ENCRYPTION_KEYS: &str = "ListSessionTokenEncryptionKeys";
 
 /// Operation name for ListUserPolicies
 pub(crate) const OP_LIST_USER_POLICIES: &str = "ListUserPolicies";

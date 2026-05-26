@@ -1,0 +1,11 @@
+ALTER TABLE iam.session_token_encryption_keys
+RENAME COLUMN session_token_encryption_key_id TO role_session_token_key_id;
+ALTER TABLE iam.session_token_encryption_keys
+RENAME COLUMN issue_valid_from TO valid_from;
+ALTER TABLE iam.session_token_encryption_keys
+RENAME COLUMN issue_expires_at TO expires_at;
+ALTER TABLE iam.session_token_encryption_keys
+DROP COLUMN accept_expires_at;
+ALTER TABLE iam.session_token_encryption_keys
+DROP CONSTRAINT stek_encryption_algorithm_check;
+ALTER TABLE iam.session_token_encryption_keys RENAME TO role_session_token_keys;

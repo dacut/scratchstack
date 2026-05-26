@@ -14,6 +14,7 @@ members = [
     "scratchstack-service-sts",
     "scratchstack-shapegen",
     "scratchstack-shapes-iam",
+    "scratchstack-shapes-sts",
 ]
 resolver = "2"
 

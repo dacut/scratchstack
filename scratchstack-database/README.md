@@ -14,7 +14,7 @@ Scratchstack native database operations and types
 * [x] AttachUserPolicy
 * [ ] ChangePassword
 * [x] CreateAccessKey
-* [ ] CreateAccountAlias
+* [x] CreateAccountAlias
 * [ ] CreateDelegationRequest
 * [x] CreateGroup
 * [ ] CreateInstanceProfile
@@ -95,7 +95,7 @@ Scratchstack native database operations and types
 * [x] GetUser
 * [x] GetUserPolicy
 * [x] ListAccessKeys
-* [ ] ListAccountAliases
+* [x] ListAccountAliases
 * [x] ListAttachedGroupPolicies
 * [x] ListAttachedRolePolicies
 * [x] ListAttachedUserPolicies

@@ -44,6 +44,9 @@ pub enum IamResourceType {
     /// The prefix for IAM roles: `AROA`.
     Role,
 
+    /// A session token encryption key. This is a Scratchstack-specific resource type: `STEK`.
+    SessionTokenEncryptionKey,
+
     /// SSH public key (`APKA`).
     SshPublicKey,
 
@@ -80,6 +83,7 @@ impl IamResourceType {
             Self::ManagedPolicyVersion => "ANVA",
             Self::PublicKey => "APKA",
             Self::Role => "AROA",
+            Self::SessionTokenEncryptionKey => "STEK",
             Self::SshPublicKey => "APKA",
             Self::TemporaryAccessKey => "ASIA",
             Self::User => "AIDA",
@@ -101,6 +105,7 @@ impl FromStr for IamResourceType {
             "ANPA" => Ok(Self::ManagedPolicy),
             "ANVA" => Ok(Self::ManagedPolicyVersion),
             "AROA" => Ok(Self::Role),
+            "STEK" => Ok(Self::SessionTokenEncryptionKey),
             "APKA" => Ok(Self::SshPublicKey),
             "ASIA" => Ok(Self::TemporaryAccessKey),
             "AIDA" => Ok(Self::User),

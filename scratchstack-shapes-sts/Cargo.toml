@@ -1,0 +1,39 @@
+[package]
+name = "scratchstack-shapes-sts"
+description = "AWS Security Token Service shapes for Scratchstack services"
+
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[features]
+default = ["clap"]
+clap = ["dep:clap", "dep:scratchstack-cli-utils"]
+
+[build-dependencies]
+env_logger.workspace = true
+scratchstack-shapegen = { path = "../scratchstack-shapegen" }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+[dependencies]
+anyhow.workspace = true
+aws-smithy-runtime-api.workspace = true
+aws-smithy-types.workspace = true
+aws-types.workspace = true
+chrono = { workspace = true, features = ["serde"] }
+clap = { workspace = true, optional = true, features = ["derive"] }
+derive_builder.workspace = true
+regex.workspace = true
+scratchstack-cli-utils = { path = "../scratchstack-cli-utils", optional = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+
+[dev-dependencies]
+chrono = { workspace = true, features = ["clock"] }
+env_logger.workspace = true
+regex.workspace = true
+test-log.workspace = true

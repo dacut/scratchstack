@@ -18,6 +18,7 @@ mod migrate;
 mod partition;
 mod policy;
 mod role;
+mod session_token_encryption_key;
 pub(crate) mod tag;
 mod user;
 
@@ -25,47 +26,10 @@ mod user;
 mod tests;
 
 use {
-    crate::{
-        account::{
-            CreateAccountAliasInternalCommand, CreateAccountCommand, ListAccountAliasesInternalCommand,
-            ListAccountsCommand,
-        },
-        group::{
-            AddUserToGroupInternalCommand, AttachGroupPolicyInternalCommand, CreateGroupInternalCommand,
-            DeleteGroupInternalCommand, DeleteGroupPolicyInternalCommand, DetachGroupPolicyInternalCommand,
-            GetGroupInternalCommand, GetGroupPolicyInternalCommand, ListAttachedGroupPoliciesInternalCommand,
-            ListGroupPoliciesInternalCommand, ListGroupsForUserInternalCommand, ListGroupsInternalCommand,
-            PutGroupPolicyInternalCommand, RemoveUserFromGroupInternalCommand, UpdateGroupInternalCommand,
-        },
-        partition::{GetCurrentPartitionCommand, SetCurrentPartitionCommand},
-        policy::{
-            CreatePolicyInternalCommand, CreatePolicyVersionCommand, DeletePolicyCommand, DeletePolicyVersionCommand,
-            GetPolicyCommand, GetPolicyVersionCommand, ListEntitiesForPolicyCommand, ListPoliciesInternalCommand,
-            ListPolicyTagsCommand, ListPolicyVersionsCommand, SetDefaultPolicyVersionCommand, TagPolicyCommand,
-            UntagPolicyCommand,
-        },
-        role::{
-            AttachRolePolicyInternalCommand, CreateRoleInternalCommand, DeleteRoleInternalCommand,
-            DeleteRolePermissionsBoundaryInternalCommand, DeleteRolePolicyInternalCommand,
-            DetachRolePolicyInternalCommand, GetRoleInternalCommand, GetRolePolicyInternalCommand,
-            ListAttachedRolePoliciesInternalCommand, ListRolePoliciesInternalCommand, ListRoleTagsInternalCommand,
-            ListRolesInternalCommand, PutRolePermissionsBoundaryInternalCommand, PutRolePolicyInternalCommand,
-            TagRoleInternalCommand, UntagRoleInternalCommand, UpdateRoleDescriptionInternalCommand,
-            UpdateRoleInternalCommand,
-        },
-        user::{
-            AttachUserPolicyInternalCommand, CreateAccessKeyInternalCommand, CreateUserInternalCommand,
-            DeleteAccessKeyInternalCommand, DeleteUserInternalCommand, DeleteUserPermissionsBoundaryInternalCommand,
-            DeleteUserPolicyInternalCommand, DetachUserPolicyInternalCommand, GetUserInternalCommand,
-            GetUserPolicyInternalCommand, ListAccessKeysInternalCommand, ListAttachedUserPoliciesInternalCommand,
-            ListUserPoliciesInternalCommand, ListUserTagsInternalCommand, ListUsersInternalCommand,
-            PutUserPermissionsBoundaryInternalCommand, PutUserPolicyInternalCommand, TagUserInternalCommand,
-            UntagUserInternalCommand, UpdateAccessKeyInternalCommand, UpdateUserInternalCommand,
-        },
-    },
+    crate::{account::*, group::*, partition::*, policy::*, role::*, session_token_encryption_key::*, user::*},
     aws_smithy_types::error::metadata::ProvideErrorMetadata,
     clap::{Parser, Subcommand},
-    scratchstack_database::ops::RequestExecutor,
+    scratchstack_database::RequestExecutor,
     scratchstack_shapes_iam::{error_meta::Error as IamError, types::error::InternalFailure},
     sqlx::{
         Error as SqlxError,
@@ -170,6 +134,10 @@ enum Commands {
     /// Create an IAM role in an account.
     #[command(name = "create-role")]
     CreateRole(CreateRoleInternalCommand),
+
+    /// Create a session token encryption key.
+    #[command(name = "create-session-token-encryption-key")]
+    CreateSessionTokenEncryptionKey(CreateSessionTokenEncryptionKeyCommand),
 
     /// Create an IAM user in an account.
     #[command(name = "create-user")]
@@ -336,6 +304,10 @@ enum Commands {
     #[command(name = "list-role-tags")]
     ListRoleTags(ListRoleTagsInternalCommand),
 
+    /// List session token encryption keys available.
+    #[command(name = "list-session-token-encryption-keys")]
+    ListSessionTokenEncryptionKeys(ListSessionTokenEncryptionKeysCommand),
+
     /// List the names of inline policies attached to an IAM user.
     #[command(name = "list-user-policies")]
     ListUserPolicies(ListUserPoliciesInternalCommand),
@@ -447,6 +419,7 @@ impl Commands {
             Commands::CreatePolicy(_) => "CreatePolicy",
             Commands::CreatePolicyVersion(_) => "CreatePolicyVersion",
             Commands::CreateRole(_) => "CreateRole",
+            Commands::CreateSessionTokenEncryptionKey(_) => "CreateSessionTokenEncryptionKey",
             Commands::CreateUser(_) => "CreateUser",
             Commands::DeleteAccessKey(_) => "DeleteAccessKey",
             Commands::DeleteGroup(_) => "DeleteGroup",
@@ -487,6 +460,7 @@ impl Commands {
             Commands::ListRolePolicies(_) => "ListRolePolicies",
             Commands::ListRoles(_) => "ListRoles",
             Commands::ListRoleTags(_) => "ListRoleTags",
+            Commands::ListSessionTokenEncryptionKeys(_) => "ListSessionTokenEncryptionKeys",
             Commands::ListUserPolicies(_) => "ListUserPolicies",
             Commands::ListUsers(_) => "ListUsers",
             Commands::ListUserTags(_) => "ListUserTags",
@@ -604,6 +578,13 @@ where
             })?
         }
         Commands::CreateRole(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::CreateSessionTokenEncryptionKey(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
@@ -842,6 +823,13 @@ where
             })?
         }
         Commands::ListRoleTags(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::ListSessionTokenEncryptionKeys(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");

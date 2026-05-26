@@ -69,9 +69,10 @@ pub(crate) struct CreateUserInternalCommand {
     #[clap(long)]
     pub permissions_boundary: Option<String>,
 
-    /// A list of tags to associate with the user. Each tag is a key-value pair separated by an
-    /// equals sign (`=`), and multiple tags are separated by commas (`,`). For example:
-    /// `Key1=Value1,Key2=Value2`.
+    /// A list of tags to associate with the user. Each tag is a `Key=<name>,Value=<value>`
+    /// structure; multiple tags may be passed in a single `--tags` argument.
+    ///
+    /// Example: `--tags Key=Environment,Value=Production Key=Team,Value=Platform`
     #[clap(long, num_args = 1..)]
     pub tags: Vec<String>,
 }

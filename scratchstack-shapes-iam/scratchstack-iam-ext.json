@@ -13,6 +13,18 @@
                 "smithy.api#documentation": "Creates a new AWS account."
             }
         },
+        "com.amazonaws.iam#CreateSessionTokenEncryptionKey": {
+            "type": "operation",
+            "input": {
+                "target": "com.amazonaws.iam#CreateSessionTokenEncryptionKeyRequest"
+            },
+            "output": {
+                "target": "com.amazonaws.iam#CreateSessionTokenEncryptionKeyResponse"
+            },
+            "traits": {
+                "smithy.api#documentation": "Creates a symmetric encryption key used to encrypt and decrypt the temporary security credentials."
+            }
+        },
         "com.amazonaws.iam#GetCurrentPartition": {
             "type": "operation",
             "input": {
@@ -35,6 +47,18 @@
             },
             "traits": {
                 "smithy.api#documentation": "List known AWS accounts."
+            }
+        },
+        "com.amazonaws.iam#ListSessionTokenEncryptionKeys": {
+            "type": "operation",
+            "input": {
+                "target": "com.amazonaws.iam#ListSessionTokenEncryptionKeysRequest"
+            },
+            "output": {
+                "target": "com.amazonaws.iam#ListSessionTokenEncryptionKeysResponse"
+            },
+            "traits": {
+                "smithy.api#documentation": "Returns a list of all symmetric encryption keys available for encrypting and decrypting the temporary security credentials."
             }
         },
         "com.amazonaws.iam#SetCurrentPartition": {
@@ -88,6 +112,54 @@
                     "target": "com.amazonaws.iam#account",
                     "traits": {
                         "smithy.api#documentation": "<p>Contains details about the newly created account.</p>",
+                        "smithy.api#required": {}
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#output": {}
+            }
+        },
+        "com.amazonaws.iam#CreateSessionTokenEncryptionKeyRequest": {
+            "type": "structure",
+            "members": {
+                "EncryptionAlgorithm": {
+                    "target": "com.amazonaws.iam#SessionTokenEncryptionAlgorithm",
+                    "traits": {
+                        "smithy.api#documentation": "The encryption algorithm to use when encrypting the session token. The only valid value is `Aes256Gcm`."
+                    }
+                },
+                "IssueValidFrom": {
+                    "target": "com.amazonaws.iam#dateType",
+                    "traits": {
+                        "smithy.api#documentation": "The date and time when the key can be used to encrypt session tokens.",
+                        "smithy.api#required": {}
+                    }
+                },
+                "IssueExpiresAt": {
+                    "target": "com.amazonaws.iam#dateType",
+                    "traits": {
+                        "smithy.api#documentation": "The date and time when the key can no longer be used to encrypt session tokens."
+                    }
+                },
+                "AcceptExpiresAt": {
+                    "target": "com.amazonaws.iam#dateType",
+                    "traits": {
+                        "smithy.api#documentation": "The date and time when key can no longer be used to decrypt session tokens."
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#input": {}
+            }
+        },
+        "com.amazonaws.iam#CreateSessionTokenEncryptionKeyResponse": {
+            "type": "structure",
+            "members": {
+                "SessionTokenEncryptionKey": {
+                    "target": "com.amazonaws.iam#SessionTokenEncryptionKey",
+                    "traits": {
+                        "smithy.api#documentation": "The session token encryption key that was created.",
                         "smithy.api#required": {}
                     }
                 }
@@ -168,6 +240,117 @@
             },
             "traits": {
                 "smithy.api#output": {}
+            }
+        },
+        "com.amazonaws.iam#ListSessionTokenEncryptionKeysRequest": {
+            "type": "structure",
+            "members": {
+                "Filters": {
+                    "target": "com.amazonaws.iam#listSessionTokenEncryptionKeysFilterType",
+                    "traits": {
+                        "smithy.api#documentation": "A list of filters to apply when listing session token encryption keys."
+                    }
+                },
+                "MaxItems": {
+                    "target": "com.amazonaws.iam#maxItemsType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>Use this when paginating results to indicate the maximum number of items you want in the response. If additional items exist beyond the maximum you specify, the <code>IsTruncated</code> response element is <code>true</code> and <code>Marker</code> contains a value to include in the subsequent call that tells the service where to continue.</p><p>If you do not include this parameter, the number of items defaults to 100. Note that IAM might return fewer results, even when there are more results available.</p>"
+                    }
+                },
+                "Marker": {
+                    "target": "com.amazonaws.iam#markerType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>Use this when paginating results when you receive a response indicating that the results are truncated. Set it to the value of the <code>Marker</code> element in the response that you received to indicate where the next call should start.</p>"
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#input": {}
+            }
+        },
+        "com.amazonaws.iam#ListSessionTokenEncryptionKeysResponse": {
+            "type": "structure",
+            "members": {
+                "SessionTokenEncryptionKeys": {
+                    "target": "com.amazonaws.iam#sessionTokenEncryptionKeyListType",
+                    "traits": {
+                        "smithy.api#documentation": "A list of session token encryption keys that are available for encrypting and decrypting the temporary security credentials."
+                    }
+                },
+                "IsTruncated": {
+                    "target": "com.amazonaws.iam#booleanType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>A flag that indicates whether there are more items to return. If your results were truncated, you can make a subsequent pagination request using the <code>Marker</code> request parameter to retrieve more items. Note that IAM might return fewer results, even when there are more results available. We recommend that you check <code>IsTruncated</code> after every call to ensure that you receive all your results.</p>"
+                    }
+                },
+                "Marker": {
+                    "target": "com.amazonaws.iam#markerType",
+                    "traits": {
+                        "smithy.api#documentation": "<p>If <code>IsTruncated</code> is <code>true</code>, this element is present and contains the value to use for the <code>Marker</code> parameter in a subsequent pagination request.</p>"
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#output": {}
+            }
+        },
+        "com.amazonaws.iam#SessionTokenEncryptionAlgorithm": {
+            "type": "enum",
+            "members": {
+                "Aes256Gcm": {
+                    "target": "smithy.api#Unit",
+                    "traits": {
+                        "smithy.api#documentation": "The AES256-GCM encryption algorithm.",
+                        "smithy.api#enumValue": "AES256-GCM"
+                    }
+                }
+            }
+        },
+        "com.amazonaws.iam#SessionTokenEncryptionKey": {
+            "type": "structure",
+            "members": {
+                "SessionTokenEncryptionKeyId": {
+                    "target": "com.amazonaws.iam#idType",
+                    "traits": {
+                        "smithy.api#documentation": "The unique identifier for the session token key.",
+                        "smithy.api#required": {}
+                    }
+                },
+                "EncryptionAlgorithm": {
+                    "target": "com.amazonaws.iam#SessionTokenEncryptionAlgorithm",
+                    "traits": {
+                        "smithy.api#documentation": "The encryption algorithm used to encrypt the session token. The only valid value is `AES256-GCM`.",
+                        "smithy.api#required": {}
+                    }
+                },
+                "IssueValidFrom": {
+                    "target": "com.amazonaws.iam#dateType",
+                    "traits": {
+                        "smithy.api#documentation": "The date and time when the key can be used to encrypt session tokens.",
+                        "smithy.api#required": {}
+                    }
+                },
+                "IssueExpiresAt": {
+                    "target": "com.amazonaws.iam#dateType",
+                    "traits": {
+                        "smithy.api#documentation": "The date and time when the key can no longer be used to encrypt session tokens.",
+                        "smithy.api#required": {}
+                    }
+                },
+                "AcceptExpiresAt": {
+                    "target": "com.amazonaws.iam#dateType",
+                    "traits": {
+                        "smithy.api#documentation": "The date and time when key can no longer be used to decrypt session tokens.",
+                        "smithy.api#required": {}
+                    }
+                },
+                "CreatedAt": {
+                    "target": "com.amazonaws.iam#dateType",
+                    "traits": {
+                        "smithy.api#documentation": "The date and time when the key was created.",
+                        "smithy.api#required": {}
+                    }
+                }
             }
         },
         "com.amazonaws.iam#SetCurrentPartitionRequest": {
@@ -310,10 +493,99 @@
         "com.amazonaws.iam#listAccountsFilterValueType": {
             "type": "string"
         },
+        "com.amazonaws.iam#listSessionTokenEncryptionKeysFilter": {
+            "type": "structure",
+            "members": {
+                "Name": {
+                    "target": "com.amazonaws.iam#listSessionTokenEncryptionKeysFilterName",
+                    "traits": {
+                        "smithy.api#documentation": "The name of the filter. Valid values are <code>issue-valid-from-start-time</code>, <code>issue-valid-from-end-time</code>, <code>issue-expires-at-start-time</code>, <code>issue-expires-at-end-time</code>, <code>accept-expires-at-start-time</code>, and <code>accept-expires-at-end-time</code>. These filter names are used to filter the session token keys based on their valid from and expires at dates.",
+                        "smithy.api#required": {}
+                    }
+                },
+                "Values": {
+                    "target": "com.amazonaws.iam#listSessionTokenEncryptionKeysFilterValueListType",
+                    "traits": {
+                        "smithy.api#documentation": "The filter values. The valid values for this filter depend on the filter name. For the time related filters, the valid value is a date and time in RFC3339 format.",
+                        "smithy.api#required": {}
+                    }
+                }
+            }
+        },
+        "com.amazonaws.iam#listSessionTokenEncryptionKeysFilterName": {
+            "type": "enum",
+            "members": {
+                "IssueValidFromStartTime": {
+                    "target": "smithy.api#Unit",
+                    "traits": {
+                        "smithy.api#documentation": "The <code>issue-valid-from-start-time</code> filter returns session token keys with a IssueValidFrom timestamp greater than or equal to the specified timestamp.",
+                        "smithy.api#enumValue": "issue-valid-from-start-time"
+                    }
+                },
+                "IssueValidFromEndTime": {
+                    "target": "smithy.api#Unit",
+                    "traits": {
+                        "smithy.api#documentation": "The <code>issue-valid-from-end-time</code> filter returns session token keys with a IssueValidFrom timestamp less than or equal to the specified timestamp.",
+                        "smithy.api#enumValue": "issue-valid-from-end-time"
+                    }
+                },
+                "IssueExpiresAtStartTime": {
+                    "target": "smithy.api#Unit",
+                    "traits": {
+                        "smithy.api#documentation": "The <code>issue-expires-at-start-time</code> filter returns session token keys with a IssueExpiresAt timestamp greater than or equal to the specified timestamp.",
+                        "smithy.api#enumValue": "issue-expires-at-start-time"
+                    }
+                },
+                "IssueExpiresAtEndTime": {
+                    "target": "smithy.api#Unit",
+                    "traits": {
+                        "smithy.api#documentation": "The <code>issue-expires-at-end-time</code> filter returns session token keys with a IssueExpiresAt timestamp less than or equal to the specified timestamp.",
+                        "smithy.api#enumValue": "issue-expires-at-end-time"
+                    }
+                },
+                "AcceptExpiresAtStartTime": {
+                    "target": "smithy.api#Unit",
+                    "traits": {
+                        "smithy.api#documentation": "The <code>accept-expires-at-start-time</code> filter returns session token keys with an AcceptExpiresAt timestamp greater than or equal to the specified timestamp.",
+                        "smithy.api#enumValue": "accept-expires-at-start-time"
+                    }
+                },
+                "AcceptExpiresAtEndTime": {
+                    "target": "smithy.api#Unit",
+                    "traits": {
+                        "smithy.api#documentation": "The <code>accept-expires-at-end-time</code> filter returns session token keys with an AcceptExpiresAt timestamp less than or equal to the specified timestamp.",
+                        "smithy.api#enumValue": "accept-expires-at-end-time"
+                    }
+                }
+            }
+        },
+        "com.amazonaws.iam#listSessionTokenEncryptionKeysFilterType": {
+            "type": "list",
+            "member": {
+                "target": "com.amazonaws.iam#listSessionTokenEncryptionKeysFilter"
+            }
+        },
+        "com.amazonaws.iam#listSessionTokenEncryptionKeysFilterValueListType": {
+            "type": "list",
+            "member": {
+                "target": "com.amazonaws.iam#stringType"
+            },
+            "traits": {
+                "smithy.api#length": {
+                    "min": 1
+                }
+            }
+        },
         "com.amazonaws.iam#partitionType": {
             "type": "string",
             "traits": {
                 "smithy.api#pattern": "^[a-z][-a-z0-9]+[a-z0-9]$"
+            }
+        },
+        "com.amazonaws.iam#sessionTokenEncryptionKeyListType": {
+            "type": "list",
+            "member": {
+                "target": "com.amazonaws.iam#SessionTokenEncryptionKey"
             }
         }
     }
