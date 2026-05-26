@@ -20,7 +20,7 @@ fn generate_sts_shapes() {
     println!("cargo:rerun-if-changed=scratchstack-sts-ext.json");
     println!("cargo:rerun-if-changed=build.rs");
 
-    // Load the AWS IAM model.
+    // Load the AWS STS model.
     let file = File::open("sts-2011-06-15.json").expect("Failed to open STS model file");
     let reader = BufReader::new(file);
     let mut model: SmithyModel = serde_json::from_reader(reader).expect("Failed to parse STS model JSON");
