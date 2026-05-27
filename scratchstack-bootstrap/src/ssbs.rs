@@ -231,6 +231,10 @@ enum Commands {
     #[command(name = "get-role-policy")]
     GetRolePolicy(GetRolePolicyInternalCommand),
 
+    /// Get information about a session token encryption key.
+    #[command(name = "get-session-token-encryption-key")]
+    GetSessionTokenEncryptionKey(GetSessionTokenEncryptionKeyCommand),
+
     /// Get information about an IAM user in an account.
     #[command(name = "get-user")]
     GetUser(GetUserInternalCommand),
@@ -395,6 +399,10 @@ enum Commands {
     #[command(name = "update-role-description")]
     UpdateRoleDescription(UpdateRoleDescriptionInternalCommand),
 
+    /// Update the expiration windows of a session token encryption key.
+    #[command(name = "update-session-token-encryption-key")]
+    UpdateSessionTokenEncryptionKey(UpdateSessionTokenEncryptionKeyCommand),
+
     /// Update an IAM user in an account.
     #[command(name = "update-user")]
     UpdateUser(UpdateUserInternalCommand),
@@ -442,6 +450,7 @@ impl Commands {
             Commands::GetPolicyVersion(_) => "GetPolicyVersion",
             Commands::GetRole(_) => "GetRole",
             Commands::GetRolePolicy(_) => "GetRolePolicy",
+            Commands::GetSessionTokenEncryptionKey(_) => "GetSessionTokenEncryptionKey",
             Commands::GetUser(_) => "GetUser",
             Commands::GetUserPolicy(_) => "GetUserPolicy",
             Commands::ListAccessKeys(_) => "ListAccessKeys",
@@ -483,6 +492,7 @@ impl Commands {
             Commands::UpdateGroup(_) => "UpdateGroup",
             Commands::UpdateRole(_) => "UpdateRole",
             Commands::UpdateRoleDescription(_) => "UpdateRoleDescription",
+            Commands::UpdateSessionTokenEncryptionKey(_) => "UpdateSessionTokenEncryptionKey",
             Commands::UpdateUser(_) => "UpdateUser",
         }
     }
@@ -697,6 +707,13 @@ where
             })?
         }
         Commands::GetRolePolicy(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::GetSessionTokenEncryptionKey(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
@@ -929,6 +946,13 @@ where
             "".to_string()
         }
         Commands::UpdateRoleDescription(sub) => {
+            let response = sub.run(&cli, vars).await?;
+            serde_json::to_string_pretty(&response).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            })?
+        }
+        Commands::UpdateSessionTokenEncryptionKey(sub) => {
             let response = sub.run(&cli, vars).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");

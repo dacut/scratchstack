@@ -6427,6 +6427,207 @@ async fn test_session_token_encryption_keys(database: &TempDatabase) {
         .await
         .expect_err("Malformed filter shorthand should fail");
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // get-session-token-encryption-key returns the full record for an existing key.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-session-token-encryption-key",
+            "--session-token-encryption-key-id",
+            &key1_id,
+        ])
+        .await
+        .expect("Failed to get session token encryption key");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse get output as JSON");
+    let key =
+        json.get("SessionTokenEncryptionKey").expect("SessionTokenEncryptionKey should be present in get response");
+    assert_eq!(key.get("SessionTokenEncryptionKeyId").and_then(JsonValue::as_str), Some(key1_id.as_str()));
+    assert_eq!(key.get("EncryptionAlgorithm").and_then(JsonValue::as_str), Some("Aes256Gcm"));
+    assert_eq!(parse_dt(key, "IssueValidFrom"), "2030-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
+    assert_eq!(parse_dt(key, "IssueExpiresAt"), "2030-01-02T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
+    assert_eq!(parse_dt(key, "AcceptExpiresAt"), "2030-01-02T12:15:00Z".parse::<DateTime<Utc>>().unwrap());
+    // Capture the original CreatedAt to verify subsequent updates preserve it.
+    let original_created_at = parse_dt(key, "CreatedAt");
+
+    // get with a valid-format-but-nonexistent id surfaces NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-session-token-encryption-key",
+            "--session-token-encryption-key-id",
+            "STEKAAAAAAAAAAAAAAAA",
+        ])
+        .await
+        .expect_err("Get of nonexistent key should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // get with a malformed id (wrong prefix) surfaces ValidationError.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "get-session-token-encryption-key",
+            "--session-token-encryption-key-id",
+            "BOGUS0123456789ABCDE",
+        ])
+        .await
+        .expect_err("Get with bad prefix should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // Update only issue_valid_from on key1; other timestamps must stay at their current values.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-session-token-encryption-key",
+            "--session-token-encryption-key-id",
+            &key1_id,
+            "--issue-valid-from",
+            "2030-01-01T01:00:00Z",
+        ])
+        .await
+        .expect("Failed to update session token encryption key");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse update output as JSON");
+    let key =
+        json.get("SessionTokenEncryptionKey").expect("SessionTokenEncryptionKey should be present in update response");
+    assert_eq!(key.get("SessionTokenEncryptionKeyId").and_then(JsonValue::as_str), Some(key1_id.as_str()));
+    assert_eq!(key.get("EncryptionAlgorithm").and_then(JsonValue::as_str), Some("Aes256Gcm"));
+    assert_eq!(parse_dt(key, "IssueValidFrom"), "2030-01-01T01:00:00Z".parse::<DateTime<Utc>>().unwrap());
+    assert_eq!(parse_dt(key, "IssueExpiresAt"), "2030-01-02T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
+    assert_eq!(parse_dt(key, "AcceptExpiresAt"), "2030-01-02T12:15:00Z".parse::<DateTime<Utc>>().unwrap());
+    assert_eq!(parse_dt(key, "CreatedAt"), original_created_at);
+
+    // Update all three timestamps at once.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-session-token-encryption-key",
+            "--session-token-encryption-key-id",
+            &key1_id,
+            "--issue-valid-from",
+            "2031-01-01T00:00:00Z",
+            "--issue-expires-at",
+            "2031-01-02T00:00:00Z",
+            "--accept-expires-at",
+            "2031-01-03T00:00:00Z",
+        ])
+        .await
+        .expect("Failed to update all timestamps");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse full-update output as JSON");
+    let key = json.get("SessionTokenEncryptionKey").expect("SessionTokenEncryptionKey should be present");
+    assert_eq!(parse_dt(key, "IssueValidFrom"), "2031-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
+    assert_eq!(parse_dt(key, "IssueExpiresAt"), "2031-01-02T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
+    assert_eq!(parse_dt(key, "AcceptExpiresAt"), "2031-01-03T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
+    assert_eq!(parse_dt(key, "CreatedAt"), original_created_at);
+
+    // Update with no optional fields returns the key unchanged.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-session-token-encryption-key",
+            "--session-token-encryption-key-id",
+            &key1_id,
+        ])
+        .await
+        .expect("Failed to run no-op update");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse no-op update output as JSON");
+    let key = json.get("SessionTokenEncryptionKey").expect("SessionTokenEncryptionKey should be present");
+    assert_eq!(parse_dt(key, "IssueValidFrom"), "2031-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
+    assert_eq!(parse_dt(key, "IssueExpiresAt"), "2031-01-02T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
+    assert_eq!(parse_dt(key, "AcceptExpiresAt"), "2031-01-03T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
+    assert_eq!(parse_dt(key, "CreatedAt"), original_created_at);
+
+    // Update where the resulting issue_expires_at is before issue_valid_from must fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-session-token-encryption-key",
+            "--session-token-encryption-key-id",
+            &key1_id,
+            "--issue-expires-at",
+            "2020-01-01T00:00:00Z",
+        ])
+        .await
+        .expect_err("issue-expires-at before existing issue-valid-from should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // Update where the resulting accept_expires_at is before issue_expires_at must fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-session-token-encryption-key",
+            "--session-token-encryption-key-id",
+            &key1_id,
+            "--accept-expires-at",
+            "2020-01-01T00:00:00Z",
+        ])
+        .await
+        .expect_err("accept-expires-at before existing issue-expires-at should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // Update of a valid-format-but-nonexistent id surfaces NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-session-token-encryption-key",
+            "--session-token-encryption-key-id",
+            "STEKAAAAAAAAAAAAAAAA",
+            "--issue-valid-from",
+            "2030-01-01T00:00:00Z",
+        ])
+        .await
+        .expect_err("Update of nonexistent key should fail");
+    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+
+    // Update with a malformed id (wrong prefix) surfaces ValidationError.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-session-token-encryption-key",
+            "--session-token-encryption-key-id",
+            "BOGUS0123456789ABCDE",
+        ])
+        .await
+        .expect_err("Update with bad prefix should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 }
 
 #[test]
