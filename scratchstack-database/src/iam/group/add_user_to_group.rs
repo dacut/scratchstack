@@ -3,13 +3,11 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{validate_account_id, validate_group_name, validate_user_name},
+        iam::{internal_failure, validate_account_id, validate_group_name, validate_user_name},
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
-        error_meta::Error as IamError,
-        operation::AddUserToGroupInternalRequest,
-        types::error::{InternalFailure, NoSuchEntityException},
+        error_meta::Error as IamError, operation::AddUserToGroupInternalRequest, types::error::NoSuchEntityException,
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
 };
@@ -58,7 +56,7 @@ pub async fn add_user_to_group(
         }
         Err(e) => {
             log::error!("Failed to look up group in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -82,7 +80,7 @@ pub async fn add_user_to_group(
         }
         Err(e) => {
             log::error!("Failed to look up user in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -98,7 +96,7 @@ pub async fn add_user_to_group(
     .await
     {
         log::error!("Failed to add user to group in database: {e}");
-        return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+        return Err(internal_failure().into());
     }
 
     Ok(())

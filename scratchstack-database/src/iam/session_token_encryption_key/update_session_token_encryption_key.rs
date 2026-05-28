@@ -1,7 +1,8 @@
 //! UpdateSessionTokenEncryptionKey database operation
 use {
     crate::{
-        RequestExecutor, constants::iam::*, iam::session_token_encryption_key::validate_session_token_encryption_key_id,
+        RequestExecutor,
+        iam::{internal_failure, session_token_encryption_key::validate_session_token_encryption_key_id},
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
@@ -11,7 +12,7 @@ use {
         operation::{UpdateSessionTokenEncryptionKeyRequest, UpdateSessionTokenEncryptionKeyResponse},
         types::{
             SessionTokenEncryptionAlgorithm, SessionTokenEncryptionKey,
-            error::{InternalFailure, NoSuchEntityException, ValidationError},
+            error::{NoSuchEntityException, ValidationError},
         },
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
@@ -57,7 +58,7 @@ pub async fn update_session_token_encryption_key(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch session token encryption key from database: {e}");
-        InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+        internal_failure()
     })?;
 
     let row = row.ok_or_else(|| {
@@ -74,7 +75,7 @@ pub async fn update_session_token_encryption_key(
 
     let encryption_algorithm = SessionTokenEncryptionAlgorithm::from_str(&encryption_algorithm).map_err(|e| {
         log::error!("Failed to parse encryption algorithm from database value: {e}");
-        InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+        internal_failure()
     })?;
 
     let new_issue_valid_from = issue_valid_from.unwrap_or(current_issue_valid_from);
@@ -108,7 +109,7 @@ pub async fn update_session_token_encryption_key(
         .await
         .map_err(|e| {
             log::error!("Failed to update session token encryption key in database: {e}");
-            InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+            internal_failure()
         })?;
     }
 

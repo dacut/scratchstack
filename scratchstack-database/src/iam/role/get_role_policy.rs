@@ -3,13 +3,13 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{validate_account_id, validate_policy_name, validate_role_name},
+        iam::{internal_failure, validate_account_id, validate_policy_name, validate_role_name},
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{GetRolePolicyInternalRequest, GetRolePolicyResponse},
-        types::error::{InternalFailure, NoSuchEntityException},
+        types::error::NoSuchEntityException,
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
 };
@@ -50,7 +50,7 @@ pub async fn get_role_policy(
     .await
     .map_err(|e| {
         log::error!("Failed to look up role in database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     let (role_id, role_name_cased): (String, String) = match role_row {
@@ -74,7 +74,7 @@ pub async fn get_role_policy(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch role inline policy from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     let (policy_name_cased, policy_document): (String, String) = match policy_row {
@@ -94,6 +94,6 @@ pub async fn get_role_policy(
         .build()
         .map_err(|e| {
             log::error!("Failed to build GetRolePolicyResponse: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure().into()
         })
 }

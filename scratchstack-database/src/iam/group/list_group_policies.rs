@@ -4,7 +4,7 @@ use {
         RequestExecutor,
         constants::iam::*,
         iam::{
-            constrain_max_items, get_current_partition_or_fail, make_paginator, validate_account_id,
+            constrain_max_items, get_current_partition_or_fail, internal_failure, make_paginator, validate_account_id,
             validate_group_name,
         },
     },
@@ -12,7 +12,7 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListGroupPoliciesInternalRequest, ListGroupPoliciesResponse},
-        types::error::{InternalFailure, NoSuchEntityException},
+        types::error::NoSuchEntityException,
     },
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, QueryBuilder, Row as _, postgres::PgTransaction, query},
@@ -77,7 +77,7 @@ pub async fn list_group_policies(
         }
         Err(e) => {
             log::error!("Failed to look up group in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -92,7 +92,7 @@ pub async fn list_group_policies(
     if let Some(marker) = marker {
         let m: ListGroupPoliciesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListGroupPolicies: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
         sql.push("\nAND policy_name_lower >= ");
         sql.push_bind(m.next_policy_name_lower);
@@ -103,7 +103,7 @@ pub async fn list_group_policies(
 
     let rows = sql.build_query_as::<ListGroupPoliciesRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch group inline policies from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     let mut results: Vec<String> = Vec::with_capacity(rows.len().min(max_items));
@@ -119,7 +119,7 @@ pub async fn list_group_policies(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListGroupPolicies: {e}");
-                        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                        internal_failure()
                     })?,
             );
             break;
@@ -136,6 +136,6 @@ pub async fn list_group_policies(
 
     builder.build().map_err(|e| {
         log::error!("Failed to build ListGroupPoliciesResponse: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure().into()
     })
 }

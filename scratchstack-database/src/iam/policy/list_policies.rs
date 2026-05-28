@@ -4,8 +4,8 @@ use {
         RequestExecutor,
         constants::iam::*,
         iam::{
-            build_policy_arn, constrain_max_items, get_current_partition_or_fail, make_paginator, validate_account_id,
-            validate_path_prefix,
+            build_policy_arn, constrain_max_items, get_current_partition_or_fail, internal_failure, make_paginator,
+            validate_account_id, validate_path_prefix,
         },
     },
     chrono::{DateTime, Utc},
@@ -14,10 +14,7 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListPoliciesInternalRequest, ListPoliciesResponse},
-        types::{
-            Policy, PolicyScopeType, PolicyUsageType,
-            error::{InternalFailure, ValidationError},
-        },
+        types::{Policy, PolicyScopeType, PolicyUsageType, error::ValidationError},
     },
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, QueryBuilder, postgres::PgTransaction, query_as},
@@ -158,7 +155,7 @@ pub async fn list_policies(
     if let Some(marker) = marker {
         let info: ListPoliciesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListPolicies: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
         sql.push(" AND (account_id, managed_policy_id) >= (");
         sql.push_bind(info.next_account_id);
@@ -172,7 +169,7 @@ pub async fn list_policies(
 
     let rows = sql.build_query_as::<ListPoliciesRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch managed policies from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     let mut results: HashMap<String, Policy> = HashMap::with_capacity(rows.len().min(max_items));
@@ -189,7 +186,7 @@ pub async fn list_policies(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListPolicies: {e}");
-                        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                        internal_failure()
                     })?,
             );
             break;
@@ -209,7 +206,7 @@ pub async fn list_policies(
             .build()
             .map_err(|e| {
                 log::error!("Failed to construct Policy object for ListPolicies result: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                internal_failure()
             })?;
         results.insert(row.managed_policy_id, policy);
     }
@@ -233,7 +230,7 @@ pub async fn list_policies(
         .await
         .map_err(|e| {
             log::error!("Failed to fetch policy attachment counts from database: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
         for row in attachment_rows.into_iter() {
             let attachment_count = min(row.attachment_count, i32::MAX as i64) as i32;
@@ -260,7 +257,7 @@ pub async fn list_policies(
         .await
         .map_err(|e| {
             log::error!("Failed to fetch policy permissions boundary usage counts from database: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
         for row in permissions_boundary_usage_rows.into_iter() {
             let usage_count = min(row.attachment_count, i32::MAX as i64) as i32;

@@ -3,13 +3,12 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{get_permissions_boundary_id, validate_account_id, validate_user_name},
+        iam::{get_permissions_boundary_id, internal_failure, validate_account_id, validate_user_name},
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
-        error_meta::Error as IamError,
-        operation::PutUserPermissionsBoundaryInternalRequest,
-        types::error::{InternalFailure, NoSuchEntityException},
+        error_meta::Error as IamError, operation::PutUserPermissionsBoundaryInternalRequest,
+        types::error::NoSuchEntityException,
     },
     sqlx::{postgres::PgTransaction, query},
 };
@@ -55,7 +54,7 @@ pub async fn put_user_permissions_boundary(
         Ok(result) => result,
         Err(e) => {
             log::error!("Failed to set user permissions boundary in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 

@@ -45,6 +45,13 @@ pub(crate) fn constrain_max_items(max_items: Option<i32>) -> Result<usize, Valid
     }
 }
 
+/// Construct a generic `InternalFailure` with the standard internal-failure message. Use this for
+/// every "unexpected database/builder/etc. error" call site — never leak underlying details to the
+/// caller (those go to the log).
+pub(crate) fn internal_failure() -> InternalFailure {
+    InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+}
+
 /// Construct an `OperationPaginator` for a policy-related list operation.
 pub(crate) fn make_paginator(
     partition: &str,
@@ -55,7 +62,7 @@ pub(crate) fn make_paginator(
     OperationPaginator::new_fixed_key(&service_metadata, &operation_metadata, PAGINATION_KEY_ID, *PAGINATION_KEY)
         .map_err(|e| {
             log::error!("Failed to create paginator for {operation_name}: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure().into()
         })
 }
 

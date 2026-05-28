@@ -1,6 +1,6 @@
 //! CreatePolicyVersion database operation
 use {
-    crate::{RequestExecutor, constants::iam::*},
+    crate::{RequestExecutor, constants::iam::*, iam::internal_failure},
     indoc::indoc,
     scratchstack_arn::Arn,
     scratchstack_aspen::Policy as AspenPolicy,
@@ -9,10 +9,7 @@ use {
         operation::{CreatePolicyVersionRequest, CreatePolicyVersionResponse},
         types::{
             PolicyVersion,
-            error::{
-                InternalFailure, LimitExceededException, MalformedPolicyDocumentException, NoSuchEntityException,
-                ValidationError,
-            },
+            error::{LimitExceededException, MalformedPolicyDocumentException, NoSuchEntityException, ValidationError},
         },
     },
     sqlx::{FromRow, Row as _, postgres::PgTransaction, query, query_as},
@@ -101,7 +98,7 @@ pub async fn create_policy_version(
         }
         Err(e) => {
             log::error!("Failed to query managed policy from database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -131,13 +128,13 @@ pub async fn create_policy_version(
         Ok(row) => row,
         Err(e) => {
             log::error!("Failed to insert managed policy version into database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
     let created_at: chrono::DateTime<chrono::Utc> = version_row.try_get(0).map_err(|e| {
         log::error!("Failed to get created_at from database row: {e}");
-        InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+        internal_failure()
     })?;
 
     // Update latest_version and update_date (and default_version if set_as_default).
@@ -163,7 +160,7 @@ pub async fn create_policy_version(
 
     if let Err(e) = update_query.execute(tx.as_mut()).await {
         log::error!("Failed to update managed policy latest_version: {e}");
-        return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+        return Err(internal_failure().into());
     }
 
     let version_id = format!("v{new_version}");
@@ -175,7 +172,7 @@ pub async fn create_policy_version(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct PolicyVersion object: {e}");
-            InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+            internal_failure()
         })?;
 
     Ok(CreatePolicyVersionResponse {

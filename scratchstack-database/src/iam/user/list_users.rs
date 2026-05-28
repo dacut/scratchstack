@@ -4,7 +4,7 @@ use {
         RequestExecutor,
         constants::iam::*,
         iam::{
-            constrain_max_items, get_current_partition_or_fail, make_paginator, validate_account_id,
+            constrain_max_items, get_current_partition_or_fail, internal_failure, make_paginator, validate_account_id,
             validate_path_prefix,
         },
     },
@@ -14,7 +14,7 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListUsersInternalRequest, ListUsersResponse},
-        types::{AttachedPermissionsBoundary, PermissionsBoundaryAttachmentType, User, error::InternalFailure},
+        types::{AttachedPermissionsBoundary, PermissionsBoundaryAttachmentType, User},
     },
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, QueryBuilder, postgres::PgTransaction},
@@ -85,7 +85,7 @@ pub async fn list_users(
     if let Some(marker) = marker {
         let info: ListUsersMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListUsers: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
         sql.push(" AND user_name_lower >= ");
         sql.push_bind(info.next_user_name);
@@ -97,7 +97,7 @@ pub async fn list_users(
 
     let rows = sql.build_query_as::<ListUsersRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch users from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
     let mut results = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -112,7 +112,7 @@ pub async fn list_users(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListUsers: {e}");
-                        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                        internal_failure()
                     })?,
             );
             break;
@@ -126,7 +126,7 @@ pub async fn list_users(
             .build()
             .map_err(|e| {
                 log::error!("Failed to construct ARN for user: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                internal_failure()
             })?;
 
         let permissions_boundary = if let Some(pb_id) = row.permissions_boundary_managed_policy_id {
@@ -143,7 +143,7 @@ pub async fn list_users(
                     .build()
                     .map_err(|e| {
                         log::error!("Failed to construct permissions boundary for user: {e}");
-                        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                        internal_failure()
                     })?,
             )
         } else {
@@ -161,7 +161,7 @@ pub async fn list_users(
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct user object: {e}");
-                    IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                    internal_failure()
                 })?,
         );
     }
@@ -174,6 +174,6 @@ pub async fn list_users(
 
     builder.build().map_err(|e| {
         log::error!("Failed to build ListUsersResponse: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure().into()
     })
 }

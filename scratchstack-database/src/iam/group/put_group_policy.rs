@@ -3,14 +3,14 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{validate_account_id, validate_group_name, validate_policy_name},
+        iam::{internal_failure, validate_account_id, validate_group_name, validate_policy_name},
     },
     indoc::indoc,
     scratchstack_aspen::Policy as AspenPolicy,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::PutGroupPolicyInternalRequest,
-        types::error::{InternalFailure, MalformedPolicyDocumentException, NoSuchEntityException},
+        types::error::{MalformedPolicyDocumentException, NoSuchEntityException},
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
     std::str::FromStr,
@@ -66,7 +66,7 @@ pub async fn put_group_policy(
         }
         Err(e) => {
             log::error!("Failed to look up group in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -85,7 +85,7 @@ pub async fn put_group_policy(
     .await
     {
         log::error!("Failed to insert/update group inline policy in database: {e}");
-        return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+        return Err(internal_failure().into());
     }
 
     Ok(())

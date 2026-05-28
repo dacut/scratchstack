@@ -3,13 +3,12 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{validate_account_id, validate_user_name},
+        iam::{internal_failure, validate_account_id, validate_user_name},
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
-        error_meta::Error as IamError,
-        operation::DeleteUserPermissionsBoundaryInternalRequest,
-        types::error::{InternalFailure, NoSuchEntityException},
+        error_meta::Error as IamError, operation::DeleteUserPermissionsBoundaryInternalRequest,
+        types::error::NoSuchEntityException,
     },
     sqlx::{postgres::PgTransaction, query},
 };
@@ -51,7 +50,7 @@ pub async fn delete_user_permissions_boundary(
         Ok(result) => result,
         Err(e) => {
             log::error!("Failed to clear user permissions boundary in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 

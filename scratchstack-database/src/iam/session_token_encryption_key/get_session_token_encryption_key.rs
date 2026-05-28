@@ -1,7 +1,8 @@
 //! GetSessionTokenEncryptionKey database operation
 use {
     crate::{
-        RequestExecutor, constants::iam::*, iam::session_token_encryption_key::validate_session_token_encryption_key_id,
+        RequestExecutor,
+        iam::{internal_failure, session_token_encryption_key::validate_session_token_encryption_key_id},
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
@@ -9,10 +10,7 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{GetSessionTokenEncryptionKeyRequest, GetSessionTokenEncryptionKeyResponse},
-        types::{
-            SessionTokenEncryptionAlgorithm, SessionTokenEncryptionKey,
-            error::{InternalFailure, NoSuchEntityException},
-        },
+        types::{SessionTokenEncryptionAlgorithm, SessionTokenEncryptionKey, error::NoSuchEntityException},
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
     std::str::FromStr as _,
@@ -45,7 +43,7 @@ pub async fn get_session_token_encryption_key(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch session token encryption key from database: {e}");
-        InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+        internal_failure()
     })?;
 
     let row = row.ok_or_else(|| {
@@ -62,7 +60,7 @@ pub async fn get_session_token_encryption_key(
 
     let encryption_algorithm = SessionTokenEncryptionAlgorithm::from_str(&encryption_algorithm).map_err(|e| {
         log::error!("Failed to parse encryption algorithm from database value: {e}");
-        InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+        internal_failure()
     })?;
 
     let session_token_encryption_key = SessionTokenEncryptionKey {

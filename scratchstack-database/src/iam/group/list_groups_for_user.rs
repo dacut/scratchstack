@@ -4,7 +4,8 @@ use {
         RequestExecutor,
         constants::iam::*,
         iam::{
-            constrain_max_items, get_current_partition_or_fail, make_paginator, validate_account_id, validate_user_name,
+            constrain_max_items, get_current_partition_or_fail, internal_failure, make_paginator, validate_account_id,
+            validate_user_name,
         },
     },
     chrono::{DateTime, Utc},
@@ -14,10 +15,7 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListGroupsForUserInternalRequest, ListGroupsForUserResponse},
-        types::{
-            Group,
-            error::{InternalFailure, NoSuchEntityException},
-        },
+        types::{Group, error::NoSuchEntityException},
     },
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, QueryBuilder, postgres::PgTransaction, query},
@@ -79,7 +77,7 @@ pub async fn list_groups_for_user(
     .await
     .map_err(|e| {
         log::error!("Failed to check if user exists in database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
     if user_exists.is_none() {
         return Err(NoSuchEntityException::builder()
@@ -106,7 +104,7 @@ pub async fn list_groups_for_user(
     if let Some(marker) = marker {
         let info: ListGroupsForUserMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListGroupsForUser: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
         sql.push(" AND g.group_name_lower >= ");
         sql.push_bind(info.next_group_name);
@@ -118,7 +116,7 @@ pub async fn list_groups_for_user(
 
     let rows = sql.build_query_as::<ListGroupsForUserRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch groups for user from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
     let mut results = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -133,7 +131,7 @@ pub async fn list_groups_for_user(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListGroupsForUser: {e}");
-                        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                        internal_failure()
                     })?,
             );
             break;
@@ -147,7 +145,7 @@ pub async fn list_groups_for_user(
             .build()
             .map_err(|e| {
                 log::error!("Failed to construct ARN for group: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                internal_failure()
             })?;
 
         results.push(
@@ -160,7 +158,7 @@ pub async fn list_groups_for_user(
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct group object: {e}");
-                    IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                    internal_failure()
                 })?,
         );
     }
@@ -173,6 +171,6 @@ pub async fn list_groups_for_user(
 
     builder.build().map_err(|e| {
         log::error!("Failed to build ListGroupsForUserResponse: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure().into()
     })
 }

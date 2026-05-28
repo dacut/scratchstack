@@ -4,14 +4,15 @@ use {
         RequestExecutor,
         constants::iam::*,
         iam::{
-            constrain_max_items, get_current_partition_or_fail, make_paginator, validate_account_id, validate_user_name,
+            constrain_max_items, get_current_partition_or_fail, internal_failure, make_paginator, validate_account_id,
+            validate_user_name,
         },
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListUserPoliciesInternalRequest, ListUserPoliciesResponse},
-        types::error::{InternalFailure, NoSuchEntityException},
+        types::error::NoSuchEntityException,
     },
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, QueryBuilder, Row as _, postgres::PgTransaction, query},
@@ -76,7 +77,7 @@ pub async fn list_user_policies(
         }
         Err(e) => {
             log::error!("Failed to look up user in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -91,7 +92,7 @@ pub async fn list_user_policies(
     if let Some(marker) = marker {
         let m: ListUserPoliciesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListUserPolicies: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
         sql.push("\nAND policy_name_lower >= ");
         sql.push_bind(m.next_policy_name_lower);
@@ -102,7 +103,7 @@ pub async fn list_user_policies(
 
     let rows = sql.build_query_as::<ListUserPoliciesRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch user inline policies from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     let mut results: Vec<String> = Vec::with_capacity(rows.len().min(max_items));
@@ -118,7 +119,7 @@ pub async fn list_user_policies(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListUserPolicies: {e}");
-                        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                        internal_failure()
                     })?,
             );
             break;
@@ -135,6 +136,6 @@ pub async fn list_user_policies(
 
     builder.build().map_err(|e| {
         log::error!("Failed to build ListUserPoliciesResponse: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure().into()
     })
 }

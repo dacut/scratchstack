@@ -2,8 +2,7 @@
 use {
     crate::{
         RequestExecutor,
-        constants::iam::*,
-        iam::{parse_policy_arn, policy::parse_policy_version_id},
+        iam::{internal_failure, parse_policy_arn, policy::parse_policy_version_id},
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
@@ -12,7 +11,7 @@ use {
         operation::{GetPolicyVersionRequest, GetPolicyVersionResponse},
         types::{
             PolicyVersion,
-            error::{InternalFailure, NoSuchEntityException, ValidationError},
+            error::{NoSuchEntityException, ValidationError},
         },
     },
     sqlx::{FromRow, postgres::PgTransaction, query_as},
@@ -44,7 +43,7 @@ pub async fn get_policy_version(
 
     let parts = parse_policy_arn(policy_arn)?;
     let version_number = parse_policy_version_id(version_id).ok_or_else(|| {
-        IamError::from(ValidationError::builder().message(format!("Invalid policy version id: {version_id}")).build())
+        ValidationError::builder().message(format!("Invalid policy version id: {version_id}")).build()
     })?;
 
     let row: PolicyVersionRow = query_as(indoc! {"
@@ -62,14 +61,12 @@ pub async fn get_policy_version(
     .await
     .map_err(|e| {
         log::error!("Failed to query managed policy version from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?
     .ok_or_else(|| {
-        IamError::from(
-            NoSuchEntityException::builder()
-                .message(format!("Policy {policy_arn} version {version_id} was not found."))
-                .build(),
-        )
+        NoSuchEntityException::builder()
+            .message(format!("Policy {policy_arn} version {version_id} was not found."))
+            .build()
     })?;
 
     let policy_version = PolicyVersion::builder()
@@ -80,7 +77,7 @@ pub async fn get_policy_version(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct PolicyVersion object: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
 
     Ok(GetPolicyVersionResponse {

@@ -4,8 +4,8 @@ use {
         IamId, RequestExecutor,
         constants::iam::*,
         iam::{
-            get_current_partition_or_fail, get_permissions_boundary_id, user::user_arn_resource, validate_account_id,
-            validate_path, validate_tag_key, validate_tag_value, validate_user_name,
+            get_current_partition_or_fail, get_permissions_boundary_id, internal_failure, user::user_arn_resource,
+            validate_account_id, validate_path, validate_tag_key, validate_tag_value, validate_user_name,
         },
     },
     chrono::{DateTime, Utc},
@@ -15,7 +15,7 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{CreateUserInternalRequest, CreateUserResponse},
-        types::{AttachedPermissionsBoundary, PermissionsBoundaryAttachmentType, Tag, User, error::InternalFailure},
+        types::{AttachedPermissionsBoundary, PermissionsBoundaryAttachmentType, Tag, User},
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
 };
@@ -91,14 +91,14 @@ pub async fn create_user(
         Ok(result) => result,
         Err(e) => {
             log::error!("Failed to insert user into database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
     let created_at: DateTime<Utc> = match result.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
             log::error!("Failed to get created_at from database row: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -119,7 +119,7 @@ pub async fn create_user(
         .await
         {
             log::error!("Failed to insert user tag into database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     }
 
@@ -133,7 +133,7 @@ pub async fn create_user(
         Ok(arn) => arn,
         Err(e) => {
             log::error!("Failed to construct ARN for new user: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -145,7 +145,7 @@ pub async fn create_user(
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct permissions boundary for new user: {e}");
-                    InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+                    internal_failure()
                 })?,
         )
     } else {
@@ -163,7 +163,7 @@ pub async fn create_user(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct user object for new user: {e}");
-            InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+            internal_failure()
         })?;
 
     Ok(CreateUserResponse::builder().user(Some(user)).build().unwrap())

@@ -3,7 +3,10 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{get_current_partition_or_fail, group_arn_resource, validate_account_id, validate_group_name},
+        iam::{
+            get_current_partition_or_fail, group_arn_resource, internal_failure, validate_account_id,
+            validate_group_name,
+        },
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
@@ -12,10 +15,7 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{GetGroupInternalRequest, GetGroupResponse},
-        types::{
-            Group,
-            error::{InternalFailure, NoSuchEntityException},
-        },
+        types::{Group, error::NoSuchEntityException},
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
 };
@@ -56,15 +56,11 @@ pub async fn get_group(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch group from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     let row = row.ok_or_else(|| {
-        IamError::from(
-            NoSuchEntityException::builder()
-                .message(format!("The group with name {group_name} cannot be found."))
-                .build(),
-        )
+        NoSuchEntityException::builder().message(format!("The group with name {group_name} cannot be found.")).build()
     })?;
 
     let group_id: String = row.get(0);
@@ -80,7 +76,7 @@ pub async fn get_group(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct ARN for group: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
 
     let group = Group::builder()
@@ -92,7 +88,7 @@ pub async fn get_group(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct group object: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
 
     Ok(GetGroupResponse::builder().group(group).build().unwrap())

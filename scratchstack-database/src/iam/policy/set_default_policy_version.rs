@@ -2,14 +2,13 @@
 use {
     crate::{
         RequestExecutor,
-        constants::iam::*,
-        iam::{parse_policy_arn, policy::parse_policy_version_id},
+        iam::{internal_failure, parse_policy_arn, policy::parse_policy_version_id},
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::SetDefaultPolicyVersionRequest,
-        types::error::{InternalFailure, NoSuchEntityException, ValidationError},
+        types::error::{NoSuchEntityException, ValidationError},
     },
     sqlx::{FromRow, postgres::PgTransaction, query, query_as},
 };
@@ -38,7 +37,7 @@ pub async fn set_default_policy_version(
 
     let parts = parse_policy_arn(policy_arn)?;
     let version_number = parse_policy_version_id(version_id).ok_or_else(|| {
-        IamError::from(ValidationError::builder().message(format!("Invalid policy version id: {version_id}")).build())
+        ValidationError::builder().message(format!("Invalid policy version id: {version_id}")).build()
     })?;
 
     // Lock the managed_policies row FOR UPDATE to serialize against DeletePolicyVersion (which
@@ -57,11 +56,9 @@ pub async fn set_default_policy_version(
     .await
     .map_err(|e| {
         log::error!("Failed to query managed policy from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?
-    .ok_or_else(|| {
-        IamError::from(NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())
-    })?;
+    .ok_or_else(|| NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())?;
 
     // Also lock the specific version row. This ensures a separate transaction can't delete this
     // version after we check it exists but before we set it as default.
@@ -77,7 +74,7 @@ pub async fn set_default_policy_version(
     .await
     .map_err(|e| {
         log::error!("Failed to query managed policy version from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     if version_exists.is_none() {
@@ -98,7 +95,7 @@ pub async fn set_default_policy_version(
     .await
     .map_err(|e| {
         log::error!("Failed to update managed policy default_version: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     Ok(())

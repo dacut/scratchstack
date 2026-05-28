@@ -4,7 +4,8 @@ use {
         RequestExecutor,
         constants::iam::*,
         iam::{
-            build_policy_arn, get_current_partition_or_fail, role_arn_resource, validate_account_id, validate_role_name,
+            build_policy_arn, get_current_partition_or_fail, internal_failure, role_arn_resource, validate_account_id,
+            validate_role_name,
         },
     },
     chrono::{DateTime, Utc},
@@ -15,8 +16,7 @@ use {
         error_meta::Error as IamError,
         operation::{GetRoleInternalRequest, GetRoleResponse},
         types::{
-            AttachedPermissionsBoundary, PermissionsBoundaryAttachmentType, Role, Tag,
-            error::{InternalFailure, NoSuchEntityException},
+            AttachedPermissionsBoundary, PermissionsBoundaryAttachmentType, Role, Tag, error::NoSuchEntityException,
         },
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
@@ -59,15 +59,11 @@ pub async fn get_role(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch role from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     let row = row.ok_or_else(|| {
-        IamError::from(
-            NoSuchEntityException::builder()
-                .message(format!("The role with name {role_name} cannot be found."))
-                .build(),
-        )
+        NoSuchEntityException::builder().message(format!("The role with name {role_name} cannot be found.")).build()
     })?;
 
     let role_id: String = row.get(0);
@@ -87,7 +83,7 @@ pub async fn get_role(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct ARN for role: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
 
     let permissions_boundary = if let Some(pb_id) = permissions_boundary_id {
@@ -101,12 +97,12 @@ pub async fn get_role(
         .await
         .map_err(|e| {
             log::error!("Failed to fetch permissions boundary managed policy from database: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
 
         let pb_row = pb_row.ok_or_else(|| {
             log::error!("Role references missing permissions boundary managed policy ID: {pb_id}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
 
         let pb_path: String = pb_row.get(0);
@@ -120,7 +116,7 @@ pub async fn get_role(
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct permissions boundary for role: {e}");
-                    IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                    internal_failure()
                 })?,
         )
     } else {
@@ -138,7 +134,7 @@ pub async fn get_role(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch role tags from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     let mut tags = Vec::with_capacity(tag_rows.len());
@@ -147,7 +143,7 @@ pub async fn get_role(
         let value: String = tag_row.get(1);
         tags.push(Tag::builder().key(key).value(value).build().map_err(|e| {
             log::error!("Failed to construct tag object: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?);
     }
 
@@ -165,11 +161,11 @@ pub async fn get_role(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct role object: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
 
     GetRoleResponse::builder().role(role).build().map_err(|e| {
         log::error!("Failed to construct get role response object: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure().into()
     })
 }

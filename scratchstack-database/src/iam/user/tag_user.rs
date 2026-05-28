@@ -3,7 +3,7 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{validate_account_id, validate_tag_key, validate_tag_value, validate_user_name},
+        iam::{internal_failure, validate_account_id, validate_tag_key, validate_tag_value, validate_user_name},
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
@@ -11,7 +11,7 @@ use {
         operation::TagUserInternalRequest,
         types::{
             Tag,
-            error::{InternalFailure, NoSuchEntityException, ValidationError},
+            error::{NoSuchEntityException, ValidationError},
         },
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
@@ -69,7 +69,7 @@ pub async fn tag_user(
         }
         Err(e) => {
             log::error!("Failed to look up user in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -92,7 +92,7 @@ pub async fn tag_user(
         .await
         {
             log::error!("Failed to insert/update user tag in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     }
 

@@ -2,14 +2,13 @@
 use {
     crate::{
         RequestExecutor,
-        constants::iam::*,
-        iam::{account::is_alias_unique_violation, validate_account_alias, validate_account_id},
+        iam::{account::is_alias_unique_violation, internal_failure, validate_account_alias, validate_account_id},
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::CreateAccountAliasInternalRequest,
-        types::error::{EntityAlreadyExistsException, InternalFailure, NoSuchEntityException},
+        types::error::{EntityAlreadyExistsException, NoSuchEntityException},
     },
     sqlx::{postgres::PgTransaction, query},
 };
@@ -55,7 +54,7 @@ pub async fn create_account_alias(
         }
         Err(e) => {
             log::error!("Failed to create account alias for account {account_id}: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 

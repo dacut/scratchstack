@@ -3,12 +3,12 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{constrain_max_items, get_current_partition_or_fail, make_paginator},
+        iam::{constrain_max_items, get_current_partition_or_fail, internal_failure, make_paginator},
     },
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListAccountsRequest, ListAccountsResponse},
-        types::{Account, ListAccountsFilter, ListAccountsFilterName, error::InternalFailure},
+        types::{Account, ListAccountsFilter, ListAccountsFilterName},
     },
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, QueryBuilder, postgres::PgTransaction},
@@ -69,7 +69,7 @@ pub async fn list_accounts(
     if let Some(marker) = marker {
         let info: ListAccountsMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListAccounts: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
         sql.push(" AND account_id > ");
         sql.push_bind(info.next_account_id);
@@ -81,7 +81,7 @@ pub async fn list_accounts(
 
     let rows = sql.build_query_as::<ListAccountsRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch accounts from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     let mut accounts = Vec::with_capacity(rows.len().min(max_items));
@@ -103,7 +103,7 @@ pub async fn list_accounts(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListAccounts: {e}");
-                        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                        internal_failure()
                     })?,
             );
             break;

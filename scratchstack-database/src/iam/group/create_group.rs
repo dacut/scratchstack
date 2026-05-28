@@ -4,7 +4,8 @@ use {
         IamId, RequestExecutor,
         constants::iam::*,
         iam::{
-            get_current_partition_or_fail, group_arn_resource, validate_account_id, validate_group_name, validate_path,
+            get_current_partition_or_fail, group_arn_resource, internal_failure, validate_account_id,
+            validate_group_name, validate_path,
         },
     },
     indoc::indoc,
@@ -13,7 +14,7 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{CreateGroupInternalRequest, CreateGroupResponse},
-        types::{Group, error::InternalFailure},
+        types::Group,
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
 };
@@ -64,14 +65,14 @@ pub async fn create_group(
         Ok(result) => result,
         Err(e) => {
             log::error!("Failed to insert group into database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
     let created_at: chrono::DateTime<chrono::Utc> = match result.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
             log::error!("Failed to get created_at from database row: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -85,7 +86,7 @@ pub async fn create_group(
         Ok(arn) => arn,
         Err(e) => {
             log::error!("Failed to construct ARN for new group: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -98,7 +99,7 @@ pub async fn create_group(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct group object for new group: {e}");
-            InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+            internal_failure()
         })?;
 
     Ok(CreateGroupResponse::builder().group(group).build().unwrap())

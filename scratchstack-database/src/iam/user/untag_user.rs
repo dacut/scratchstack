@@ -3,13 +3,13 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{validate_account_id, validate_tag_key, validate_user_name},
+        iam::{internal_failure, validate_account_id, validate_tag_key, validate_user_name},
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::UntagUserInternalRequest,
-        types::error::{InternalFailure, NoSuchEntityException, ValidationError},
+        types::error::{NoSuchEntityException, ValidationError},
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
 };
@@ -65,7 +65,7 @@ pub async fn untag_user(
         }
         Err(e) => {
             log::error!("Failed to look up user in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -82,7 +82,7 @@ pub async fn untag_user(
         .await
         {
             log::error!("Failed to delete user tag from database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     }
 

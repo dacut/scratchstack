@@ -4,18 +4,15 @@ use {
         RequestExecutor,
         constants::iam::*,
         iam::{
-            build_policy_arn, constrain_max_items, get_current_partition_or_fail, make_paginator, validate_account_id,
-            validate_path_prefix, validate_role_name,
+            build_policy_arn, constrain_max_items, get_current_partition_or_fail, internal_failure, make_paginator,
+            validate_account_id, validate_path_prefix, validate_role_name,
         },
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListAttachedRolePoliciesInternalRequest, ListAttachedRolePoliciesResponse},
-        types::{
-            AttachedPolicy,
-            error::{InternalFailure, NoSuchEntityException},
-        },
+        types::{AttachedPolicy, error::NoSuchEntityException},
     },
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, QueryBuilder, Row as _, postgres::PgTransaction, query},
@@ -96,7 +93,7 @@ pub async fn list_attached_role_policies(
         }
         Err(e) => {
             log::error!("Failed to look up role in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -121,7 +118,7 @@ pub async fn list_attached_role_policies(
     if let Some(marker) = marker {
         let info: ListAttachedRolePoliciesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListAttachedRolePolicies: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
         sql.push(" AND (mp.managed_policy_name_lower, mp.managed_policy_id) >= (");
         sql.push_bind(info.next_policy_name_lower);
@@ -135,7 +132,7 @@ pub async fn list_attached_role_policies(
 
     let rows = sql.build_query_as::<ListAttachedRolePolicyRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch attached role policies from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     let mut results: Vec<AttachedPolicy> = Vec::with_capacity(rows.len().min(max_items));
@@ -152,7 +149,7 @@ pub async fn list_attached_role_policies(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListAttachedRolePolicies: {e}");
-                        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                        internal_failure()
                     })?,
             );
             break;
@@ -166,7 +163,7 @@ pub async fn list_attached_role_policies(
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct AttachedPolicy: {e}");
-                    IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                    internal_failure()
                 })?,
         );
     }
@@ -179,6 +176,6 @@ pub async fn list_attached_role_policies(
 
     builder.build().map_err(|e| {
         log::error!("Failed to build ListAttachedRolePoliciesResponse: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure().into()
     })
 }

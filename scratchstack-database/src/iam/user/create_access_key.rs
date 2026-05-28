@@ -3,7 +3,7 @@ use {
     crate::{
         IamId, RequestExecutor,
         constants::iam::*,
-        iam::{validate_account_id, validate_user_name},
+        iam::{internal_failure, validate_account_id, validate_user_name},
     },
     indoc::indoc,
     rand::RngExt,
@@ -13,7 +13,7 @@ use {
         operation::{CreateAccessKeyInternalRequest, CreateAccessKeyResponse},
         types::{
             AccessKey, StatusType,
-            error::{InternalFailure, NoSuchEntityException, ValidationError},
+            error::{NoSuchEntityException, ValidationError},
         },
     },
     sqlx::{FromRow, Row as _, postgres::PgTransaction, query, query_as},
@@ -83,7 +83,7 @@ pub async fn create_access_key(
     .await
     .map_err(|e| {
         log::error!("Failed to query user from database: {e}");
-        InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+        internal_failure()
     })?;
 
     let Some(user_info) = user_info else {
@@ -112,14 +112,14 @@ pub async fn create_access_key(
         Ok(row) => row,
         Err(e) => {
             log::error!("Failed to insert access key into database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
     let created_at: chrono::DateTime<chrono::Utc> = match row.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
             log::error!("Failed to get created_at from database row: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -132,11 +132,11 @@ pub async fn create_access_key(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct AccessKey response: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
 
     CreateAccessKeyResponse::builder().access_key(access_key).build().map_err(|e| {
         log::error!("Failed to construct CreateAccessKeyResponse: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure().into()
     })
 }

@@ -3,13 +3,11 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{validate_account_id, validate_group_name, validate_path},
+        iam::{internal_failure, validate_account_id, validate_group_name, validate_path},
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
-        error_meta::Error as IamError,
-        operation::UpdateGroupInternalRequest,
-        types::error::{InternalFailure, NoSuchEntityException},
+        error_meta::Error as IamError, operation::UpdateGroupInternalRequest, types::error::NoSuchEntityException,
     },
     sqlx::{postgres::PgTransaction, query},
 };
@@ -69,7 +67,7 @@ pub async fn update_group(
         Ok(result) => result,
         Err(e) => {
             log::error!("Failed to update group in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 

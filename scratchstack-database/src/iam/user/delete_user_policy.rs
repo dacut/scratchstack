@@ -3,13 +3,11 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{validate_account_id, validate_policy_name, validate_user_name},
+        iam::{internal_failure, validate_account_id, validate_policy_name, validate_user_name},
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
-        error_meta::Error as IamError,
-        operation::DeleteUserPolicyInternalRequest,
-        types::error::{InternalFailure, NoSuchEntityException},
+        error_meta::Error as IamError, operation::DeleteUserPolicyInternalRequest, types::error::NoSuchEntityException,
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
 };
@@ -58,7 +56,7 @@ pub async fn delete_user_policy(
         }
         Err(e) => {
             log::error!("Failed to look up user in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -74,7 +72,7 @@ pub async fn delete_user_policy(
         Ok(result) => result,
         Err(e) => {
             log::error!("Failed to delete user inline policy from database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 

@@ -1,11 +1,14 @@
 //! DeletePolicy database operation
 use {
-    crate::{RequestExecutor, constants::iam::*, iam::parse_policy_arn},
+    crate::{
+        RequestExecutor,
+        iam::{internal_failure, parse_policy_arn},
+    },
     indoc::indoc,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::DeletePolicyRequest,
-        types::error::{DeleteConflictException, InternalFailure, NoSuchEntityException},
+        types::error::{DeleteConflictException, NoSuchEntityException},
     },
     sqlx::{FromRow, postgres::PgTransaction, query, query_as},
 };
@@ -66,7 +69,7 @@ pub async fn delete_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Resu
         }
         Err(e) => {
             log::error!("Failed to query managed policy from database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -98,7 +101,7 @@ pub async fn delete_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Resu
         Ok(row) => row,
         Err(e) => {
             log::error!("Failed to query DeletePolicy conflict counts from database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -148,7 +151,7 @@ pub async fn delete_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Resu
         }
 
         log::error!("Failed to delete managed policy from database: {e}");
-        return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+        return Err(internal_failure().into());
     }
 
     Ok(())

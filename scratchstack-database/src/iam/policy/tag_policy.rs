@@ -2,8 +2,8 @@
 use {
     crate::{
         RequestExecutor,
-        constants::iam::*,
         iam::{
+            internal_failure,
             policy::{lookup_managed_policy_id, parse_policy_arn},
             validate_tag_key, validate_tag_value,
         },
@@ -12,10 +12,7 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::TagPolicyRequest,
-        types::{
-            Tag,
-            error::{InternalFailure, ValidationError},
-        },
+        types::{Tag, error::ValidationError},
     },
     sqlx::{postgres::PgTransaction, query},
 };
@@ -65,7 +62,7 @@ pub async fn tag_policy(tx: &mut PgTransaction<'_>, policy_arn: &str, tags: &[Ta
         .await
         {
             log::error!("Failed to insert/update managed policy tag: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     }
 

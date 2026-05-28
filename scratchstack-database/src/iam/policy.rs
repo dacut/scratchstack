@@ -1,6 +1,6 @@
 //! Policy-level database operations.
 use {
-    crate::constants::iam::*,
+    crate::{constants::iam::*, iam::internal_failure},
     indoc::indoc,
     scratchstack_arn::Arn,
     scratchstack_shapes_iam::{
@@ -48,7 +48,7 @@ pub(crate) fn build_policy_arn(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct ARN for managed policy: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure().into()
         })
 }
 
@@ -75,7 +75,7 @@ pub(crate) async fn fetch_policy_tags(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch managed policy tags: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     let mut tags = Vec::with_capacity(rows.len());
@@ -106,7 +106,7 @@ pub(crate) async fn get_policy_attachment_count(
     .await
     .map_err(|e| {
         log::error!("Failed to query attachment count for managed policy: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     row.try_get::<i64, _>(0)
@@ -119,7 +119,7 @@ pub(crate) async fn get_policy_attachment_count(
         })
         .map_err(|e| {
             log::error!("Failed to get attachment_count from database row: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure().into()
         })
 }
 
@@ -140,7 +140,7 @@ async fn get_policy_permissions_boundary_usage_count(
     .await
     .map_err(|e| {
         log::error!("Failed to query permissions boundary usage count for managed policy: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     row.try_get::<i64, _>("usage_count")
@@ -153,7 +153,7 @@ async fn get_policy_permissions_boundary_usage_count(
         })
         .map_err(|e| {
             log::error!("Failed to get usage_count from database row: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure().into()
         })
 }
 
@@ -175,15 +175,13 @@ async fn lookup_managed_policy_id(
     .await
     .map_err(|e| {
         log::error!("Failed to query managed policy from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?
-    .ok_or_else(|| {
-        IamError::from(NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())
-    })?
+    .ok_or_else(|| NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())?
     .try_get(0)
     .map_err(|e| {
         log::error!("Failed to get managed_policy_id from database row: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure().into()
     })
 }
 
@@ -203,7 +201,7 @@ pub(crate) struct PolicyArnParts {
 pub(crate) fn parse_policy_arn(policy_arn: &str) -> Result<PolicyArnParts, IamError> {
     let arn = Arn::from_str(policy_arn).map_err(|e| {
         log::info!("Failed to parse policy ARN: {e}");
-        IamError::from(ValidationError::builder().message("Invalid policy ARN".to_string()).build())
+        ValidationError::builder().message("Invalid policy ARN".to_string()).build()
     })?;
 
     let service = arn.service();

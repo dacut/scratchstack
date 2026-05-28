@@ -4,7 +4,8 @@ use {
         RequestExecutor,
         constants::iam::*,
         iam::{
-            constrain_max_items, get_current_partition_or_fail, make_paginator, parse_policy_arn, validate_path_prefix,
+            constrain_max_items, get_current_partition_or_fail, internal_failure, make_paginator, parse_policy_arn,
+            validate_path_prefix,
         },
     },
     indoc::{formatdoc, indoc},
@@ -14,7 +15,7 @@ use {
         operation::{ListEntitiesForPolicyRequest, ListEntitiesForPolicyResponse},
         types::{
             EntityType, PolicyGroup, PolicyRole, PolicyUsageType, PolicyUser,
-            error::{InternalFailure, NoSuchEntityException, ValidationError},
+            error::{NoSuchEntityException, ValidationError},
         },
     },
     serde::{Deserialize, Serialize},
@@ -145,14 +146,14 @@ pub async fn list_entities_for_policy(
         }
         Err(e) => {
             log::error!("Failed to look up managed policy in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
     let resume: Option<ListEntitiesForPolicyMarker> = if let Some(marker) = marker {
         Some(paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListEntitiesForPolicy: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?)
     } else {
         None
@@ -209,7 +210,7 @@ pub async fn list_entities_for_policy(
                         .await
                         .map_err(|e| {
                             log::error!("Failed to encrypt pagination token for ListEntitiesForPolicy: {e}");
-                            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                            internal_failure()
                         })?,
                 );
                 break;
@@ -222,7 +223,7 @@ pub async fn list_entities_for_policy(
                         .build()
                         .map_err(|e| {
                             log::error!("Failed to construct PolicyGroup: {e}");
-                            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                            internal_failure()
                         })?,
                 ),
                 EntitySection::Role => roles.push(
@@ -232,7 +233,7 @@ pub async fn list_entities_for_policy(
                         .build()
                         .map_err(|e| {
                             log::error!("Failed to construct PolicyRole: {e}");
-                            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                            internal_failure()
                         })?,
                 ),
                 EntitySection::User => users.push(
@@ -242,7 +243,7 @@ pub async fn list_entities_for_policy(
                         .build()
                         .map_err(|e| {
                             log::error!("Failed to construct PolicyUser: {e}");
-                            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                            internal_failure()
                         })?,
                 ),
             }
@@ -317,6 +318,6 @@ async fn fetch_section_rows(
 
     sql.build_query_as::<EntityRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch attached entities for ListEntitiesForPolicy ({section}): {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure().into()
     })
 }
