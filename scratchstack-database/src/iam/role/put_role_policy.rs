@@ -3,14 +3,14 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{validate_account_id, validate_policy_name, validate_role_name},
+        iam::{internal_failure, validate_account_id, validate_policy_name, validate_role_name},
     },
     indoc::indoc,
     scratchstack_aspen::Policy as AspenPolicy,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::PutRolePolicyInternalRequest,
-        types::error::{InternalFailure, MalformedPolicyDocumentException, NoSuchEntityException},
+        types::error::{MalformedPolicyDocumentException, NoSuchEntityException},
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
     std::str::FromStr,
@@ -66,7 +66,7 @@ pub async fn put_role_policy(
         }
         Err(e) => {
             log::error!("Failed to look up role in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -85,7 +85,7 @@ pub async fn put_role_policy(
     .await
     {
         log::error!("Failed to insert/update role inline policy in database: {e}");
-        return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+        return Err(internal_failure().into());
     }
 
     Ok(())

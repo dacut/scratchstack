@@ -37,6 +37,18 @@
                 "smithy.api#documentation": "Returns the partition configured for the service."
             }
         },
+        "com.amazonaws.iam#GetSessionTokenEncryptionKey": {
+            "type": "operation",
+            "input": {
+                "target": "com.amazonaws.iam#GetSessionTokenEncryptionKeyRequest"
+            },
+            "output": {
+                "target": "com.amazonaws.iam#GetSessionTokenEncryptionKeyResponse"
+            },
+            "traits": {
+                "smithy.api#documentation": "Returns details about a session token encryption key."
+            }
+        },
         "com.amazonaws.iam#ListAccounts": {
             "type": "operation",
             "input": {
@@ -71,6 +83,18 @@
             },
             "traits": {
                 "smithy.api#documentation": "Sets the partition for the service. This is used to support other partitions beyond standard AWS, such as AWS China and AWS GovCloud."
+            }
+        },
+        "com.amazonaws.iam#UpdateSessionTokenEncryptionKey": {
+            "type": "operation",
+            "input": {
+                "target": "com.amazonaws.iam#UpdateSessionTokenEncryptionKeyRequest"
+            },
+            "output": {
+                "target": "com.amazonaws.iam#UpdateSessionTokenEncryptionKeyResponse"
+            },
+            "traits": {
+                "smithy.api#documentation": "Updates the expiration dates of a session token encryption key."
             }
         },
         "com.amazonaws.iam#CreateAccountRequest": {
@@ -189,6 +213,36 @@
                 "smithy.api#output": {}
             }
         },
+        "com.amazonaws.iam#GetSessionTokenEncryptionKeyRequest": {
+            "type": "structure",
+            "members": {
+                "SessionTokenEncryptionKeyId": {
+                    "target": "com.amazonaws.iam#idType",
+                    "traits": {
+                        "smithy.api#documentation": "The unique identifier of the session token encryption key to retrieve.",
+                        "smithy.api#required": {}
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#input": {}
+            }
+        },
+        "com.amazonaws.iam#GetSessionTokenEncryptionKeyResponse": {
+            "type": "structure",
+            "members": {
+                "SessionTokenEncryptionKey": {
+                    "target": "com.amazonaws.iam#SessionTokenEncryptionKey",
+                    "traits": {
+                        "smithy.api#documentation": "The session token encryption key.",
+                        "smithy.api#required": {}
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#output": {}
+            }
+        },
         "com.amazonaws.iam#ListAccountsRequest": {
             "type": "structure",
             "members": {
@@ -287,6 +341,54 @@
                     "target": "com.amazonaws.iam#markerType",
                     "traits": {
                         "smithy.api#documentation": "<p>If <code>IsTruncated</code> is <code>true</code>, this element is present and contains the value to use for the <code>Marker</code> parameter in a subsequent pagination request.</p>"
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#output": {}
+            }
+        },
+        "com.amazonaws.iam#UpdateSessionTokenEncryptionKeyRequest": {
+            "type": "structure",
+            "members": {
+                "SessionTokenEncryptionKeyId": {
+                    "target": "com.amazonaws.iam#idType",
+                    "traits": {
+                        "smithy.api#documentation": "The unique identifier of the session token encryption key to update.",
+                        "smithy.api#required": {}
+                    }
+                },
+                "IssueValidFrom": {
+                    "target": "com.amazonaws.iam#dateType",
+                    "traits": {
+                        "smithy.api#documentation": "The date and time when the key can be used to encrypt session tokens."
+                    }
+                },
+                "IssueExpiresAt": {
+                    "target": "com.amazonaws.iam#dateType",
+                    "traits": {
+                        "smithy.api#documentation": "The date and time when the key can no longer be used to encrypt session tokens."
+                    }
+                },
+                "AcceptExpiresAt": {
+                    "target": "com.amazonaws.iam#dateType",
+                    "traits": {
+                        "smithy.api#documentation": "The date and time when key can no longer be used to decrypt session tokens."
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#input": {}
+            }
+        },
+        "com.amazonaws.iam#UpdateSessionTokenEncryptionKeyResponse": {
+            "type": "structure",
+            "members": {
+                "SessionTokenEncryptionKey": {
+                    "target": "com.amazonaws.iam#SessionTokenEncryptionKey",
+                    "traits": {
+                        "smithy.api#documentation": "The session token encryption key with updated expiration dates.",
+                        "smithy.api#required": {}
                     }
                 }
             },

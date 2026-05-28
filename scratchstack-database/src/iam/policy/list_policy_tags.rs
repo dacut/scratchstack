@@ -4,7 +4,7 @@ use {
         RequestExecutor,
         constants::iam::*,
         iam::{
-            constrain_max_items, get_current_partition_or_fail, make_paginator,
+            constrain_max_items, get_current_partition_or_fail, internal_failure, make_paginator,
             policy::{lookup_managed_policy_id, parse_policy_arn},
         },
     },
@@ -12,7 +12,7 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListPolicyTagsRequest, ListPolicyTagsResponse},
-        types::{Tag, error::InternalFailure},
+        types::Tag,
     },
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, QueryBuilder, postgres::PgTransaction},
@@ -66,7 +66,7 @@ pub async fn list_policy_tags(
     if let Some(marker) = marker {
         let m: ListPolicyTagsMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListPolicyTags: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
         sql.push("\nAND key_lower >= ");
         sql.push_bind(m.next_key_lower);
@@ -78,7 +78,7 @@ pub async fn list_policy_tags(
 
     let rows = sql.build_query_as::<ListPolicyTagsRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch managed policy tags from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
     let mut results = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -93,7 +93,7 @@ pub async fn list_policy_tags(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListPolicyTags: {e}");
-                        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                        internal_failure()
                     })?,
             );
             break;
@@ -101,7 +101,7 @@ pub async fn list_policy_tags(
 
         results.push(Tag::builder().key(row.key_cased).value(row.value).build().map_err(|e| {
             log::error!("Failed to construct tag object: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?);
     }
 
@@ -113,6 +113,6 @@ pub async fn list_policy_tags(
 
     builder.build().map_err(|e| {
         log::error!("Failed to build ListPolicyTagsResponse: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure().into()
     })
 }

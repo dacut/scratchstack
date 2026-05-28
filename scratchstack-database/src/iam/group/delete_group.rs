@@ -3,13 +3,13 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{validate_account_id, validate_group_name},
+        iam::{internal_failure, validate_account_id, validate_group_name},
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::DeleteGroupInternalRequest,
-        types::error::{DeleteConflictException, InternalFailure, NoSuchEntityException},
+        types::error::{DeleteConflictException, NoSuchEntityException},
     },
     sqlx::{postgres::PgTransaction, query},
 };
@@ -54,7 +54,7 @@ pub async fn delete_group(tx: &mut PgTransaction<'_>, account_id: &str, group_na
                 return Err(DeleteConflictException::builder().message(message).build().into());
             }
             log::error!("Failed to delete group from database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 

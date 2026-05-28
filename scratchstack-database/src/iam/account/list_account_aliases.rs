@@ -1,10 +1,13 @@
 //! ListAccountAliases database level operations.
 use {
-    crate::{RequestExecutor, constants::iam::*, iam::validate_account_id},
+    crate::{
+        RequestExecutor,
+        iam::{internal_failure, validate_account_id},
+    },
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListAccountAliasesInternalRequest, ListAccountAliasesResponse},
-        types::error::{InternalFailure, NoSuchEntityException},
+        types::error::NoSuchEntityException,
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
 };
@@ -36,14 +39,14 @@ pub async fn list_account_aliases(
             log::error!(
                 "ListAccountAliases query failed for account {account_id} (query: SELECT alias FROM iam.accounts WHERE account_id = $1): {e}"
             );
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
 
     match result {
         Some(row) => {
             let alias: Option<String> = row.try_get(0).map_err(|e| {
                 log::error!("Failed to get account alias for account {account_id}: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                internal_failure()
             })?;
             Ok(ListAccountAliasesResponse {
                 account_aliases: alias.into_iter().collect(),

@@ -3,17 +3,14 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{constrain_max_items, get_current_partition_or_fail, make_paginator, parse_policy_arn},
+        iam::{constrain_max_items, get_current_partition_or_fail, internal_failure, make_paginator, parse_policy_arn},
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListPolicyVersionsRequest, ListPolicyVersionsResponse},
-        types::{
-            PolicyVersion,
-            error::{InternalFailure, NoSuchEntityException},
-        },
+        types::{PolicyVersion, error::NoSuchEntityException},
     },
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, QueryBuilder, postgres::PgTransaction, query_as},
@@ -75,11 +72,9 @@ pub async fn list_policy_versions(
     .await
     .map_err(|e| {
         log::error!("Failed to query managed policy from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?
-    .ok_or_else(|| {
-        IamError::from(NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())
-    })?;
+    .ok_or_else(|| NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())?;
 
     let mut sql = QueryBuilder::new(
         r#"
@@ -93,7 +88,7 @@ pub async fn list_policy_versions(
     if let Some(marker) = marker {
         let info: ListPolicyVersionsMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListPolicyVersions: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
         sql.push(" AND managed_policy_version <= ");
         sql.push_bind(info.next_version);
@@ -104,7 +99,7 @@ pub async fn list_policy_versions(
 
     let rows = sql.build_query_as::<ListPolicyVersionsRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch managed policy versions from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     let mut versions: Vec<PolicyVersion> = Vec::with_capacity(rows.len().min(max_items));
@@ -120,7 +115,7 @@ pub async fn list_policy_versions(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListPolicyVersions: {e}");
-                        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                        internal_failure()
                     })?,
             );
             break;
@@ -134,7 +129,7 @@ pub async fn list_policy_versions(
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct PolicyVersion object: {e}");
-                    IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                    internal_failure()
                 })?,
         );
     }

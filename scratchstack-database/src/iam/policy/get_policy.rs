@@ -4,7 +4,7 @@ use {
         RequestExecutor,
         constants::iam::*,
         iam::{
-            get_current_partition_or_fail, parse_policy_arn,
+            get_current_partition_or_fail, internal_failure, parse_policy_arn,
             policy::{
                 build_policy_arn, fetch_policy_tags, get_policy_attachment_count,
                 get_policy_permissions_boundary_usage_count,
@@ -17,10 +17,7 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{GetPolicyRequest, GetPolicyResponse},
-        types::{
-            Policy,
-            error::{InternalFailure, NoSuchEntityException},
-        },
+        types::{Policy, error::NoSuchEntityException},
     },
     sqlx::{FromRow, postgres::PgTransaction, query_as},
 };
@@ -66,11 +63,9 @@ pub async fn get_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Result<
     .await
     .map_err(|e| {
         log::error!("Failed to query managed policy from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?
-    .ok_or_else(|| {
-        IamError::from(NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())
-    })?;
+    .ok_or_else(|| NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())?;
 
     let arn = build_policy_arn(&partition, &parts.account_id, &policy_row.path, &policy_row.managed_policy_name_cased)?;
     let tags = fetch_policy_tags(tx, &policy_row.managed_policy_id).await?;

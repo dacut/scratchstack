@@ -8,7 +8,9 @@ use {
         error_meta::Error as IamError,
         operation::{
             CreateSessionTokenEncryptionKeyRequest, CreateSessionTokenEncryptionKeyResponse,
+            GetSessionTokenEncryptionKeyRequest, GetSessionTokenEncryptionKeyResponse,
             ListSessionTokenEncryptionKeysRequest, ListSessionTokenEncryptionKeysResponse,
+            UpdateSessionTokenEncryptionKeyRequest, UpdateSessionTokenEncryptionKeyResponse,
         },
         types::{ListSessionTokenEncryptionKeysFilter, error::ValidationError},
     },
@@ -35,6 +37,14 @@ pub(crate) struct CreateSessionTokenEncryptionKeyCommand {
     accept_expires_at: Option<DateTime<Utc>>,
 }
 
+/// Get information about a session token encryption key.
+#[derive(Debug, Parser)]
+pub(crate) struct GetSessionTokenEncryptionKeyCommand {
+    /// The unique identifier of the session token encryption key to retrieve.
+    #[clap(long)]
+    pub session_token_encryption_key_id: String,
+}
+
 /// List session token encryption keys.
 #[derive(Debug, Parser)]
 pub(crate) struct ListSessionTokenEncryptionKeysCommand {
@@ -59,6 +69,27 @@ pub(crate) struct ListSessionTokenEncryptionKeysCommand {
     pub marker: Option<String>,
 }
 
+/// Update the expiration windows of an existing session token encryption key. Any field left
+/// unspecified retains its current value.
+#[derive(Debug, Parser)]
+pub(crate) struct UpdateSessionTokenEncryptionKeyCommand {
+    /// The unique identifier of the session token encryption key to update.
+    #[clap(long)]
+    pub session_token_encryption_key_id: String,
+
+    /// The date and time when the key can be used to encrypt session tokens.
+    #[clap(long)]
+    pub issue_valid_from: Option<DateTime<Utc>>,
+
+    /// The date and time when the key can no longer be used to encrypt session tokens.
+    #[clap(long)]
+    pub issue_expires_at: Option<DateTime<Utc>>,
+
+    /// The date and time when key can no longer be used to decrypt session tokens.
+    #[clap(long)]
+    pub accept_expires_at: Option<DateTime<Utc>>,
+}
+
 impl Runnable for CreateSessionTokenEncryptionKeyCommand {
     type Result = CreateSessionTokenEncryptionKeyResponse;
 
@@ -81,6 +112,20 @@ impl Runnable for CreateSessionTokenEncryptionKeyCommand {
     }
 }
 
+impl Runnable for GetSessionTokenEncryptionKeyCommand {
+    type Result = GetSessionTokenEncryptionKeyResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let request = GetSessionTokenEncryptionKeyRequest::builder()
+            .session_token_encryption_key_id(self.session_token_encryption_key_id.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
 impl Runnable for ListSessionTokenEncryptionKeysCommand {
     type Result = ListSessionTokenEncryptionKeysResponse;
 
@@ -95,6 +140,29 @@ impl Runnable for ListSessionTokenEncryptionKeysCommand {
         }
         if let Some(marker) = &self.marker {
             request = request.marker(marker.clone());
+        }
+        let request = request.build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
+impl Runnable for UpdateSessionTokenEncryptionKeyCommand {
+    type Result = UpdateSessionTokenEncryptionKeyResponse;
+
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let mut request = UpdateSessionTokenEncryptionKeyRequest::builder()
+            .session_token_encryption_key_id(self.session_token_encryption_key_id.clone());
+        if let Some(issue_valid_from) = self.issue_valid_from {
+            request = request.issue_valid_from(issue_valid_from);
+        }
+        if let Some(issue_expires_at) = self.issue_expires_at {
+            request = request.issue_expires_at(issue_expires_at);
+        }
+        if let Some(accept_expires_at) = self.accept_expires_at {
+            request = request.accept_expires_at(accept_expires_at);
         }
         let request = request.build()?;
         execute_in_transaction(cli, vars, &request).await

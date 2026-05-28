@@ -3,13 +3,13 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{validate_account_id, validate_role_name},
+        iam::{internal_failure, validate_account_id, validate_role_name},
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{UpdateRoleInternalRequest, UpdateRoleResponse},
-        types::error::{InternalFailure, NoSuchEntityException, ValidationError},
+        types::error::{NoSuchEntityException, ValidationError},
     },
     sqlx::{postgres::PgTransaction, query},
 };
@@ -63,7 +63,7 @@ pub async fn update_role(
             Ok(result) => result,
             Err(e) => {
                 log::error!("Failed to update role in database: {e}");
-                return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+                return Err(internal_failure().into());
             }
         };
 
@@ -85,7 +85,7 @@ pub async fn update_role(
         .await
         .map_err(|e| {
             log::error!("Failed to query role in database: {e}");
-            InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+            internal_failure()
         })?;
 
         if result.is_none() {
@@ -98,6 +98,6 @@ pub async fn update_role(
 
     UpdateRoleResponse::builder().build().map_err(|e| {
         log::error!("Failed to build UpdateRoleResponse: {e}");
-        InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into()
+        internal_failure().into()
     })
 }

@@ -4,13 +4,13 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{validate_account_id, validate_role_name},
+        iam::{internal_failure, validate_account_id, validate_role_name},
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{UpdateRoleDescriptionInternalRequest, UpdateRoleDescriptionResponse},
-        types::error::{InternalFailure, NoSuchEntityException},
+        types::error::NoSuchEntityException,
     },
     sqlx::{postgres::PgTransaction, query},
 };
@@ -52,7 +52,7 @@ pub async fn update_role_description(
         Ok(result) => result,
         Err(e) => {
             log::error!("Failed to update role description in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -67,6 +67,6 @@ pub async fn update_role_description(
 
     UpdateRoleDescriptionResponse::builder().role(Some(role)).build().map_err(|e| {
         log::error!("Failed to build UpdateRoleDescriptionResponse: {e}");
-        InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into()
+        internal_failure().into()
     })
 }

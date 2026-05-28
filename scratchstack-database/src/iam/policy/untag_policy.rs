@@ -2,14 +2,11 @@
 use {
     crate::{
         RequestExecutor,
-        constants::iam::*,
-        iam::{parse_policy_arn, policy::lookup_managed_policy_id, validate_tag_key},
+        iam::{internal_failure, parse_policy_arn, policy::lookup_managed_policy_id, validate_tag_key},
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
-        error_meta::Error as IamError,
-        operation::UntagPolicyRequest,
-        types::error::{InternalFailure, ValidationError},
+        error_meta::Error as IamError, operation::UntagPolicyRequest, types::error::ValidationError,
     },
     sqlx::{postgres::PgTransaction, query},
 };
@@ -46,7 +43,7 @@ pub async fn untag_policy(tx: &mut PgTransaction<'_>, policy_arn: &str, tag_keys
         .await
         {
             log::error!("Failed to delete managed policy tag: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     }
 

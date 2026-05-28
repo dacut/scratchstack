@@ -4,8 +4,8 @@ use {
         RequestExecutor,
         constants::iam::*,
         iam::{
-            build_policy_arn, constrain_max_items, get_current_partition_or_fail, make_paginator, role_arn_resource,
-            validate_account_id, validate_path_prefix,
+            build_policy_arn, constrain_max_items, get_current_partition_or_fail, internal_failure, make_paginator,
+            role_arn_resource, validate_account_id, validate_path_prefix,
         },
     },
     chrono::{DateTime, Utc},
@@ -14,7 +14,7 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListRolesInternalRequest, ListRolesResponse},
-        types::{AttachedPermissionsBoundary, PermissionsBoundaryAttachmentType, Role, Tag, error::InternalFailure},
+        types::{AttachedPermissionsBoundary, PermissionsBoundaryAttachmentType, Role, Tag},
     },
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, QueryBuilder, postgres::PgTransaction},
@@ -97,7 +97,7 @@ pub async fn list_roles(
     if let Some(marker) = marker {
         let info: ListRolesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListRoles: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
         sql.push(" AND r.role_name_lower >= ");
         sql.push_bind(info.next_role_name_lower);
@@ -109,7 +109,7 @@ pub async fn list_roles(
 
     let rows = sql.build_query_as::<ListRolesRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch roles from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     let mut results: Vec<Role> = Vec::with_capacity(rows.len().min(max_items));
@@ -125,7 +125,7 @@ pub async fn list_roles(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListRoles: {e}");
-                        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                        internal_failure()
                     })?,
             );
             break;
@@ -139,7 +139,7 @@ pub async fn list_roles(
             .build()
             .map_err(|e| {
                 log::error!("Failed to construct ARN for role: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                internal_failure()
             })?;
 
         let permissions_boundary = if let Some(pb_id) = row.permissions_boundary_managed_policy_id.as_deref() {
@@ -149,7 +149,7 @@ pub async fn list_roles(
                 (Some(p), Some(n)) => (p, n),
                 _ => {
                     log::error!("Role references missing permissions boundary managed policy ID: {pb_id}");
-                    return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+                    return Err(internal_failure().into());
                 }
             };
             let pb_arn = build_policy_arn(&partition, account_id, &pb_path, &pb_name_cased)?;
@@ -161,7 +161,7 @@ pub async fn list_roles(
                     .build()
                     .map_err(|e| {
                         log::error!("Failed to construct permissions boundary for role: {e}");
-                        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                        internal_failure()
                     })?,
             )
         } else {
@@ -183,7 +183,7 @@ pub async fn list_roles(
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct role object: {e}");
-                    IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                    internal_failure()
                 })?,
         );
     }
@@ -196,6 +196,6 @@ pub async fn list_roles(
 
     builder.build().map_err(|e| {
         log::error!("Failed to build ListRolesResponse: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure().into()
     })
 }

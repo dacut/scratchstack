@@ -4,8 +4,8 @@ use {
         RequestExecutor,
         constants::iam::*,
         iam::{
-            build_policy_arn, get_current_partition_or_fail, user::user_arn_resource, validate_account_id,
-            validate_user_name,
+            build_policy_arn, get_current_partition_or_fail, internal_failure, user::user_arn_resource,
+            validate_account_id, validate_user_name,
         },
     },
     chrono::{DateTime, Utc},
@@ -17,7 +17,7 @@ use {
         operation::{GetUserInternalRequest, GetUserResponse},
         types::{
             AttachedPermissionsBoundary, PermissionsBoundaryAttachmentType, Tag, User,
-            error::{InternalFailure, NoSuchEntityException, ValidationError},
+            error::{NoSuchEntityException, ValidationError},
         },
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
@@ -47,7 +47,7 @@ pub async fn get_user(
     let user_name = user_name.ok_or_else(|| {
         // If no user name is provided, this would normally default to the calling user,
         // but at the database level we require it.
-        IamError::from(ValidationError::builder().message("UserName is required").build())
+        ValidationError::builder().message("UserName is required").build()
     })?;
     validate_user_name(user_name)?;
     let user_name_lower = user_name.to_lowercase();
@@ -65,15 +65,11 @@ pub async fn get_user(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch user from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     let row = row.ok_or_else(|| {
-        IamError::from(
-            NoSuchEntityException::builder()
-                .message(format!("The user with name {user_name} cannot be found."))
-                .build(),
-        )
+        NoSuchEntityException::builder().message(format!("The user with name {user_name} cannot be found.")).build()
     })?;
 
     let user_id: String = row.get(0);
@@ -90,7 +86,7 @@ pub async fn get_user(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct ARN for user: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
 
     let permissions_boundary = if let Some(pb_id) = permissions_boundary_id {
@@ -104,12 +100,12 @@ pub async fn get_user(
         .await
         .map_err(|e| {
             log::error!("Failed to fetch permissions boundary managed policy from database: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
 
         let pb_row = pb_row.ok_or_else(|| {
             log::error!("User references missing permissions boundary managed policy ID: {pb_id}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
 
         let pb_path: String = pb_row.get(0);
@@ -123,7 +119,7 @@ pub async fn get_user(
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct permissions boundary for user: {e}");
-                    IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                    internal_failure()
                 })?,
         )
     } else {
@@ -142,7 +138,7 @@ pub async fn get_user(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch user tags from database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     let mut tags = Vec::with_capacity(tag_rows.len());
@@ -151,7 +147,7 @@ pub async fn get_user(
         let value: String = tag_row.get(1);
         tags.push(Tag::builder().key(key).value(value).build().map_err(|e| {
             log::error!("Failed to construct tag object: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?);
     }
 
@@ -166,7 +162,7 @@ pub async fn get_user(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct user object: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
 
     Ok(GetUserResponse::builder().user(user).build().unwrap())

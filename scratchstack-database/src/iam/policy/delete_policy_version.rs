@@ -2,14 +2,16 @@
 use {
     crate::{
         RequestExecutor,
-        constants::iam::*,
-        iam::policy::{parse_policy_arn, parse_policy_version_id},
+        iam::{
+            internal_failure,
+            policy::{parse_policy_arn, parse_policy_version_id},
+        },
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::DeletePolicyVersionRequest,
-        types::error::{DeleteConflictException, InternalFailure, NoSuchEntityException, ValidationError},
+        types::error::{DeleteConflictException, NoSuchEntityException, ValidationError},
     },
     sqlx::{FromRow, postgres::PgTransaction, query, query_as},
 };
@@ -44,7 +46,7 @@ pub async fn delete_policy_version(
     // ^v[1-9][0-9]*(\.[A-Za-z0-9-]*)?$, so version_id always starts with 'v' followed by digits
     // and optionally a '.suffix'. We accept the input defensively in case the builder is bypassed.
     let version_number = parse_policy_version_id(version_id).ok_or_else(|| {
-        IamError::from(ValidationError::builder().message(format!("Invalid policy version id: {version_id}")).build())
+        ValidationError::builder().message(format!("Invalid policy version id: {version_id}")).build()
     })?;
 
     // Lock the managed_policies row to prevent a race in which another transaction sets the
@@ -68,7 +70,7 @@ pub async fn delete_policy_version(
         }
         Err(e) => {
             log::error!("Failed to query managed policy from database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -89,7 +91,7 @@ pub async fn delete_policy_version(
         Ok(result) => result,
         Err(e) => {
             log::error!("Failed to delete managed policy version from database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -118,7 +120,7 @@ pub async fn delete_policy_version(
         .await
     {
         log::error!("Failed to recompute managed policy update_date: {e}");
-        return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+        return Err(internal_failure().into());
     }
 
     Ok(())

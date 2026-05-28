@@ -3,13 +3,11 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{parse_policy_arn, validate_account_id, validate_group_name},
+        iam::{internal_failure, parse_policy_arn, validate_account_id, validate_group_name},
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
-        error_meta::Error as IamError,
-        operation::AttachGroupPolicyInternalRequest,
-        types::error::{InternalFailure, NoSuchEntityException},
+        error_meta::Error as IamError, operation::AttachGroupPolicyInternalRequest, types::error::NoSuchEntityException,
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
 };
@@ -66,7 +64,7 @@ pub async fn attach_group_policy(
         }
         Err(e) => {
             log::error!("Failed to look up managed policy in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -90,7 +88,7 @@ pub async fn attach_group_policy(
         }
         Err(e) => {
             log::error!("Failed to look up group in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -105,7 +103,7 @@ pub async fn attach_group_policy(
     .await
     {
         log::error!("Failed to attach policy to group in database: {e}");
-        return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+        return Err(internal_failure().into());
     }
 
     Ok(())

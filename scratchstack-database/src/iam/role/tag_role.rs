@@ -3,7 +3,7 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{validate_account_id, validate_role_name, validate_tag_key, validate_tag_value},
+        iam::{internal_failure, validate_account_id, validate_role_name, validate_tag_key, validate_tag_value},
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
@@ -11,7 +11,7 @@ use {
         operation::TagRoleInternalRequest,
         types::{
             Tag,
-            error::{InternalFailure, NoSuchEntityException, ValidationError},
+            error::{NoSuchEntityException, ValidationError},
         },
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
@@ -69,7 +69,7 @@ pub async fn tag_role(
         }
         Err(e) => {
             log::error!("Failed to look up role in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     };
 
@@ -95,7 +95,7 @@ pub async fn tag_role(
         .await
         {
             log::error!("Failed to insert/update role tag in database: {e}");
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+            return Err(internal_failure().into());
         }
     }
 

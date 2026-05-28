@@ -2,8 +2,7 @@
 use {
     crate::{
         RequestExecutor,
-        constants::iam::*,
-        iam::{account::is_alias_unique_violation, validate_account_alias, validate_account_id},
+        iam::{account::is_alias_unique_violation, internal_failure, validate_account_alias, validate_account_id},
     },
     indoc::indoc,
     rand::random_range,
@@ -12,7 +11,7 @@ use {
         operation::{CreateAccountRequest, CreateAccountResponse},
         types::{
             Account,
-            error::{EntityAlreadyExistsException, InternalFailure, ValidationError},
+            error::{EntityAlreadyExistsException, ValidationError},
         },
     },
     sqlx::{Acquire as _, postgres::PgTransaction, query},
@@ -90,7 +89,7 @@ async fn create_account_with_id(
                 .into());
         }
         log::error!("Failed to insert account into database: {e}");
-        return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+        return Err(internal_failure().into());
     }
 
     let mut acct_builder = Account::builder().account_id(account_id);
@@ -102,7 +101,7 @@ async fn create_account_with_id(
     }
     let account = acct_builder.build().map_err(|e| {
         log::error!("Failed to build Account: {e}");
-        InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+        internal_failure()
     })?;
     Ok(CreateAccountResponse {
         account,
@@ -122,7 +121,7 @@ async fn create_account_with_random_account_id(
             Ok(sp) => sp,
             Err(e) => {
                 log::error!("Failed to create savepoint: {e}");
-                return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+                return Err(internal_failure().into());
             }
         };
 
@@ -130,7 +129,7 @@ async fn create_account_with_random_account_id(
             Ok(response) => {
                 if let Err(e) = savepoint.commit().await {
                     log::error!("Failed to commit savepoint: {e}");
-                    return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+                    return Err(internal_failure().into());
                 }
                 return Ok(response);
             }
@@ -142,7 +141,7 @@ async fn create_account_with_random_account_id(
                 // extremely unlikely to repeat.
                 if let Err(e) = savepoint.rollback().await {
                     log::error!("Failed to rollback savepoint: {e}");
-                    return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+                    return Err(internal_failure().into());
                 }
                 continue;
             }
@@ -150,7 +149,7 @@ async fn create_account_with_random_account_id(
                 // Validation error or something else — don't retry.
                 if let Err(e) = savepoint.rollback().await {
                     log::error!("Failed to rollback savepoint: {e}");
-                    return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into());
+                    return Err(internal_failure().into());
                 }
                 return Err(other);
             }

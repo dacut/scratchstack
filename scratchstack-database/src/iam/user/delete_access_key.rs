@@ -3,13 +3,11 @@ use {
     crate::{
         RequestExecutor,
         constants::iam::*,
-        iam::{user::validate_access_key_id, validate_account_id, validate_user_name},
+        iam::{internal_failure, user::validate_access_key_id, validate_account_id, validate_user_name},
     },
     indoc::indoc,
     scratchstack_shapes_iam::{
-        error_meta::Error as IamError,
-        operation::DeleteAccessKeyInternalRequest,
-        types::error::{InternalFailure, NoSuchEntityException},
+        error_meta::Error as IamError, operation::DeleteAccessKeyInternalRequest, types::error::NoSuchEntityException,
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
 };
@@ -53,7 +51,7 @@ pub async fn delete_access_key(
     .await
     .map_err(|e| {
         log::error!("Failed to look up access key in database: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        internal_failure()
     })?;
 
     let (key_user_name_lower, key_account_id): (String, String) = match row {
@@ -87,7 +85,7 @@ pub async fn delete_access_key(
         .await
         .map_err(|e| {
             log::error!("Failed to delete access key from database: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+            internal_failure()
         })?;
 
     if result.rows_affected() == 0 {
