@@ -1,6 +1,6 @@
 //! Default session token extractor implementation.
 use {
-    crate::{ExtractSessionToken, SessionTokenData, SignatureError},
+    crate::{ExtractSessionToken, SessionTokenData, SignatureError, constants::*},
     aes_gcm::{AeadInPlace as _, Aes256Gcm, Key as AesKey, KeyInit as _, Nonce},
     base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
     std::{
@@ -201,7 +201,7 @@ impl EncryptedSessionTokenData {
 
     /// Parse a session token and return the parsed [`EncryptedSessionTokenData`].
     pub(crate) fn from_session_token(session_token: &[u8]) -> Result<Self, SignatureError> {
-        if session_token.is_empty() {
+        if session_token.is_empty() || session_token.len() > MAX_SESSION_TOKEN_SIZE {
             return Err(invalid_session_token_error());
         }
 

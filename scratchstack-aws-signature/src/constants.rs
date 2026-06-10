@@ -128,6 +128,12 @@ pub(crate) const ISO8601_DATE_FORMAT: &str = "%Y%m%d";
 /// Length of an ISO8601 date string in the UTC time zone.
 pub(crate) const ISO8601_UTC_LENGTH: usize = 16;
 
+/// Maximum size of a session token in bytes.
+pub(crate) const MAX_SESSION_TOKEN_SIZE: usize = 1 << 20; // 1 MiB
+
+/// Maximum size of a secret key in bytes.
+pub(crate) const MAX_SECRET_KEY_SIZE: usize = 256;
+
 /// Error message: `"Authorization header requires 'Credential' parameter."`
 pub(crate) const MSG_AUTH_HEADER_REQ_CREDENTIAL: &str = "Authorization header requires 'Credential' parameter.";
 

@@ -160,6 +160,9 @@ impl FromStr for KSecretKey {
         if len == 0 {
             return Err(KeyLengthError::TooShort);
         }
+        if len > MAX_SECRET_KEY_SIZE {
+            return Err(KeyLengthError::TooLong);
+        }
 
         // Reserve the exact size up front so the buffer is never reallocated; a reallocation
         // would leave an unscrubbed copy of the key on the heap.
@@ -505,7 +508,7 @@ where
 #[cfg(test)]
 mod tests {
     use {
-        crate::{GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey},
+        crate::{GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, constants::*},
         chrono::NaiveDate,
         scratchstack_aws_principal::{AssumedRole, Principal},
         std::str::FromStr,
@@ -665,6 +668,7 @@ mod tests {
     #[test]
     fn test_key_from_str_length() {
         assert_eq!(KSecretKey::from_str(""), Err(crate::KeyLengthError::TooShort));
+        assert_eq!(KSecretKey::from_str(&"a".repeat(MAX_SECRET_KEY_SIZE + 1)), Err(crate::KeyLengthError::TooLong));
         assert!(KSecretKey::from_str("1234567890123456789012345678901234567890").is_ok());
     }
 }
