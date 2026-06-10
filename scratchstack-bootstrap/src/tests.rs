@@ -1,5 +1,7 @@
 use {
-    crate::{run, session_token_encryption_key::list_session_token_encryption_keys_filters_from_shorthand},
+    crate::{
+        boxed_future, run, session_token_encryption_key::list_session_token_encryption_keys_filters_from_shorthand,
+    },
     aws_smithy_types::error::metadata::ProvideErrorMetadata,
     chrono::{DateTime, Utc},
     pretty_assertions::assert_eq,
@@ -6770,7 +6772,9 @@ impl TestHarness for TempDatabase {
         let args = cli(args);
         async move {
             let mut result: Vec<u8> = Vec::with_capacity(1024);
-            run(args, vars, &mut result).await?;
+            // Box the CLI future so the async blocks awaited by the test functions stay small;
+            // see `boxed_future` for details.
+            boxed_future(|| run(args, vars, &mut result)).await?;
             String::from_utf8(result).map_err(|e| {
                 log::error!("Failed to convert output to UTF-8: {e}");
                 IamError::from(

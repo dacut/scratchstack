@@ -37,6 +37,9 @@ pub enum SignatureError {
     /// Invalid request method.
     InvalidRequestMethod(/* message */ String),
 
+    /// Invalid session token.
+    InvalidSessionToken(/* message */ String),
+
     /// The request signature does not conform to AWS standards. Sample messages:  
     /// `Authorization header requires 'Credential' parameter. Authorization=...`  
     /// `Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header.`  
@@ -85,6 +88,7 @@ impl SignatureError {
             Self::InvalidClientTokenId(_) => ERR_CODE_INVALID_CLIENT_TOKEN_ID,
             Self::InvalidContentType(_) => ERR_CODE_INVALID_CONTENT_TYPE,
             Self::InvalidRequestMethod(_) => ERR_CODE_INVALID_REQUEST_METHOD,
+            Self::InvalidSessionToken(_) => ERR_CODE_INVALID_SESSION_TOKEN,
             Self::IncompleteSignature(_) => ERR_CODE_INCOMPLETE_SIGNATURE,
             Self::InvalidURIPath(_) => ERR_CODE_INVALID_URI_PATH,
             Self::MalformedHeader(_) => ERR_CODE_MALFORMED_HEADER,
@@ -133,6 +137,7 @@ impl Display for SignatureError {
             Self::InvalidClientTokenId(msg) => f.write_str(msg),
             Self::InvalidContentType(msg) => f.write_str(msg),
             Self::InvalidRequestMethod(msg) => f.write_str(msg),
+            Self::InvalidSessionToken(msg) => f.write_str(msg),
             Self::IncompleteSignature(msg) => f.write_str(msg),
             Self::InvalidURIPath(msg) => f.write_str(msg),
             Self::MalformedHeader(msg) => f.write_str(msg),

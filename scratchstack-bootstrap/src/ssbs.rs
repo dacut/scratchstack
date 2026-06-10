@@ -38,9 +38,25 @@ use {
     std::{
         ffi::OsString,
         io::{Write, stdout},
+        pin::Pin,
         time::Duration,
     },
 };
+
+/// Construct the future returned by `make` and immediately box it.
+///
+/// In unoptimized builds, every future a function creates is materialized in that function's
+/// stack frame, and those slots are not reused across match arms or sequential awaits. With the
+/// dozens of subcommand futures dispatched in [`run`] (and the hundreds of invocations in the
+/// test suite), those frames overflow the 8 MiB thread stack. Constructing each future in this
+/// helper's transient frame and returning it boxed keeps the callers' frames small.
+pub(crate) fn boxed_future<F, Fut>(make: F) -> Pin<Box<Fut>>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future,
+{
+    Box::pin(make())
+}
 
 /// Trait that subcommands must implement to be run by the CLI.
 trait Runnable {
@@ -533,438 +549,438 @@ where
     let cli = Cli::parse_from(args);
     let result = match &cli.command {
         Commands::AddUserToGroup(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::AttachGroupPolicy(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::AttachRolePolicy(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::AttachUserPolicy(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::CreateAccessKey(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::CreateAccount(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::CreateAccountAlias(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::CreateGroup(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::CreatePolicy(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::CreatePolicyVersion(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::CreateRole(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::CreateSessionTokenEncryptionKey(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::CreateUser(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::DeleteAccessKey(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::DeleteGroup(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::DeleteGroupPolicy(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::DeletePolicy(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::DeletePolicyVersion(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::DeleteRole(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::DeleteRolePermissionsBoundary(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::DeleteRolePolicy(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::DeleteUserPermissionsBoundary(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::DeleteUser(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::DeleteUserPolicy(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::DetachGroupPolicy(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::DetachRolePolicy(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::DetachUserPolicy(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::GetCurrentPartition(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::GetGroup(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::GetGroupPolicy(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::GetPolicy(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::GetPolicyVersion(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::GetRole(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::GetRolePolicy(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::GetSessionTokenEncryptionKey(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::GetUser(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::GetUserPolicy(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListAccessKeys(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListAccountAliases(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListAccounts(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListAttachedGroupPolicies(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListAttachedRolePolicies(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListAttachedUserPolicies(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListEntitiesForPolicy(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListGroupPolicies(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListGroups(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListGroupsForUser(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListPolicies(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListPolicyTags(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListPolicyVersions(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListRolePolicies(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListRoles(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListRoleTags(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListSessionTokenEncryptionKeys(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListUserPolicies(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListUsers(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::ListUserTags(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::Migrate(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "Migration completed successfully.".to_string()
         }
         Commands::PutGroupPolicy(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::PutRolePermissionsBoundary(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::PutRolePolicy(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::PutUserPermissionsBoundary(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::PutUserPolicy(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::RemoveUserFromGroup(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::SetCurrentPartition(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::SetDefaultPolicyVersion(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::TagPolicy(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::TagRole(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::TagUser(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::UntagPolicy(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::UntagRole(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::UpdateAccessKey(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::UpdateGroup(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::UpdateRole(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::UpdateRoleDescription(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::UpdateSessionTokenEncryptionKey(sub) => {
-            let response = sub.run(&cli, vars).await?;
+            let response = boxed_future(|| sub.run(&cli, vars)).await?;
             serde_json::to_string_pretty(&response).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
                 IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
             })?
         }
         Commands::UpdateUser(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
         Commands::UntagUser(sub) => {
-            sub.run(&cli, vars).await?;
+            boxed_future(|| sub.run(&cli, vars)).await?;
             "".to_string()
         }
     };

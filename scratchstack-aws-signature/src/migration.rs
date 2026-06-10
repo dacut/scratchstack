@@ -49,9 +49,9 @@
 //! * [`KSigningKey`](crate::KSigningKey): Key derived from `KServiceKey` and the string
 //!   "aws4_request".
 //!
-//! These types have fixed sizes. [`KSecretKey`][crate::KSecretKey] has a const parameter that
-//! specifies the maximum secret key size (including the `"AWS4"` prefix), which defaults to 44
-//! (the size of AWS-issued secret keys).
+//! The derived key types have fixed sizes. [`KSecretKey`][crate::KSecretKey] holds the secret
+//! key (including the `"AWS4"` prefix) in a heap allocation that is zeroized on drop; AWS-issued
+//! secret keys are 40 characters long.
 //!
 //! ### Signing key functions changed
 //! Previously, `get_signing_key_fn()` was used to convert a function into a

@@ -8,7 +8,7 @@ use {
     },
     rand::random_range,
     sqlx::{
-        ConnectOptions as _, Error as SqlxError, Row as _,
+        AssertSqlSafe, ConnectOptions as _, Error as SqlxError, Row as _,
         postgres::{PgConnectOptions, PgConnection, PgPoolOptions},
         query,
     },
@@ -57,7 +57,8 @@ pub async fn create_database_if_not_exists(conn: &mut PgConnection, db_name: &st
     if present == 0 {
         log::info!("Creating database {db_name}");
         let sql = format!("CREATE DATABASE {}", pg_quote_ident(db_name));
-        query(&sql).execute(&mut *conn).await?;
+        // Safety: db_name is quoted with pg_quote_ident; DDL cannot use bind parameters.
+        query(AssertSqlSafe(sql)).execute(&mut *conn).await?;
         log::info!("Created database {db_name}");
     }
 
@@ -92,7 +93,9 @@ pub async fn create_user_if_not_exists(
             sql += &format!(" PASSWORD {}", pg_quote_literal(password));
         };
 
-        query(&sql).bind(username).execute(&mut *conn).await?;
+        // Safety: username is quoted with pg_quote_ident and password with pg_quote_literal;
+        // DDL cannot use bind parameters.
+        query(AssertSqlSafe(sql)).execute(&mut *conn).await?;
         log::info!("Created database role for user {username}"); // codeql[rust/cleartext-logging]
     } else {
         log::info!("Database role for user {username} already exists"); // codeql[rust/cleartext-logging]
@@ -108,7 +111,9 @@ pub async fn grant_ddl_permissions(conn: &mut PgConnection, db_name: &str, usern
         pg_quote_ident(db_name),
         pg_quote_ident(username)
     );
-    query(&sql).bind(username).execute(&mut *conn).await?;
+    // Safety: db_name and username are quoted with pg_quote_ident; DDL cannot use bind
+    // parameters.
+    query(AssertSqlSafe(sql)).execute(&mut *conn).await?;
     log::info!("Granted DDL permissions to user {username} on database {db_name}"); // codeql[rust/cleartext-logging]
     Ok(())
 }
@@ -342,10 +347,11 @@ impl TempDatabase {
             .connect()
             .await?;
 
-        query(&format!(
+        // Safety: the password is quoted with pg_quote_literal; DDL cannot use bind parameters.
+        query(AssertSqlSafe(format!(
             "CREATE ROLE scratchstack NOSUPERUSER CREATEDB NOCREATEROLE LOGIN PASSWORD {}",
             pg_quote_literal(&self.scratchstack_password)
-        ))
+        )))
         .execute(&mut c)
         .await
         .expect("Failed to create role in PostgreSQL database");

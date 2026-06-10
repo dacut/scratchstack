@@ -14,8 +14,7 @@ counterparts, so GetUserInternalRequest's response is still GetUserResponse. How
 counterpart is not used when the account can be inferred from other arguments; notably, this
 happens with policy APIs that take a policy ARN.
 
-When implementing code, make sure it passes formatting and clippy checks: `cargo fmt --check` (or
-just run `cargo fmt`) and `cargo clippy -- -Dwarnings` are used in GitHub Actions.
+When implementing code, it should pass formatting and clippy checks.
 
 This project uses an embedded PostgreSQL database to execute tests, so unit tests can be a bit
 more comprehensive and feel a bit more like integration tests, but still do not require off-host

@@ -35,7 +35,8 @@ sqlx = { workspace = true, optional = true, features = [
     "chrono",
     "macros",
     "migrate",
-    "runtime-tokio-rustls",
+    "runtime-tokio",
+    "tls-rustls",
 ] }
 tokio = { workspace = true, features = ["macros", "rt"] }
 tower.workspace = true

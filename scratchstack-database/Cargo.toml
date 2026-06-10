@@ -46,7 +46,8 @@ sqlx = { workspace = true, features = [
     "macros",
     "migrate",
     "postgres",
-    "runtime-tokio-rustls",
+    "runtime-tokio",
+    "tls-rustls",
 ] }
 tempfile = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["macros", "rt"] }

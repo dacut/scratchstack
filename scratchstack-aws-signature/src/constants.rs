@@ -54,6 +54,9 @@ pub(crate) const ERR_CODE_INCOMPLETE_SIGNATURE: &str = "IncompleteSignature";
 /// Error code: InvalidRequestMethod (non-AWS standard)
 pub(crate) const ERR_CODE_INVALID_REQUEST_METHOD: &str = "InvalidRequestMethod";
 
+/// Error code: InvalidSessionToken (non-AWS standard)
+pub(crate) const ERR_CODE_INVALID_SESSION_TOKEN: &str = "InvalidSessionToken";
+
 /// Error code: InvalidURIPath
 pub(crate) const ERR_CODE_INVALID_URI_PATH: &str = "InvalidURIPath";
 
@@ -125,8 +128,11 @@ pub(crate) const ISO8601_DATE_FORMAT: &str = "%Y%m%d";
 /// Length of an ISO8601 date string in the UTC time zone.
 pub(crate) const ISO8601_UTC_LENGTH: usize = 16;
 
-/// The default length of an AWS secret key, including the "AWS4" prefix.
-pub(crate) static KSECRETKEY_LENGTH: usize = 44;
+/// Maximum size of a session token in bytes.
+pub(crate) const MAX_SESSION_TOKEN_SIZE: usize = 1 << 20; // 1 MiB
+
+/// Maximum size of a secret key in bytes.
+pub(crate) const MAX_SECRET_KEY_SIZE: usize = 256;
 
 /// Error message: `"Authorization header requires 'Credential' parameter."`
 pub(crate) const MSG_AUTH_HEADER_REQ_CREDENTIAL: &str = "Authorization header requires 'Credential' parameter.";

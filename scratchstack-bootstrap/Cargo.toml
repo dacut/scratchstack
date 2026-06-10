@@ -25,7 +25,7 @@ scratchstack-database = { path = "../scratchstack-database", features = ["clap",
 scratchstack-shapes-iam = { path = "../scratchstack-shapes-iam" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-sqlx = { workspace = true, features = ["chrono", "macros", "migrate", "postgres", "runtime-tokio-rustls" ] }
+sqlx = { workspace = true, features = ["chrono", "macros", "migrate", "postgres", "runtime-tokio", "tls-rustls" ] }
 tokio = { workspace = true, features = ["macros", "rt"] }
 whoami.workspace = true
 

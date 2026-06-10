@@ -10,7 +10,12 @@ license.workspace = true
 repository.workspace = true
 version.workspace = true
 
+[features]
+default = []
+serde = ["dep:serde"]
+
 [dependencies]
 base64.workspace = true
 chrono = { workspace = true, features = [ "alloc" ] }
 scratchstack-arn.path = "../scratchstack-arn"
+serde = { workspace = true, features = ["derive"], optional = true }
