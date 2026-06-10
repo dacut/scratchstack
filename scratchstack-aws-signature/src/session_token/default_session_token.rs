@@ -6,6 +6,7 @@ use {
     std::{
         collections::HashMap,
         future::Future,
+        marker::PhantomData,
         pin::Pin,
         task::{Context, Poll},
     },
@@ -31,7 +32,7 @@ const AES256_KEY_LENGTH: usize = 32;
 /// The format of the session token used in this implementation is:
 /// * Version: 1 byte, currently always ASCII `0`.
 /// * Base64Payload: base-64 encoded string representing an [`EncryptedSessionTokenData`] struct.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct DefaultSessionTokenExtractor<KeyService> {
     /// An underlying Tower service that converts a `KeyId` into an AES256-GCM key for decrypting
     /// the session token data.
@@ -51,9 +52,9 @@ pub struct DefaultSessionTokenExtractor<KeyService> {
 /// * EncryptedPayloadLength: u32 in little-endian format
 /// * EncryptedPayload: variable length AES256-GCM encrypted data with associated authentication
 ///   tag of
-///   "AccountId=<AccountId>". The underlying plaintext data is a postcard-serialized
+///   "AccountId=<i>account-id</i>". The underlying plaintext data is a postcard-serialized
 ///   `SessionTokenData` struct.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct EncryptedSessionTokenData {
     /// The KeyId of the signing key associated with the session token.
     key_id: String,
@@ -64,12 +65,13 @@ pub struct EncryptedSessionTokenData {
     /// The nonce used for AES256-GCM encryption.
     nonce: [u8; NONCE_LENGTH],
 
-    /// The AES256-GCM encrypted session token data. The associated authentication tag is "AccountId=<AccountId>".
+    /// The AES256-GCM encrypted session token data. The associated authentication tag is
+    /// "AccountId=<i>account-id</i>".
     encrypted_payload: Vec<u8>,
 }
 
 /// A static key service, primarily for testing.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[repr(transparent)]
 pub struct StaticKeyService(pub HashMap<String, [u8; AES256_KEY_LENGTH]>);
 
@@ -263,8 +265,6 @@ fn invalid_session_token_error() -> SignatureError {
 // framework expects: the `Service` associated types (asserted individually so a mismatch produces
 // a plain type error naming the offending type), a `Send` future, and `ExtractSessionToken`.
 const _: () = {
-    use std::marker::PhantomData;
-
     fn assert_extract_session_token<T: ExtractSessionToken>() {}
     fn assert_send<T: Send>() {}
 
@@ -293,7 +293,7 @@ mod tests {
         crate::{KSecretKey, SessionTokenPermissions},
         chrono::{DateTime, Duration},
         scratchstack_aws_principal::{AssumedRole, SessionData, SessionValue},
-        std::{fmt::Debug, str::FromStr as _},
+        std::str::FromStr as _,
         tower::ServiceExt as _,
     };
 
@@ -303,10 +303,10 @@ mod tests {
     const TEST_NONCE: [u8; NONCE_LENGTH] = [0x07; NONCE_LENGTH];
 
     /// Asserts that `result` is an `InvalidSessionToken` error carrying `expected_message`.
-    fn assert_invalid_session_token<T: Debug>(result: Result<T, SignatureError>, expected_message: &str) {
+    fn assert_invalid_session_token<T>(result: Result<T, SignatureError>, expected_message: &str) {
         match result {
             Err(SignatureError::InvalidSessionToken(message)) => assert_eq!(message, expected_message),
-            other => panic!("expected InvalidSessionToken error, got {other:?}"),
+            _ => panic!("expected Err(SignatureError::InvalidSessionToken), got Ok()"),
         }
     }
 
@@ -453,9 +453,8 @@ mod tests {
     }
 
     #[test_log::test]
-    fn test_extractor_clone_debug() {
-        let extractor = DefaultSessionTokenExtractor::new(test_key_service()).clone();
-        assert!(format!("{extractor:?}").contains("DefaultSessionTokenExtractor"));
+    fn test_extractor_clone() {
+        let _extractor = DefaultSessionTokenExtractor::new(test_key_service()).clone();
     }
 
     #[test_log::test]
@@ -472,7 +471,6 @@ mod tests {
 
         let cloned = parsed.clone();
         assert_eq!(cloned.key_id, parsed.key_id);
-        assert!(format!("{parsed:?}").contains("EncryptedSessionTokenData"));
     }
 
     #[test_log::test]
@@ -552,8 +550,6 @@ mod tests {
         let service = StaticKeyService::with_capacity(10);
         assert!(service.0.is_empty());
         assert!(service.0.capacity() >= 10);
-
-        assert!(format!("{service:?}").contains("StaticKeyService"));
     }
 
     #[tokio::test]

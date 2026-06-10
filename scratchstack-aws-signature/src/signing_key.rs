@@ -431,7 +431,7 @@ impl Debug for GetSigningKeyRequest {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("GetSigningKeyRequest")
             .field("access_key", &self.access_key)
-            .field("session_token", &self.session_token.as_ref().map(|_| "<redacted>"))
+            .field("session_token", &"<redacted>")
             .field("request_date", &self.request_date)
             .field("region", &self.region)
             .field("service", &self.service)
