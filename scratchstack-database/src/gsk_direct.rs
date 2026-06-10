@@ -82,8 +82,8 @@ where
     for<'a, 'c> String: Encode<'a, <&'c mut <DB as Database>::Connection as Executor<'c>>::Database>, // String handling
     for<'c> String: Type<<&'c mut <DB as Database>::Connection as Executor<'c>>::Database>, // String handling
     for<'c> usize: ColumnIndex<<<&'c mut <DB as Database>::Connection as Executor<'c>>::Database as Database>::Row>, // Row results
-    for<'a, 'c> <<&'c mut <DB as Database>::Connection as Executor<'c>>::Database as Database>::Arguments<'a>:
-        IntoArguments<'a, <&'c mut <DB as Database>::Connection as Executor<'c>>::Database>, // Query arguments
+    for<'c> <<&'c mut <DB as Database>::Connection as Executor<'c>>::Database as Database>::Arguments:
+        IntoArguments<<&'c mut <DB as Database>::Connection as Executor<'c>>::Database>, // Query arguments
 {
     type Response = GetSigningKeyResponse;
     type Error = BoxError;
@@ -120,8 +120,8 @@ where
     for<'a> String: Encode<'a, <&'c mut C as Executor<'c>>::Database>, // String handling
     String: Type<<&'c mut C as Executor<'c>>::Database>, // String handling
     usize: ColumnIndex<<<&'c mut C as Executor<'c>>::Database as Database>::Row>, // Row results
-    for<'a> <<&'c mut C as Executor<'c>>::Database as sqlx::Database>::Arguments<'a>:
-        IntoArguments<'a, <&'c mut C as Executor<'c>>::Database>, // Query arguments
+    <<&'c mut C as Executor<'c>>::Database as sqlx::Database>::Arguments:
+        IntoArguments<<&'c mut C as Executor<'c>>::Database>, // Query arguments
 {
     let access_key = req.access_key();
 

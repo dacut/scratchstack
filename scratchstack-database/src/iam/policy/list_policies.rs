@@ -281,7 +281,7 @@ pub async fn list_policies(
 /// Append a ListPolicies filter restricting results to policies attached to a user, group, or
 /// role in `account_id`. The join back to the entity tables prevents attachments to entities in
 /// other accounts from leaking through.
-fn push_attached_in_account_filter<'a>(sql: &mut QueryBuilder<'a, sqlx::Postgres>, account_id: &'a str) {
+fn push_attached_in_account_filter(sql: &mut QueryBuilder<sqlx::Postgres>, account_id: &str) {
     sql.push(" AND managed_policy_id IN (SELECT uap.managed_policy_id FROM iam.user_attached_policies uap ");
     sql.push("JOIN iam.users u ON u.user_id = uap.user_id WHERE u.account_id = ");
     sql.push_bind(account_id);
@@ -296,7 +296,7 @@ fn push_attached_in_account_filter<'a>(sql: &mut QueryBuilder<'a, sqlx::Postgres
 
 /// Append a ListPolicies filter restricting results to policies used as a permissions boundary
 /// by a user or role in `account_id`.
-fn push_pb_in_account_filter<'a>(sql: &mut QueryBuilder<'a, sqlx::Postgres>, account_id: &'a str) {
+fn push_pb_in_account_filter(sql: &mut QueryBuilder<sqlx::Postgres>, account_id: &str) {
     sql.push(" AND managed_policy_id IN (");
     sql.push("SELECT permissions_boundary_managed_policy_id FROM iam.users WHERE account_id = ");
     sql.push_bind(account_id);
