@@ -11,6 +11,7 @@ use {
 ///
 /// RootUser structs are immutable.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RootUser {
     /// The partition this principal exists in.
     partition: String,

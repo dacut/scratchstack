@@ -136,6 +136,7 @@ mod chronoutil;
 pub(crate) mod constants;
 mod crypto;
 mod error;
+mod session_token;
 mod signature;
 mod signing_key;
 
@@ -143,8 +144,8 @@ pub mod auth;
 pub mod canonical;
 
 pub use {
-    body::*, error::*, scratchstack_aws_principal as principal, scratchstack_errors as errors, signature::*,
-    signing_key::*,
+    body::*, error::*, scratchstack_aws_principal as principal, scratchstack_errors as errors, session_token::*,
+    signature::*, signing_key::*,
 };
 
 #[doc(inline)]

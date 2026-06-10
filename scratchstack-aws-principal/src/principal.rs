@@ -10,6 +10,7 @@ use {
 
 /// The source of a principal.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PrincipalSource {
     /// AWS account or IAM principal
     Aws,
@@ -44,6 +45,7 @@ impl Display for PrincipalSource {
 /// assert_eq!(pi.as_user().unwrap().user_name(), "username");
 /// ```
 #[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Principal {
     /// Details for an assumed role.
     AssumedRole(AssumedRole),

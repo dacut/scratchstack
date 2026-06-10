@@ -20,6 +20,7 @@ use {
 /// This wraps the standard Rust [`HashMap`] type, providing the case-insensitive key lookup and setting values to
 /// the [`SessionValue`] type.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SessionData {
     /// The variables associated with the session with the keys lower-cased.
     variables: HashMap<String, SessionValue>,
@@ -321,6 +322,7 @@ impl Eq for SessionData {}
 
 /// Associated data about a session key.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SessionValue {
     /// Null value
     Null,

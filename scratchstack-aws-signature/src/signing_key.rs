@@ -3,56 +3,186 @@ use {
     chrono::NaiveDate,
     derive_builder::Builder,
     scratchstack_aws_principal::{Principal, SessionData},
+    serde::{
+        Deserialize, Serialize,
+        de::{Deserializer, Visitor},
+        ser::Serializer,
+    },
     std::{
         fmt::{Debug, Display, Formatter, Result as FmtResult},
         future::Future,
         str::FromStr,
     },
+    subtle::{Choice, ConstantTimeEq},
     tower::{BoxError, service_fn, util::ServiceFn},
+    zeroize::{Zeroize, ZeroizeOnDrop},
 };
 
 /// A raw AWS secret key (`kSecret`).
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct KSecretKey<const M: usize = KSECRETKEY_LENGTH> {
+///
+/// The key material is heap-allocated, zeroized on drop, compared in constant time, and redacted
+/// from the [`Debug`] and [`Display`] implementations. Some care is still required when handling
+/// this type:
+/// * The [`Serialize`] implementation emits the raw secret key. Only serialize this type into a
+///   buffer that is subsequently encrypted and zeroized, such as the default session token
+///   format.
+/// * [`FromStr`] copies the key from a caller-owned string that this type cannot scrub. Zeroize
+///   the source string if it is not short-lived.
+/// * Protecting key material from swap and core dumps (encrypted swap, `RLIMIT_CORE`, etc.) is a
+///   deployment concern that this type does not address.
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
+pub struct KSecretKey {
     /// The secret key, prefixed with "AWS4".
-    prefixed_key: [u8; M],
-
-    /// The length of the key.
-    len: usize,
+    prefixed_key: Box<[u8]>,
 }
 
 /// The `kDate` key: `HMAC_SHA256("AWS4" + KSecretKey, "YYYYMMDD")`
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct KDateKey {
     /// The raw key.
     key: [u8; SHA256_OUTPUT_LEN],
 }
 
 /// The `kRegion` key: an AWS `kDate` key, HMAC-SHA256 hashed with the region.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct KRegionKey {
     /// The raw key.
     key: [u8; SHA256_OUTPUT_LEN],
 }
 
 /// The `kService` key: an AWS `kRegion` key, HMAC-SHA256 hashed with the service.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct KServiceKey {
     /// The raw key.
     key: [u8; SHA256_OUTPUT_LEN],
 }
 
 /// The `kSigning` key: an AWS `kService` key, HMAC-SHA256 hashed with the "aws4_request" string.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct KSigningKey {
     /// The resulting raw signing key.
     key: [u8; SHA256_OUTPUT_LEN],
 }
 
+impl KSecretKey {
+    /// Create a new `KDateKey` from this `KSecretKey` and a date.
+    pub fn to_kdate(&self, date: NaiveDate) -> KDateKey {
+        let date = date.format("%Y%m%d").to_string();
+        KDateKey {
+            key: hmac_sha256(&self.prefixed_key, date.as_bytes()),
+        }
+    }
+
+    /// Create a new `KRegionKey` from this `KSecretKey`, a date, and a region.
+    pub fn to_kregion(&self, date: NaiveDate, region: &str) -> KRegionKey {
+        self.to_kdate(date).to_kregion(region)
+    }
+
+    /// Create a new `KServiceKey` from this `KSecretKey`, a date, a region, and a service.
+    pub fn to_kservice(&self, date: NaiveDate, region: &str, service: &str) -> KServiceKey {
+        self.to_kdate(date).to_kservice(region, service)
+    }
+
+    /// Create a new `KSigningKey` from this `KSecretKey`, a date, a region, and a service.
+    pub fn to_ksigning(&self, date: NaiveDate, region: &str, service: &str) -> KSigningKey {
+        self.to_kdate(date).to_ksigning(region, service)
+    }
+}
+
 impl AsRef<[u8]> for KSecretKey {
     fn as_ref(&self) -> &[u8] {
         // Remove the "AWS4" prefix.
-        &self.prefixed_key[4..self.len]
+        &self.prefixed_key[4..]
+    }
+}
+
+impl ConstantTimeEq for KSecretKey {
+    fn ct_eq(&self, other: &Self) -> Choice {
+        self.prefixed_key.ct_eq(&other.prefixed_key)
+    }
+}
+
+impl Eq for KSecretKey {}
+
+impl PartialEq for KSecretKey {
+    /// Compares the keys in constant time.
+    fn eq(&self, other: &Self) -> bool {
+        self.ct_eq(other).into()
+    }
+}
+
+impl Debug for KSecretKey {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.write_str("KSecretKey")
+    }
+}
+
+impl<'de> Deserialize<'de> for KSecretKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct KSecretKeyVisitor;
+
+        impl Visitor<'_> for KSecretKeyVisitor {
+            type Value = KSecretKey;
+
+            fn expecting(&self, formatter: &mut Formatter) -> FmtResult {
+                formatter.write_str("AWS secret key")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                KSecretKey::from_str(v).map_err(|e| E::custom(format!("invalid key length: {e}")))
+            }
+        }
+
+        deserializer.deserialize_str(KSecretKeyVisitor)
+    }
+}
+
+impl Display for KSecretKey {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.write_str("KSecretKey")
+    }
+}
+
+impl FromStr for KSecretKey {
+    type Err = KeyLengthError;
+
+    /// Create a new `KSecretKey` from a raw AWS secret key.
+    ///
+    /// This copies the key out of `raw`; zeroize the source string if it is not short-lived.
+    fn from_str(raw: &str) -> Result<Self, KeyLengthError> {
+        let len = raw.len();
+        if len == 0 {
+            return Err(KeyLengthError::TooShort);
+        }
+
+        // Reserve the exact size up front so the buffer is never reallocated; a reallocation
+        // would leave an unscrubbed copy of the key on the heap.
+        let mut prefixed_key = Vec::with_capacity(4 + len);
+        prefixed_key.extend_from_slice(b"AWS4");
+        prefixed_key.extend_from_slice(raw.as_bytes());
+        Ok(Self {
+            prefixed_key: prefixed_key.into_boxed_slice(),
+        })
+    }
+}
+
+/// Serializes the **raw secret key**, bypassing the redaction that `Debug` and `Display`
+/// provide. Only serialize a `KSecretKey` into a buffer that is subsequently encrypted and
+/// zeroized, such as the default session token format.
+impl Serialize for KSecretKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let prefixed_key_str = str::from_utf8(&self.prefixed_key[4..])
+            .map_err(|e| serde::ser::Error::custom(format!("invalid UTF-8 in key: {e}")))?;
+        serializer.serialize_str(prefixed_key_str)
     }
 }
 
@@ -80,9 +210,27 @@ impl AsRef<[u8; SHA256_OUTPUT_LEN]> for KSigningKey {
     }
 }
 
-impl Debug for KSecretKey {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.write_str("KSecretKey")
+impl ConstantTimeEq for KDateKey {
+    fn ct_eq(&self, other: &Self) -> Choice {
+        self.key.ct_eq(&other.key)
+    }
+}
+
+impl ConstantTimeEq for KRegionKey {
+    fn ct_eq(&self, other: &Self) -> Choice {
+        self.key.ct_eq(&other.key)
+    }
+}
+
+impl ConstantTimeEq for KServiceKey {
+    fn ct_eq(&self, other: &Self) -> Choice {
+        self.key.ct_eq(&other.key)
+    }
+}
+
+impl ConstantTimeEq for KSigningKey {
+    fn ct_eq(&self, other: &Self) -> Choice {
+        self.key.ct_eq(&other.key)
     }
 }
 
@@ -110,12 +258,6 @@ impl Debug for KSigningKey {
     }
 }
 
-impl Display for KSecretKey {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.write_str("KSecretKey")
-    }
-}
-
 impl Display for KDateKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.write_str("KDateKey")
@@ -140,68 +282,47 @@ impl Display for KSigningKey {
     }
 }
 
-impl<const M: usize> FromStr for KSecretKey<M> {
-    type Err = KeyLengthError;
+impl Eq for KDateKey {}
 
-    /// Create a new `KSecretKey` from a raw AWS secret key.
-    fn from_str(raw: &str) -> Result<Self, KeyLengthError> {
-        let len = raw.len();
-        if len > M - 4 {
-            return Err(KeyLengthError::TooLong);
-        }
-        if len + 4 < M {
-            return Err(KeyLengthError::TooShort);
-        }
+impl Eq for KRegionKey {}
 
-        let mut prefixed_key = [0; M];
+impl Eq for KServiceKey {}
 
-        prefixed_key[..4].copy_from_slice(b"AWS4");
-        prefixed_key[4..].copy_from_slice(raw.as_bytes());
-        Ok(Self {
-            prefixed_key,
-            len: len + 4,
-        })
+impl Eq for KSigningKey {}
+
+impl PartialEq for KDateKey {
+    /// Compares the keys in constant time.
+    fn eq(&self, other: &Self) -> bool {
+        self.ct_eq(other).into()
     }
 }
 
-impl KSecretKey {
-    /// Create a new `KDateKey` from this `KSecretKey` and a date.
-    pub fn to_kdate(&self, date: NaiveDate) -> KDateKey {
-        let date = date.format("%Y%m%d").to_string();
-        let date = date.as_bytes();
-        let key = hmac_sha256(self.prefixed_key.as_slice(), date);
-        let mut key_bytes = [0; SHA256_OUTPUT_LEN];
-        key_bytes.copy_from_slice(key.as_ref());
-        KDateKey {
-            key: key_bytes,
-        }
+impl PartialEq for KRegionKey {
+    /// Compares the keys in constant time.
+    fn eq(&self, other: &Self) -> bool {
+        self.ct_eq(other).into()
     }
+}
 
-    /// Creeate a new `KRegionKey` from this `KSecretKey`, a date, and a region.
-    pub fn to_kregion(&self, date: NaiveDate, region: &str) -> KRegionKey {
-        self.to_kdate(date).to_kregion(region)
+impl PartialEq for KServiceKey {
+    /// Compares the keys in constant time.
+    fn eq(&self, other: &Self) -> bool {
+        self.ct_eq(other).into()
     }
+}
 
-    /// Creeate a new `KServiceKey` from this `KSecretKey`, a date, a region, and a service.
-    pub fn to_kservice(&self, date: NaiveDate, region: &str, service: &str) -> KServiceKey {
-        self.to_kdate(date).to_kservice(region, service)
-    }
-
-    /// Creeate a new `KSigningKey` from this `KSecretKey`, a date, a region, and a service.
-    pub fn to_ksigning(&self, date: NaiveDate, region: &str, service: &str) -> KSigningKey {
-        self.to_kdate(date).to_ksigning(region, service)
+impl PartialEq for KSigningKey {
+    /// Compares the keys in constant time.
+    fn eq(&self, other: &Self) -> bool {
+        self.ct_eq(other).into()
     }
 }
 
 impl KDateKey {
     /// Create a new `KRegionKey` from this `KDateKey` and a region.
     pub fn to_kregion(&self, region: &str) -> KRegionKey {
-        let region = region.as_bytes();
-        let key = hmac_sha256(self.key.as_slice(), region);
-        let mut key_bytes = [0; SHA256_OUTPUT_LEN];
-        key_bytes.copy_from_slice(key.as_ref());
         KRegionKey {
-            key: key_bytes,
+            key: hmac_sha256(self.key.as_slice(), region.as_bytes()),
         }
     }
 
@@ -219,12 +340,8 @@ impl KDateKey {
 impl KRegionKey {
     /// Create a new `KServiceKey` from this `KRegionKey` and a service.
     pub fn to_kservice(&self, service: &str) -> KServiceKey {
-        let service = service.as_bytes();
-        let key = hmac_sha256(self.key.as_slice(), service);
-        let mut key_bytes = [0; SHA256_OUTPUT_LEN];
-        key_bytes.copy_from_slice(key.as_ref());
         KServiceKey {
-            key: key_bytes,
+            key: hmac_sha256(self.key.as_slice(), service.as_bytes()),
         }
     }
 
@@ -237,11 +354,8 @@ impl KRegionKey {
 impl KServiceKey {
     /// Create a new `KSigningKey` from this `KServiceKey`.
     pub fn to_ksigning(&self) -> KSigningKey {
-        let key = hmac_sha256(self.key.as_slice(), AWS4_REQUEST.as_bytes());
-        let mut key_bytes = [0; SHA256_OUTPUT_LEN];
-        key_bytes.copy_from_slice(key.as_ref());
         KSigningKey {
-            key: key_bytes,
+            key: hmac_sha256(self.key.as_slice(), AWS4_REQUEST.as_bytes()),
         }
     }
 }
@@ -250,7 +364,7 @@ impl KServiceKey {
 ///
 /// GetSigningKeyRequest structs are immutable. Use [`GetSigningKeyRequestBuilder`] to programmatically construct a
 /// request.
-#[derive(Builder, Clone, Debug)]
+#[derive(Builder, Clone)]
 #[non_exhaustive]
 pub struct GetSigningKeyRequest {
     /// The access key used in the request.
@@ -308,6 +422,20 @@ impl GetSigningKeyRequest {
     #[inline]
     pub fn service(&self) -> &str {
         &self.service
+    }
+}
+
+impl Debug for GetSigningKeyRequest {
+    /// Formats the request with the session token redacted: the token is bearer-credential
+    /// material and must not end up in logs.
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("GetSigningKeyRequest")
+            .field("access_key", &self.access_key)
+            .field("session_token", &self.session_token.as_ref().map(|_| "<redacted>"))
+            .field("request_date", &self.request_date)
+            .field("region", &self.region)
+            .field("service", &self.service)
+            .finish()
     }
 }
 
@@ -377,7 +505,7 @@ where
 #[cfg(test)]
 mod tests {
     use {
-        crate::{GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, constants::*},
+        crate::{GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey},
         chrono::NaiveDate,
         scratchstack_aws_principal::{AssumedRole, Principal},
         std::str::FromStr,
@@ -488,8 +616,10 @@ mod tests {
             service: "example".to_string(),
         };
 
-        // Make sure we can debug print the request.
-        let _ = format!("{:?}", gsk_req1a);
+        // Make sure we can debug print the request, and that the session token is redacted.
+        let debug = format!("{gsk_req1a:?}");
+        assert!(debug.contains("<redacted>"));
+        assert!(!debug.contains("\"token\""));
 
         // Make sure clones are field-by-field equal.
         let gsk_req1b = gsk_req1a.clone();
@@ -534,11 +664,7 @@ mod tests {
 
     #[test]
     fn test_key_from_str_length() {
-        assert_eq!(KSecretKey::from_str("123"), Err(crate::KeyLengthError::TooShort));
-        assert_eq!(
-            KSecretKey::from_str("123456789012345678901234567890123456789012345"),
-            Err(crate::KeyLengthError::TooLong)
-        );
-        assert!(KSecretKey::<KSECRETKEY_LENGTH>::from_str("1234567890123456789012345678901234567890").is_ok());
+        assert_eq!(KSecretKey::from_str(""), Err(crate::KeyLengthError::TooShort));
+        assert!(KSecretKey::from_str("1234567890123456789012345678901234567890").is_ok());
     }
 }
