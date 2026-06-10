@@ -95,7 +95,7 @@ pub async fn create_user_if_not_exists(
 
         // Safety: username is quoted with pg_quote_ident and password with pg_quote_literal;
         // DDL cannot use bind parameters.
-        query(AssertSqlSafe(sql)).bind(username).execute(&mut *conn).await?;
+        query(AssertSqlSafe(sql)).execute(&mut *conn).await?;
         log::info!("Created database role for user {username}"); // codeql[rust/cleartext-logging]
     } else {
         log::info!("Database role for user {username} already exists"); // codeql[rust/cleartext-logging]
@@ -113,7 +113,7 @@ pub async fn grant_ddl_permissions(conn: &mut PgConnection, db_name: &str, usern
     );
     // Safety: db_name and username are quoted with pg_quote_ident; DDL cannot use bind
     // parameters.
-    query(AssertSqlSafe(sql)).bind(username).execute(&mut *conn).await?;
+    query(AssertSqlSafe(sql)).execute(&mut *conn).await?;
     log::info!("Granted DDL permissions to user {username} on database {db_name}"); // codeql[rust/cleartext-logging]
     Ok(())
 }
