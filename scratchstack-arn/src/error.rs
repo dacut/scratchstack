@@ -5,6 +5,7 @@ use std::{
 
 /// Errors that can be raise during the parsing of ARNs.
 #[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ArnError {
     /// Invalid AWS account id. The argument contains the specified account id.
     InvalidAccountId(String),
@@ -26,6 +27,14 @@ pub enum ArnError {
 
     /// Invalid service. The argument contains the specified service.
     InvalidService(String),
+
+    /// Invalid IAM resource name. The argument contains the specified name.
+    #[cfg(feature = "iam")]
+    InvalidIamResourceName(String),
+
+    /// Invalid IAM resource path. The argument contains the specified path.
+    #[cfg(feature = "iam")]
+    InvalidIamResourcePath(String),
 }
 
 impl Error for ArnError {}
@@ -40,6 +49,10 @@ impl Display for ArnError {
             Self::InvalidResource(resource) => write!(f, "Invalid resource: {resource:#?}"),
             Self::InvalidScheme(scheme) => write!(f, "Invalid scheme: {scheme:#?}"),
             Self::InvalidService(service) => write!(f, "Invalid service name: {service:#?}"),
+            #[cfg(feature = "iam")]
+            Self::InvalidIamResourceName(name) => write!(f, "Invalid IAM resource name: {name:#?}"),
+            #[cfg(feature = "iam")]
+            Self::InvalidIamResourcePath(path) => write!(f, "Invalid IAM resource path: {path:#?}"),
         }
     }
 }
@@ -103,6 +116,8 @@ impl From<ArnError> for ArnBuilderError {
             ArnError::InvalidResource(resource) => Self::InvalidResource(resource),
             ArnError::InvalidScheme(scheme) => Self::InvalidScheme(scheme),
             ArnError::InvalidService(service) => Self::InvalidService(service),
+            #[cfg(feature = "iam")]
+            _ => unreachable!("IAM-related variants of ArnError cannot be converted to ArnBuilderError"),
         }
     }
 }

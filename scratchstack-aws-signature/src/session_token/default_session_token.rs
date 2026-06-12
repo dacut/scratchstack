@@ -1,12 +1,13 @@
 //! Default session token extractor implementation.
 use {
     crate::{ExtractSessionToken, SessionTokenData, SignatureError, constants::*},
-    aes_gcm::{AeadInPlace as _, Aes256Gcm, Key as AesKey, KeyInit as _, Nonce},
+    aes_gcm::{AeadInPlace as _, Aes256Gcm, KeyInit as _, Nonce},
     base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
     std::{
         collections::HashMap,
         future::Future,
         marker::PhantomData,
+        mem::take,
         pin::Pin,
         task::{Context, Poll},
     },
@@ -15,16 +16,16 @@ use {
 };
 
 /// The length of an AWS account id in characters/bytes.
-const ACCOUNT_ID_LENGTH: usize = 12;
+pub const ACCOUNT_ID_LENGTH: usize = 12;
 
 /// The current token version (ASCII `0`).
 pub const CURRENT_TOKEN_VERSION: u8 = b'0';
 
 /// The length of the nonce used for AES256-GCM encryption in bytes.
-const NONCE_LENGTH: usize = 12;
+pub const NONCE_LENGTH: usize = 12;
 
 /// The length of the keys used for AES256-GCM encryption in bytes.
-const AES256_KEY_LENGTH: usize = 32;
+pub const AES256_KEY_LENGTH: usize = 32;
 
 /// The default Scratchstack implementation of the `ExtractSessionToken` trait that relies on the
 /// [postcard] serialization format. This is enabled by the `default_session_token` feature.
@@ -48,10 +49,12 @@ pub struct DefaultSessionTokenExtractor<KeyService> {
 ///   with the session token.
 /// * AccountId: 12 bytes, the 12-digit AWS account ID associated with the session token,
 ///   represented as an ASCII string.
-/// * Nonce: 12 bytes, a random nonce used for AES256-GCM encryption.
+/// * NonceLength: u8.
+/// * Nonce: variable bytes, a random nonce used for encryption.
+/// * EncryptionAlgorithm: 1 byte, an enum representing the encryption algorithm used; currently
+///   always 0 forAES256-GCM.
 /// * EncryptedPayloadLength: u32 in little-endian format
-/// * EncryptedPayload: variable length AES256-GCM encrypted data with associated authentication
-///   tag of
+/// * EncryptedPayload: variable length encrypted data with associated authentication tag of
 ///   "AccountId=<i>account-id</i>". The underlying plaintext data is a postcard-serialized
 ///   `SessionTokenData` struct.
 #[derive(Clone)]
@@ -62,18 +65,39 @@ pub struct EncryptedSessionTokenData {
     /// The AWS account ID associated with the session token.
     account_id: String,
 
-    /// The nonce used for AES256-GCM encryption.
-    nonce: [u8; NONCE_LENGTH],
+    /// The nonce used for encryption.
+    nonce: Vec<u8>,
 
-    /// The AES256-GCM encrypted session token data. The associated authentication tag is
+    /// The encrypted session token data. The associated authentication tag is
     /// "AccountId=<i>account-id</i>".
     encrypted_payload: Vec<u8>,
+}
+
+/// Session token encryption algorithm.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum SessionTokenEncryptionAlgorithm {
+    /// AES256-GCM, currently the only supported encryption algorithm for session tokens.
+    Aes256Gcm = 0,
+}
+
+/// Information about a session token encryption key.
+#[derive(Clone)]
+pub struct SessionTokenEncryptionKeyInfo {
+    /// The ID of the session token encryption key.
+    pub session_token_encryption_key_id: String,
+
+    /// The encryption algorithm used by the session token encryption key.
+    pub encryption_algorithm: SessionTokenEncryptionAlgorithm,
+
+    /// The key material for encrypting session tokens, formatted as raw bytes.
+    pub encryption_key: Zeroizing<Vec<u8>>,
 }
 
 /// A static key service, primarily for testing.
 #[derive(Clone)]
 #[repr(transparent)]
-pub struct StaticKeyService(pub HashMap<String, [u8; AES256_KEY_LENGTH]>);
+pub struct StaticKeyService(pub HashMap<String, SessionTokenEncryptionKeyInfo>);
 
 impl<KeyService> DefaultSessionTokenExtractor<KeyService> {
     /// Create a new `DefaultSessionTokenExtractor` with the given key service.
@@ -86,7 +110,8 @@ impl<KeyService> DefaultSessionTokenExtractor<KeyService> {
 
 impl<KeyService> DefaultSessionTokenExtractor<KeyService>
 where
-    KeyService: Service<String, Response = [u8; AES256_KEY_LENGTH], Error = SignatureError> + Clone + Send + 'static,
+    KeyService:
+        Service<String, Response = SessionTokenEncryptionKeyInfo, Error = SignatureError> + Clone + Send + 'static,
     KeyService::Future: Send,
 {
     /// Extract the session token data from the given session token string.
@@ -100,10 +125,37 @@ where
         // After decryption, this buffer holds the plaintext token data -- including the raw
         // secret key -- so it must be zeroized on every exit path.
         let mut payload = Zeroizing::new(encrypted_payload);
-        let key: AesKey<Aes256Gcm> = self.key_service.call(key_id).await?.into();
+        let key_info: SessionTokenEncryptionKeyInfo = self.key_service.call(key_id).await?;
+        if key_info.encryption_algorithm != SessionTokenEncryptionAlgorithm::Aes256Gcm {
+            log::error!(
+                "Unsupported encryption algorithm for session token encryption key {}: {:?}",
+                key_info.session_token_encryption_key_id,
+                key_info.encryption_algorithm,
+            );
+            Err(SignatureError::InternalServiceError(
+                format!(
+                    "Unsupported encryption algorithm for session token encryption key {}: {:?}",
+                    key_info.session_token_encryption_key_id, key_info.encryption_algorithm
+                )
+                .into(),
+            ))?;
+        }
+
         let nonce = Nonce::from_slice(&nonce);
         let associated_data = format!("AccountId={account_id}");
-        let cipher = Aes256Gcm::new(&key);
+        let cipher = Aes256Gcm::new_from_slice(key_info.encryption_key.as_slice()).map_err(|e| {
+            log::error!(
+                "Failed to create cipher for session token decryption with key {}: {e}",
+                key_info.session_token_encryption_key_id,
+            );
+            SignatureError::InternalServiceError(
+                format!(
+                    "Failed to create cipher for session token decryption with key {}: {e}",
+                    key_info.session_token_encryption_key_id
+                )
+                .into(),
+            )
+        })?;
 
         cipher
             .decrypt_in_place(nonce, associated_data.as_bytes(), &mut *payload)
@@ -121,7 +173,8 @@ where
 
 impl<KeyService> Service<String> for DefaultSessionTokenExtractor<KeyService>
 where
-    KeyService: Service<String, Response = [u8; AES256_KEY_LENGTH], Error = SignatureError> + Clone + Send + 'static,
+    KeyService:
+        Service<String, Response = SessionTokenEncryptionKeyInfo, Error = SignatureError> + Clone + Send + 'static,
     KeyService::Future: Send,
 {
     type Response = SessionTokenData;
@@ -139,6 +192,75 @@ where
 }
 
 impl EncryptedSessionTokenData {
+    /// Encrypt the given session token data with the given encryption key, producing the
+    /// encrypted session token data. The account ID must be the 12-digit AWS account ID
+    /// associated with the session, represented as an ASCII string; it is used as the
+    /// associated authentication data for the encryption.
+    pub fn encrypt(
+        session_token_data: &SessionTokenData,
+        key_info: &SessionTokenEncryptionKeyInfo,
+        account_id: &str,
+    ) -> Result<Self, SignatureError> {
+        if key_info.encryption_algorithm != SessionTokenEncryptionAlgorithm::Aes256Gcm {
+            log::error!(
+                "Unsupported encryption algorithm for session token encryption key {}: {:?}",
+                key_info.session_token_encryption_key_id,
+                key_info.encryption_algorithm,
+            );
+            return Err(SignatureError::InternalServiceError(
+                format!(
+                    "Unsupported encryption algorithm for session token encryption key {}: {:?}",
+                    key_info.session_token_encryption_key_id, key_info.encryption_algorithm
+                )
+                .into(),
+            ));
+        }
+
+        if account_id.len() != ACCOUNT_ID_LENGTH || !account_id.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(SignatureError::InternalServiceError(
+                format!("Invalid account ID for session token: {account_id}").into(),
+            ));
+        }
+
+        let cipher = Aes256Gcm::new_from_slice(key_info.encryption_key.as_slice()).map_err(|e| {
+            log::error!(
+                "Failed to create cipher for session token encryption with key {}: {e}",
+                key_info.session_token_encryption_key_id,
+            );
+            SignatureError::InternalServiceError(
+                format!(
+                    "Failed to create cipher for session token encryption with key {}: {e}",
+                    key_info.session_token_encryption_key_id
+                )
+                .into(),
+            )
+        })?;
+
+        // Before encryption, this buffer holds the plaintext token data -- including the raw
+        // secret key -- so it must be zeroized on every exit path. On success, the plaintext is
+        // overwritten in place by the ciphertext.
+        let mut payload = Zeroizing::new(postcard::to_allocvec(session_token_data).map_err(|e| {
+            log::error!("Failed to serialize session token data: {e}");
+            SignatureError::InternalServiceError(format!("Failed to serialize session token data: {e}").into())
+        })?);
+
+        let mut nonce = [0u8; NONCE_LENGTH];
+        rand::fill(&mut nonce);
+        let associated_data = format!("AccountId={account_id}");
+
+        cipher.encrypt_in_place(Nonce::from_slice(&nonce), associated_data.as_bytes(), &mut *payload).map_err(|e| {
+            log::error!("Failed to encrypt session token data: {e}");
+            SignatureError::InternalServiceError(format!("Failed to encrypt session token data: {e}").into())
+        })?;
+
+        Ok(Self {
+            key_id: key_info.session_token_encryption_key_id.clone(),
+            account_id: account_id.to_string(),
+            nonce: nonce.to_vec(),
+            encrypted_payload: take(&mut *payload),
+        })
+    }
+
     /// Parse the encrypted session token data from the given byte slice.
     fn parse_encrypted_session_token_data(session_token: &[u8]) -> Result<Self, SignatureError> {
         if session_token.is_empty() {
@@ -171,8 +293,7 @@ impl EncryptedSessionTokenData {
         if nonce_end > session_token.len() {
             return Err(invalid_session_token_error());
         }
-        let nonce: [u8; NONCE_LENGTH] =
-            session_token[nonce_start..nonce_end].try_into().map_err(|_| invalid_session_token_error())?;
+        let nonce = session_token[nonce_start..nonce_end].to_vec();
 
         let encrypted_payload_length_start = nonce_end;
         let encrypted_payload_length_end = encrypted_payload_length_start + 4;
@@ -214,6 +335,34 @@ impl EncryptedSessionTokenData {
             .map_err(|_| invalid_session_token_error())
             .and_then(|decoded| Self::parse_encrypted_session_token_data(&decoded))
     }
+
+    /// Serialize this encrypted session token data into an opaque session token string.
+    pub fn to_session_token(&self) -> Result<String, SignatureError> {
+        let key_id_length = u8::try_from(self.key_id.len()).map_err(|_| {
+            SignatureError::InternalServiceError(
+                format!("Session token encryption key id is too long: {}", self.key_id).into(),
+            )
+        })?;
+        let encrypted_payload_length = u32::try_from(self.encrypted_payload.len())
+            .map_err(|_| SignatureError::InternalServiceError("Encrypted session token payload is too long".into()))?;
+
+        let mut body = Vec::with_capacity(
+            1 + self.key_id.len() + ACCOUNT_ID_LENGTH + self.nonce.len() + 4 + self.encrypted_payload.len(),
+        );
+        body.push(key_id_length);
+        body.extend_from_slice(self.key_id.as_bytes());
+        body.extend_from_slice(self.account_id.as_bytes());
+        body.extend_from_slice(&self.nonce);
+        body.extend_from_slice(&encrypted_payload_length.to_le_bytes());
+        body.extend_from_slice(&self.encrypted_payload);
+
+        let session_token = format!("{}{}", CURRENT_TOKEN_VERSION as char, URL_SAFE_NO_PAD.encode(body));
+        if session_token.len() > MAX_SESSION_TOKEN_SIZE {
+            return Err(SignatureError::InternalServiceError("Session token is too long".into()));
+        }
+
+        Ok(session_token)
+    }
 }
 
 impl Default for StaticKeyService {
@@ -238,7 +387,7 @@ impl StaticKeyService {
 }
 
 impl Service<String> for StaticKeyService {
-    type Response = [u8; AES256_KEY_LENGTH];
+    type Response = SessionTokenEncryptionKeyInfo;
     type Error = SignatureError;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
@@ -275,7 +424,7 @@ const _: () = {
     #[allow(dead_code)]
     fn check<K>()
     where
-        K: Service<String, Response = [u8; AES256_KEY_LENGTH], Error = SignatureError> + Clone + Send + 'static,
+        K: Service<String, Response = SessionTokenEncryptionKeyInfo, Error = SignatureError> + Clone + Send + 'static,
         K::Future: Send,
     {
         let (response, error) = assoc::<DefaultSessionTokenExtractor<K>, String>();
@@ -290,10 +439,16 @@ const _: () = {
 mod tests {
     use {
         super::*,
-        crate::{KSecretKey, SessionTokenPermissions},
+        crate::KSecretKey,
+        aes_gcm::Key as AesKey,
+        ascii_casing::AsciiString,
         chrono::{DateTime, Duration},
+        scratchstack_aspen::Policy as AspenPolicy,
         scratchstack_aws_principal::{AssumedRole, SessionData, SessionValue},
-        std::str::FromStr as _,
+        std::{
+            collections::{HashMap, HashSet},
+            str::FromStr as _,
+        },
         tower::ServiceExt as _,
     };
 
@@ -350,7 +505,14 @@ mod tests {
     /// Returns a `StaticKeyService` holding `TEST_KEY` under `TEST_KEY_ID`.
     fn test_key_service() -> StaticKeyService {
         let mut service = StaticKeyService::new();
-        service.0.insert(TEST_KEY_ID.to_string(), TEST_KEY);
+        service.0.insert(
+            TEST_KEY_ID.to_string(),
+            SessionTokenEncryptionKeyInfo {
+                session_token_encryption_key_id: TEST_KEY_ID.to_string(),
+                encryption_algorithm: SessionTokenEncryptionAlgorithm::Aes256Gcm,
+                encryption_key: Zeroizing::new(TEST_KEY.to_vec()),
+            },
+        );
         service
     }
 
@@ -366,16 +528,27 @@ mod tests {
         let issued_at = DateTime::from_timestamp(1_767_225_600, 0).unwrap();
         let mut metadata = SessionData::new();
         metadata.insert("MultiFactorAuthPresent", SessionValue::Bool(true));
+        let inline_policy = AspenPolicy::from_str(
+            r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#,
+        )
+        .unwrap();
+        let environment_tag_key = AsciiString::from_ascii(b"Environment".to_vec()).unwrap();
+        let tags = HashMap::from([(environment_tag_key.clone(), "Production".to_string())]);
+        let transitive_tag_keys = HashSet::from([environment_tag_key]);
 
         SessionTokenData {
+            role_id: "AROAEXAMPLEROLEID".to_string(),
             access_key_id: "ASIAEXAMPLEACCESSKEY".to_string(),
             secret_key: KSecretKey::from_str("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY").unwrap(),
             principal: AssumedRole::new("aws", TEST_ACCOUNT_ID, "TestRole", "test-session").unwrap().into(),
             expires_at: issued_at + Duration::hours(1),
             issued_at,
-            permissions: SessionTokenPermissions::None,
-            session_name: "test-session".to_string(),
+            inline_policy: Some(inline_policy),
+            managed_policy_ids: vec!["ANPAEXAMPLEPOLICYID".to_string()],
+            role_session_name: "test-session".to_string(),
             metadata,
+            tags,
+            transitive_tag_keys,
         }
     }
 
@@ -391,9 +564,12 @@ mod tests {
         assert_eq!(actual.principal, expected.principal);
         assert_eq!(actual.expires_at, expected.expires_at);
         assert_eq!(actual.issued_at, expected.issued_at);
-        assert_eq!(actual.permissions, expected.permissions);
-        assert_eq!(actual.session_name, expected.session_name);
+        assert_eq!(actual.inline_policy, expected.inline_policy);
+        assert_eq!(actual.managed_policy_ids, expected.managed_policy_ids);
+        assert_eq!(actual.role_session_name, expected.role_session_name);
         assert!(matches!(actual.metadata.get("MultiFactorAuthPresent"), Some(SessionValue::Bool(true))));
+        assert_eq!(actual.tags, expected.tags);
+        assert_eq!(actual.transitive_tag_keys, expected.transitive_tag_keys);
     }
 
     #[tokio::test]
@@ -553,11 +729,68 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_encrypt_round_trip() {
+        let data = test_session_token_data();
+        let key_info = SessionTokenEncryptionKeyInfo {
+            session_token_encryption_key_id: TEST_KEY_ID.to_string(),
+            encryption_algorithm: SessionTokenEncryptionAlgorithm::Aes256Gcm,
+            encryption_key: Zeroizing::new(TEST_KEY.to_vec()),
+        };
+
+        let encrypted = EncryptedSessionTokenData::encrypt(&data, &key_info, TEST_ACCOUNT_ID).unwrap();
+        let session_token = encrypted.to_session_token().unwrap();
+
+        let mut extractor = DefaultSessionTokenExtractor::new(test_key_service());
+        let extracted = extractor.ready().await.unwrap().call(session_token).await.unwrap();
+
+        assert_eq!(extracted.access_key_id, data.access_key_id);
+        assert_eq!(extracted.expires_at, data.expires_at);
+        assert_eq!(extracted.issued_at, data.issued_at);
+        assert_eq!(extracted.managed_policy_ids, data.managed_policy_ids);
+        assert_eq!(extracted.role_id, data.role_id);
+        assert_eq!(extracted.role_session_name, data.role_session_name);
+        assert_eq!(extracted.secret_key, data.secret_key);
+        assert_eq!(extracted.tags, data.tags);
+        assert_eq!(extracted.transitive_tag_keys, data.transitive_tag_keys);
+    }
+
+    #[tokio::test]
+    async fn test_encrypt_rejects_bad_inputs() {
+        let data = test_session_token_data();
+        let key_info = SessionTokenEncryptionKeyInfo {
+            session_token_encryption_key_id: TEST_KEY_ID.to_string(),
+            encryption_algorithm: SessionTokenEncryptionAlgorithm::Aes256Gcm,
+            encryption_key: Zeroizing::new(TEST_KEY.to_vec()),
+        };
+
+        // Non-numeric and wrong-length account IDs are rejected.
+        for account_id in ["12345678901a", "123456789012345"] {
+            assert!(matches!(
+                EncryptedSessionTokenData::encrypt(&data, &key_info, account_id),
+                Err(SignatureError::InternalServiceError(_))
+            ));
+        }
+
+        // Wrong key length is rejected.
+        let short_key_info = SessionTokenEncryptionKeyInfo {
+            session_token_encryption_key_id: TEST_KEY_ID.to_string(),
+            encryption_algorithm: SessionTokenEncryptionAlgorithm::Aes256Gcm,
+            encryption_key: Zeroizing::new(vec![0x42; 16]),
+        };
+        assert!(matches!(
+            EncryptedSessionTokenData::encrypt(&data, &short_key_info, TEST_ACCOUNT_ID),
+            Err(SignatureError::InternalServiceError(_))
+        ));
+    }
+
+    #[tokio::test]
     async fn test_static_key_service_call() {
         let mut service = test_key_service().clone();
 
-        let key = service.ready().await.unwrap().call(TEST_KEY_ID.to_string()).await.unwrap();
-        assert_eq!(key, TEST_KEY);
+        let key_info = service.ready().await.unwrap().call(TEST_KEY_ID.to_string()).await.unwrap();
+        assert_eq!(key_info.session_token_encryption_key_id, TEST_KEY_ID);
+        assert_eq!(key_info.encryption_algorithm, SessionTokenEncryptionAlgorithm::Aes256Gcm);
+        assert_eq!(key_info.encryption_key.as_slice(), TEST_KEY);
 
         assert_invalid_session_token(
             service.ready().await.unwrap().call("missing".to_string()).await,

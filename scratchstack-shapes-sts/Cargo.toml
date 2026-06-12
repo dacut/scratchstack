@@ -29,6 +29,7 @@ clap = { workspace = true, optional = true, features = ["derive"] }
 derive_builder.workspace = true
 regex.workspace = true
 scratchstack-cli-utils = { path = "../scratchstack-cli-utils", optional = true }
+scratchstack-shapes-iam.path = "../scratchstack-shapes-iam"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 

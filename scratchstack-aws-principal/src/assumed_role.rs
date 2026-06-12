@@ -30,7 +30,7 @@ pub struct AssumedRole {
 }
 
 impl AssumedRole {
-    /// Create an [AssumedRole] object.
+    /// Create an `AssumedRole` object.
     ///
     /// # Arguments:
     ///

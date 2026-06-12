@@ -16,6 +16,10 @@ test = true
 doctest = false
 doc = true
 
+[features]
+default = ["iam"]
+iam = []
+
 [dependencies]
 serde.workspace = true
 

@@ -30,6 +30,13 @@ pub(crate) const CHARSET: &str = "charset";
 /// Signature field for the access key
 pub(crate) const CREDENTIAL: &[u8] = b"Credential";
 
+/// The default size of a secret key in bytes.
+#[allow(unused)]
+pub(crate) const DEFAULT_SECRET_KEY_SIZE: usize = 40;
+
+/// The default size of a raw secret key in bytes before encoding.
+pub(crate) const DEFAULT_SECRET_KEY_RAW_SIZE: usize = 30;
+
 /// Error code: DuplicateHeaderAndQueryParameter
 pub(crate) const ERR_CODE_DUPLICATE_HEADER_AND_QUERY_PARAMETER: &str = "DuplicateHeaderAndQueryParameter";
 

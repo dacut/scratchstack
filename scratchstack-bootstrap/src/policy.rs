@@ -240,8 +240,9 @@ pub(crate) struct UntagPolicyCommand {
 
 impl Runnable for CreatePolicyInternalCommand {
     type Result = CreatePolicyResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -260,8 +261,9 @@ impl Runnable for CreatePolicyInternalCommand {
 
 impl Runnable for CreatePolicyVersionCommand {
     type Result = CreatePolicyVersionResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -278,8 +280,9 @@ impl Runnable for CreatePolicyVersionCommand {
 
 impl Runnable for DeletePolicyCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -290,8 +293,9 @@ impl Runnable for DeletePolicyCommand {
 
 impl Runnable for DeletePolicyVersionCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -305,8 +309,9 @@ impl Runnable for DeletePolicyVersionCommand {
 
 impl Runnable for GetPolicyCommand {
     type Result = GetPolicyResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -317,8 +322,9 @@ impl Runnable for GetPolicyCommand {
 
 impl Runnable for GetPolicyVersionCommand {
     type Result = GetPolicyVersionResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -332,8 +338,9 @@ impl Runnable for GetPolicyVersionCommand {
 
 impl Runnable for ListEntitiesForPolicyCommand {
     type Result = ListEntitiesForPolicyResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -360,8 +367,9 @@ impl Runnable for ListEntitiesForPolicyCommand {
 
 impl Runnable for ListPoliciesInternalCommand {
     type Result = ListPoliciesResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -391,8 +399,9 @@ impl Runnable for ListPoliciesInternalCommand {
 
 impl Runnable for ListPolicyTagsCommand {
     type Result = ListPolicyTagsResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -410,8 +419,9 @@ impl Runnable for ListPolicyTagsCommand {
 
 impl Runnable for ListPolicyVersionsCommand {
     type Result = ListPolicyVersionsResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -429,8 +439,9 @@ impl Runnable for ListPolicyVersionsCommand {
 
 impl Runnable for SetDefaultPolicyVersionCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -444,8 +455,9 @@ impl Runnable for SetDefaultPolicyVersionCommand {
 
 impl Runnable for TagPolicyCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -457,8 +469,9 @@ impl Runnable for TagPolicyCommand {
 
 impl Runnable for UntagPolicyCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {

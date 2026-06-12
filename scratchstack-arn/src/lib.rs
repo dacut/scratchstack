@@ -19,8 +19,12 @@
 
 mod arn;
 mod error;
+pub use {arn::*, error::*};
+
+#[cfg(feature = "iam")]
+mod iam;
+#[cfg(feature = "iam")]
+pub use iam::*;
 
 /// Validation utilities used internally, but may be useful elsewhere.
 pub mod utils;
-
-pub use {arn::*, error::*};

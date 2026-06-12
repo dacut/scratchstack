@@ -1,17 +1,21 @@
 //! Session token data types and utilities
 use {
     crate::{KSecretKey, SignatureError},
+    ascii_casing::{AsciiString, CaseInsensitive},
     chrono::{DateTime, Utc},
-    scratchstack_arn::Arn,
     scratchstack_aspen::Policy as AspenPolicy,
     scratchstack_aws_principal::{Principal, SessionData},
     serde::{Deserialize, Serialize},
+    std::collections::{HashMap, HashSet},
     tower::Service,
 };
 
 /// Data from a session token.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SessionTokenData {
+    /// The ID of the role associated with this session.
+    pub role_id: String,
+
     /// The access key ID of the session token.
     pub access_key_id: String,
 
@@ -37,38 +41,25 @@ pub struct SessionTokenData {
     /// The issuing time of the session token.
     pub issued_at: DateTime<Utc>,
 
-    /// Permissions associated with the session token.
-    pub permissions: SessionTokenPermissions,
+    /// Inline policy associated with the session token.
+    #[serde(with = "inline_policy_json")]
+    pub inline_policy: Option<AspenPolicy>,
+
+    /// Managed policy identifiers associated with the session token.
+    pub managed_policy_ids: Vec<String>,
 
     /// The name of the session.
-    pub session_name: String,
+    pub role_session_name: String,
 
     /// Additional metadata associated with the session token.
     pub metadata: SessionData,
-}
 
-/// Permissions associated with a session token.
-///
-/// The session token may have permissions associated with it that are more restrictive than the
-/// permissions of the principal. This is specified as either an inline policy or a reference to a
-/// managed policy.
-///
-/// It is allowed to have no permissions associated with the session token; however, the result is
-/// the session will have no permissions at all, even if the principal has permissions.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub enum SessionTokenPermissions {
-    /// No permissions are associated with the session token. The session will have no permissions
-    /// at all, even if the principal has permissions.
-    #[default]
-    None,
+    /// Tags associated with the session token.
+    pub tags: HashMap<AsciiString<CaseInsensitive>, String>,
 
-    /// An inline policy is directly attached to the session token. This policy is more restrictive
-    /// than the permissions of the principal.
-    InlinePolicy(AspenPolicy),
-
-    /// A reference to a managed policy is attached to the session token. This policy is more
-    /// restrictive than the permissions of the principal.
-    ManagedPolicy(Arn),
+    /// Keys of the transitive tags associated with the session token. These are tags that will be
+    /// passed to any sessions that are assumed by this session.
+    pub transitive_tag_keys: HashSet<AsciiString<CaseInsensitive>>,
 }
 
 /// Trait for extracting data from an opaque session token.
@@ -87,6 +78,32 @@ pub enum SessionTokenPermissions {
 pub trait ExtractSessionToken: Service<String, Response = SessionTokenData, Error = SignatureError> {}
 
 impl<T> ExtractSessionToken for T where T: Service<String, Response = SessionTokenData, Error = SignatureError> {}
+
+/// Serde adapter for [`SessionTokenData::inline_policy`] that carries the policy as its JSON
+/// document string. Aspen policies use flexible JSON representations (e.g. element-or-list) that
+/// can only be (de)serialized with a self-describing format, so they cannot be embedded directly
+/// in non-self-describing formats such as the postcard encoding used for session tokens.
+mod inline_policy_json {
+    use {
+        scratchstack_aspen::Policy as AspenPolicy,
+        serde::{Deserialize, Deserializer, Serializer, de::Error as _},
+        std::str::FromStr as _,
+    };
+
+    pub(super) fn serialize<S: Serializer>(policy: &Option<AspenPolicy>, serializer: S) -> Result<S::Ok, S::Error> {
+        match policy {
+            None => serializer.serialize_none(),
+            Some(policy) => serializer.serialize_some(&policy.to_string()),
+        }
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<AspenPolicy>, D::Error> {
+        match Option::<String>::deserialize(deserializer)? {
+            None => Ok(None),
+            Some(policy) => AspenPolicy::from_str(&policy).map(Some).map_err(D::Error::custom),
+        }
+    }
+}
 
 #[cfg(feature = "default_session_token")]
 mod default_session_token;

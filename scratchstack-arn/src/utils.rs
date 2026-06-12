@@ -61,8 +61,8 @@ pub fn validate_partition(partition: &str) -> Result<(), ArnError> {
 ///
 /// An account id must be 12 ASCII digits or the string `aws`.
 ///
-/// If `account_id` meets this requirement, Ok is returned. Otherwise, a [ArnError::InvalidAccountId] error is
-/// returned.
+/// If `account_id` meets this requirement, Ok is returned. Otherwise, an
+/// [`InvalidAccountId`][ArnError::InvalidAccountId] error is returned.
 pub fn validate_account_id(account_id: &str) -> Result<(), ArnError> {
     if account_id != "aws" {
         let a_bytes = account_id.as_bytes();

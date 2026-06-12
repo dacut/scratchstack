@@ -28,7 +28,7 @@ use {
     clap::Parser,
     log::{debug, error, info},
     scratchstack_config::{Config, ResolvedSts},
-    scratchstack_database::GetSigningKeyFromDatabase,
+    scratchstack_iam_database::GetSigningKeyFromDatabase,
     std::{path::PathBuf, process::exit, sync::Arc},
     tokio::{net::TcpListener, runtime::Builder as RuntimeBuilder},
 };

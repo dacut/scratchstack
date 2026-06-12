@@ -89,8 +89,9 @@ pub(crate) struct ListAccountsCommand {
 
 impl Runnable for CreateAccountAliasInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -104,8 +105,9 @@ impl Runnable for CreateAccountAliasInternalCommand {
 
 impl Runnable for CreateAccountCommand {
     type Result = CreateAccountResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<CreateAccountResponse, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -125,8 +127,9 @@ impl Runnable for CreateAccountCommand {
 
 impl Runnable for ListAccountAliasesInternalCommand {
     type Result = ListAccountAliasesResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -141,8 +144,9 @@ impl Runnable for ListAccountAliasesInternalCommand {
 
 impl Runnable for ListAccountsCommand {
     type Result = ListAccountsResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<ListAccountsResponse, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
