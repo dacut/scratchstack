@@ -20,7 +20,7 @@ use {
         EncryptedSessionTokenData, KSecretKey, SessionTokenData,
         SessionTokenEncryptionAlgorithm as SigSessionTokenEncryptionAlgorithm, SessionTokenEncryptionKeyInfo,
     },
-    scratchstack_shapes_iam::types::SessionTokenEncryptionAlgorithm,
+    scratchstack_shapes_iam::{error_meta::Error as IamError, types::SessionTokenEncryptionAlgorithm},
     scratchstack_shapes_sts::{
         error_meta::Error as StsError,
         operation::{AssumeRoleRequest, AssumeRoleResponse},
@@ -78,7 +78,15 @@ pub async fn assume_role(
             continue;
         };
 
-        let get_policy_response = get_policy(tx, policy_arn).await?;
+        let get_policy_response = match get_policy(tx, policy_arn).await {
+            Ok(response) => response,
+            Err(IamError::NoSuchEntityException(e)) => {
+                return Err(StsError::ValidationError(Box::new(
+                    ValidationError::builder().message(format!("Policy {} does not exist: {}", policy_arn, e)).build(),
+                )));
+            }
+            Err(e) => return Err(e.into()),
+        };
         let Some(policy) = get_policy_response.policy else {
             return Err(ValidationError::builder()
                 .message(format!("Policy {} does not exist", policy_arn))

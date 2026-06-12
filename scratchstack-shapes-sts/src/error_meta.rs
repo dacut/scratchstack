@@ -57,7 +57,13 @@ impl From<Error> for ::scratchstack_shapes_iam::error_meta::Error {
             Error::ThrottlingException(inner) => Self::ThrottlingException(inner.into()),
             Error::UnrecognizedClientException(inner) => Self::UnrecognizedClientException(inner.into()),
             Error::ValidationError(inner) => Self::ValidationError(inner.into()),
-            _ => panic!("STS error type cannot be converted to IAM error type: {e:?}"),
+            _ => {
+                ::log::error!("Converting unhandled STS error to IAM error: {:?}", e);
+                Self::InternalFailure(Box::new(::scratchstack_shapes_iam::types::error::InternalFailure {
+                    message: Some("An internal error has occurred.".to_string()),
+                    meta: ::aws_smithy_types::error::ErrorMetadata::builder().code("InternalFailure").build(),
+                }))
+            }
         }
     }
 }

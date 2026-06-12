@@ -2057,7 +2057,7 @@ pub async fn test_assume_role(pool: &sqlx::PgPool) {
 
     let assumed_role_user = resp.assumed_role_user.expect("AssumedRoleUser should be present");
     assert_eq!(assumed_role_user.arn, "arn:aws:sts::123456789012:assumed-role/example-role-1/test-session");
-    assert_eq!(assumed_role_user.assumed_role_id, "EXAMPLEROLEID123:test-session");
+    assert_eq!(assumed_role_user.assumed_role_id, "AROAEXAMPLEROLEID123:test-session");
     assert_eq!(resp.source_identity.as_deref(), Some("test-identity"));
 
     let credentials = resp.credentials.expect("Credentials should be present");

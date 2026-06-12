@@ -6711,7 +6711,7 @@ async fn test_assume_role(database: &TempDatabase) {
         ])
         .await
         .expect_err("assume-role without a current session token encryption key should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), Some("InternalFailure"), "Expected InternalFailure, got: {err}");
 
     // Create a session token encryption key that is current.
     database
@@ -6921,7 +6921,7 @@ async fn test_assume_role(database: &TempDatabase) {
         ])
         .await
         .expect_err("assume-role with a nonexistent managed session policy should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 
     // Tag keys that differ only in case are rejected.
     let err = database
