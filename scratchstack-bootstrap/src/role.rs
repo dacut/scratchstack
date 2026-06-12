@@ -16,8 +16,59 @@ use {
             UpdateRoleInternalRequest, UpdateRoleResponse,
         },
     },
+    scratchstack_shapes_sts::{
+        error_meta::Error as StsError,
+        operation::{AssumeRoleRequest, AssumeRoleResponse},
+        types::{PolicyDescriptorType, Tag as StsTag},
+    },
     std::ffi::OsString,
 };
+
+/// Assume a role in the Scratchstack IAM service, returning a set of temporary security
+/// credentials. The account is inferred from the role ARN.
+#[derive(Debug, Parser)]
+pub(crate) struct AssumeRoleCommand {
+    /// The duration, in seconds, of the role session. Must be between 900 (15 minutes) and
+    /// 43200 (12 hours). The session duration is capped at the role's maximum session duration.
+    #[clap(long)]
+    pub duration_seconds: Option<i32>,
+
+    /// An IAM policy in JSON format to use as an inline session policy.
+    #[clap(long)]
+    pub policy: Option<String>,
+
+    /// The ARNs of managed policies to use as managed session policies. The policies must exist
+    /// in the same account as the role.
+    #[clap(long, num_args = 1..)]
+    pub policy_arns: Vec<String>,
+
+    /// The ARN of the role to assume.
+    #[clap(long)]
+    pub role_arn: String,
+
+    /// An identifier for the assumed role session.
+    #[clap(long)]
+    pub role_session_name: String,
+
+    /// The source identity specified by the principal assuming the role.
+    #[clap(long)]
+    pub source_identity: Option<String>,
+
+    /// A list of session tags to pass. Each tag must use AWS CLI-style shorthand,
+    /// for example: `Key=Environment,Value=Production`.
+    /// Multiple tags may be passed as multiple `--tags` arguments and/or as a bracketed list,
+    /// for example:
+    /// `--tags Key=Environment,Value=Production --tags Key=Team,Value=Platform`
+    /// or
+    /// `--tags "[{Key=Environment,Value=Production},{Key=Team,Value=Platform}]"`.
+    #[clap(long, num_args = 1..)]
+    pub tags: Vec<String>,
+
+    /// A list of keys for session tags to set as transitive in subsequent sessions in a role
+    /// chain.
+    #[clap(long, num_args = 1..)]
+    pub transitive_tag_keys: Vec<String>,
+}
 
 /// Create a new role in a given account in the Scratchstack IAM service.
 #[derive(Debug, Parser)]
@@ -215,10 +266,48 @@ pub(crate) struct ListRolePoliciesInternalCommand {
     pub marker: Option<String>,
 }
 
+impl Runnable for AssumeRoleCommand {
+    type Result = AssumeRoleResponse;
+    type Error = StsError;
+
+    /// Execute the subcommand. This is an inherent counterpart to [`Runnable::run`]; it cannot
+    /// implement the trait because `AssumeRole` is an STS operation and returns [`StsError`]
+    /// rather than [`IamError`].
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
+    where
+        I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    {
+        let tags: Vec<StsTag> = tags_from_shorthand(&self.tags)?
+            .into_iter()
+            .map(|tag| StsTag {
+                key: tag.key,
+                value: tag.value,
+            })
+            .collect();
+        let policy_arns = self
+            .policy_arns
+            .iter()
+            .map(|arn| PolicyDescriptorType::builder().arn(arn.clone()).build())
+            .collect::<Result<Vec<_>, _>>()?;
+        let request = AssumeRoleRequest::builder()
+            .duration_seconds(self.duration_seconds)
+            .policy(self.policy.clone())
+            .policy_arns(policy_arns)
+            .role_arn(self.role_arn.clone())
+            .role_session_name(self.role_session_name.clone())
+            .source_identity(self.source_identity.clone())
+            .tags(tags)
+            .transitive_tag_keys(self.transitive_tag_keys.clone())
+            .build()?;
+        execute_in_transaction(cli, vars, &request).await
+    }
+}
+
 impl Runnable for AttachRolePolicyInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -233,8 +322,9 @@ impl Runnable for AttachRolePolicyInternalCommand {
 
 impl Runnable for CreateRoleInternalCommand {
     type Result = CreateRoleResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -255,8 +345,9 @@ impl Runnable for CreateRoleInternalCommand {
 
 impl Runnable for DeleteRoleInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -270,8 +361,9 @@ impl Runnable for DeleteRoleInternalCommand {
 
 impl Runnable for DeleteRolePermissionsBoundaryInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -285,8 +377,9 @@ impl Runnable for DeleteRolePermissionsBoundaryInternalCommand {
 
 impl Runnable for DeleteRolePolicyInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -301,8 +394,9 @@ impl Runnable for DeleteRolePolicyInternalCommand {
 
 impl Runnable for DetachRolePolicyInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -317,8 +411,9 @@ impl Runnable for DetachRolePolicyInternalCommand {
 
 impl Runnable for GetRoleInternalCommand {
     type Result = GetRoleResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -332,6 +427,7 @@ impl Runnable for GetRoleInternalCommand {
 
 impl Runnable for GetRolePolicyInternalCommand {
     type Result = GetRolePolicyResponse;
+    type Error = IamError;
 
     async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
     where
@@ -348,8 +444,9 @@ impl Runnable for GetRolePolicyInternalCommand {
 
 impl Runnable for ListAttachedRolePoliciesInternalCommand {
     type Result = ListAttachedRolePoliciesResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -366,8 +463,9 @@ impl Runnable for ListAttachedRolePoliciesInternalCommand {
 
 impl Runnable for ListRolePoliciesInternalCommand {
     type Result = ListRolePoliciesResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -406,8 +504,9 @@ pub(crate) struct ListRolesInternalCommand {
 
 impl Runnable for ListRolesInternalCommand {
     type Result = ListRolesResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -445,8 +544,9 @@ pub(crate) struct ListRoleTagsInternalCommand {
 
 impl Runnable for ListRoleTagsInternalCommand {
     type Result = ListRoleTagsResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -500,8 +600,9 @@ pub(crate) struct UntagRoleInternalCommand {
 
 impl Runnable for TagRoleInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -517,8 +618,9 @@ impl Runnable for TagRoleInternalCommand {
 
 impl Runnable for UntagRoleInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -571,8 +673,9 @@ pub(crate) struct UpdateRoleDescriptionInternalCommand {
 
 impl Runnable for UpdateRoleInternalCommand {
     type Result = UpdateRoleResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -588,8 +691,9 @@ impl Runnable for UpdateRoleInternalCommand {
 
 impl Runnable for UpdateRoleDescriptionInternalCommand {
     type Result = UpdateRoleDescriptionResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -621,8 +725,9 @@ pub(crate) struct PutRolePermissionsBoundaryInternalCommand {
 
 impl Runnable for PutRolePermissionsBoundaryInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -657,8 +762,9 @@ pub(crate) struct PutRolePolicyInternalCommand {
 
 impl Runnable for PutRolePolicyInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {

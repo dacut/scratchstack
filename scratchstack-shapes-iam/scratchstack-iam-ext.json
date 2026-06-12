@@ -37,6 +37,18 @@
                 "smithy.api#documentation": "Returns the partition configured for the service."
             }
         },
+        "com.amazonaws.iam#GetCurrentSessionTokenEncryptionKey": {
+            "type": "operation",
+            "input": {
+                "target": "com.amazonaws.iam#GetCurrentSessionTokenEncryptionKeyRequest"
+            },
+            "output": {
+                "target": "com.amazonaws.iam#GetCurrentSessionTokenEncryptionKeyResponse"
+            },
+            "traits": {
+                "smithy.api#documentation": "Returns the current session token encryption key."
+            }
+        },
         "com.amazonaws.iam#GetSessionTokenEncryptionKey": {
             "type": "operation",
             "input": {
@@ -206,6 +218,35 @@
                     "target": "com.amazonaws.iam#partitionType",
                     "traits": {
                         "smithy.api#documentation": "<p>The partition configured for the service.</p>"
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#output": {}
+            }
+        },
+        "com.amazonaws.iam#GetCurrentSessionTokenEncryptionKeyRequest": {
+            "type": "structure",
+            "members": {
+                "AsOf": {
+                    "target": "com.amazonaws.iam#dateType",
+                    "traits": {
+                        "smithy.api#documentation": "The date and time to use when determining which session token encryption key is current. If not specified, the service defaults to the current date and time. The session token encryption key that is current at the specified time is the one that has an IssueValidFrom date in the past (relative to the specified time) and an IssueExpiresAt date in the future (relative to the specified time)."
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#input": {}
+            }
+        },
+        "com.amazonaws.iam#GetCurrentSessionTokenEncryptionKeyResponse": {
+            "type": "structure",
+            "members": {
+                "SessionTokenEncryptionKey": {
+                    "target": "com.amazonaws.iam#SessionTokenEncryptionKey",
+                    "traits": {
+                        "smithy.api#documentation": "The current session token encryption key at the specified time.",
+                        "smithy.api#required": {}
                     }
                 }
             },
@@ -422,6 +463,13 @@
                     "target": "com.amazonaws.iam#SessionTokenEncryptionAlgorithm",
                     "traits": {
                         "smithy.api#documentation": "The encryption algorithm used to encrypt the session token. The only valid value is `AES256-GCM`.",
+                        "smithy.api#required": {}
+                    }
+                },
+                "EncryptionKey": {
+                    "target": "com.amazonaws.iam#stringType",
+                    "traits": {
+                        "smithy.api#documentation": "The base64-encoded encryption key used to encrypt the session token.",
                         "smithy.api#required": {}
                     }
                 },

@@ -5,7 +5,7 @@ use {
     aws_smithy_types::error::metadata::ProvideErrorMetadata,
     chrono::{DateTime, Utc},
     pretty_assertions::assert_eq,
-    scratchstack_database::utils::TempDatabase,
+    scratchstack_iam_database::utils::TempDatabase,
     scratchstack_shapes_iam::{error_meta::Error as IamError, types::ListSessionTokenEncryptionKeysFilterName},
     serde_json::Value as JsonValue,
     std::{collections::HashSet, ffi::OsString, future::Future},
@@ -31,6 +31,7 @@ async fn test_ssdb_ops() {
     test_roles(&database).await;
     test_policy_attachments(&database).await;
     test_session_token_encryption_keys(&database).await;
+    test_assume_role(&database).await;
 }
 
 async fn test_migrate_database(database: &TempDatabase) {
@@ -6632,6 +6633,318 @@ async fn test_session_token_encryption_keys(database: &TempDatabase) {
     assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
 }
 
+async fn test_assume_role(database: &TempDatabase) {
+    let port = database.port_str();
+    let trust_policy = r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}"#;
+    let session_policy =
+        r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#;
+
+    // Create the role to assume, with a 2-hour maximum session duration.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "assume-target",
+            "--assume-role-policy-document",
+            trust_policy,
+            "--max-session-duration",
+            "7200",
+        ])
+        .await
+        .expect("Failed to run create-role for 555566667777/assume-target");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse create-role output as JSON");
+    let role_arn = json
+        .get("Role")
+        .and_then(|role| role.get("Arn"))
+        .and_then(JsonValue::as_str)
+        .expect("Role.Arn should be a string")
+        .to_string();
+    assert_eq!(role_arn, "arn:test-partition:iam::555566667777:role/assume-target");
+
+    // Create a managed policy to use as a managed session policy.
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-policy",
+            "--account-id",
+            "555566667777",
+            "--policy-name",
+            "assume-session-policy",
+            "--policy-document",
+            session_policy,
+        ])
+        .await
+        .expect("Failed to run create-policy for 555566667777/assume-session-policy");
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse create-policy output as JSON");
+    let session_policy_arn = json
+        .get("Policy")
+        .and_then(|policy| policy.get("Arn"))
+        .and_then(JsonValue::as_str)
+        .expect("Policy.Arn should be a string")
+        .to_string();
+
+    // All session token encryption keys created so far only become issuable in 2030 or later, so
+    // there is no key current as of now and assume-role must fail.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "assume-role",
+            "--role-arn",
+            &role_arn,
+            "--role-session-name",
+            "integ-session",
+        ])
+        .await
+        .expect_err("assume-role without a current session token encryption key should fail");
+    assert_eq!(err.code(), Some("InternalFailure"), "Expected InternalFailure, got: {err}");
+
+    // Create a session token encryption key that is current.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-session-token-encryption-key",
+            "--issue-valid-from",
+            "2020-01-01T00:00:00Z",
+            "--issue-expires-at",
+            "2200-01-01T00:00:00Z",
+            "--accept-expires-at",
+            "2200-01-02T00:00:00Z",
+        ])
+        .await
+        .expect("Failed to create a current session token encryption key");
+
+    // Assume the role with the full set of supported arguments. The requested duration exceeds
+    // the role's maximum session duration, so the expiration must be capped at 2 hours.
+    let before = Utc::now();
+    let result = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "assume-role",
+            "--role-arn",
+            &role_arn,
+            "--role-session-name",
+            "integ-session",
+            "--duration-seconds",
+            "43200",
+            "--policy",
+            session_policy,
+            "--policy-arns",
+            &session_policy_arn,
+            "--source-identity",
+            "integ-tester",
+            "--tags",
+            "Key=Environment,Value=Production",
+            "--transitive-tag-keys",
+            "Environment",
+        ])
+        .await
+        .expect("Failed to run assume-role");
+    let after = Utc::now();
+    let json: JsonValue = serde_json::from_str(&result).expect("Failed to parse assume-role output as JSON");
+    let assumed_role_user = json.get("AssumedRoleUser").expect("AssumedRoleUser should be present");
+    assert_eq!(
+        assumed_role_user.get("Arn").and_then(JsonValue::as_str),
+        Some("arn:test-partition:sts::555566667777:assumed-role/assume-target/integ-session")
+    );
+    let assumed_role_id =
+        assumed_role_user.get("AssumedRoleId").and_then(JsonValue::as_str).expect("AssumedRoleId should be a string");
+    assert!(assumed_role_id.ends_with(":integ-session"), "AssumedRoleId should end with the session name");
+    assert_eq!(json.get("SourceIdentity").and_then(JsonValue::as_str), Some("integ-tester"));
+
+    let credentials = json.get("Credentials").expect("Credentials should be present");
+    let access_key_id =
+        credentials.get("AccessKeyId").and_then(JsonValue::as_str).expect("AccessKeyId should be a string");
+    assert!(access_key_id.starts_with("ASIA"), "AccessKeyId should start with ASIA, got {access_key_id}");
+    let secret_access_key =
+        credentials.get("SecretAccessKey").and_then(JsonValue::as_str).expect("SecretAccessKey should be a string");
+    assert!(!secret_access_key.is_empty(), "SecretAccessKey should not be empty");
+    let session_token =
+        credentials.get("SessionToken").and_then(JsonValue::as_str).expect("SessionToken should be a string");
+    assert!(!session_token.is_empty(), "SessionToken should not be empty");
+    let expiration = parse_dt(credentials, "Expiration");
+    assert!(
+        expiration >= before + chrono::Duration::seconds(7200) && expiration <= after + chrono::Duration::seconds(7200),
+        "Expiration should be capped at the role's 7200-second maximum session duration; \
+         before={before}, after={after}, expiration={expiration}"
+    );
+
+    // A role ARN too short to be valid is rejected by request validation.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "assume-role",
+            "--role-arn",
+            "not-an-arn",
+            "--role-session-name",
+            "integ-session",
+        ])
+        .await
+        .expect_err("assume-role with an invalid role ARN should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // An ARN that is not a role ARN is rejected.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "assume-role",
+            "--role-arn",
+            "arn:test-partition:iam::555566667777:user/someone",
+            "--role-session-name",
+            "integ-session",
+        ])
+        .await
+        .expect_err("assume-role with a non-role ARN should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // A nonexistent role surfaces as AccessDenied (matching AWS behavior).
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "assume-role",
+            "--role-arn",
+            "arn:test-partition:iam::555566667777:role/does-not-exist",
+            "--role-session-name",
+            "integ-session",
+        ])
+        .await
+        .expect_err("assume-role on a nonexistent role should fail");
+    assert_eq!(err.code(), Some("AccessDenied"), "Expected AccessDenied, got: {err}");
+
+    // A session name shorter than 2 characters is rejected by request validation.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "assume-role",
+            "--role-arn",
+            &role_arn,
+            "--role-session-name",
+            "x",
+        ])
+        .await
+        .expect_err("assume-role with a too-short session name should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // A duration below the 900-second minimum is rejected by request validation.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "assume-role",
+            "--role-arn",
+            &role_arn,
+            "--role-session-name",
+            "integ-session",
+            "--duration-seconds",
+            "100",
+        ])
+        .await
+        .expect_err("assume-role with a too-short duration should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // A malformed inline session policy surfaces as MalformedPolicyDocument.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "assume-role",
+            "--role-arn",
+            &role_arn,
+            "--role-session-name",
+            "integ-session",
+            "--policy",
+            "{not-json",
+        ])
+        .await
+        .expect_err("assume-role with a malformed inline policy should fail");
+    assert_eq!(err.code(), Some("MalformedPolicyDocument"), "Expected MalformedPolicyDocument, got: {err}");
+
+    // A nonexistent managed session policy surfaces as NoSuchEntity.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "assume-role",
+            "--role-arn",
+            &role_arn,
+            "--role-session-name",
+            "integ-session",
+            "--policy-arns",
+            "arn:test-partition:iam::555566667777:policy/does-not-exist",
+        ])
+        .await
+        .expect_err("assume-role with a nonexistent managed session policy should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+
+    // Tag keys that differ only in case are rejected.
+    let err = database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "assume-role",
+            "--role-arn",
+            &role_arn,
+            "--role-session-name",
+            "integ-session",
+            "--tags",
+            "Key=Environment,Value=Production",
+            "Key=environment,Value=Test",
+        ])
+        .await
+        .expect_err("assume-role with case-insensitive duplicate tag keys should fail");
+    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+}
+
 #[test]
 fn list_stek_filters_empty() {
     let filters: &[&str] = &[];
@@ -6782,6 +7095,7 @@ impl TestHarness for TempDatabase {
                         .message("An internal error has occurred.")
                         .build(),
                 )
+                .into()
             })
         }
     }

@@ -48,6 +48,12 @@ pub enum PrincipalError {
     /// Invalid resource. The argument contains the specified resource.
     InvalidResource(String),
 
+    /// Invalid resource name. The argument contains the specified resource name.
+    InvalidResourceName(String),
+
+    /// Invalid resource path. The argument contains the specified resource path.
+    InvalidResourcePath(String),
+
     /// Invalid role name. The argument contains the specified role name.
     InvalidRoleName(String),
 
@@ -98,6 +104,12 @@ impl Display for PrincipalError {
             Self::InvalidPath(path) => write!(f, "Invalid path: {path:#?}"),
             Self::InvalidRegion(region) => write!(f, "Invalid region: {region:#?}"),
             Self::InvalidResource(resource) => write!(f, "Invalid resource: {resource:#?}"),
+            Self::InvalidResourceName(resource_name) => {
+                write!(f, "Invalid resource name: {resource_name:#?}")
+            }
+            Self::InvalidResourcePath(resource_path) => {
+                write!(f, "Invalid resource path: {resource_path:#?}")
+            }
             Self::InvalidRoleName(role_name) => write!(f, "Invalid role name: {role_name:#?}"),
             Self::InvalidRoleId(role_id) => write!(f, "Invalid role id: {role_id:#?}"),
             Self::InvalidScheme(scheme) => write!(f, "Invalid scheme: {scheme:#?}"),
@@ -123,6 +135,9 @@ impl From<ArnError> for PrincipalError {
             ArnError::InvalidAccountId(account_id) => Self::InvalidAccountId(account_id),
             ArnError::InvalidResource(resource) => Self::InvalidResource(resource),
             ArnError::InvalidArn(arn) => Self::InvalidArn(arn),
+            ArnError::InvalidIamResourcePath(path) => Self::InvalidResourcePath(path),
+            ArnError::InvalidIamResourceName(name) => Self::InvalidResourceName(name),
+            _ => unreachable!("Unexpected ArnError variant: {err:#?}"),
         }
     }
 }

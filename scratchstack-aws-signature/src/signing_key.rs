@@ -1,5 +1,6 @@
 use {
     crate::{KeyLengthError, constants::*, crypto::hmac_sha256},
+    base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
     chrono::NaiveDate,
     derive_builder::Builder,
     scratchstack_aws_principal::{Principal, SessionData},
@@ -65,6 +66,34 @@ pub struct KSigningKey {
 }
 
 impl KSecretKey {
+    /// Return the raw secret key, without the `AWS4` prefix.
+    ///
+    /// This bypasses the redaction that the [`Debug`] and [`Display`] implementations provide.
+    /// Only use this where the raw key must be revealed, such as returning newly-issued
+    /// credentials from an STS-like API.
+    pub fn as_str(&self) -> &str {
+        str::from_utf8(&self.prefixed_key[4..]).expect("secret key is ASCII")
+    }
+
+    /// Generate a new `KSecretKey` from random data.
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        let mut raw_key = vec![0u8; DEFAULT_SECRET_KEY_RAW_SIZE];
+        rand::fill(&mut raw_key);
+        let mut encoded = URL_SAFE_NO_PAD.encode(&raw_key).into_bytes();
+        raw_key.zeroize();
+
+        // Reserve the exact size up front so the buffer is never reallocated; a reallocation
+        // would leave an unscrubbed copy of the key on the heap.
+        let mut prefixed_key = Vec::with_capacity(4 + encoded.len());
+        prefixed_key.extend_from_slice(b"AWS4");
+        prefixed_key.extend_from_slice(&encoded);
+        encoded.zeroize();
+        Self {
+            prefixed_key: prefixed_key.into_boxed_slice(),
+        }
+    }
+
     /// Create a new `KDateKey` from this `KSecretKey` and a date.
     pub fn to_kdate(&self, date: NaiveDate) -> KDateKey {
         let date = date.format("%Y%m%d").to_string();

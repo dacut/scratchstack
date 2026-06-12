@@ -17,5 +17,6 @@ serde = ["dep:serde"]
 [dependencies]
 base64.workspace = true
 chrono = { workspace = true, features = [ "alloc" ] }
-scratchstack-arn.path = "../scratchstack-arn"
+scratchstack-arn = { path = "../scratchstack-arn", features = ["iam"] }
 serde = { workspace = true, features = ["derive"], optional = true }
+zeroize.workspace = true

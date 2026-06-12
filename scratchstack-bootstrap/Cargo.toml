@@ -21,8 +21,9 @@ env_logger.workspace = true
 log.workspace = true
 rpassword.workspace = true
 scratchstack-cli-utils = { path = "../scratchstack-cli-utils" }
-scratchstack-database = { path = "../scratchstack-database", features = ["clap", "iam", "utils"] }
+scratchstack-iam-database = { path = "../scratchstack-iam-database", features = ["utils"] }
 scratchstack-shapes-iam = { path = "../scratchstack-shapes-iam" }
+scratchstack-shapes-sts = { path = "../scratchstack-shapes-sts" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sqlx = { workspace = true, features = ["chrono", "macros", "migrate", "postgres", "runtime-tokio", "tls-rustls" ] }

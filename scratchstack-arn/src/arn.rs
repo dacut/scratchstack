@@ -29,6 +29,16 @@ pub struct Arn {
     resource_start: usize,
 }
 
+/// A builder for programmatically constructing ARNs.
+#[derive(Clone, Debug, Default)]
+pub struct ArnBuilder {
+    partition: Option<String>,
+    service: Option<String>,
+    region: String,
+    account_id: String,
+    resource: String,
+}
+
 impl Arn {
     /// Create a new ARN from the specified components.
     ///
@@ -111,32 +121,32 @@ impl Arn {
         ArnBuilder::default()
     }
 
-    /// Retrieve the partition the resource is in.
-    #[inline]
+    /// Return the partition the resource is in.
+    #[inline(always)]
     pub fn partition(&self) -> &str {
         &self.arn[PARTITION_START..self.service_start - 1]
     }
 
-    /// Retrieve the service the resource belongs to.
-    #[inline]
+    /// Return the service the resource belongs to.
+    #[inline(always)]
     pub fn service(&self) -> &str {
         &self.arn[self.service_start..self.region_start - 1]
     }
 
-    /// Retrieve the region the resource is in.
-    #[inline]
+    /// Return the region the resource is in.
+    #[inline(always)]
     pub fn region(&self) -> &str {
         &self.arn[self.region_start..self.account_id_start - 1]
     }
 
-    /// Retrieve the account ID the resource belongs to.
-    #[inline]
+    /// Return the account ID the resource belongs to.
+    #[inline(always)]
     pub fn account_id(&self) -> &str {
         &self.arn[self.account_id_start..self.resource_start - 1]
     }
 
-    /// Retrieve the resource name.
-    #[inline]
+    /// Return the resource name.
+    #[inline(always)]
     pub fn resource(&self) -> &str {
         &self.arn[self.resource_start..]
     }
@@ -223,16 +233,6 @@ impl Serialize for Arn {
     {
         serializer.serialize_str(&self.arn)
     }
-}
-
-/// A builder for programmatically constructing ARNs.
-#[derive(Clone, Debug, Default)]
-pub struct ArnBuilder {
-    partition: Option<String>,
-    service: Option<String>,
-    region: String,
-    account_id: String,
-    resource: String,
 }
 
 impl ArnBuilder {

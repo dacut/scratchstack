@@ -2,7 +2,7 @@
 use {
     crate::{Cli, MSG_INTERNAL_FAILURE, Runnable},
     clap::Args,
-    scratchstack_database::iam::MIGRATOR,
+    scratchstack_iam_database::migrate::MIGRATOR,
     scratchstack_shapes_iam::{error_meta::Error as IamError, types::error::InternalFailure},
     serde::{Deserialize, Serialize},
     std::ffi::OsString,
@@ -20,8 +20,9 @@ impl MigrateCommand {}
 
 impl Runnable for MigrateCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, args: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, args: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {

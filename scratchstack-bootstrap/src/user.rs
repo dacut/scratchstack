@@ -374,8 +374,9 @@ pub(crate) struct UpdateUserInternalCommand {
 
 impl Runnable for AttachUserPolicyInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -390,8 +391,9 @@ impl Runnable for AttachUserPolicyInternalCommand {
 
 impl Runnable for CreateAccessKeyInternalCommand {
     type Result = CreateAccessKeyResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -405,8 +407,9 @@ impl Runnable for CreateAccessKeyInternalCommand {
 
 impl Runnable for CreateUserInternalCommand {
     type Result = CreateUserResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -425,8 +428,9 @@ impl Runnable for CreateUserInternalCommand {
 
 impl Runnable for DeleteAccessKeyInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -441,8 +445,9 @@ impl Runnable for DeleteAccessKeyInternalCommand {
 
 impl Runnable for DeleteUserInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -456,8 +461,9 @@ impl Runnable for DeleteUserInternalCommand {
 
 impl Runnable for DeleteUserPermissionsBoundaryInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -471,8 +477,9 @@ impl Runnable for DeleteUserPermissionsBoundaryInternalCommand {
 
 impl Runnable for DeleteUserPolicyInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -487,8 +494,9 @@ impl Runnable for DeleteUserPolicyInternalCommand {
 
 impl Runnable for DetachUserPolicyInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -503,8 +511,9 @@ impl Runnable for DetachUserPolicyInternalCommand {
 
 impl Runnable for GetUserInternalCommand {
     type Result = GetUserResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -518,8 +527,9 @@ impl Runnable for GetUserInternalCommand {
 
 impl Runnable for GetUserPolicyInternalCommand {
     type Result = GetUserPolicyResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -534,8 +544,9 @@ impl Runnable for GetUserPolicyInternalCommand {
 
 impl Runnable for ListAccessKeysInternalCommand {
     type Result = ListAccessKeysResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -551,8 +562,9 @@ impl Runnable for ListAccessKeysInternalCommand {
 
 impl Runnable for ListAttachedUserPoliciesInternalCommand {
     type Result = ListAttachedUserPoliciesResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -569,8 +581,9 @@ impl Runnable for ListAttachedUserPoliciesInternalCommand {
 
 impl Runnable for ListUserPoliciesInternalCommand {
     type Result = ListUserPoliciesResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -586,8 +599,9 @@ impl Runnable for ListUserPoliciesInternalCommand {
 
 impl Runnable for ListUsersInternalCommand {
     type Result = ListUsersResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -603,8 +617,9 @@ impl Runnable for ListUsersInternalCommand {
 
 impl Runnable for ListUserTagsInternalCommand {
     type Result = ListUserTagsResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -620,8 +635,9 @@ impl Runnable for ListUserTagsInternalCommand {
 
 impl Runnable for TagUserInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -637,8 +653,9 @@ impl Runnable for TagUserInternalCommand {
 
 impl Runnable for UntagUserInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -653,8 +670,9 @@ impl Runnable for UntagUserInternalCommand {
 
 impl Runnable for UpdateAccessKeyInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -670,8 +688,9 @@ impl Runnable for UpdateAccessKeyInternalCommand {
 
 impl Runnable for UpdateUserInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -704,8 +723,9 @@ pub(crate) struct PutUserPermissionsBoundaryInternalCommand {
 
 impl Runnable for PutUserPermissionsBoundaryInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -740,8 +760,9 @@ pub(crate) struct PutUserPolicyInternalCommand {
 
 impl Runnable for PutUserPolicyInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {

@@ -26,8 +26,9 @@ pub(crate) struct SetCurrentPartitionCommand {
 
 impl Runnable for GetCurrentPartitionCommand {
     type Result = GetCurrentPartitionResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<GetCurrentPartitionResponse, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<GetCurrentPartitionResponse, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -37,8 +38,9 @@ impl Runnable for GetCurrentPartitionCommand {
 
 impl Runnable for SetCurrentPartitionCommand {
     type Result = SetCurrentPartitionResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<SetCurrentPartitionResponse, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<SetCurrentPartitionResponse, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {

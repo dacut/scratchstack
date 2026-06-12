@@ -92,8 +92,9 @@ pub(crate) struct UpdateSessionTokenEncryptionKeyCommand {
 
 impl Runnable for CreateSessionTokenEncryptionKeyCommand {
     type Result = CreateSessionTokenEncryptionKeyResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -114,8 +115,9 @@ impl Runnable for CreateSessionTokenEncryptionKeyCommand {
 
 impl Runnable for GetSessionTokenEncryptionKeyCommand {
     type Result = GetSessionTokenEncryptionKeyResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -128,8 +130,9 @@ impl Runnable for GetSessionTokenEncryptionKeyCommand {
 
 impl Runnable for ListSessionTokenEncryptionKeysCommand {
     type Result = ListSessionTokenEncryptionKeysResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -148,8 +151,9 @@ impl Runnable for ListSessionTokenEncryptionKeysCommand {
 
 impl Runnable for UpdateSessionTokenEncryptionKeyCommand {
     type Result = UpdateSessionTokenEncryptionKeyResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {

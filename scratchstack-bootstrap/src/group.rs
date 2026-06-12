@@ -216,8 +216,9 @@ pub(crate) struct UpdateGroupInternalCommand {
 
 impl Runnable for CreateGroupInternalCommand {
     type Result = CreateGroupResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -232,8 +233,9 @@ impl Runnable for CreateGroupInternalCommand {
 
 impl Runnable for DeleteGroupInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -247,8 +249,9 @@ impl Runnable for DeleteGroupInternalCommand {
 
 impl Runnable for DeleteGroupPolicyInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -263,8 +266,9 @@ impl Runnable for DeleteGroupPolicyInternalCommand {
 
 impl Runnable for GetGroupInternalCommand {
     type Result = GetGroupResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -278,8 +282,9 @@ impl Runnable for GetGroupInternalCommand {
 
 impl Runnable for GetGroupPolicyInternalCommand {
     type Result = GetGroupPolicyResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -294,8 +299,9 @@ impl Runnable for GetGroupPolicyInternalCommand {
 
 impl Runnable for ListAttachedGroupPoliciesInternalCommand {
     type Result = ListAttachedGroupPoliciesResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -312,8 +318,9 @@ impl Runnable for ListAttachedGroupPoliciesInternalCommand {
 
 impl Runnable for ListGroupPoliciesInternalCommand {
     type Result = ListGroupPoliciesResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -329,8 +336,9 @@ impl Runnable for ListGroupPoliciesInternalCommand {
 
 impl Runnable for ListGroupsInternalCommand {
     type Result = ListGroupsResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -346,8 +354,9 @@ impl Runnable for ListGroupsInternalCommand {
 
 impl Runnable for UpdateGroupInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -415,8 +424,9 @@ pub(crate) struct RemoveUserFromGroupInternalCommand {
 
 impl Runnable for AddUserToGroupInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -431,8 +441,9 @@ impl Runnable for AddUserToGroupInternalCommand {
 
 impl Runnable for ListGroupsForUserInternalCommand {
     type Result = ListGroupsForUserResponse;
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -448,8 +459,9 @@ impl Runnable for ListGroupsForUserInternalCommand {
 
 impl Runnable for RemoveUserFromGroupInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -464,8 +476,9 @@ impl Runnable for RemoveUserFromGroupInternalCommand {
 
 impl Runnable for AttachGroupPolicyInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -480,8 +493,9 @@ impl Runnable for AttachGroupPolicyInternalCommand {
 
 impl Runnable for DetachGroupPolicyInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
@@ -516,8 +530,9 @@ pub(crate) struct PutGroupPolicyInternalCommand {
 
 impl Runnable for PutGroupPolicyInternalCommand {
     type Result = ();
+    type Error = IamError;
 
-    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, IamError>
+    async fn run<I>(&self, cli: &Cli, vars: I) -> Result<Self::Result, Self::Error>
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {

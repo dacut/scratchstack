@@ -1,0 +1,252 @@
+//! IAM related utilities for ARNs.
+use {
+    crate::{Arn, ArnError},
+    std::{
+        fmt::{Display, Formatter, Result as FmtResult},
+        str::FromStr,
+    },
+};
+
+/// The service component for IAM ARNs.
+pub(crate) const SERVICE_KEY_IAM: &str = "iam";
+
+/// The components from an IAM resource ARN
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IamResourceArn {
+    /// The base ARN for this resource.
+    arn: Arn,
+
+    /// The start of the path component of the resource, including the leading slash.
+    resource_path_start: usize,
+
+    /// The start of the resource name component of the resource.
+    resource_name_start: usize,
+}
+
+impl Display for IamResourceArn {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Display::fmt(&self.arn, f)
+    }
+}
+
+impl FromStr for IamResourceArn {
+    type Err = ArnError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let arn = Arn::from_str(s)?;
+        Self::try_from(arn)
+    }
+}
+
+impl TryFrom<Arn> for IamResourceArn {
+    type Error = ArnError;
+
+    fn try_from(arn: Arn) -> Result<Self, Self::Error> {
+        if arn.service() != SERVICE_KEY_IAM {
+            return Err(ArnError::InvalidService(arn.service().to_string()));
+        }
+
+        let resource = arn.resource();
+        let path_start = resource.find('/').ok_or_else(|| ArnError::InvalidResource(resource.to_string()))?;
+        let name_start = resource.rfind('/').ok_or_else(|| ArnError::InvalidResource(resource.to_string()))? + 1;
+        if name_start >= resource.len() {
+            return Err(ArnError::InvalidResource(resource.to_string()));
+        }
+
+        validate_iam_path(&resource[path_start..name_start])?;
+        validate_iam_resource_name(&resource[name_start..])?;
+
+        Ok(IamResourceArn {
+            arn,
+            resource_path_start: path_start,
+            resource_name_start: name_start,
+        })
+    }
+}
+
+impl IamResourceArn {
+    /// Parse a string into an `IamResourceArn`, returning an error if the string is not a valid,
+    /// ARN, the service is not `iam`, the resource does not contain a valid type, path, and name,
+    /// or the resource type is not as expected.
+    pub fn expect_resource_type(arn_str: impl AsRef<str>, expected_resource_type: &str) -> Result<Self, ArnError> {
+        let arn = Arn::from_str(arn_str.as_ref())?;
+        let iam_arn = Self::try_from(arn)?;
+        if iam_arn.resource_type() != expected_resource_type {
+            return Err(ArnError::InvalidResource(iam_arn.arn.resource().to_string()));
+        }
+        Ok(iam_arn)
+    }
+
+    /// Returns the partition the resource is in.
+    #[inline(always)]
+    pub fn partition(&self) -> &str {
+        self.arn.partition()
+    }
+
+    /// Returns the service the resource belongs to.
+    #[inline(always)]
+    pub fn service(&self) -> &str {
+        self.arn.service()
+    }
+
+    /// Returns the region the resource is in.
+    #[inline(always)]
+    pub fn region(&self) -> &str {
+        self.arn.region()
+    }
+
+    /// Returns the account ID the resource belongs to.
+    #[inline(always)]
+    pub fn account_id(&self) -> &str {
+        self.arn.account_id()
+    }
+
+    /// Returns the resource name.
+    #[inline(always)]
+    pub fn resource(&self) -> &str {
+        self.arn.resource()
+    }
+
+    /// Returns the resource type.
+    #[inline(always)]
+    pub fn resource_type(&self) -> &str {
+        &self.arn.resource()[..self.resource_path_start]
+    }
+
+    /// Returns the path component of this ARN, including the leading slash.
+    #[inline(always)]
+    pub fn resource_path(&self) -> &str {
+        &self.arn.resource()[self.resource_path_start..self.resource_name_start]
+    }
+
+    /// Returns the resource name component of this ARN.
+    #[inline(always)]
+    pub fn resource_name(&self) -> &str {
+        &self.arn.resource()[self.resource_name_start..]
+    }
+
+    /// Returns a lowercase version of the resource name, for case-insensitive comparisons.
+    #[inline(always)]
+    pub fn resource_name_lower(&self) -> String {
+        self.resource_name().to_ascii_lowercase()
+    }
+}
+
+/// Validate that the resource path is valid according to AWS IAM rules.
+///
+/// Paths must be between 1 and 512 characters long, start and end with a slash, and can contain any printable
+/// ASCII character except for space (i.e. character codes 33 through 126).
+///
+/// ## References
+/// * [AWS CreateGroup](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateGroup.html)
+/// * [AWS CreatePolicy](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreatePolicy.html)
+/// * [AWS CreateRole](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html)
+/// * [AWS CreateUser](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateUser.html)
+#[inline(always)]
+pub fn validate_iam_path(path: impl AsRef<str>) -> Result<(), ArnError> {
+    validate_iam_path_inner(path.as_ref())
+}
+
+fn validate_iam_path_inner(path: &str) -> Result<(), ArnError> {
+    if path.is_empty() || path.len() > 512 {
+        return Err(ArnError::InvalidResource(path.to_string()));
+    }
+
+    let mut last_was_slash = false;
+
+    for c in path.chars() {
+        if c < '\x21' || c > '\x7e' {
+            return Err(ArnError::InvalidResource(path.to_string()));
+        }
+
+        last_was_slash = c == '/';
+    }
+
+    if !last_was_slash {
+        return Err(ArnError::InvalidResource(path.to_string()));
+    }
+
+    Ok(())
+}
+
+/// Validate that the path prefix is valid.
+///
+/// Unlike `validate_iam_path`, this function does not require the path to end with a slash.
+#[inline(always)]
+pub fn validate_iam_path_prefix(path_prefix: impl AsRef<str>) -> Result<(), ArnError> {
+    validate_iam_path_prefix_inner(path_prefix.as_ref())
+}
+
+fn validate_iam_path_prefix_inner(path_prefix: &str) -> Result<(), ArnError> {
+    if path_prefix.is_empty() || path_prefix.len() > 512 {
+        return Err(ArnError::InvalidIamResourcePath(path_prefix.to_string()));
+    }
+
+    for c in path_prefix.chars() {
+        if c < '\x21' || c > '\x7e' {
+            return Err(ArnError::InvalidIamResourcePath(path_prefix.to_string()));
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate that the resource name is valid according to AWS IAM rules.
+///
+/// Resource names can consist of any alphanumeric character and the following symbols: `+=,.@-_`.
+/// They cannot be empty and cannot be longer than the specified maximum length.
+///
+/// Resource names have a maximum length that varies by the resource type; this function does not
+/// perform length validation as a result.
+pub fn validate_iam_resource_name(resource_name: impl AsRef<str>) -> Result<(), ArnError> {
+    validate_iam_resource_name_inner(resource_name.as_ref())
+}
+
+fn validate_iam_resource_name_inner(resource_name: &str) -> Result<(), ArnError> {
+    if resource_name.is_empty() {
+        return Err(ArnError::InvalidIamResourceName(resource_name.to_string()));
+    }
+
+    for c in resource_name.chars() {
+        if !(c.is_ascii_alphanumeric() || matches!(c, '+' | '=' | ',' | '.' | '@' | '-' | '_')) {
+            return Err(ArnError::InvalidIamResourceName(resource_name.to_string()));
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_resource_arns() {
+        let arn = Arn::from_str("arn:aws:iam::123456789012:role/path/to/role").unwrap();
+        let iam_arn = IamResourceArn::try_from(arn).unwrap();
+        assert_eq!(iam_arn.resource_type(), "role");
+        assert_eq!(iam_arn.resource_path(), "/path/to/");
+        assert_eq!(iam_arn.resource_name(), "role");
+
+        let arn = Arn::from_str("arn:aws:iam::123456789012:policy/path/to/policy").unwrap();
+        let iam_arn = IamResourceArn::try_from(arn).unwrap();
+        assert_eq!(iam_arn.resource_type(), "policy");
+        assert_eq!(iam_arn.resource_path(), "/path/to/");
+        assert_eq!(iam_arn.resource_name(), "policy");
+    }
+
+    #[test]
+    fn test_invalid_resource_arns() {
+        let arn = Arn::from_str("arn:aws:s3:::my_corporate_bucket").unwrap();
+        assert!(IamResourceArn::try_from(arn).is_err());
+
+        let arn = Arn::from_str("arn:aws:iam::123456789012:role").unwrap();
+        assert!(IamResourceArn::try_from(arn).is_err());
+
+        let arn = Arn::from_str("arn:aws:iam::123456789012:role/").unwrap();
+        assert!(IamResourceArn::try_from(arn).is_err());
+
+        let arn = Arn::from_str("arn:aws:iam::123456789012:role/path/to/").unwrap();
+        assert!(IamResourceArn::try_from(arn).is_err());
+    }
+}

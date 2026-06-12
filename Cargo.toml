@@ -7,7 +7,7 @@ members = [
     "scratchstack-bootstrap",
     "scratchstack-cli-utils",
     "scratchstack-config",
-    "scratchstack-database",
+    "scratchstack-iam-database",
     "scratchstack-errors",
     "scratchstack-http-framework",
     "scratchstack-pagination",
@@ -30,8 +30,10 @@ repository = "https://github.com/dacut/scratchstack.git"
 version = "0.12.0"
 
 [workspace.dependencies]
+aes = "0.8"
 aes-gcm = "0.10"
 anyhow = "1.0"
+ascii-casing = "0.2"
 async-trait = "0.1"
 axum = "0.8"
 aws-smithy-runtime-api = "1.12"
@@ -60,6 +62,7 @@ lazy_static = "1.5"
 log = "0.4"
 lru = "0.18"
 pct-str = "3.0"
+paste = "1.0"
 postcard = "1.1"
 postgresql_commands = "0.20"
 postgresql_embedded = { version = "0.20", default-features = false }
