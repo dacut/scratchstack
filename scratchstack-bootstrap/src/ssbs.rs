@@ -903,7 +903,7 @@ where
 
     let buffer = writer.into_inner();
     if !buffer.is_empty() {
-        writeln!(out, "{}", String::from_utf8_lossy(&buffer)).map_err(|e| {
+        writeln!(out, "{}", String::from_utf8_lossy(buffer)).map_err(|e| {
             log::error!("Failed to write output: {e}");
             IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
         })?;
