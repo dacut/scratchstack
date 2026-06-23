@@ -30,7 +30,7 @@ repository = "https://github.com/dacut/scratchstack.git"
 version = "0.12.0"
 
 [workspace.dependencies]
-aes = "0.8"
+aes = "0.9"
 aes-gcm = "0.10"
 anyhow = "1.0"
 ascii-casing = "0.2"
