@@ -30,8 +30,8 @@ repository = "https://github.com/dacut/scratchstack.git"
 version = "0.12.0"
 
 [workspace.dependencies]
-aes = "0.8"
-aes-gcm = "0.10"
+aes = "0.9"
+aes-gcm = "0.11"
 anyhow = "1.0"
 ascii-casing = "0.2"
 async-trait = "0.1"
@@ -64,8 +64,8 @@ lru = "0.18"
 pct-str = "3.0"
 paste = "1.0"
 postcard = "1.1"
-postgresql_commands = "0.20"
-postgresql_embedded = { version = "0.20", default-features = false }
+postgresql_commands = "0.21"
+postgresql_embedded = { version = "0.21", default-features = false }
 pretty_assertions = "1.4"
 qualifier_attr = "0.2.2"
 quick-xml = "0.40"
