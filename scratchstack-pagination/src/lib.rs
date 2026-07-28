@@ -22,7 +22,7 @@
 //! [Postcard](https://docs.rs/postcard/latest/postcard/) serialization library.
 
 use {
-    aes_gcm::{AeadCore, AeadInPlace, Aes256Gcm, KeyInit as _, aead::OsRng},
+    aes_gcm::{AeadCore, AeadInOut as _, Aes256Gcm, KeyInit as _, Nonce, aead::common::Generate as _},
     anyhow::anyhow,
     base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
     chrono::{DateTime, NaiveDateTime, TimeZone as _, Utc},
@@ -319,7 +319,7 @@ impl<C, K> OperationPaginator<C, K> {
         let key = self.current_key_service.clone().oneshot(()).await?;
         let cipher = Aes256Gcm::new_from_slice(&key.encrypted_key)
             .map_err(|_| anyhow!("Failed to create cipher for pagination token encryption"))?;
-        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        let nonce = Nonce::<<Aes256Gcm as AeadCore>::NonceSize>::generate_from_rng(&mut rand::rng());
         let mut payload = postcard::to_stdvec(pagination_state)?;
         cipher
             .encrypt_in_place(&nonce, &self.aad, &mut payload)
@@ -363,7 +363,7 @@ where
         }
 
         let key_id = Uuid::from_slice(&bytes[..16])?;
-        let nonce = aes_gcm::Nonce::from_slice(&bytes[16..28]);
+        let nonce = aes_gcm::Nonce::try_from(&bytes[16..28])?;
         let ciphertext = &bytes[28..];
 
         let key = self.key_service.clone().oneshot(key_id).await?;
@@ -371,7 +371,7 @@ where
             .map_err(|_| anyhow!("Failed to create cipher for pagination token decryption"))?;
         let mut payload = ciphertext.to_vec();
         cipher
-            .decrypt_in_place(nonce, &self.aad, &mut payload)
+            .decrypt_in_place(&nonce, &self.aad, &mut payload)
             .map_err(|_| anyhow!("Failed to decrypt pagination token"))?;
 
         let state = postcard::from_bytes(&payload)?;

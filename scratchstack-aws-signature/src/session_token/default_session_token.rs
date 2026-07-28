@@ -1,7 +1,7 @@
 //! Default session token extractor implementation.
 use {
     crate::{ExtractSessionToken, SessionTokenData, SignatureError, constants::*},
-    aes_gcm::{AeadInPlace as _, Aes256Gcm, KeyInit as _, Nonce},
+    aes_gcm::{AeadCore, AeadInOut as _, Aes256Gcm, KeyInit as _, KeySizeUser, Nonce, aead::common::Generate as _},
     base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
     std::{
         collections::HashMap,
@@ -12,6 +12,7 @@ use {
         task::{Context, Poll},
     },
     tower::Service,
+    typenum::Unsigned,
     zeroize::Zeroizing,
 };
 
@@ -21,11 +22,14 @@ pub const ACCOUNT_ID_LENGTH: usize = 12;
 /// The current token version (ASCII `0`).
 pub const CURRENT_TOKEN_VERSION: u8 = b'0';
 
+/// The size of the nonce, as a hybrid array type.
+pub type NonceSize = <Aes256Gcm as AeadCore>::NonceSize;
+
 /// The length of the nonce used for AES256-GCM encryption in bytes.
-pub const NONCE_LENGTH: usize = 12;
+pub const NONCE_LENGTH: usize = NonceSize::USIZE;
 
 /// The length of the keys used for AES256-GCM encryption in bytes.
-pub const AES256_KEY_LENGTH: usize = 32;
+pub const AES256_KEY_LENGTH: usize = <Aes256Gcm as KeySizeUser>::KeySize::USIZE;
 
 /// The default Scratchstack implementation of the `ExtractSessionToken` trait that relies on the
 /// [postcard] serialization format. This is enabled by the `default_session_token` feature.
@@ -141,7 +145,8 @@ where
             ))?;
         }
 
-        let nonce = Nonce::from_slice(&nonce);
+        let nonce = Nonce::try_from(nonce.as_slice())
+            .map_err(|_| SignatureError::InvalidSessionToken(ERR_MSG_INVALID_SESSION_TOKEN.to_string()))?;
         let associated_data = format!("AccountId={account_id}");
         let cipher = Aes256Gcm::new_from_slice(key_info.encryption_key.as_slice()).map_err(|e| {
             log::error!(
@@ -158,7 +163,7 @@ where
         })?;
 
         cipher
-            .decrypt_in_place(nonce, associated_data.as_bytes(), &mut *payload)
+            .decrypt_in_place(&nonce, associated_data.as_bytes(), &mut *payload)
             .map_err(|_| invalid_session_token_error())?;
 
         let (result, remainder) =
@@ -244,11 +249,10 @@ impl EncryptedSessionTokenData {
             SignatureError::InternalServiceError(format!("Failed to serialize session token data: {e}").into())
         })?);
 
-        let mut nonce = [0u8; NONCE_LENGTH];
-        rand::fill(&mut nonce);
+        let nonce = Nonce::<NonceSize>::generate_from_rng(&mut rand::rng());
         let associated_data = format!("AccountId={account_id}");
 
-        cipher.encrypt_in_place(Nonce::from_slice(&nonce), associated_data.as_bytes(), &mut *payload).map_err(|e| {
+        cipher.encrypt_in_place(&nonce, associated_data.as_bytes(), &mut *payload).map_err(|e| {
             log::error!("Failed to encrypt session token data: {e}");
             SignatureError::InternalServiceError(format!("Failed to encrypt session token data: {e}").into())
         })?;
@@ -485,14 +489,10 @@ mod tests {
     /// Encrypts `plaintext` in place with AES256-GCM using `key`, `TEST_NONCE`, and the
     /// "AccountId=<account_id>" associated data, returning the ciphertext with the appended tag.
     fn encrypt_payload(key: &[u8; AES256_KEY_LENGTH], account_id: &str, mut plaintext: Vec<u8>) -> Vec<u8> {
-        let cipher = Aes256Gcm::new(AesKey::<Aes256Gcm>::from_slice(key));
-        cipher
-            .encrypt_in_place(
-                Nonce::from_slice(&TEST_NONCE),
-                format!("AccountId={account_id}").as_bytes(),
-                &mut plaintext,
-            )
-            .unwrap();
+        let key = AesKey::<Aes256Gcm>::from(*key);
+        let cipher = Aes256Gcm::new(&key);
+        let nonce = Nonce::<NonceSize>::from(TEST_NONCE);
+        cipher.encrypt_in_place(&nonce, format!("AccountId={account_id}").as_bytes(), &mut plaintext).unwrap();
         plaintext
     }
 

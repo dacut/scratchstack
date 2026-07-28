@@ -88,6 +88,9 @@ pub(crate) const ERR_MSG_KEY_TOO_LONG: &str = "Key too long";
 /// Error message: Key too short
 pub(crate) const ERR_MSG_KEY_TOO_SHORT: &str = "Key too short";
 
+/// Error message: Invalid session token
+pub(crate) const ERR_MSG_INVALID_SESSION_TOKEN: &str = "Invalid session token";
+
 /// Header for `authorization`
 pub(crate) const HDR_AUTHORIZATION: &str = "authorization";
 
