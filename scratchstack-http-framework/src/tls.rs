@@ -20,7 +20,7 @@ const ACCEPT_ERROR_DELAY: Duration = Duration::from_secs(1);
 /// before the accept task stops accepting new connections.
 const ACCEPT_QUEUE_SIZE: usize = 32;
 
-/// A TLS-wrapped [`TcpListener`] that can be passed to [`axum::serve`].
+/// A TLS-wrapped [`TcpListener`] that can be passed to [`axum::serve()`].
 ///
 /// TLS handshakes are performed on spawned tasks so that a slow or stalled client cannot block
 /// other connections from being accepted; only connections that complete the handshake are handed
