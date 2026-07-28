@@ -16,8 +16,8 @@ use {
 /// error (e.g. file descriptor exhaustion).
 const ACCEPT_ERROR_DELAY: Duration = Duration::from_secs(1);
 
-/// The number of handshake-completed TLS connections that can be queued awaiting pickup by Axum
-/// before the accept task stops accepting new connections.
+/// The number of handshake-completed TLS connections that can be queued awaiting pickup by Axum.
+/// When the queue is full, completed handshakes will wait until capacity is available on this queue.
 const ACCEPT_QUEUE_SIZE: usize = 32;
 
 /// A TLS-wrapped [`TcpListener`] that can be passed to [`axum::serve()`].
