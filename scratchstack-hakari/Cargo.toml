@@ -13,11 +13,11 @@ description = "Scratchstack build optimization hack package (Hakari)"
 
 ### BEGIN HAKARI SECTION
 [dependencies]
-aes = { version = "0.8", default-features = false, features = ["zeroize"] }
-aes-gcm = { version = "0.10", features = ["zeroize"] }
-anstream = { version = "0.6" }
+aes = { version = "0.9", default-features = false, features = ["zeroize"] }
+aes-gcm = { version = "0.11", features = ["zeroize"] }
+anstream = { version = "1.0" }
 axum = { version = "0.8", features = ["http2", "macros"] }
-base64 = { version = "0.22" }
+base64 = { version = "0.23" }
 bitflags = { version = "2", default-features = false, features = ["serde"] }
 byteorder = { version = "1", default-features = false, features = ["std"] }
 chrono = { version = "0.4", default-features = false, features = [
@@ -61,7 +61,7 @@ hyper-util = { version = "0.1", features = [
     "service",
     "tokio",
 ] }
-libsqlite3-sys = { version = "0.30", default-features = false, features = [
+libsqlite3-sys = { version = "0.37", default-features = false, features = [
     "bundled",
     "pkg-config",
     "unlock_notify",
@@ -154,11 +154,11 @@ whoami = { version = "2" }
 zeroize = { version = "1", features = ["zeroize_derive"] }
 
 [build-dependencies]
-aes = { version = "0.8", default-features = false, features = ["zeroize"] }
-aes-gcm = { version = "0.10", features = ["zeroize"] }
-anstream = { version = "0.6" }
+aes = { version = "0.9", default-features = false, features = ["zeroize"] }
+aes-gcm = { version = "0.11", features = ["zeroize"] }
+anstream = { version = "1.0" }
 axum = { version = "0.8", features = ["http2", "macros"] }
-base64 = { version = "0.22" }
+base64 = { version = "0.23" }
 bitflags = { version = "2", default-features = false, features = ["serde"] }
 byteorder = { version = "1", default-features = false, features = ["std"] }
 cc = { version = "1", default-features = false, features = ["parallel"] }
@@ -203,7 +203,7 @@ hyper-util = { version = "0.1", features = [
     "service",
     "tokio",
 ] }
-libsqlite3-sys = { version = "0.30", default-features = false, features = [
+libsqlite3-sys = { version = "0.37", default-features = false, features = [
     "bundled",
     "pkg-config",
     "unlock_notify",
@@ -304,7 +304,7 @@ sqlx-sqlite = { version = "0.9", default-features = false, features = [
     "unlock-notify",
 ] }
 subtle = { version = "2" }
-syn = { version = "2", features = [
+syn = { version = "3", features = [
     "extra-traits",
     "fold",
     "full",
