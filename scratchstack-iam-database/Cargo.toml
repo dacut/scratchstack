@@ -29,8 +29,8 @@ log.workspace = true
 pct-str.workspace = true
 postgresql_commands = { workspace = true, optional = true }
 postgresql_embedded = { workspace = true, optional = true, features = [
-    "rustls",
     "theseus",
+    "tls-rustls-aws-lc-rs",
     "tokio",
 ] }
 rand = { workspace = true, features = ["std", "std_rng"] }

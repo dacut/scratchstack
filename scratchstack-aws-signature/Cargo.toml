@@ -54,6 +54,7 @@ serde = { workspace = true, features = ["derive"] }
 subtle.workspace = true
 tokio = { workspace = true, optional = true, features = ["io-util"] }
 tower = { workspace = true, features = ["util"] }
+typenum.workspace = true
 zeroize = { workspace = true, features = ["zeroize_derive"] }
 
 [dev-dependencies]
