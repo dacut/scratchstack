@@ -13,6 +13,7 @@ version.workspace = true
 default = ["axum", "gsk-direct"]
 axum = ["dep:axum"]
 gsk-direct = ["dep:scratchstack-arn"]
+tls = ["axum", "dep:tokio-rustls", "tokio/net"]
 
 [dependencies]
 axum = { workspace = true, optional = true }
@@ -27,8 +28,11 @@ quick-xml = { workspace = true, features = ["serialize"] }
 rand = { workspace = true, features = ["std", "std_rng"] }
 scratchstack-arn = { path = "../scratchstack-arn", optional = true }
 scratchstack-aws-principal.path = "../scratchstack-aws-principal"
-scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features = ["unstable"] }
+scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features = [
+    "unstable",
+] }
 scratchstack-errors.path = "../scratchstack-errors"
+scratchstack-hakari = { path = "../scratchstack-hakari" }
 serde = { workspace = true, features = ["derive"] }
 sqlx = { workspace = true, optional = true, features = [
     "all-databases",
@@ -39,6 +43,7 @@ sqlx = { workspace = true, optional = true, features = [
     "tls-rustls",
 ] }
 tokio = { workspace = true, features = ["macros", "rt"] }
+tokio-rustls = { workspace = true, optional = true }
 tower.workspace = true
 uuid = { workspace = true, features = ["serde", "v7"] }
 

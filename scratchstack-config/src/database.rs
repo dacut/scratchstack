@@ -1,11 +1,13 @@
 use {
-    crate::error::{ConfigError, DatabaseConfigErrorKind},
+    crate::{
+        Resolvable,
+        error::{ConfigError, DatabaseConfigError},
+    },
     log::{debug, error},
     pct_str::{PctString, UriReserved},
     serde::Deserialize,
     sqlx::postgres::PgPoolOptions,
-    std::{fmt::Debug, time::Duration},
-    tokio::fs::read,
+    std::{fmt::Debug, fs::read, time::Duration},
 };
 
 fn pct_encode(s: &str) -> String {
@@ -13,7 +15,7 @@ fn pct_encode(s: &str) -> String {
 }
 
 /// Database configuration for a service.
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct DatabaseConfig {
     /// The database URL to connect to. If the URL contains the placeholder `${password}`, then either
     /// `password` or `password_file` must be specified to provide a value for the placeholder.
@@ -83,39 +85,93 @@ pub struct DatabaseConfig {
     pub test_before_acquire: Option<bool>,
 }
 
+/// The resolved database configuration after validating fields and resolving any references.
+#[derive(Clone, Debug)]
+pub struct ResolvedDatabaseConfig {
+    /// The database URL to connect to.
+    pub url: String,
+
+    /// The connection pool options to use when connecting to the database.
+    pub pool_options: PgPoolOptions,
+}
+
 impl DatabaseConfig {
+    /// Updates this configuration with values from another configuration. This is used to apply
+    /// overrides from a service-specific configuration to the base configuration.
+    pub fn update_from(&mut self, other: &DatabaseConfig) {
+        if let Some(url) = &other.url {
+            self.url = Some(url.clone());
+        }
+        if let Some(host) = &other.host {
+            self.host = Some(host.clone());
+        }
+        if let Some(port) = other.port {
+            self.port = Some(port);
+        }
+        if let Some(username) = &other.username {
+            self.username = Some(username.clone());
+        }
+        if let Some(password) = &other.password {
+            self.password = Some(password.clone());
+        }
+        if let Some(password_file) = &other.password_file {
+            self.password_file = Some(password_file.clone());
+        }
+        if let Some(database) = &other.database {
+            self.database = Some(database.clone());
+        }
+        if let Some(max_connections) = other.max_connections {
+            self.max_connections = Some(max_connections);
+        }
+        if let Some(min_connections) = other.min_connections {
+            self.min_connections = Some(min_connections);
+        }
+        if let Some(connection_timeout) = other.connection_timeout {
+            self.connection_timeout = Some(connection_timeout);
+        }
+        if let Some(max_lifetime) = other.max_lifetime {
+            self.max_lifetime = Some(max_lifetime);
+        }
+        if let Some(idle_timeout) = other.idle_timeout {
+            self.idle_timeout = Some(idle_timeout);
+        }
+        if let Some(test_before_acquire) = other.test_before_acquire {
+            self.test_before_acquire = Some(test_before_acquire);
+        }
+    }
+
     /// Returns the database URL to connect to.
     ///
     /// If the `url` field is specified, it is returned with any `${password}` placeholders replaced
     /// by the value from `password` or `password_file`.
     ///
     /// If `url` is not specified, a URL is constructed from the other fields in this configuration.
-    pub async fn get_database_url(&self) -> Result<String, ConfigError> {
+    pub fn get_database_url(&self) -> Result<String, ConfigError> {
         if let Some(url) = &self.url {
             if url.contains("${password}") {
                 if let Some(password) = &self.password {
                     Ok(url.replace("${password}", password))
                 } else if self.password_file.is_some() {
-                    let password = self.get_password_from_file().await?;
+                    let password = self.get_password_from_file()?;
                     Ok(url.replace("${password}", &password))
                 } else {
                     error!("Found password placeholder '${{password}}' in database URL but no password was supplied");
-                    Err(DatabaseConfigErrorKind::MissingPassword.into())
+                    Err(DatabaseConfigError::MissingPassword.into())
                 }
             } else {
                 Ok(url.clone())
             }
         } else {
-            self.construct_url().await
+            self.construct_url()
         }
     }
 
-    /// Cosntruct a database URL from the other fields in this configuration. This is used when
+    /// Construct a database URL from the other fields in this configuration. This is used when
     /// `url` is not specified.
     ///
     /// # Panics
     /// Panics if the `url` field has been specified.
-    async fn construct_url(&self) -> Result<String, ConfigError> {
+    fn construct_url(&self) -> Result<String, ConfigError> {
         assert!(self.url.is_none(), "Cannot construct database URL when 'url' field is specified");
         const URL_PREFIX: &str = "postgresql://";
 
@@ -128,7 +184,7 @@ impl DatabaseConfig {
                 result.push(':');
                 result.push_str(&pct_encode(password));
             } else if self.password_file.is_some() {
-                let password = self.get_password_from_file().await?;
+                let password = self.get_password_from_file()?;
                 result.push(':');
                 result.push_str(&pct_encode(&password));
             }
@@ -161,18 +217,18 @@ impl DatabaseConfig {
     ///
     /// # Panics
     /// Panics if `password_file` is None.
-    async fn get_password_from_file(&self) -> Result<String, ConfigError> {
+    fn get_password_from_file(&self) -> Result<String, ConfigError> {
         let password_file = self.password_file.as_ref().unwrap();
 
-        match read(password_file).await {
-            Ok(password_u8) => match std::str::from_utf8(&password_u8) {
+        match read(password_file) {
+            Ok(password_u8) => match str::from_utf8(&password_u8) {
                 Ok(password) => {
                     debug!("Successfully read database password file {password_file}");
                     Ok(password.trim().to_string())
                 }
                 Err(e) => {
                     error!("Found non-UTF-8 characters in database password file {password_file}");
-                    Err(DatabaseConfigErrorKind::InvalidPasswordFileEncoding(password_file.to_string(), e).into())
+                    Err(DatabaseConfigError::InvalidPasswordFileEncoding(password_file.to_string(), e).into())
                 }
             },
             Err(e) => {
@@ -206,10 +262,14 @@ impl DatabaseConfig {
 
         Ok(options)
     }
+}
+
+impl Resolvable for DatabaseConfig {
+    type Resolved = ResolvedDatabaseConfig;
 
     /// Resolves the database configuration by validating fields and resolving any references.
-    pub async fn resolve(&self) -> Result<ResolvedDatabaseConfig, ConfigError> {
-        let url = self.get_database_url().await?;
+    fn resolve(&self) -> Result<Self::Resolved, ConfigError> {
+        let url = self.get_database_url()?;
         let pool_options = self.get_pool_options()?;
 
         Ok(ResolvedDatabaseConfig {
@@ -217,14 +277,4 @@ impl DatabaseConfig {
             pool_options,
         })
     }
-}
-
-/// The resolved database configuration after validating fields and resolving any references.
-#[derive(Debug)]
-pub struct ResolvedDatabaseConfig {
-    /// The database URL to connect to.
-    pub url: String,
-
-    /// The connection pool options to use when connecting to the database.
-    pub pool_options: PgPoolOptions,
 }

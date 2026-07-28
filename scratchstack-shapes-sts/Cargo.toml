@@ -30,6 +30,7 @@ derive_builder.workspace = true
 log.workspace = true
 regex.workspace = true
 scratchstack-cli-utils = { path = "../scratchstack-cli-utils", optional = true }
+scratchstack-hakari = { path = "../scratchstack-hakari" }
 scratchstack-shapes-iam.path = "../scratchstack-shapes-iam"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

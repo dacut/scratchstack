@@ -1,5 +1,4 @@
-//! Scratchstack implementation of the AWS Security Token Service (STS).
-
+//! Scratchstack implementation of the AWS Identity and Access Management (IAM) Service
 #![warn(clippy::all)]
 #![allow(clippy::manual_range_contains)]
 #![deny(
@@ -17,12 +16,11 @@ pub(crate) mod config;
 pub(crate) mod constants;
 pub(crate) mod error;
 pub(crate) mod model;
-pub(crate) mod operations;
 pub(crate) mod service;
 
 use {
     crate::{
-        config::{ResolvedStsServiceConfig, StsServiceConfig},
+        config::{IamServiceConfig, ResolvedIamServiceConfig},
         error::ServiceError,
     },
     axum::{
@@ -39,7 +37,6 @@ use {
 };
 
 const DEFAULT_CONFIG_FILENAME: &str = "scratchstack.cfg";
-// const CONTENT_LENGTH_LIMIT: u64 = 10 << 20;
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -51,16 +48,16 @@ struct CliOptions {
 
 fn main() {
     env_logger::init();
-    let cli = CliOptions::parse();
+    let cli_options = CliOptions::parse();
 
-    let config_filename = match cli.config {
+    let config_filename = match cli_options.config {
         Some(filename) => filename,
         None => PathBuf::from(DEFAULT_CONFIG_FILENAME),
     };
 
     // Parse the configuration.
     info!("Reading configuration from {}", config_filename.display());
-    let config = match StsServiceConfig::read_file(&config_filename) {
+    let config = match IamServiceConfig::read_file(&config_filename) {
         Ok(c) => c,
         Err(e) => {
             error!("Unable to read configuration file {}: {}", config_filename.display(), e);
@@ -73,16 +70,15 @@ fn main() {
     let config = match config.resolve() {
         Ok(c) => c,
         Err(e) => {
-            error!("Error resolving configuration: {}", e);
+            error!("Failed to resolve configuration: {}", e);
             exit(2);
         }
     };
 
     debug!("Resolved configuration: {config:?}");
-
     let runtime = match RuntimeBuilder::new_multi_thread()
         .worker_threads(config.common.runtime.threads)
-        .thread_name("sts")
+        .thread_name("iam")
         .enable_all()
         .build()
     {
@@ -97,7 +93,7 @@ fn main() {
 }
 
 #[allow(unused_variables, clippy::useless_vec)]
-async fn run_server_from_config(config: ResolvedStsServiceConfig) -> Result<(), ServiceError> {
+async fn run_server_from_config(config: ResolvedIamServiceConfig) -> Result<(), ServiceError> {
     use crate::service::serve_request;
 
     let common = config.common;
@@ -105,9 +101,9 @@ async fn run_server_from_config(config: ResolvedStsServiceConfig) -> Result<(), 
     let pool = Arc::new(pool);
     let region = common.scope.region.clone();
     let allowed_content_types = vec!["application/x-www-form-urlencoded".to_string()];
-    let gsk = GetSigningKeyFromDatabase::new(pool, &common.scope.partition, &common.scope.region, "sts");
-    // let service_impl = StsService {};
-    // let error_mapper = XmlErrorMapper::new(STS_XML_NS);
+    let gsk = GetSigningKeyFromDatabase::new(pool, &common.scope.partition, &common.scope.region, "iam");
+    // let service_impl = IamService {};
+    // let error_mapper = XmlErrorMapper::new(IAM_XML_NS);
 
     let app =
         Router::new().route("/", get(serve_request)).route("/", post(serve_request)).route("/", put(serve_request));

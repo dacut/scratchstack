@@ -1,6 +1,9 @@
 use {
-    crate::error::{ConfigError, TlsConfigErrorKind},
-    rustls::ServerConfig,
+    crate::{
+        Resolvable,
+        error::{ConfigError, TlsConfigError},
+    },
+    rustls::ServerConfig as TlsServerConfig,
     rustls_pemfile::{certs, rsa_private_keys},
     rustls_pki_types::{CertificateDer, PrivateKeyDer},
     serde::Deserialize,
@@ -23,29 +26,38 @@ pub struct TlsConfig {
     pub private_key_file: String,
 }
 
-impl TlsConfig {
-    /// Resolve files referenced in the TLS configuration to actual certificates and keys.
-    pub fn to_server_config(&self) -> Result<ServerConfig, ConfigError> {
-        let builder = ServerConfig::builder().with_no_client_auth();
+impl TryFrom<&TlsConfig> for TlsServerConfig {
+    type Error = ConfigError;
 
-        let cert_file = File::open(&self.certificate_chain_file)?;
+    fn try_from(value: &TlsConfig) -> Result<Self, Self::Error> {
+        let builder = TlsServerConfig::builder().with_no_client_auth();
+
+        let cert_file = File::open(&value.certificate_chain_file)?;
         let mut reader = BufReader::new(cert_file);
         let certs = read_certs(&mut reader)?;
         if certs.is_empty() {
-            return Err(TlsConfigErrorKind::InvalidCertificate.into());
+            return Err(TlsConfigError::InvalidCertificate.into());
         }
 
-        let private_key_file = File::open(&self.private_key_file)?;
+        let private_key_file = File::open(&value.private_key_file)?;
         let mut reader = BufReader::new(private_key_file);
         let mut private_keys = read_rsa_private_keys(&mut reader)?;
         if private_keys.len() != 1 {
-            return Err(TlsConfigErrorKind::InvalidPrivateKey.into());
+            return Err(TlsConfigError::InvalidPrivateKey.into());
         }
         let private_key = private_keys.remove(0);
 
         builder
             .with_single_cert(certs, private_key)
-            .map_err(|e| ConfigError::InvalidTlsConfig(TlsConfigErrorKind::TlsSetupFailed(e)))
+            .map_err(|e| ConfigError::InvalidTlsConfig(TlsConfigError::TlsSetupFailed(e)))
+    }
+}
+
+impl Resolvable for TlsConfig {
+    type Resolved = TlsServerConfig;
+
+    fn resolve(&self) -> Result<Self::Resolved, ConfigError> {
+        self.try_into()
     }
 }
 
