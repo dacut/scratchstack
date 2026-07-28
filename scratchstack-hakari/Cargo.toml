@@ -13,11 +13,11 @@ description = "Scratchstack build optimization hack package (Hakari)"
 
 ### BEGIN HAKARI SECTION
 [dependencies]
-aes = { version = "0.8", default-features = false, features = ["zeroize"] }
-aes-gcm = { version = "0.10", features = ["zeroize"] }
+aes = { version = "0.9", default-features = false, features = ["zeroize"] }
+aes-gcm = { version = "0.11", features = ["zeroize"] }
 anstream = { version = "0.6" }
 axum = { version = "0.8", features = ["http2", "macros"] }
-base64 = { version = "0.22" }
+base64 = { version = "0.23" }
 bitflags = { version = "2", default-features = false, features = ["serde"] }
 byteorder = { version = "1", default-features = false, features = ["std"] }
 chrono = { version = "0.4", default-features = false, features = [
@@ -154,11 +154,11 @@ whoami = { version = "2" }
 zeroize = { version = "1", features = ["zeroize_derive"] }
 
 [build-dependencies]
-aes = { version = "0.8", default-features = false, features = ["zeroize"] }
-aes-gcm = { version = "0.10", features = ["zeroize"] }
+aes = { version = "0.9", default-features = false, features = ["zeroize"] }
+aes-gcm = { version = "0.11", features = ["zeroize"] }
 anstream = { version = "0.6" }
 axum = { version = "0.8", features = ["http2", "macros"] }
-base64 = { version = "0.22" }
+base64 = { version = "0.23" }
 bitflags = { version = "2", default-features = false, features = ["serde"] }
 byteorder = { version = "1", default-features = false, features = ["std"] }
 cc = { version = "1", default-features = false, features = ["parallel"] }
