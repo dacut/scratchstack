@@ -24,3 +24,8 @@ pub use request_id::*;
 mod sigv4;
 #[cfg(feature = "axum")]
 pub use sigv4::*;
+
+#[cfg(feature = "tls")]
+mod tls;
+#[cfg(feature = "tls")]
+pub use tls::*;

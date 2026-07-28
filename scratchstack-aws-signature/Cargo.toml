@@ -45,12 +45,15 @@ regex.workspace = true
 sha2.workspace = true
 scratchstack-arn.path = "../scratchstack-arn"
 scratchstack-aspen.path = "../scratchstack-aspen"
-scratchstack-aws-principal = { path = "../scratchstack-aws-principal", features = ["serde"] }
+scratchstack-aws-principal = { path = "../scratchstack-aws-principal", features = [
+    "serde",
+] }
 scratchstack-errors.path = "../scratchstack-errors"
+scratchstack-hakari = { path = "../scratchstack-hakari" }
 serde = { workspace = true, features = ["derive"] }
 subtle.workspace = true
 tokio = { workspace = true, optional = true, features = ["io-util"] }
-tower = { workspace = true, features = ["util"]}
+tower = { workspace = true, features = ["util"] }
 zeroize = { workspace = true, features = ["zeroize_derive"] }
 
 [dev-dependencies]

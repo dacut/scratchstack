@@ -18,7 +18,16 @@ log.workspace = true
 rustls.workspace = true
 rustls-pemfile.workspace = true
 rustls-pki-types.workspace = true
-serde = { workspace = true, features = [ "derive" ] }
-sqlx = { workspace = true, features = [ "all-databases", "chrono", "macros", "migrate", "runtime-tokio", "tls-rustls" ] }
+scratchstack-arn = { path = "../scratchstack-arn" }
+scratchstack-hakari = { path = "../scratchstack-hakari" }
+serde = { workspace = true, features = ["derive"] }
+sqlx = { workspace = true, features = [
+    "all-databases",
+    "chrono",
+    "macros",
+    "migrate",
+    "runtime-tokio",
+    "tls-rustls",
+] }
 toml.workspace = true
-tokio = { workspace = true, features = [ "fs", "io-util", "macros", "time" ] }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "time"] }

@@ -28,15 +28,22 @@ indoc.workspace = true
 log.workspace = true
 pct-str.workspace = true
 postgresql_commands = { workspace = true, optional = true }
-postgresql_embedded = { workspace = true, optional = true, features = [ "rustls", "theseus", "tokio" ] }
+postgresql_embedded = { workspace = true, optional = true, features = [
+    "rustls",
+    "theseus",
+    "tokio",
+] }
 rand = { workspace = true, features = ["std", "std_rng"] }
 regex.workspace = true
 scratchstack-arn = { path = "../scratchstack-arn", features = ["iam"] }
 scratchstack-aspen.path = "../scratchstack-aspen"
 scratchstack-aws-principal.path = "../scratchstack-aws-principal"
-scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features = ["unstable"] }
+scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features = [
+    "unstable",
+] }
 scratchstack-cli-utils.path = "../scratchstack-cli-utils"
 scratchstack-errors.path = "../scratchstack-errors"
+scratchstack-hakari = { path = "../scratchstack-hakari" }
 scratchstack-pagination.path = "../scratchstack-pagination"
 scratchstack-shapes-iam.path = "../scratchstack-shapes-iam"
 scratchstack-shapes-sts.path = "../scratchstack-shapes-sts"

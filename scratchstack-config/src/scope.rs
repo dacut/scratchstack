@@ -1,0 +1,67 @@
+//! Cloud scope configuration types.
+
+use {
+    crate::{Resolvable, error::ConfigError},
+    scratchstack_arn::utils::{validate_partition, validate_region},
+    serde::Deserialize,
+};
+
+/// The default cloud partition to use if none is specified.
+pub const DEFAULT_PARTITION: &str = "aws";
+
+/// Cloud scope configuration for a service.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ScopeConfig {
+    /// The cloud partition this service is running in.
+    pub partition: Option<String>,
+
+    /// The region this service is running in. This must be specified.
+    pub region: Option<String>,
+}
+
+/// Resolved cloud scope configuration for a service.
+#[derive(Clone, Debug)]
+pub struct ResolvedScopeConfig {
+    /// The cloud partition this service is running in.
+    pub partition: String,
+
+    /// The region this service is running in.
+    pub region: String,
+}
+
+impl ScopeConfig {
+    /// Updates this configuration with values from another configuration. This is used to apply
+    /// overrides from a service-specific configuration to the base configuration.
+    pub fn update_from(&mut self, other: &ScopeConfig) {
+        if let Some(partition) = &other.partition {
+            self.partition = Some(partition.clone());
+        }
+
+        if let Some(region) = &other.region {
+            self.region = Some(region.clone());
+        }
+    }
+}
+
+impl Resolvable for ScopeConfig {
+    type Resolved = ResolvedScopeConfig;
+
+    fn resolve(&self) -> Result<Self::Resolved, ConfigError> {
+        let partition = self.partition.clone().unwrap_or_else(|| DEFAULT_PARTITION.to_string());
+        let region = self.region.clone().ok_or(ConfigError::MissingRegion)?;
+
+        if validate_partition(&partition).is_err() {
+            return Err(ConfigError::InvalidPartition);
+        }
+
+        if validate_region(&region).is_err() {
+            return Err(ConfigError::InvalidRegion);
+        }
+
+        Ok(ResolvedScopeConfig {
+            partition,
+            region,
+        })
+    }
+}

@@ -1,7 +1,7 @@
 [package]
 name = "scratchstack-aspen"
 description = "AWS IAM policy language (Aspen) parser and internal representation"
-keywords = [ "AWS", "IAM", "Aspen" ]
+keywords = ["AWS", "IAM", "Aspen"]
 
 authors.workspace = true
 edition.workspace = true
@@ -23,7 +23,8 @@ log.workspace = true
 regex.workspace = true
 scratchstack-arn.path = "../scratchstack-arn"
 scratchstack-aws-principal.path = "../scratchstack-aws-principal"
-serde = { workspace = true, features = [ "derive" ]}
+scratchstack-hakari = { path = "../scratchstack-hakari" }
+serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 
 [dev-dependencies]

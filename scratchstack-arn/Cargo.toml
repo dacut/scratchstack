@@ -21,6 +21,7 @@ default = ["iam"]
 iam = []
 
 [dependencies]
+scratchstack-hakari = { path = "../scratchstack-hakari" }
 serde.workspace = true
 
 [dev-dependencies]

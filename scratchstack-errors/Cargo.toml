@@ -1,7 +1,7 @@
 [package]
 name = "scratchstack-errors"
 description = "Error trait for AWS/AWS-like services"
-keywords = [ "AWS" ]
+keywords = ["AWS"]
 
 authors.workspace = true
 homepage.workspace = true
@@ -12,3 +12,4 @@ version.workspace = true
 
 [dependencies]
 http.workspace = true
+scratchstack-hakari = { path = "../scratchstack-hakari" }
