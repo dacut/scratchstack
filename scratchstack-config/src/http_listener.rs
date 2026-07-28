@@ -114,7 +114,7 @@ impl Resolvable for HttpListenerConfig {
 impl Debug for ResolvedHttpListenerConfig {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         f.debug_struct("ResolvedHttpListenerConfig")
-            .field("socket_addr", &self.socket_addr.ip())
+            .field("socket_addr", &self.socket_addr)
             .field("tls", &self.tls.as_ref().map(|_| "<present>").unwrap_or("<absent>"))
             .finish()
     }
