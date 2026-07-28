@@ -49,7 +49,7 @@ impl<'a> From<InvalidActionError<'a>> for Response {
         let body = quick_xml::se::to_string(&error_response).expect("Failed to serialize error response");
         Response::builder()
             .status(StatusCode::BAD_REQUEST)
-            .header("Content-Type", HeaderValue::from_static("application/xml"))
+            .header(HDR_CONTENT_TYPE, HeaderValue::from_static(MIME_TYPE_XML))
             .body(Body::from(body))
             .expect("Failed to build error response")
     }
