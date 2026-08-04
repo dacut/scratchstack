@@ -12,6 +12,7 @@ use {
         tag::{validate_tag_key, validate_tag_value},
     },
     indoc::indoc,
+    log::error,
     scratchstack_arn::Arn,
     scratchstack_aspen::Policy as AspenPolicy,
     scratchstack_aws_principal::IamResourceType,
@@ -96,14 +97,14 @@ pub async fn create_policy(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to insert managed policy into database: {e}");
+            error!("Failed to insert managed policy into database: {e}");
             return Err(internal_failure().into());
         }
     };
     let created_at: chrono::DateTime<chrono::Utc> = match result.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
-            log::error!("Failed to get created_at from database row: {e}");
+            error!("Failed to get created_at from database row: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -118,7 +119,7 @@ pub async fn create_policy(
     .execute(tx.as_mut())
     .await
     {
-        log::error!("Failed to insert managed policy version into database: {e}");
+        error!("Failed to insert managed policy version into database: {e}");
         return Err(internal_failure().into());
     }
 
@@ -139,7 +140,7 @@ pub async fn create_policy(
         .execute(tx.as_mut())
         .await
         {
-            log::error!("Failed to insert managed policy tag into database: {e}");
+            error!("Failed to insert managed policy tag into database: {e}");
             return Err(internal_failure().into());
         }
     }
@@ -153,30 +154,31 @@ pub async fn create_policy(
     {
         Ok(arn) => arn,
         Err(e) => {
-            log::error!("Failed to construct ARN for new managed policy: {e}");
+            error!("Failed to construct ARN for new managed policy: {e}");
             return Err(internal_failure().into());
         }
     };
 
     let policy = Policy::builder()
-        .arn(Some(arn.to_string()))
-        .attachment_count(Some(0))
-        .create_date(Some(created_at))
-        .default_version_id(Some("v1".to_string()))
-        .description(description.map(|d| d.to_string()))
-        .is_attachable(Some(true))
-        .path(Some(path.to_string()))
-        .permissions_boundary_usage_count(Some(0))
-        .policy_id(Some(policy_id))
-        .policy_name(Some(policy_name.to_string()))
-        .tags(tags.to_vec())
+        .arn(arn)
+        .attachment_count(0)
+        .create_date(created_at)
+        .default_version_id("v1")
+        .set_description(description.map(str::to_string))
+        .is_attachable(true)
+        .path(path)
+        .permissions_boundary_usage_count(0)
+        .policy_id(policy_id)
+        .policy_name(policy_name)
+        .set_tags(tags)
         .build()
         .map_err(|e| {
-            log::error!("Failed to construct policy object for new managed policy: {e}");
+            error!("Failed to build Policy: {e}");
             internal_failure()
         })?;
 
-    Ok(CreatePolicyResponse {
-        policy: Some(policy),
-    })
+    Ok(CreatePolicyResponse::builder().policy(policy).build().map_err(|e| {
+        error!("Failed to build CreatePolicyResponse: {e}");
+        internal_failure()
+    })?)
 }

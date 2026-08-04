@@ -5,6 +5,7 @@ use {
         policy::get_permissions_boundary_id, user::validate_user_name,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError, operation::PutUserPermissionsBoundaryInternalRequest,
         types::error::NoSuchEntityException,
@@ -52,7 +53,7 @@ pub async fn put_user_permissions_boundary(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to set user permissions boundary in database: {e}");
+            error!("Failed to set user permissions boundary in database: {e}");
             return Err(internal_failure().into());
         }
     };

@@ -5,6 +5,7 @@ use {
         policy::get_permissions_boundary_id, role::validate_role_name,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError, operation::PutRolePermissionsBoundaryInternalRequest,
         types::error::NoSuchEntityException,
@@ -52,7 +53,7 @@ pub async fn put_role_permissions_boundary(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to set role permissions boundary in database: {e}");
+            error!("Failed to set role permissions boundary in database: {e}");
             return Err(internal_failure().into());
         }
     };

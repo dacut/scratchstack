@@ -5,6 +5,7 @@ use {
         make_iam_paginator, partition::get_current_partition_or_fail, role::validate_role_name,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListRolePoliciesInternalRequest, ListRolePoliciesResponse},
@@ -72,7 +73,7 @@ pub async fn list_role_policies(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up role in database: {e}");
+            error!("Failed to look up role in database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -87,7 +88,7 @@ pub async fn list_role_policies(
 
     if let Some(marker) = marker {
         let m: ListRolePoliciesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListRolePolicies: {e}");
+            error!("Failed to decrypt pagination token for ListRolePolicies: {e}");
             internal_failure()
         })?;
         sql.push("\nAND policy_name_lower >= ");
@@ -98,7 +99,7 @@ pub async fn list_role_policies(
     sql.push_bind(max_items as i32 + 1);
 
     let rows = sql.build_query_as::<ListRolePoliciesRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch role inline policies from database: {e}");
+        error!("Failed to fetch role inline policies from database: {e}");
         internal_failure()
     })?;
 
@@ -114,7 +115,7 @@ pub async fn list_role_policies(
                     })
                     .await
                     .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListRolePolicies: {e}");
+                        error!("Failed to encrypt pagination token for ListRolePolicies: {e}");
                         internal_failure()
                     })?,
             );
@@ -124,14 +125,13 @@ pub async fn list_role_policies(
         results.push(row.policy_name_cased);
     }
 
-    let mut builder = ListRolePoliciesResponse::builder();
-    builder = builder.policy_names(results);
-    if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
-    }
-
-    builder.build().map_err(|e| {
-        log::error!("Failed to build ListRolePoliciesResponse: {e}");
-        internal_failure().into()
-    })
+    Ok(ListRolePoliciesResponse::builder()
+        .set_policy_names(results)
+        .is_truncated(next_marker.is_some())
+        .set_marker(next_marker)
+        .build()
+        .map_err(|e| {
+            error!("Failed to construct ListRolePoliciesResponse: {e}");
+            internal_failure()
+        })?)
 }

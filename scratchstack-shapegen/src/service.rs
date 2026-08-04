@@ -1,5 +1,5 @@
 use {
-    super::{ShapeBase, ShapeInfo, ShapeRef, forward_shape_info},
+    super::{ShapeBase, ShapeInfo, ShapeRef, TraitMap, forward_shape_info},
     serde::{Deserialize, Serialize},
     std::collections::HashMap,
 };
@@ -20,6 +20,10 @@ pub struct Service {
     /// Binds a list of operations to the service. Each reference MUST target an operation.
     #[serde(default)]
     pub operations: Vec<ShapeRef>,
+
+    /// A map of absolute shape IDs to trait values.
+    #[serde(skip_serializing_if = "TraitMap::is_empty", default)]
+    pub traits: TraitMap,
 
     /// Binds a list of resources to the service. Each reference MUST target a resource.
     #[serde(default)]

@@ -10,6 +10,7 @@ use {
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
+    log::error,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
     scratchstack_shapes_iam::{
@@ -55,7 +56,7 @@ pub async fn get_group(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to fetch group from database: {e}");
+        error!("Failed to fetch group from database: {e}");
         internal_failure()
     })?;
 
@@ -75,7 +76,7 @@ pub async fn get_group(
         .resource(group_arn_resource(&path, &group_name_cased))
         .build()
         .map_err(|e| {
-            log::error!("Failed to construct ARN for group: {e}");
+            error!("Failed to construct ARN for group: {e}");
             internal_failure()
         })?;
 
@@ -87,9 +88,12 @@ pub async fn get_group(
         .group_name(group_name_cased)
         .build()
         .map_err(|e| {
-            log::error!("Failed to construct group object: {e}");
+            error!("Failed to construct Group object: {e}");
             internal_failure()
         })?;
 
-    Ok(GetGroupResponse::builder().group(group).build().unwrap())
+    Ok(GetGroupResponse::builder().group(group).build().map_err(|e| {
+        error!("Failed to construct GetGroupResponseObject: {e}");
+        internal_failure()
+    })?)
 }

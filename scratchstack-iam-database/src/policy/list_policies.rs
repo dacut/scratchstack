@@ -7,6 +7,7 @@ use {
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
+    log::error,
     scratchstack_aws_principal::IamResourceType,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -15,7 +16,7 @@ use {
     },
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, QueryBuilder, postgres::PgTransaction, query_as},
-    std::{cmp::min, collections::HashMap},
+    std::{cmp::min, collections::BTreeMap},
 };
 
 impl RequestExecutor for ListPoliciesInternalRequest {
@@ -151,7 +152,7 @@ pub async fn list_policies(
 
     if let Some(marker) = marker {
         let info: ListPoliciesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListPolicies: {e}");
+            error!("Failed to decrypt pagination token for ListPolicies: {e}");
             internal_failure()
         })?;
         sql.push(" AND (account_id, managed_policy_id) >= (");
@@ -165,11 +166,11 @@ pub async fn list_policies(
     sql.push_bind(max_items as i32 + 1);
 
     let rows = sql.build_query_as::<ListPoliciesRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch managed policies from database: {e}");
+        error!("Failed to fetch managed policies from database: {e}");
         internal_failure()
     })?;
 
-    let mut results: HashMap<String, Policy> = HashMap::with_capacity(rows.len().min(max_items));
+    let mut results: BTreeMap<String, Policy> = BTreeMap::new();
     let mut next_marker = None;
 
     for row in rows.into_iter() {
@@ -182,7 +183,7 @@ pub async fn list_policies(
                     })
                     .await
                     .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListPolicies: {e}");
+                        error!("Failed to encrypt pagination token for ListPolicies: {e}");
                         internal_failure()
                     })?,
             );
@@ -192,17 +193,17 @@ pub async fn list_policies(
         let arn = build_policy_arn(&partition, &row.account_id, &row.path, &row.managed_policy_name_cased)?;
         let policy_id = format!("{}{}", IamResourceType::ManagedPolicy.as_str(), row.managed_policy_id);
         let policy = Policy::builder()
-            .arn(Some(arn.to_string()))
-            .create_date(Some(row.created_at))
-            .default_version_id(Some(format!("v{}", row.default_version)))
-            .is_attachable(Some(!row.deprecated))
-            .path(Some(row.path))
-            .policy_id(policy_id.clone())
-            .policy_name(Some(row.managed_policy_name_cased))
-            .update_date(Some(row.update_date))
+            .arn(arn.to_string())
+            .create_date(row.created_at)
+            .default_version_id(format!("v{}", row.default_version))
+            .is_attachable(!row.deprecated)
+            .path(row.path)
+            .policy_id(policy_id)
+            .policy_name(row.managed_policy_name_cased)
+            .update_date(row.update_date)
             .build()
             .map_err(|e| {
-                log::error!("Failed to construct Policy object for ListPolicies result: {e}");
+                error!("Failed to build Policy: {e}");
                 internal_failure()
             })?;
         results.insert(row.managed_policy_id, policy);
@@ -226,7 +227,7 @@ pub async fn list_policies(
         .fetch_all(tx.as_mut())
         .await
         .map_err(|e| {
-            log::error!("Failed to fetch policy attachment counts from database: {e}");
+            error!("Failed to fetch policy attachment counts from database: {e}");
             internal_failure()
         })?;
         for row in attachment_rows.into_iter() {
@@ -253,7 +254,7 @@ pub async fn list_policies(
         .fetch_all(tx.as_mut())
         .await
         .map_err(|e| {
-            log::error!("Failed to fetch policy permissions boundary usage counts from database: {e}");
+            error!("Failed to fetch policy permissions boundary usage counts from database: {e}");
             internal_failure()
         })?;
         for row in permissions_boundary_usage_rows.into_iter() {
@@ -265,14 +266,17 @@ pub async fn list_policies(
         }
     }
 
-    let mut policies = results.into_iter().collect::<Vec<_>>();
-    policies.sort_by(|(left_id, _), (right_id, _)| left_id.cmp(right_id));
+    let policies = results.into_values().collect::<Vec<_>>();
 
-    Ok(ListPoliciesResponse {
-        policies: policies.into_iter().map(|(_, policy)| policy).collect(),
-        is_truncated: Some(next_marker.is_some()),
-        marker: next_marker,
-    })
+    Ok(ListPoliciesResponse::builder()
+        .set_policies(policies)
+        .is_truncated(next_marker.is_some())
+        .set_marker(next_marker)
+        .build()
+        .map_err(|e| {
+            error!("Failed to build ListPoliciesResponse: {e}");
+            internal_failure()
+        })?)
 }
 
 /// Append a ListPolicies filter restricting results to policies attached to a user, group, or

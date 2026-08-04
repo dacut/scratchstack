@@ -122,6 +122,7 @@ fn generate_iam_shapes() -> AnyResult<()> {
         &common_exceptions.as_object().unwrap().keys().collect::<Vec<_>>(),
     );
 
+    model.resolve_self();
     model.resolve();
 
     let out_dir = var("OUT_DIR").expect("OUT_DIR environment variable not set");
@@ -353,6 +354,7 @@ fn create_exception_shape(model: &mut SmithyModel, exc_name: &str, exc_def: &Jso
             traits,
         },
         members,
+        xmlns: None,
     };
 
     model.shapes.insert(exc_name.to_string(), Rc::new(RefCell::new(Shape::Structure(error_struct))));

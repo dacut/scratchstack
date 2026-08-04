@@ -5,6 +5,7 @@ use {
         role::validate_role_name,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError, operation::AttachRolePolicyInternalRequest, types::error::NoSuchEntityException,
     },
@@ -66,7 +67,7 @@ pub async fn attach_role_policy(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up managed policy in database: {e}");
+            error!("Failed to look up managed policy in database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -90,7 +91,7 @@ pub async fn attach_role_policy(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up role in database: {e}");
+            error!("Failed to look up role in database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -105,7 +106,7 @@ pub async fn attach_role_policy(
     .execute(tx.as_mut())
     .await
     {
-        log::error!("Failed to attach policy to role in database: {e}");
+        error!("Failed to attach policy to role in database: {e}");
         return Err(internal_failure().into());
     }
 

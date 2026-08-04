@@ -5,6 +5,7 @@ use {
         user::validate_user_name,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{GetUserPolicyInternalRequest, GetUserPolicyResponse},
@@ -48,7 +49,7 @@ pub async fn get_user_policy(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to look up user in database: {e}");
+        error!("Failed to look up user in database: {e}");
         internal_failure()
     })?;
 
@@ -72,7 +73,7 @@ pub async fn get_user_policy(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to fetch user inline policy from database: {e}");
+        error!("Failed to fetch user inline policy from database: {e}");
         internal_failure()
     })?;
 
@@ -86,13 +87,13 @@ pub async fn get_user_policy(
         }
     };
 
-    GetUserPolicyResponse::builder()
+    Ok(GetUserPolicyResponse::builder()
         .user_name(user_name_cased)
         .policy_name(policy_name_cased)
         .policy_document(policy_document)
         .build()
         .map_err(|e| {
-            log::error!("Failed to build GetUserPolicyResponse: {e}");
-            internal_failure().into()
-        })
+            error!("Failed to construct GetUserPolicyResponse: {e}");
+            internal_failure()
+        })?)
 }

@@ -1,19 +1,20 @@
 use {
     crate::{
-        GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, NO_ADDITIONAL_SIGNED_HEADERS, SignatureOptions,
-        canonical::CanonicalRequest, constants::*, service_for_signing_key_fn, sigv4_validate_request,
+        GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, NoSignedHeaderRequirements, SignatureError,
+        SignatureOptions, canonical::CanonicalRequest, constants::*, service_for_signing_key_fn,
+        sigv4_validate_request,
     },
     bytes::{Bytes, BytesMut},
     chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc},
-    http::{
+    log::debug,
+    scratchstack_aws_principal::{Principal, User},
+    scratchstack_core::http::{
         header::HeaderValue,
         method::Method,
         request::Request,
         uri::{PathAndQuery, Uri},
         version::Version as HttpVersion,
     },
-    log::debug,
-    scratchstack_aws_principal::{Principal, User},
     std::{
         env,
         fs::File,
@@ -21,7 +22,6 @@ use {
         path::PathBuf,
         str::{FromStr, from_utf8},
     },
-    tower::BoxError,
 };
 
 #[test_log::test(tokio::test)]
@@ -222,8 +222,7 @@ async fn run(basename: &str) {
     expected_canonical_request.retain(|c| *c != b'\r'); // Remove carriage returns (not newlines)
 
     // Check the canonical request.
-    let auth_params =
-        canonical.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).expect("Failed to get auth parameters");
+    let auth_params = canonical.get_auth_parameters(NoSignedHeaderRequirements).expect("Failed to get auth parameters");
     let canonical_request = canonical.canonical_request(&auth_params.signed_headers);
     assert_eq!(
         String::from_utf8_lossy(canonical_request.as_slice()),
@@ -275,19 +274,19 @@ async fn run(basename: &str) {
         TEST_SERVICE,
         &mut signing_key_svc,
         test_time,
-        &NO_ADDITIONAL_SIGNED_HEADERS,
+        NoSignedHeaderRequirements,
         SignatureOptions::URL_ENCODE_FORM,
     )
     .await
     .expect(&format!("Failed to validate request: {:?}", sreq_path));
 }
 
-async fn get_signing_key(request: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, BoxError> {
+async fn get_signing_key(request: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, SignatureError> {
     let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
     let k_secret = KSecretKey::from_str("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY").unwrap();
     let k_signing = k_secret.to_ksigning(request.request_date(), request.region(), request.service());
 
-    let response = GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build().unwrap();
+    let response = GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build();
     Ok(response)
 }
 

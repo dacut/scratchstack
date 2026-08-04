@@ -2,6 +2,7 @@
 use {
     crate::{RequestExecutor, account::validate_account_id, constants::*, internal_failure, role::validate_role_name},
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError, operation::DeleteRolePermissionsBoundaryInternalRequest,
         types::error::NoSuchEntityException,
@@ -45,7 +46,7 @@ pub async fn delete_role_permissions_boundary(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to clear role permissions boundary in database: {e}");
+            error!("Failed to clear role permissions boundary in database: {e}");
             return Err(internal_failure().into());
         }
     };

@@ -5,6 +5,7 @@ use {
         user::validate_user_name,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::UntagUserInternalRequest,
@@ -63,7 +64,7 @@ pub async fn untag_user(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up user in database: {e}");
+            error!("Failed to look up user in database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -80,7 +81,7 @@ pub async fn untag_user(
         .execute(tx.as_mut())
         .await
         {
-            log::error!("Failed to delete user tag from database: {e}");
+            error!("Failed to delete user tag from database: {e}");
             return Err(internal_failure().into());
         }
     }

@@ -2,6 +2,7 @@
 use {
     crate::{RequestExecutor, account::validate_account_id, constants::*, internal_failure, user::validate_user_name},
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::DeleteUserInternalRequest,
@@ -49,7 +50,7 @@ pub async fn delete_user(tx: &mut PgTransaction<'_>, account_id: &str, user_name
                 );
                 return Err(DeleteConflictException::builder().message(message).build().into());
             }
-            log::error!("Failed to delete user from database: {e}");
+            error!("Failed to delete user from database: {e}");
             return Err(internal_failure().into());
         }
     };

@@ -1,8 +1,9 @@
 //! Scratchstack bootstrap session token encryption key subcommands
 use {
-    crate::{Cli, Runnable, execute_in_transaction},
+    crate::{Cli, Runnable, execute_in_transaction, internal_failure},
     chrono::{DateTime, Utc},
     clap::Parser,
+    log::error,
     scratchstack_cli_utils::{ShorthandValue, parse_shorthand},
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -98,17 +99,16 @@ impl Runnable for CreateSessionTokenEncryptionKeyCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let mut request = CreateSessionTokenEncryptionKeyRequest::builder().issue_valid_from(self.issue_valid_from);
-        if let Some(encryption_algorithm) = self.encryption_algorithm {
-            request = request.encryption_algorithm(encryption_algorithm);
-        }
-        if let Some(issue_expires_at) = self.issue_expires_at {
-            request = request.issue_expires_at(issue_expires_at);
-        }
-        if let Some(accept_expires_at) = self.accept_expires_at {
-            request = request.accept_expires_at(accept_expires_at);
-        }
-        let request = request.build()?;
+        let request = CreateSessionTokenEncryptionKeyRequest::builder()
+            .issue_valid_from(self.issue_valid_from)
+            .set_encryption_algorithm(self.encryption_algorithm)
+            .set_issue_expires_at(self.issue_expires_at)
+            .set_accept_expires_at(self.accept_expires_at)
+            .build()
+            .map_err(|e| {
+                error!("Failed to build CreateSessionTokenEncryptionKeyRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -123,7 +123,11 @@ impl Runnable for GetSessionTokenEncryptionKeyCommand {
     {
         let request = GetSessionTokenEncryptionKeyRequest::builder()
             .session_token_encryption_key_id(self.session_token_encryption_key_id.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build GetSessionTokenEncryptionKeyRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -137,14 +141,15 @@ impl Runnable for ListSessionTokenEncryptionKeysCommand {
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
         let filters = list_session_token_encryption_keys_filters_from_shorthand(&self.filters)?;
-        let mut request = ListSessionTokenEncryptionKeysRequest::builder().filters(filters);
-        if let Some(max_items) = self.max_items {
-            request = request.max_items(max_items);
-        }
-        if let Some(marker) = &self.marker {
-            request = request.marker(marker.clone());
-        }
-        let request = request.build()?;
+        let request = ListSessionTokenEncryptionKeysRequest::builder()
+            .set_filters(filters)
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build ListSessionTokenEncryptionKeysRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -157,18 +162,16 @@ impl Runnable for UpdateSessionTokenEncryptionKeyCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let mut request = UpdateSessionTokenEncryptionKeyRequest::builder()
-            .session_token_encryption_key_id(self.session_token_encryption_key_id.clone());
-        if let Some(issue_valid_from) = self.issue_valid_from {
-            request = request.issue_valid_from(issue_valid_from);
-        }
-        if let Some(issue_expires_at) = self.issue_expires_at {
-            request = request.issue_expires_at(issue_expires_at);
-        }
-        if let Some(accept_expires_at) = self.accept_expires_at {
-            request = request.accept_expires_at(accept_expires_at);
-        }
-        let request = request.build()?;
+        let request = UpdateSessionTokenEncryptionKeyRequest::builder()
+            .session_token_encryption_key_id(self.session_token_encryption_key_id.clone())
+            .set_issue_valid_from(self.issue_valid_from)
+            .set_issue_expires_at(self.issue_expires_at)
+            .set_accept_expires_at(self.accept_expires_at)
+            .build()
+            .map_err(|e| {
+                error!("Failed to build UpdateSessionTokenEncryptionKeyRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }

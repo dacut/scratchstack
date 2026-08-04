@@ -5,6 +5,8 @@ use {
         make_iam_paginator, partition::get_current_partition_or_fail, user::validate_user_name,
     },
     indoc::indoc,
+    log::error,
+    scratchstack_aws_principal::IamResourceType,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListAccessKeysInternalRequest, ListAccessKeysResponse},
@@ -83,7 +85,7 @@ pub async fn list_access_keys(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to query user from database: {e}");
+        error!("Failed to query user from database: {e}");
         internal_failure()
     })?;
 
@@ -105,7 +107,7 @@ pub async fn list_access_keys(
 
     if let Some(marker) = marker {
         let m: ListAccessKeysMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListAccessKeys: {e}");
+            error!("Failed to decrypt pagination token for ListAccessKeys: {e}");
             internal_failure()
         })?;
         sql.push("\nAND access_key_id >= ");
@@ -116,7 +118,7 @@ pub async fn list_access_keys(
     sql.push_bind(max_items as i32 + 1);
 
     let rows = sql.build_query_as::<ListAccessKeysRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch user access keys from database: {e}");
+        error!("Failed to fetch user access keys from database: {e}");
         internal_failure()
     })?;
 
@@ -132,7 +134,7 @@ pub async fn list_access_keys(
                     })
                     .await
                     .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListAccessKeys: {e}");
+                        error!("Failed to encrypt pagination token for ListAccessKeys: {e}");
                         internal_failure()
                     })?,
             );
@@ -140,30 +142,29 @@ pub async fn list_access_keys(
         }
 
         let metadata = AccessKeyMetadata::builder()
-            .access_key_id(Some(format!("AKIA{}", row.access_key_id)))
-            .create_date(Some(row.created_at))
-            .status(Some(if row.enabled {
+            .access_key_id(format!("{}{}", IamResourceType::AccessKey.as_str(), row.access_key_id))
+            .create_date(row.created_at)
+            .status(if row.enabled {
                 StatusType::Active
             } else {
                 StatusType::Inactive
-            }))
-            .user_name(Some(user_name.to_string()))
+            })
+            .user_name(&user_name)
             .build()
             .map_err(|e| {
-                log::error!("Failed to construct AccessKeyMetadata: {e}");
+                error!("Failed to construct AccessKeyMetadata: {e}");
                 internal_failure()
             })?;
         results.push(metadata);
     }
 
-    let mut builder = ListAccessKeysResponse::builder();
-    builder = builder.access_key_metadata(results);
-    if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
-    }
-
-    builder.build().map_err(|e| {
-        log::error!("Failed to build ListAccessKeysResponse: {e}");
-        internal_failure().into()
-    })
+    Ok(ListAccessKeysResponse::builder()
+        .set_access_key_metadata(results)
+        .is_truncated(next_marker.is_some())
+        .set_marker(next_marker)
+        .build()
+        .map_err(|e| {
+            error!("Failed to construct ListAccessKeysResponse: {e}");
+            internal_failure()
+        })?)
 }

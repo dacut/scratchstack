@@ -5,6 +5,7 @@ use {
         user::validate_user_name,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError, operation::RemoveUserFromGroupInternalRequest,
         types::error::NoSuchEntityException,
@@ -55,7 +56,7 @@ pub async fn remove_user_from_group(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up group in database: {e}");
+            error!("Failed to look up group in database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -79,7 +80,7 @@ pub async fn remove_user_from_group(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up user in database: {e}");
+            error!("Failed to look up user in database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -96,7 +97,7 @@ pub async fn remove_user_from_group(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to remove user from group in database: {e}");
+            error!("Failed to remove user from group in database: {e}");
             return Err(internal_failure().into());
         }
     };

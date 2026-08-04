@@ -6,6 +6,7 @@ use {
         internal_failure,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::CreateAccountAliasInternalRequest,
@@ -54,7 +55,7 @@ pub async fn create_account_alias(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to create account alias for account {account_id}: {e}");
+            error!("Failed to create account alias for account {account_id}: {e}");
             return Err(internal_failure().into());
         }
     };

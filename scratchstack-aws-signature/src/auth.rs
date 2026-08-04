@@ -10,11 +10,12 @@
 
 use {
     crate::{
-        GetSigningKeyRequest, GetSigningKeyResponse, KSigningKey, SignatureError, constants::*, crypto::hmac_sha256,
+        GetSigningKeyRequest, GetSigningKeyResponse, IncompleteSignatureError, KSigningKey, SignatureDoesNotMatchError,
+        SignatureError, constants::*, crypto::hmac_sha256,
     },
     chrono::{DateTime, Duration, Utc},
     derive_builder::Builder,
-    log::{debug, trace},
+    log::trace,
     qualifier_attr::qualifiers,
     scratchstack_aws_principal::{Principal, SessionData},
     std::{
@@ -22,7 +23,7 @@ use {
         future::Future,
     },
     subtle::ConstantTimeEq,
-    tower::{BoxError, Service, ServiceExt},
+    tower::{Service, ServiceExt},
 };
 
 /// Low-level structure for performing AWS SigV4 authentication after a canonical request has been generated.
@@ -125,36 +126,35 @@ impl SigV4Authenticator {
         // Rule 10: Make sure date isn't expired...
         if req_ts < min_ts {
             trace!("prevalidate: request timestamp {} is before minimum timestamp {}", req_ts, min_ts);
-            return Err(SignatureError::SignatureDoesNotMatch(Some(format!(
+            let message = format!(
                 "Signature expired: {} is now earlier than {} ({} - {}.)",
                 req_ts.format(ISO8601_COMPACT_FORMAT),
                 min_ts.format(ISO8601_COMPACT_FORMAT),
                 server_timestamp.format(ISO8601_COMPACT_FORMAT),
                 duration_to_string(allowed_mismatch)
-            ))));
+            );
+            Err(SignatureDoesNotMatchError::builder().message(message).build())?
         }
 
         // Rule 11: ... or too far into the future.
         if req_ts > max_ts {
             trace!("prevalidate: request timestamp {} is after maximum timestamp {}", req_ts, max_ts);
-            return Err(SignatureError::SignatureDoesNotMatch(Some(format!(
+            let message = format!(
                 "Signature not yet current: {} is still later than {} ({} + {}.)",
                 req_ts.format(ISO8601_COMPACT_FORMAT),
                 max_ts.format(ISO8601_COMPACT_FORMAT),
                 server_timestamp.format(ISO8601_COMPACT_FORMAT),
                 duration_to_string(allowed_mismatch)
-            ))));
+            );
+            Err(SignatureDoesNotMatchError::builder().message(message).build())?;
         }
 
         // Rule 12: Credential scope must have exactly five elements.
         let credential_parts = self.credential().split('/').collect::<Vec<&str>>();
         if credential_parts.len() != 5 {
             trace!("prevalidate: credential has {} parts, expected 5", credential_parts.len());
-            return Err(SignatureError::IncompleteSignature(format!(
-                "{} got '{}'",
-                MSG_CREDENTIAL_MUST_HAVE_FIVE_PARTS,
-                self.credential()
-            )));
+            let message = format!("{} got '{}'", ERR_MSG_CREDENTIAL_MUST_HAVE_FIVE_PARTS, self.credential());
+            Err(IncompleteSignatureError::builder().message(message).build())?
         }
 
         let cscope_date = credential_parts[1];
@@ -198,7 +198,7 @@ impl SigV4Authenticator {
         }
 
         if !cscope_errors.is_empty() {
-            return Err(SignatureError::SignatureDoesNotMatch(Some(cscope_errors.join(" "))));
+            Err(SignatureDoesNotMatchError::builder().message(cscope_errors.join(" ")).build())?;
         }
 
         Ok(())
@@ -216,33 +216,20 @@ impl SigV4Authenticator {
         get_signing_key: &mut S,
     ) -> Result<GetSigningKeyResponse, SignatureError>
     where
-        S: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = BoxError, Future = F> + Send,
-        F: Future<Output = Result<GetSigningKeyResponse, BoxError>> + Send,
+        S: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = SignatureError, Future = F> + Send,
+        F: Future<Output = Result<GetSigningKeyResponse, SignatureError>> + Send,
     {
         let access_key = self.credential().split('/').next().expect("prevalidate must been called first").to_string();
 
         let req = GetSigningKeyRequest::builder()
             .access_key(access_key)
-            .session_token(self.session_token().map(|x| x.to_string()))
+            .maybe_session_token(self.session_token().map(|x| x.to_string()))
             .request_date(self.request_timestamp().date_naive())
             .region(region)
             .service(service)
-            .build()
-            .expect("All fields set");
+            .build();
 
-        match get_signing_key.oneshot(req).await {
-            Ok(key) => {
-                trace!("get_signing_key: got signing key");
-                Ok(key)
-            }
-            Err(e) => {
-                debug!("get_signing_key: error getting signing key: {}", e);
-                match e.downcast::<SignatureError>() {
-                    Ok(sig_err) => Err(*sig_err),
-                    Err(e) => Err(SignatureError::InternalServiceError(e)),
-                }
-            }
-        }
+        get_signing_key.oneshot(req).await
     }
 
     /// Return the string to sign for the request.
@@ -282,8 +269,8 @@ impl SigV4Authenticator {
         get_signing_key: &mut S,
     ) -> Result<SigV4AuthenticatorResponse, SignatureError>
     where
-        S: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = BoxError, Future = F> + Send,
-        F: Future<Output = Result<GetSigningKeyResponse, BoxError>> + Send,
+        S: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = SignatureError, Future = F> + Send,
+        F: Future<Output = Result<GetSigningKeyResponse, SignatureError>> + Send,
     {
         self.prevalidate(region, service, server_timestamp, allowed_mismatch)?;
         let string_to_sign = self.get_string_to_sign();
@@ -295,7 +282,7 @@ impl SigV4Authenticator {
         let is_equal: bool = signature_bytes.ct_eq(expected_signature_bytes).into();
         if !is_equal {
             trace!("Signature mismatch: expected '{}', got '{}'", expected_signature, self.signature());
-            Err(SignatureError::SignatureDoesNotMatch(Some(MSG_REQUEST_SIGNATURE_MISMATCH.to_string())))
+            Err(SignatureDoesNotMatchError::builder().message(ERR_MSG_REQUEST_SIGNATURE_MISMATCH).build().into())
         } else {
             Ok(response.into())
         }
@@ -322,7 +309,7 @@ impl SigV4Authenticator {
         let is_equal: bool = signature_bytes.ct_eq(expected_signature_bytes).into();
         if !is_equal {
             trace!("Signature mismatch: expected '{}', got '{}'", expected_signature, self.signature());
-            Err(SignatureError::SignatureDoesNotMatch(Some(MSG_REQUEST_SIGNATURE_MISMATCH.to_string())))
+            Err(SignatureDoesNotMatchError::builder().message(ERR_MSG_REQUEST_SIGNATURE_MISMATCH).build().into())
         } else {
             Ok(())
         }
@@ -416,7 +403,8 @@ mod tests {
     use {
         super::duration_to_string,
         crate::{
-            GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, SignatureError,
+            ExpiredTokenError, GetSigningKeyRequest, GetSigningKeyResponse, InternalFailureError,
+            InvalidClientTokenIdError, KSecretKey, SignatureError,
             auth::{SigV4Authenticator, SigV4AuthenticatorBuilder, SigV4AuthenticatorResponse},
             constants::*,
             service_for_signing_key_fn,
@@ -424,9 +412,8 @@ mod tests {
         chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, NaiveTime, Utc},
         log::LevelFilter,
         scratchstack_aws_principal::{Principal, User},
-        scratchstack_errors::ServiceError,
-        std::{error::Error, fs::File, str::FromStr},
-        tower::BoxError,
+        scratchstack_core::{error::ProvideErrorMetadata as _, http::StatusCode},
+        std::str::FromStr,
     };
 
     fn init() {
@@ -483,25 +470,20 @@ mod tests {
         let _ = format!("{:?}", auth2);
     }
 
-    async fn get_signing_key(request: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, BoxError> {
+    async fn get_signing_key(request: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, SignatureError> {
         if let Some(token) = request.session_token() {
             match token {
                 "internal-service-error" => {
-                    return Err("internal service error".into());
+                    Err(InternalFailureError::builder().message(ERR_MSG_INTERNAL_SERVICE_ERROR).build())?;
                 }
                 "invalid" => {
-                    return Err(Box::new(SignatureError::InvalidClientTokenId(
-                        "The security token included in the request is invalid".to_string(),
-                    )));
+                    Err(InvalidClientTokenIdError::builder().message(ERR_MSG_INVALID_SECURITY_TOKEN).build())?;
                 }
                 "io-error" => {
-                    let e = File::open("/00Hi1i6V4qad5nF/6KPlcyW4H9miTOD02meLgTaV09O2UToMPTE9j6sNmHZ/08EzM4qOs8bYOINWJ9RheQVadpgixRTh0VjcwpVPoo1Rh4gNAJhS4cj/this-path/does//not/exist").unwrap_err();
-                    return Err(Box::new(SignatureError::from(e)));
+                    Err(InternalFailureError::builder().message(ERR_MSG_INTERNAL_SERVICE_ERROR).build())?;
                 }
                 "expired" => {
-                    return Err(Box::new(SignatureError::ExpiredToken(
-                        "The security token included in the request is expired".to_string(),
-                    )));
+                    Err(ExpiredTokenError::builder().message(ERR_MSG_EXPIRED_SECURITY_TOKEN).build())?;
                 }
                 _ => (),
             }
@@ -513,13 +495,10 @@ mod tests {
                 let k_secret = KSecretKey::from_str("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY").unwrap();
                 let k_signing = k_secret.to_ksigning(request.request_date(), request.region(), request.service());
 
-                let response =
-                    GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build().unwrap();
+                let response = GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build();
                 Ok(response)
             }
-            _ => Err(Box::new(SignatureError::InvalidClientTokenId(
-                "The AWS access key provided does not exist in our records".to_string(),
-            ))),
+            _ => Err(InvalidClientTokenIdError::builder().message(ERR_MSG_INVALID_ACCESS_KEY).build().into()),
         }
     }
 
@@ -567,13 +546,13 @@ mod tests {
             .await
             .unwrap_err();
 
-        if let SignatureError::SignatureDoesNotMatch(ref msg) = e {
+        if let SignatureError::SignatureDoesNotMatch(e) = e {
             assert_eq!(
-                msg.as_ref().unwrap(),
+                e.message().unwrap(),
                 "Signature expired: 20150830T122059Z is now earlier than 20150830T122100Z (20150830T123600Z - 15 min.)"
             );
-            assert_eq!(e.error_code(), "SignatureDoesNotMatch");
-            assert_eq!(e.http_status(), 403);
+            assert_eq!(e.code(), "SignatureDoesNotMatch");
+            assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
         } else {
             panic!("Unexpected error: {:?}", e);
         }
@@ -592,13 +571,13 @@ mod tests {
             .await
             .unwrap_err();
 
-        if let SignatureError::SignatureDoesNotMatch(ref msg) = e {
+        if let SignatureError::SignatureDoesNotMatch(e) = e {
             assert_eq!(
-                msg.as_ref().unwrap(),
+                e.message().unwrap(),
                 "Signature not yet current: 20150830T125101Z is still later than 20150830T125100Z (20150830T123600Z + 15 min.)"
             );
-            assert_eq!(e.error_code(), "SignatureDoesNotMatch");
-            assert_eq!(e.http_status(), 403);
+            assert_eq!(e.code(), "SignatureDoesNotMatch");
+            assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
         } else {
             panic!("Unexpected error: {:?}", e);
         }
@@ -622,8 +601,8 @@ mod tests {
                 e.to_string(),
                 "Credential must have exactly 5 slash-delimited elements, e.g. keyid/date/region/service/term, got 'AKIDFOO/20130101/wrong-region/wrong-service'"
             );
-            assert_eq!(e.error_code(), "IncompleteSignature");
-            assert_eq!(e.http_status(), 400);
+            assert_eq!(e.code(), "IncompleteSignature");
+            assert_eq!(e.http_status(), Some(StatusCode::BAD_REQUEST));
         } else {
             panic!("Unexpected error: {:?}", e);
         }
@@ -647,8 +626,8 @@ mod tests {
                 e.to_string(),
                 "Credential should be scoped to a valid region, not 'wrong-region'. Credential should be scoped to correct service: 'example'. Credential should be scoped with a valid terminator: 'aws4_request', not 'aws5_request'. Date in Credential scope does not match YYYYMMDD from ISO-8601 version of date from HTTP: '20130101' != '20150830', from '20150830T123600Z'."
             );
-            assert_eq!(e.error_code(), "SignatureDoesNotMatch");
-            assert_eq!(e.http_status(), 403);
+            assert_eq!(e.code(), "SignatureDoesNotMatch");
+            assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
         } else {
             panic!("Unexpected error: {:?}", e);
         }
@@ -669,8 +648,8 @@ mod tests {
 
         if let SignatureError::InvalidClientTokenId(_) = e {
             assert_eq!(e.to_string(), "The security token included in the request is invalid");
-            assert_eq!(e.error_code(), "InvalidClientTokenId");
-            assert_eq!(e.http_status(), 403);
+            assert_eq!(e.code(), "InvalidClientTokenId");
+            assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
         } else {
             panic!("Unexpected error: {:?}", e);
         }
@@ -691,8 +670,8 @@ mod tests {
 
         if let SignatureError::ExpiredToken(_) = e {
             assert_eq!(e.to_string(), "The security token included in the request is expired");
-            assert_eq!(e.error_code(), "ExpiredToken");
-            assert_eq!(e.http_status(), 403);
+            assert_eq!(e.code(), "ExpiredToken");
+            assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
         } else {
             panic!("Unexpected error: {:?}", e);
         }
@@ -711,14 +690,10 @@ mod tests {
             .await
             .unwrap_err();
 
-        if let SignatureError::InternalServiceError(ref err) = e {
-            assert_eq!(format!("{:?}", err), r#""internal service error""#);
-            assert_eq!(e.to_string(), "internal service error");
-            assert_eq!(e.error_code(), "InternalFailure");
-            assert_eq!(e.http_status(), 500);
-        } else {
-            panic!("Unexpected error: {:?}", e);
-        }
+        assert!(matches!(e, SignatureError::InternalFailure(_)), "Unexpected error: {:?}", e);
+        assert_eq!(e.to_string(), "Internal Service Error");
+        assert_eq!(e.code(), "InternalFailure");
+        assert_eq!(e.http_status(), Some(StatusCode::INTERNAL_SERVER_ERROR));
 
         let auth = SigV4Authenticator::builder()
             .canonical_request_sha256(creq_sha256)
@@ -734,17 +709,9 @@ mod tests {
             .await
             .unwrap_err();
 
-        if let SignatureError::IO(_) = e {
-            let e_string = e.to_string();
-            assert!(
-                e_string.contains("No such file or directory")
-                    || e_string.contains("The system cannot find the file specified"),
-                "Error message: {:#?}",
-                e_string
-            );
-            assert_eq!(e.error_code(), "InternalFailure");
-            assert_eq!(e.http_status(), 500);
-            assert!(e.source().is_some());
+        if let SignatureError::InternalFailure(e) = e {
+            assert_eq!(e.code(), "InternalFailure");
+            assert_eq!(e.http_status(), Some(StatusCode::INTERNAL_SERVER_ERROR));
         } else {
             panic!("Unexpected error: {:?}", e);
         }
@@ -765,8 +732,8 @@ mod tests {
 
         if let SignatureError::InvalidClientTokenId(_) = e {
             assert_eq!(e.to_string(), "The AWS access key provided does not exist in our records");
-            assert_eq!(e.error_code(), "InvalidClientTokenId");
-            assert_eq!(e.http_status(), 403);
+            assert_eq!(e.code(), "InvalidClientTokenId");
+            assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
         } else {
             panic!("Unexpected error: {:?}", e);
         }
@@ -790,8 +757,8 @@ mod tests {
                 e.to_string(),
                 "The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details."
             );
-            assert_eq!(e.error_code(), "SignatureDoesNotMatch");
-            assert_eq!(e.http_status(), 403);
+            assert_eq!(e.code(), "SignatureDoesNotMatch");
+            assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
         } else {
             panic!("Unexpected error: {:?}", e);
         }

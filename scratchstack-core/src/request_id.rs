@@ -1,6 +1,6 @@
-//! AWS request id implementation.
+//! Request id implementation for Scratchstack services.
 //!
-//! This implementation uses the UUIDv7 format the embed a timestamp in the UUID to make it easier to track down the
+//! This implementation uses the UUIDv7 format to embed a timestamp in the UUID to make it easier to track down the
 //! request in the logs. This timestamp has a resolution of 1 microsecond.
 
 use {
@@ -15,21 +15,19 @@ use {
     uuid::Uuid,
 };
 
-/// AWS request id implementation.
+/// Scratchstack default request id implementation.
 ///
-/// This implementation uses the UUIDv7 format the embed a timestamp in the UUID to make it easier to track down the
-/// request in the logs. This timestamp has a resolution of 1s and is based on the system clock, so it's not guaranteed
-/// to be unique; thus, a random number is also embedded in the UUID.
+/// This implementation uses the UUIDv7 format to embed a timestamp in the UUID to make it easier to track down the
+/// request in the logs. This timestamp has a resolution of 1 us and is based on the system clock. A 62-bit random number is also embedded in the UUID to ensure uniqueness.
 ///
 /// The format of the UUID is as follows:
 ///
-/// | 0-47           | 48-51      | 52-63      | 64-65    | 66-127 |
-/// | -------------- | ---------- | ---------- | -------- | ------ |
-/// | Timestamp (ms) | Ver (0111) | Microsecs  | Var (10) | Random |
+/// | 0-47           | 48-51      | 52-63      | 64-65        | 66-127 |
+/// | -------------- | ---------- | ---------- | ------------ | ------ |
+/// | Timestamp (ms) | Ver (0111) | Microsecs  | Variant (10) | Random |
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct RequestId {
-    id: Uuid,
-}
+#[repr(transparent)]
+pub struct RequestId(Uuid);
 
 impl RequestId {
     /// Create a new request id from the current system time and a random number.
@@ -81,9 +79,7 @@ impl RequestId {
         bytes[6..8].copy_from_slice(&ver_and_microseconds.to_be_bytes());
         bytes[8..16].copy_from_slice(&var_and_random.to_be_bytes());
 
-        Self {
-            id: Uuid::from_bytes(bytes),
-        }
+        Self(Uuid::from_bytes(bytes))
     }
 
     /// Create a new request id from the given timestamp and random number.
@@ -111,15 +107,15 @@ impl RequestId {
     /// this request id.
     #[inline(always)]
     pub fn unix_timestamp(&self) -> u64 {
-        let milliseconds = u64::from_be_bytes(self.id.as_bytes()[0..8].try_into().unwrap());
+        let milliseconds = u64::from_be_bytes(self.0.as_bytes()[0..8].try_into().unwrap());
         milliseconds / 1_000
     }
 
     /// Returns the microseconds from the Unix epoch (January 1, 1970 at 00:00:00 UTC) embedded in this request id.
     #[inline(always)]
     pub fn microseconds(&self) -> i64 {
-        let milliseconds = u64::from_be_bytes(self.id.as_bytes()[0..8].try_into().unwrap());
-        let ver_and_microseconds = u16::from_be_bytes(self.id.as_bytes()[8..10].try_into().unwrap());
+        let milliseconds = u64::from_be_bytes(self.0.as_bytes()[0..8].try_into().unwrap());
+        let ver_and_microseconds = u16::from_be_bytes(self.0.as_bytes()[8..10].try_into().unwrap());
         let microseconds = (ver_and_microseconds & 0x0FFF) as i64;
         (milliseconds as i64) * 1_000 + microseconds
     }
@@ -134,7 +130,7 @@ impl RequestId {
     /// Returns this request id as a UUID.
     #[inline(always)]
     pub fn uuid(&self) -> Uuid {
-        self.id
+        self.0
     }
 }
 
@@ -146,7 +142,7 @@ impl Default for RequestId {
 
 impl Display for RequestId {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(f, "{}", self.id)
+        write!(f, "{}", self.0)
     }
 }
 
@@ -155,9 +151,7 @@ impl<'de> Deserialize<'de> for RequestId {
     where
         D: Deserializer<'de>,
     {
-        Ok(RequestId {
-            id: Uuid::deserialize(deserializer)?,
-        })
+        Ok(RequestId(Uuid::deserialize(deserializer)?))
     }
 }
 
@@ -165,9 +159,13 @@ impl FromStr for RequestId {
     type Err = uuid::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(RequestId {
-            id: Uuid::parse_str(s)?,
-        })
+        Ok(RequestId(Uuid::parse_str(s)?))
+    }
+}
+
+impl From<&RequestId> for String {
+    fn from(request_id: &RequestId) -> Self {
+        request_id.to_string()
     }
 }
 
@@ -176,7 +174,7 @@ impl Serialize for RequestId {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&self.id.to_string())
+        serializer.serialize_str(&self.0.to_string())
     }
 }
 

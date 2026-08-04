@@ -11,7 +11,7 @@ pub use {
 
 use {
     indoc::indoc,
-    scratchstack_aws_signature::{AES256_KEY_LENGTH, SignatureError},
+    scratchstack_aws_signature::{AES256_KEY_LENGTH, InternalFailureError, SignatureError},
     scratchstack_shapes_iam::types::error::ValidationError,
     sqlx::{postgres::PgPool, query},
     std::{
@@ -60,12 +60,12 @@ impl Service<String> for DatabaseKeyService {
         Box::pin(async move {
             pool.acquire().await.map_err(|e| {
                 log::error!("Failed to acquire database connection: {e}");
-                SignatureError::InternalServiceError(Box::new(e))
+                InternalFailureError::default()
             })?;
 
             let mut tx = pool.begin().await.map_err(|e| {
                 log::error!("Failed to begin database transaction: {e}");
-                SignatureError::InternalServiceError(Box::new(e))
+                InternalFailureError::default()
             })?;
 
             query(indoc! {"
@@ -78,7 +78,7 @@ impl Service<String> for DatabaseKeyService {
             .await
             .map_err(|e| {
                 log::error!("Failed to fetch session token encryption key: {e}");
-                SignatureError::InternalServiceError(Box::new(e))
+                InternalFailureError::default()
             })?;
             todo!()
         })

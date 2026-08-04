@@ -2,6 +2,7 @@
 use {
     crate::{RequestExecutor, constants::*, internal_failure, policy::parse_policy_arn},
     indoc::indoc,
+    log::{error, info},
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::DeletePolicyRequest,
@@ -66,11 +67,11 @@ pub async fn delete_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Resu
         Ok(Some(row)) => row,
         Ok(None) => {
             let message = format!("Policy {policy_arn} was not found.");
-            log::info!("{}", message);
+            info!("{}", message);
             return Err(NoSuchEntityException::builder().message(message).build().into());
         }
         Err(e) => {
-            log::error!("Failed to query managed policy from database: {e}");
+            error!("Failed to query managed policy from database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -102,7 +103,7 @@ pub async fn delete_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Resu
     {
         Ok(row) => row,
         Err(e) => {
-            log::error!("Failed to query DeletePolicy conflict counts from database: {e}");
+            error!("Failed to query DeletePolicy conflict counts from database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -152,7 +153,7 @@ pub async fn delete_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Resu
             return Err(DeleteConflictException::builder().message(message).build().into());
         }
 
-        log::error!("Failed to delete managed policy from database: {e}");
+        error!("Failed to delete managed policy from database: {e}");
         return Err(internal_failure().into());
     }
 

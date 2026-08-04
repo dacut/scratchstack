@@ -1,5 +1,5 @@
 use {
-    super::{Member, ShapeBase, ShapeInfo, SmithyModel, StrExt, Writers},
+    crate::{Member, ShapeBase, ShapeInfo, SmithyModel, StrExt, Writers, status_code_from_u16},
     serde::{Deserialize, Serialize},
     std::{
         collections::BTreeMap,
@@ -19,6 +19,10 @@ pub struct Structure {
     /// The members of the structure. Each member name maps to exactly one member definition.
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub members: BTreeMap<String, Member>,
+
+    /// The XML namespace the service exists in.
+    #[serde(skip)]
+    pub xmlns: Option<String>,
 }
 
 impl ShapeInfo for Structure {
@@ -29,6 +33,8 @@ impl ShapeInfo for Structure {
     fn rust_typename(&self) -> String {
         if self.base.traits.is_error() {
             format!("crate::error::{}", self.base.rust_typename())
+        } else if self.base.traits.is_input() || self.base.traits.is_output() {
+            format!("crate::operation::{}", self.base.rust_typename())
         } else {
             format!("crate::types::{}", self.base.rust_typename())
         }
@@ -39,6 +45,8 @@ impl ShapeInfo for Structure {
         for member in self.members.values_mut() {
             member.resolve(shape_name, model);
         }
+
+        self.xmlns = model.xmlns.clone();
     }
 
     /// Generates code that implements the structure.
@@ -59,22 +67,20 @@ impl ShapeInfo for Structure {
         }
 
         if is_error {
-            self.write_rust_decl(&mut w.types_error)?;
-            self.write_rust_impl(&mut w.types_error)?;
-            self.write_rust_aws_query_error_impl(&mut w.types_error)?;
-            self.write_error_builder(&mut w.types_error)?;
+            self.write_error_decl(&mut w.types_error)?;
+            self.write_error_impl(&mut w.types_error)?;
         } else if is_input || is_output {
-            self.write_rust_decl(&mut w.operation)?;
-            self.write_rust_impl(&mut w.operation)?;
-            self.write_builder(&mut w.operation)?;
+            self.write_regular_decl(&mut w.operation)?;
+            self.write_regular_impl(&mut w.operation)?;
+            self.write_regular_builder(&mut w.operation)?;
 
             if is_input {
                 self.write_shorthand_parser(&mut w.operation)?;
             }
         } else {
-            self.write_rust_decl(&mut w.types)?;
-            self.write_rust_impl(&mut w.types)?;
-            self.write_builder(&mut w.types)?;
+            self.write_regular_decl(&mut w.types)?;
+            self.write_regular_impl(&mut w.types)?;
+            self.write_regular_builder(&mut w.types)?;
             self.write_shorthand_parser(&mut w.types)?;
         }
 
@@ -85,6 +91,7 @@ impl ShapeInfo for Structure {
 impl Structure {
     /// For error structures, returns the AWS error code (string) to use for this structure.
     #[must_use]
+    #[allow(dead_code)] // FIXME: Is this method needed?
     fn error_code(&self) -> String {
         let default_error_code =
             self.base.rust_typename().strip_suffix("Exception").unwrap_or(&self.base.rust_typename()).to_string();
@@ -118,9 +125,8 @@ impl Structure {
     }
 
     /// Writes the Rust declaration for the main body of this structure.
-    fn write_rust_decl(&self, w: &mut dyn Write) -> IoResult<()> {
+    fn write_regular_decl(&self, w: &mut dyn Write) -> IoResult<()> {
         let rust_typename = self.base.rust_typename();
-        let is_error = self.base.traits.is_error();
 
         // Write the documentation comments for the structure, if any.
         self.base.traits.write_docs(w, "")?;
@@ -142,10 +148,10 @@ impl Structure {
             let is_optional = !member.traits.is_required();
             let is_list = member.is_list();
             let mut member_type = member.rust_typename();
-            let rust_member_name = member_name.to_snake_case();
+            let rust_member_name = member_name.to_rust_ident();
 
             if is_optional && !is_list {
-                member_type = format!("Option<{}>", member_type);
+                member_type = format!("::std::option::Option<{}>", member_type);
             }
 
             if is_optional && !is_list {
@@ -156,24 +162,14 @@ impl Structure {
             writeln!(w, "    pub {rust_member_name}: {member_type},")?;
         }
 
-        // If this is an error type, add metadata to the structure for error handling.
-        if is_error {
-            writeln!(w)?;
-            writeln!(w, "    /// Metadata about the error")?;
-            writeln!(w, "    #[serde(skip)]")?;
-            writeln!(w, "    pub meta: ::aws_smithy_types::error::ErrorMetadata,")?;
-        }
-
         writeln!(w, "}}")?;
-
         writeln!(w)?;
 
         Ok(())
     }
 
     /// Writes the main impl of this structure, which just provides a builder method for constructing this structure.
-    fn write_rust_impl(&self, w: &mut dyn Write) -> IoResult<()> {
-        let is_error = self.base.traits.is_error();
+    fn write_regular_impl(&self, w: &mut dyn Write) -> IoResult<()> {
         let rust_typename = self.base.rust_typename();
 
         writeln!(w, "impl {rust_typename} {{")?;
@@ -182,23 +178,45 @@ impl Structure {
         writeln!(w, "    pub fn builder() -> {rust_typename}Builder {{")?;
         writeln!(w, "        {rust_typename}Builder::default()")?;
         writeln!(w, "    }}")?;
-        writeln!(w)?;
-        if is_error {
-            writeln!(w, "    /// Returns the error message.")?;
-            writeln!(w, "    #[inline(always)]")?;
-            writeln!(w, "    pub fn message(&self) -> ::std::option::Option<&str> {{")?;
-            writeln!(w, "        self.message.as_deref()")?;
-            writeln!(w, "    }}")?;
-        }
         writeln!(w, "}}")?;
         writeln!(w)?;
         Ok(())
     }
 
-    /// Writes implementations of the `Error`, `Display`, `RequestId`, `ProvideErrorKind`, and
-    /// `ProvideErrorMetadata` traits for this structure.
-    fn write_rust_aws_query_error_impl(&self, w: &mut dyn Write) -> IoResult<()> {
+    /// Writes the Rust declaration for an error structure.
+    fn write_error_decl(&self, w: &mut dyn Write) -> IoResult<()> {
         let rust_typename = self.base.rust_typename();
+
+        // Write the documentation comments for the structure, if any.
+        self.base.traits.write_docs(w, "")?;
+
+        // Attributes for the structure.
+        writeln!(
+            w,
+            "#[derive(::bon::Builder, ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]"
+        )?;
+        writeln!(w, "pub struct {rust_typename} {{")?;
+        writeln!(w, "    /// The underlying error message.")?;
+        writeln!(w, "    #[builder(into)]")?;
+        writeln!(w, "    pub message: ::std::option::Option<::std::string::String>,")?;
+        writeln!(w)?;
+        writeln!(w, "    /// The request id for this request, if available.")?;
+        writeln!(w, "    #[builder(into)]")?;
+        writeln!(w, "    pub request_id: ::std::option::Option<::std::string::String>,")?;
+        writeln!(w, "}}")?;
+        writeln!(w)?;
+
+        Ok(())
+    }
+
+    /// Writes implementations of the `Error`, `Display`, `RequestId`, `ProvideErrorMetadata`,
+    /// `ProvideRequestId`, `ProvideXmlNamespace`, `Deserialize`, and `Serialize` traits for this
+    /// structure.
+    fn write_error_impl(&self, w: &mut dyn Write) -> IoResult<()> {
+        let xmlns: &str = self.xmlns.as_ref().expect("XML namespace must be set");
+        let rust_typename = self.base.rust_typename();
+        let http_status = self.base.traits.http_error().expect("No HTTP status set for this type");
+        let http_status = status_code_from_u16(http_status);
         let code = if let Some(qe_any) = self.base.traits.aws_query_error() {
             let qe_map = qe_any.as_object().unwrap();
             qe_map.get("code").unwrap().as_str().unwrap().to_string()
@@ -206,8 +224,13 @@ impl Structure {
             rust_typename.strip_suffix("Exception").unwrap().to_string()
         };
 
-        let error_type = self.base.traits.error().unwrap();
+        let error_type = match self.base.traits.error().as_ref().unwrap().as_str() {
+            "client" => "Sender",
+            "server" => "Receiver",
+            e => panic!("Unknown error type: {e}"),
+        };
 
+        // Display impl
         writeln!(w, "impl ::std::fmt::Display for {rust_typename} {{")?;
         writeln!(w, "    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {{")?;
         writeln!(w, "        f.write_str(\"{rust_typename}\")?;")?;
@@ -218,39 +241,131 @@ impl Structure {
         writeln!(w, "    }}")?;
         writeln!(w, "}}")?;
         writeln!(w)?;
+
+        // Standard Error impl
         writeln!(w, "impl ::std::error::Error for {rust_typename} {{}}")?;
         writeln!(w)?;
-        writeln!(w, "impl ::aws_types::request_id::RequestId for {rust_typename} {{")?;
-        writeln!(w, "    #[inline(always)]")?;
-        writeln!(w, "    fn request_id(&self) -> ::std::option::Option<&str> {{")?;
-        writeln!(w, "        ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(self).request_id()")?;
-        writeln!(w, "    }}")?;
-        writeln!(w, "}}")?;
 
-        writeln!(w)?;
-        writeln!(w, "impl ::aws_smithy_types::retry::ProvideErrorKind for {rust_typename} {{")?;
+        // ProvideErrorMetadata impl
+        writeln!(w, "impl ::scratchstack_core::error::ProvideErrorMetadata for {rust_typename} {{")?;
         writeln!(w, "    #[inline(always)]")?;
-        writeln!(
-            w,
-            "    fn retryable_error_kind(&self) -> ::std::option::Option<::aws_smithy_types::retry::ErrorKind> {{"
-        )?;
+        writeln!(w, "    fn error_type(&self) -> ::scratchstack_core::error::ErrorType {{")?;
         if error_type == "client" {
-            writeln!(w, "        ::std::option::Option::Some(::aws_smithy_types::retry::ErrorKind::ClientError)")?;
+            writeln!(w, "        ::scratchstack_core::error::ErrorType::Sender")?;
         } else {
-            writeln!(w, "        ::std::option::Option::Some(::aws_smithy_types::retry::ErrorKind::ServerError)")?;
+            writeln!(w, "        ::scratchstack_core::error::ErrorType::Receiver")?;
         }
         writeln!(w, "    }}")?;
         writeln!(w)?;
         writeln!(w, "    #[inline(always)]")?;
-        writeln!(w, "    fn code(&self) -> ::std::option::Option<&str> {{")?;
-        writeln!(w, "        ::std::option::Option::Some(\"{code}\")")?;
+        writeln!(w, "    fn code(&self) -> &str {{")?;
+        writeln!(w, "        \"{code}\"")?;
+        writeln!(w, "    }}")?;
+        writeln!(w)?;
+        writeln!(w, "    #[inline(always)]")?;
+        writeln!(w, "    fn message(&self) -> ::std::option::Option<&str> {{")?;
+        writeln!(w, "        self.message.as_deref()")?;
+        writeln!(w, "    }}")?;
+        writeln!(w)?;
+        writeln!(w, "    #[inline(always)]")?;
+        writeln!(w, "    fn http_status(&self) -> ::std::option::Option<::scratchstack_core::http::StatusCode> {{")?;
+        writeln!(w, "        ::std::option::Option::Some({http_status})")?;
         writeln!(w, "    }}")?;
         writeln!(w, "}}")?;
         writeln!(w)?;
-        writeln!(w, "impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for {rust_typename} {{")?;
+
+        // ProvideRequestId impl
+        writeln!(w, "impl ::scratchstack_core::ProvideRequestId for {rust_typename} {{")?;
         writeln!(w, "    #[inline(always)]")?;
-        writeln!(w, "    fn meta(&self) -> &::aws_smithy_types::error::metadata::ErrorMetadata {{")?;
-        writeln!(w, "        &self.meta")?;
+        writeln!(w, "    fn request_id(&self) -> ::std::option::Option<&str> {{")?;
+        writeln!(w, "        self.request_id.as_deref()")?;
+        writeln!(w, "    }}")?;
+        writeln!(w, "}}")?;
+        writeln!(w)?;
+
+        // ProvideXmlNamespace impl
+        writeln!(w, "impl ::scratchstack_core::ProvideXmlNamespace for {rust_typename} {{")?;
+        writeln!(w, "    #[inline(always)]")?;
+        writeln!(w, "    fn xml_namespace(&self) -> &str {{")?;
+        writeln!(w, "        \"{xmlns}\"")?;
+        writeln!(w, "    }}")?;
+        writeln!(w, "}}")?;
+
+        // Deserialize impl
+        writeln!(w, "impl<'de> ::serde::Deserialize<'de> for {rust_typename} {{")?;
+        writeln!(
+            w,
+            "    fn deserialize<D: ::serde::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {{"
+        )?;
+        writeln!(w, "        deserializer.deserialize_map(Self::default())")?;
+        writeln!(w, "    }}")?;
+        writeln!(w, "}}")?;
+        writeln!(w)?;
+
+        // Visitor impl
+        writeln!(w, "impl<'de> ::serde::de::Visitor<'de> for {rust_typename} {{")?;
+        writeln!(w, "    type Value = Self;")?;
+        writeln!(w, "    fn expecting(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {{")?;
+        writeln!(w, "        formatter.write_str(\"{rust_typename}\")")?;
+        writeln!(w, "    }}")?;
+        writeln!(w)?;
+        writeln!(
+            w,
+            "    fn visit_map<A: ::serde::de::MapAccess<'de>>(mut self, mut map: A) -> Result<Self::Value, A::Error> {{"
+        )?;
+        writeln!(w, "        loop {{")?;
+        writeln!(w, "            let Some(entry) = map.next_entry()? else {{")?;
+        writeln!(w, "                break;")?;
+        writeln!(w, "            }};")?;
+        writeln!(w, "            let (key, value): (&'de str, &'de str) = entry;")?;
+        writeln!(w)?;
+        writeln!(w, "            match key {{")?;
+        writeln!(w, "                \"Message\" => {{")?;
+        writeln!(w, "                    self.message = ::std::option::Option::Some(value.to_string());")?;
+        writeln!(w, "                }},")?;
+        // RequestId is usually not available since it is not serialized out here.
+        writeln!(w, "                \"RequestId\" => {{")?;
+        writeln!(w, "                    self.request_id = ::std::option::Option::Some(value.to_string());")?;
+        writeln!(w, "                }},")?;
+        writeln!(w, "                _ => (),")?;
+        writeln!(w, "            }}")?;
+        writeln!(w, "        }}")?;
+        writeln!(w)?;
+        writeln!(w, "        Ok(self)")?;
+        writeln!(w, "    }}")?;
+        writeln!(w, "}}")?;
+        writeln!(w)?;
+
+        // Serialize impl
+        writeln!(w, "impl ::serde::Serialize for {rust_typename} {{")?;
+        writeln!(
+            w,
+            "    fn serialize<S: ::serde::ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {{"
+        )?;
+        writeln!(w, "        use ::serde::ser::SerializeMap;")?;
+        writeln!(w, "        let mut m = serializer.serialize_map(None)?;")?;
+        writeln!(w, "        m.serialize_entry(\"Type\", \"{error_type}\")?;")?;
+        writeln!(w, "        m.serialize_entry(\"Code\", \"{code}\")?;")?;
+        writeln!(w, "        if let Some(message) = self.message.as_ref() {{")?;
+        writeln!(w, "            m.serialize_entry(\"Message\", message)?;")?;
+        writeln!(w, "        }}")?;
+        // We intentionally skip serializing the request id here since it is part of the envelope.
+        writeln!(w, "        m.end()")?;
+        writeln!(w, "    }}")?;
+        writeln!(w, "}}")?;
+        writeln!(w)?;
+
+        // Responder impl
+        writeln!(w, "impl ::scratchstack_core::response::Responder for {rust_typename} {{")?;
+        writeln!(
+            w,
+            "    fn respond(&self) -> ::scratchstack_core::http::Response<::scratchstack_core::axum::body::Body> {{"
+        )?;
+        writeln!(
+            w,
+            r#"        let error_response = ::scratchstack_core::response::ErrorResponseEnvelope::new_with_xmlns(self, "{xmlns}");"#
+        )?;
+        writeln!(w, "        error_response.respond()")?;
         writeln!(w, "    }}")?;
         writeln!(w, "}}")?;
         writeln!(w)?;
@@ -264,7 +379,7 @@ impl Structure {
     /// implementation: setters take `impl Into<T>` where `T` is the struct field type, all
     /// internal storage is `Option<T>`, and `build()` runs validation and returns a typed
     /// `ValidationError` on failure instead of an opaque builder error.
-    fn write_builder(&self, w: &mut dyn Write) -> IoResult<()> {
+    fn write_regular_builder(&self, w: &mut dyn Write) -> IoResult<()> {
         let rust_typename = self.base.rust_typename();
 
         // 1. The builder struct itself.
@@ -272,9 +387,14 @@ impl Structure {
         writeln!(w, "#[derive(::std::clone::Clone, ::std::fmt::Debug, ::std::default::Default)]")?;
         writeln!(w, "pub struct {rust_typename}Builder {{")?;
         for (member_name, member) in &self.members {
-            let rust_member_name = member_name.to_snake_case();
-            let field_type = self.builder_field_type(member);
-            writeln!(w, "    {rust_member_name}: ::std::option::Option<{field_type}>,")?;
+            let rust_member_name = member_name.to_rust_ident();
+            let field_type = member.rust_typename();
+
+            if member.is_list() {
+                writeln!(w, "    {rust_member_name}: {field_type},")?;
+            } else {
+                writeln!(w, "    {rust_member_name}: ::std::option::Option<{field_type}>,")?;
+            }
         }
         writeln!(w, "}}")?;
         writeln!(w)?;
@@ -283,24 +403,60 @@ impl Structure {
 
         // 2. Per-field setters, matching derive_builder's `setter(into)` semantics.
         for (member_name, member) in &self.members {
-            let rust_member_name = member_name.to_snake_case();
-            let field_type = self.builder_field_type(member);
-            writeln!(w, "    /// Sets the `{member_name}` field.")?;
-            writeln!(
-                w,
-                "    pub fn {rust_member_name}(mut self, value: impl ::std::convert::Into<{field_type}>) -> Self {{"
-            )?;
-            writeln!(w, "        self.{rust_member_name} = ::std::option::Option::Some(value.into());")?;
-            writeln!(w, "        self")?;
-            writeln!(w, "    }}")?;
-            writeln!(w)?;
+            let rust_member_name = member_name.to_rust_ident();
+            let set_method_name = member_name.to_rust_ident_affixed("set_", "");
+
+            if let Some(member_list) = member.as_list() {
+                let field_type = member_list.member.rust_typename();
+                writeln!(w, "    /// Adds an item to the `{member_name}` list.")?;
+                writeln!(
+                    w,
+                    "    pub fn {rust_member_name}(mut self, value: impl ::std::convert::Into<{field_type}>) -> Self {{"
+                )?;
+                writeln!(w, "        self.{rust_member_name}.push(value.into());")?;
+                writeln!(w, "        self")?;
+                writeln!(w, "    }}")?;
+                writeln!(w)?;
+                writeln!(w, "    /// Sets the `{member_name}` field.")?;
+                writeln!(
+                    w,
+                    "    pub fn {set_method_name}(mut self, value: impl ::std::convert::Into<::std::vec::Vec<{field_type}>>) -> Self {{"
+                )?;
+                writeln!(w, "        self.{rust_member_name} = value.into();")?;
+                writeln!(w, "        self")?;
+                writeln!(w, "    }}")?;
+                writeln!(w)?;
+            } else {
+                let field_type = member.rust_typename();
+                writeln!(w, "    /// Sets the `{member_name}` field.")?;
+                writeln!(
+                    w,
+                    "    pub fn {rust_member_name}(mut self, value: impl ::std::convert::Into<{field_type}>) -> Self {{"
+                )?;
+                writeln!(w, "        self.{rust_member_name} = ::std::option::Option::Some(value.into());")?;
+                writeln!(w, "        self")?;
+                writeln!(w, "    }}")?;
+                writeln!(w)?;
+
+                if !member.traits.is_required() {
+                    writeln!(w, "    /// Sets or clears the `{member_name}` field.")?;
+                    writeln!(
+                        w,
+                        "    pub fn {set_method_name}(mut self, value: impl ::std::convert::Into<::std::option::Option<{field_type}>>) -> Self {{"
+                    )?;
+                    writeln!(w, "        self.{rust_member_name} = value.into();")?;
+                    writeln!(w, "        self")?;
+                    writeln!(w, "    }}")?;
+                    writeln!(w)?;
+                }
+            }
         }
 
         // 3. The private validate() method (kept verbatim from the prior implementation).
         writeln!(w, "    #[allow(clippy::collapsible_if)]")?;
         writeln!(w, "    fn validate(&self) -> ::std::result::Result<(), ::std::string::String> {{")?;
         for (member_name, member) in &self.members {
-            let rust_member_name = member_name.to_snake_case();
+            let rust_member_name = member_name.to_rust_ident();
             let is_required = member.is_required();
             let is_list = member.is_list();
 
@@ -313,20 +469,22 @@ impl Structure {
                 writeln!(w, "        }}")?;
             }
 
-            let member_validator = member.derive_builder_validator("value", &rust_typename);
-            if let Some(mut validator) = member_validator
-                && !validator.trim().is_empty()
-            {
-                validator = validator.trim().replace("\n", "\n            ");
-                if is_required || is_list {
+            if member.is_list() {
+                let member_validator =
+                    member.derive_builder_validator(&format!("self.{rust_member_name}"), &rust_typename);
+                if let Some(mut validator) = member_validator
+                    && !validator.trim().is_empty()
+                {
+                    validator = validator.trim().replace("\n", "\n        ");
+                    writeln!(w, "        {validator}")?;
+                }
+            } else {
+                let member_validator = member.derive_builder_validator("value", &rust_typename);
+                if let Some(mut validator) = member_validator
+                    && !validator.trim().is_empty()
+                {
+                    validator = validator.trim().replace("\n", "\n            ");
                     writeln!(w, "        if let Some(value) = &self.{rust_member_name} {{")?;
-                    writeln!(w, "            {validator}")?;
-                    writeln!(w, "        }}")?;
-                } else {
-                    writeln!(
-                        w,
-                        "        if let Some(value_opt) = &self.{rust_member_name} && let Some(value) = value_opt {{"
-                    )?;
                     writeln!(w, "            {validator}")?;
                     writeln!(w, "        }}")?;
                 }
@@ -349,7 +507,7 @@ impl Structure {
         )?;
         writeln!(w, "        ::std::result::Result::Ok({rust_typename} {{")?;
         for (member_name, member) in &self.members {
-            let rust_member_name = member_name.to_snake_case();
+            let rust_member_name = member_name.to_rust_ident();
             let is_required = member.is_required();
             let is_list = member.is_list();
             if is_required && !is_list {
@@ -358,102 +516,13 @@ impl Structure {
                     "            {rust_member_name}: self.{rust_member_name}.expect(\"validate confirmed required field is set\"),"
                 )?;
             } else {
-                writeln!(w, "            {rust_member_name}: self.{rust_member_name}.unwrap_or_default(),")?;
+                writeln!(w, "            {rust_member_name}: self.{rust_member_name},")?;
             }
         }
         writeln!(w, "        }})")?;
         writeln!(w, "    }}")?;
         writeln!(w, "}}")?;
         writeln!(w)?;
-        Ok(())
-    }
-
-    /// Returns the struct's field Rust type for a member (matching `write_rust_decl`).
-    fn builder_field_type(&self, member: &Member) -> String {
-        let is_optional = !member.traits.is_required();
-        let is_list = member.is_list();
-        let mut t = member.rust_typename();
-        if is_optional && !is_list {
-            t = format!("::std::option::Option<{t}>");
-        }
-        t
-    }
-
-    /// Writes a builder structure for this error type instead of using derive_builder.
-    ///
-    /// This is required because the builder needs to be infalliable to be compatible with the AWS
-    /// SDK.
-    fn write_error_builder(&self, w: &mut dyn Write) -> IoResult<()> {
-        let rust_typename = self.base.rust_typename();
-        let error_code = self.error_code();
-
-        writeln!(w, "/// Builder for [`{rust_typename}`].")?;
-        writeln!(w, "#[derive(::std::clone::Clone, ::std::fmt::Debug, ::std::default::Default)]")?;
-        writeln!(w, "pub struct {rust_typename}Builder {{")?;
-        writeln!(w, "    message: ::std::option::Option<::std::string::String>,")?;
-        writeln!(w, "    meta: ::std::option::Option<::aws_smithy_types::error::ErrorMetadata>,")?;
-        writeln!(w, "}}")?;
-        writeln!(w)?;
-        writeln!(w, "impl {rust_typename}Builder {{")?;
-        writeln!(w, "    /// Sets the error message for this error.")?;
-        writeln!(w, "    pub fn message(mut self, message: impl Into<::std::string::String>) -> Self {{")?;
-        writeln!(w, "        self.message = Some(message.into());")?;
-        writeln!(w, "        self")?;
-        writeln!(w, "    }}")?;
-        writeln!(w)?;
-        writeln!(w, "    /// Sets or resets the message for this error.")?;
-        writeln!(
-            w,
-            "    pub fn set_message(mut self, message: ::std::option::Option<::std::string::String>) -> Self {{"
-        )?;
-        writeln!(w, "        self.message = message;")?;
-        writeln!(w, "        self")?;
-        writeln!(w, "    }}")?;
-        writeln!(w)?;
-        writeln!(w, "    /// Returns the error message for this error, if any.")?;
-        writeln!(w, "    pub fn get_message(&self) -> &::std::option::Option<::std::string::String> {{")?;
-        writeln!(w, "        &self.message")?;
-        writeln!(w, "    }}")?;
-        writeln!(w)?;
-        writeln!(w, "    /// Sets the error metadata for this error.")?;
-        writeln!(w, "    pub fn meta(mut self, meta: ::aws_smithy_types::error::metadata::ErrorMetadata) -> Self {{")?;
-        writeln!(w, "        self.meta = Some(meta);")?;
-        writeln!(w, "        self")?;
-        writeln!(w, "    }}")?;
-        writeln!(w)?;
-        writeln!(w, "    /// Sets or resets the error metadata for this error.")?;
-        writeln!(
-            w,
-            "    pub fn set_meta(mut self, meta: ::std::option::Option<::aws_smithy_types::error::metadata::ErrorMetadata>) -> Self {{"
-        )?;
-        writeln!(w, "        self.meta = meta;")?;
-        writeln!(w, "        self")?;
-        writeln!(w, "    }}")?;
-        writeln!(w)?;
-        writeln!(w, "    /// Consumes the builder and constructs a [`{rust_typename}`].")?;
-        writeln!(w, "    pub fn build(self) -> {rust_typename} {{")?;
-        writeln!(w, "        let meta = match self.meta {{")?;
-        writeln!(w, "            Some(meta) => meta,")?;
-        writeln!(w, "            None => {{")?;
-        writeln!(w, "                let message = self.message.clone();")?;
-        writeln!(
-            w,
-            "                let mut builder = ::aws_smithy_types::error::metadata::ErrorMetadata::builder().code(\"{error_code}\");"
-        )?;
-        writeln!(w, "                if let Some(message) = message {{")?;
-        writeln!(w, "                    builder = builder.message(message);")?;
-        writeln!(w, "                }}")?;
-        writeln!(w, "                builder.build()")?;
-        writeln!(w, "            }}")?;
-        writeln!(w, "        }};")?;
-        writeln!(w)?;
-        writeln!(w, "        {rust_typename} {{")?;
-        writeln!(w, "            message: self.message,")?;
-        writeln!(w, "            meta,")?;
-        writeln!(w, "        }}")?;
-        writeln!(w, "    }}")?;
-        writeln!(w, "}}")?;
-
         Ok(())
     }
 
@@ -528,22 +597,25 @@ impl Structure {
             writeln!(w, "            match key.as_str() {{")?;
             for (member_name, member) in &self.members {
                 let arg_name = member_name.to_pascal_case();
-                let rust_member_name = member_name.to_snake_case();
+                let rust_member_name = member_name.to_rust_ident();
+                let set_method = member_name.to_rust_ident_affixed("set_", "");
                 let rust_member_typename = member.rust_typename();
                 writeln!(w, "                 \"{arg_name}\" => {{")?;
-                writeln!(
-                    w,
-                    "                     let value: {rust_member_typename} = value.try_into().map_err(|e| format!(\"Failed to parse field '{member_name}' for {rust_typename} from '{{value:?}}': {{e}}\"))?;"
-                )?;
-                if member.is_required() || member.is_list() {
-                    writeln!(w, "                     builder = builder.{rust_member_name}(value);")?;
+                if member.is_list() {
+                    writeln!(
+                        w,
+                        "                     let value: {rust_member_typename} = value.try_into().map_err(|e| format!(\"Failed to parse field '{member_name}' for {rust_typename} from '{{value:?}}': {{e}}\"))?;"
+                    )?;
+                    writeln!(w, "                     builder = builder.{set_method}(value);")?;
+                    writeln!(w, "                 }}")?;
                 } else {
                     writeln!(
                         w,
-                        "                     builder = builder.{rust_member_name}(::std::option::Option::Some(value));"
+                        "                     let value: {rust_member_typename} = value.try_into().map_err(|e| format!(\"Failed to parse field '{member_name}' for {rust_typename} from '{{value:?}}': {{e}}\"))?;"
                     )?;
+                    writeln!(w, "                     builder = builder.{rust_member_name}(value);")?;
+                    writeln!(w, "                 }}")?;
                 }
-                writeln!(w, "                 }}")?;
             }
             writeln!(
                 w,

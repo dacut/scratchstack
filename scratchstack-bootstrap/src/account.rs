@@ -1,7 +1,8 @@
 //! Scratchstack bootsrap account subcommands
 use {
-    crate::{Cli, Runnable, execute_in_transaction},
+    crate::{Cli, Runnable, execute_in_transaction, internal_failure},
     clap::Parser,
+    log::error,
     scratchstack_cli_utils::{ShorthandValue, parse_shorthand},
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -98,7 +99,12 @@ impl Runnable for CreateAccountAliasInternalCommand {
         let request = CreateAccountAliasInternalRequest::builder()
             .account_id(self.account_id.clone())
             .account_alias(self.account_alias.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build CreateAccountAliasInternalRequest: {e}");
+                internal_failure()
+            })?;
+
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -111,16 +117,16 @@ impl Runnable for CreateAccountCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let mut builder =
-            CreateAccountRequest::builder().email(self.email.clone()).account_alias(self.account_alias.clone());
-        if let Some(organization_id) = &self.organization_id {
-            builder = builder.organization_id(organization_id.clone());
-        }
-        if let Some(account_id) = &self.account_id {
-            builder = builder.account_id(account_id.clone());
-        }
-
-        let request = builder.build()?;
+        let request = CreateAccountRequest::builder()
+            .set_email(self.email.clone())
+            .set_account_alias(self.account_alias.clone())
+            .set_organization_id(self.organization_id.clone())
+            .set_account_id(self.account_id.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build CreateAccountRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -135,9 +141,13 @@ impl Runnable for ListAccountAliasesInternalCommand {
     {
         let request = ListAccountAliasesInternalRequest::builder()
             .account_id(self.account_id.clone())
-            .max_items(self.max_items)
-            .marker(self.marker.clone())
-            .build()?;
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build ListAccountAliasesInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -150,7 +160,6 @@ impl Runnable for ListAccountsCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let mut builder = ListAccountsRequest::builder();
         let mut filters = Vec::with_capacity(self.filters.len());
 
         for filter in &self.filters {
@@ -187,15 +196,15 @@ impl Runnable for ListAccountsCommand {
             }
         }
 
-        builder = builder.filters(filters);
-        if let Some(max_items) = self.max_items {
-            builder = builder.max_items(max_items as i32);
-        }
-        if let Some(marker) = &self.marker {
-            builder = builder.marker(marker.clone());
-        }
-
-        let request = builder.build()?;
+        let request = ListAccountsRequest::builder()
+            .set_filters(filters)
+            .set_max_items(self.max_items.map(|v| v as i32))
+            .set_marker(self.marker.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build ListAccountsRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }

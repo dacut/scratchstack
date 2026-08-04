@@ -11,6 +11,7 @@ use {
         path::validate_path,
     },
     indoc::indoc,
+    log::error,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
     scratchstack_shapes_iam::{
@@ -66,14 +67,14 @@ pub async fn create_group(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to insert group into database: {e}");
+            error!("Failed to insert group into database: {e}");
             return Err(internal_failure().into());
         }
     };
     let created_at: chrono::DateTime<chrono::Utc> = match result.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
-            log::error!("Failed to get created_at from database row: {e}");
+            error!("Failed to get created_at from database row: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -87,7 +88,7 @@ pub async fn create_group(
     {
         Ok(arn) => arn,
         Err(e) => {
-            log::error!("Failed to construct ARN for new group: {e}");
+            error!("Failed to construct ARN for new group: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -98,11 +99,7 @@ pub async fn create_group(
         .path(path.to_string())
         .group_id(group_id)
         .group_name(group_name.to_string())
-        .build()
-        .map_err(|e| {
-            log::error!("Failed to construct group object for new group: {e}");
-            internal_failure()
-        })?;
+        .build()?;
 
-    Ok(CreateGroupResponse::builder().group(group).build().unwrap())
+    Ok(CreateGroupResponse::builder().group(group).build()?)
 }

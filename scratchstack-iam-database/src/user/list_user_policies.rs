@@ -5,6 +5,7 @@ use {
         make_iam_paginator, partition::get_current_partition_or_fail, user::validate_user_name,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListUserPoliciesInternalRequest, ListUserPoliciesResponse},
@@ -72,7 +73,7 @@ pub async fn list_user_policies(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up user in database: {e}");
+            error!("Failed to look up user in database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -87,7 +88,7 @@ pub async fn list_user_policies(
 
     if let Some(marker) = marker {
         let m: ListUserPoliciesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListUserPolicies: {e}");
+            error!("Failed to decrypt pagination token for ListUserPolicies: {e}");
             internal_failure()
         })?;
         sql.push("\nAND policy_name_lower >= ");
@@ -98,7 +99,7 @@ pub async fn list_user_policies(
     sql.push_bind(max_items as i32 + 1);
 
     let rows = sql.build_query_as::<ListUserPoliciesRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch user inline policies from database: {e}");
+        error!("Failed to fetch user inline policies from database: {e}");
         internal_failure()
     })?;
 
@@ -114,7 +115,7 @@ pub async fn list_user_policies(
                     })
                     .await
                     .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListUserPolicies: {e}");
+                        error!("Failed to encrypt pagination token for ListUserPolicies: {e}");
                         internal_failure()
                     })?,
             );
@@ -123,15 +124,13 @@ pub async fn list_user_policies(
 
         results.push(row.policy_name_cased);
     }
-
-    let mut builder = ListUserPoliciesResponse::builder();
-    builder = builder.policy_names(results);
-    if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
-    }
-
-    builder.build().map_err(|e| {
-        log::error!("Failed to build ListUserPoliciesResponse: {e}");
-        internal_failure().into()
-    })
+    Ok(ListUserPoliciesResponse::builder()
+        .set_policy_names(results)
+        .is_truncated(next_marker.is_some())
+        .set_marker(next_marker)
+        .build()
+        .map_err(|e| {
+            error!("Failed to construct ListUserPoliciesResponse: {e}");
+            internal_failure()
+        })?)
 }

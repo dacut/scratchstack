@@ -13,6 +13,7 @@ version.workspace = true
 derive_builder.workspace = true
 indoc.workspace = true
 log.workspace = true
+http.workspace = true
 scratchstack-hakari = { path = "../scratchstack-hakari" }
 serde = { workspace = true, features = ["derive", "rc"] }
 serde_json.workspace = true

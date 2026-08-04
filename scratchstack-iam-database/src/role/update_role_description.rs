@@ -3,6 +3,7 @@ use {
     super::get_role,
     crate::{RequestExecutor, account::validate_account_id, constants::*, internal_failure, role::validate_role_name},
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{UpdateRoleDescriptionInternalRequest, UpdateRoleDescriptionResponse},
@@ -47,7 +48,7 @@ pub async fn update_role_description(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to update role description in database: {e}");
+            error!("Failed to update role description in database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -61,8 +62,8 @@ pub async fn update_role_description(
 
     let role = get_role(tx, account_id, role_name).await?.role;
 
-    UpdateRoleDescriptionResponse::builder().role(Some(role)).build().map_err(|e| {
-        log::error!("Failed to build UpdateRoleDescriptionResponse: {e}");
-        internal_failure().into()
-    })
+    Ok(UpdateRoleDescriptionResponse::builder().role(role).build().map_err(|e| {
+        error!("Failed to build UpdateRoleDescriptionResponse: {e}");
+        internal_failure()
+    })?)
 }

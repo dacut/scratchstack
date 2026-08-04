@@ -5,6 +5,7 @@ use {
         user::validate_user_name,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError, operation::DetachUserPolicyInternalRequest, types::error::NoSuchEntityException,
     },
@@ -66,7 +67,7 @@ pub async fn detach_user_policy(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up managed policy in database: {e}");
+            error!("Failed to look up managed policy in database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -90,7 +91,7 @@ pub async fn detach_user_policy(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up user in database: {e}");
+            error!("Failed to look up user in database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -106,7 +107,7 @@ pub async fn detach_user_policy(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to detach policy from user in database: {e}");
+            error!("Failed to detach policy from user in database: {e}");
             return Err(internal_failure().into());
         }
     };

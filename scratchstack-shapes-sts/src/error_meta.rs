@@ -25,11 +25,12 @@ impl From<::scratchstack_shapes_iam::error_meta::Error> for Error {
             IamError::ValidationError(inner) => Self::ValidationError(inner.into()),
             #[allow(deprecated)]
             _ => {
-                let meta = ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&e).clone();
-                Self::Unhandled(Box::new(crate::types::error::sealed_unhandled::Unhandled {
-                    source: Box::new(e),
-                    meta,
-                }))
+                let inner = ::scratchstack_core::error::GenericError::builder()
+                    .http_status(::scratchstack_core::http::StatusCode::INTERNAL_SERVER_ERROR)
+                    .code("InternalFailure".to_string())
+                    .message("Internal failure".to_string())
+                    .build();
+                Self::Unhandled(inner)
             }
         }
     }
@@ -59,10 +60,10 @@ impl From<Error> for ::scratchstack_shapes_iam::error_meta::Error {
             Error::ValidationError(inner) => Self::ValidationError(inner.into()),
             _ => {
                 ::log::error!("Converting unhandled STS error to IAM error: {:?}", e);
-                Self::InternalFailure(Box::new(::scratchstack_shapes_iam::types::error::InternalFailure {
-                    message: Some("An internal error has occurred.".to_string()),
-                    meta: ::aws_smithy_types::error::ErrorMetadata::builder().code("InternalFailure").build(),
-                }))
+                let inner = ::scratchstack_shapes_iam::types::error::InternalFailure::builder()
+                    .message("Internal failure".to_string())
+                    .build();
+                Self::InternalFailure(inner)
             }
         }
     }
@@ -72,10 +73,10 @@ macro_rules! from_iam {
     ($ty: ident) => {
         impl From<::scratchstack_shapes_iam::types::error::$ty> for Error {
             fn from(e: ::scratchstack_shapes_iam::types::error::$ty) -> Self {
-                Self::$ty(Box::new(crate::types::error::$ty {
+                Self::$ty(crate::types::error::$ty {
                     message: e.message,
-                    meta: e.meta,
-                }))
+                    request_id: e.request_id,
+                })
             }
         }
     };

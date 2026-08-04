@@ -7,6 +7,7 @@ use {
         policy::{parse_policy_arn, parse_policy_version_id},
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::DeletePolicyVersionRequest,
@@ -72,7 +73,7 @@ pub async fn delete_policy_version(
             return Err(NoSuchEntityException::builder().message(message).build().into());
         }
         Err(e) => {
-            log::error!("Failed to query managed policy from database: {e}");
+            error!("Failed to query managed policy from database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -93,7 +94,7 @@ pub async fn delete_policy_version(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to delete managed policy version from database: {e}");
+            error!("Failed to delete managed policy version from database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -122,7 +123,7 @@ pub async fn delete_policy_version(
         .execute(tx.as_mut())
         .await
     {
-        log::error!("Failed to recompute managed policy update_date: {e}");
+        error!("Failed to recompute managed policy update_date: {e}");
         return Err(internal_failure().into());
     }
 

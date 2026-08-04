@@ -5,6 +5,7 @@ use {
         user::validate_user_name,
     },
     indoc::indoc,
+    log::error,
     rand::RngExt,
     scratchstack_aws_principal::IamResourceType,
     scratchstack_shapes_iam::{
@@ -81,7 +82,7 @@ pub async fn create_access_key(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to query user from database: {e}");
+        error!("Failed to query user from database: {e}");
         internal_failure()
     })?;
 
@@ -110,32 +111,32 @@ pub async fn create_access_key(
     {
         Ok(row) => row,
         Err(e) => {
-            log::error!("Failed to insert access key into database: {e}");
+            error!("Failed to insert access key into database: {e}");
             return Err(internal_failure().into());
         }
     };
     let created_at: chrono::DateTime<chrono::Utc> = match row.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
-            log::error!("Failed to get created_at from database row: {e}");
+            error!("Failed to get created_at from database row: {e}");
             return Err(internal_failure().into());
         }
     };
 
     let access_key = AccessKey::builder()
         .access_key_id(access_key_id_full)
-        .create_date(Some(created_at))
+        .create_date(created_at)
         .secret_access_key(secret_key)
         .status(StatusType::Active)
         .user_name(user_name.to_string())
         .build()
         .map_err(|e| {
-            log::error!("Failed to construct AccessKey response: {e}");
+            error!("Failed to construct AccessKey: {e}");
             internal_failure()
         })?;
 
-    CreateAccessKeyResponse::builder().access_key(access_key).build().map_err(|e| {
-        log::error!("Failed to construct CreateAccessKeyResponse: {e}");
-        internal_failure().into()
-    })
+    Ok(CreateAccessKeyResponse::builder().access_key(access_key).build().map_err(|e| {
+        error!("Failed to construct CreateAccessKeyResponse: {e}");
+        internal_failure()
+    })?)
 }

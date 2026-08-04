@@ -1,6 +1,8 @@
 use {
+    crate::constants::*,
     axum::Error as AxumError,
     scratchstack_aws_signature::SignatureError,
+    scratchstack_shapes_sts::types::error::InternalFailure as StsInternalFailure,
     sqlx::Error as SqlxError,
     std::{
         error::Error,
@@ -61,4 +63,12 @@ impl From<SqlxError> for ServiceError {
     fn from(e: SqlxError) -> Self {
         Self::SqlxError(e)
     }
+}
+
+/// Construct a generic `InternalFailure` with the standard internal-failure message. Use
+/// this for every "unexpected database/builder/etc. error" call site — never leak
+/// underlying details to the caller (those go to the log).
+#[allow(dead_code)]
+pub(crate) fn internal_failure() -> StsInternalFailure {
+    StsInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
 }

@@ -2,9 +2,9 @@ use {
     crate::{
         boxed_future, run, session_token_encryption_key::list_session_token_encryption_keys_filters_from_shorthand,
     },
-    aws_smithy_types::error::metadata::ProvideErrorMetadata,
     chrono::{DateTime, Utc},
     pretty_assertions::assert_eq,
+    scratchstack_core::error::ProvideErrorMetadata as _,
     scratchstack_iam_database::utils::TempDatabase,
     scratchstack_shapes_iam::{error_meta::Error as IamError, types::ListSessionTokenEncryptionKeysFilterName},
     serde_json::Value as JsonValue,
@@ -275,7 +275,7 @@ async fn test_accounts(database: &TempDatabase) {
         ])
         .await
         .expect_err("create-account-alias on a nonexistent account should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // create-account-alias with an alias that fails the Smithy regex must fail with
     // ValidationError before reaching the database.
@@ -294,7 +294,7 @@ async fn test_accounts(database: &TempDatabase) {
         ])
         .await
         .expect_err("create-account-alias with an invalid alias should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // create-account-alias with an invalid account id must fail with ValidationError.
     let err = database
@@ -312,7 +312,7 @@ async fn test_accounts(database: &TempDatabase) {
         ])
         .await
         .expect_err("create-account-alias with an invalid account id should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // list-account-aliases on a nonexistent account must fail with NoSuchEntity.
     let err = database
@@ -328,14 +328,14 @@ async fn test_accounts(database: &TempDatabase) {
         ])
         .await
         .expect_err("list-account-aliases on a nonexistent account should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // list-account-aliases with an invalid account id must fail with ValidationError.
     let err = database
         .run(["ssbs", "--port", &port, "--username", "scratchstack", "list-account-aliases", "--account-id", "12345"])
         .await
         .expect_err("list-account-aliases with an invalid account id should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- alias uniqueness -----------------------------------------------------
     // The 200 bulk accounts above already use aliases of the form `account-alias-00000`. Creating
@@ -353,7 +353,7 @@ async fn test_accounts(database: &TempDatabase) {
         ])
         .await
         .expect_err("create-account with an in-use alias should fail");
-    assert_eq!(err.code(), Some("EntityAlreadyExists"), "Expected EntityAlreadyExists, got: {err}");
+    assert_eq!(err.code(), "EntityAlreadyExists", "Expected EntityAlreadyExists, got: {err}");
 
     // create-account-alias setting an alias that another account already holds must also fail
     // with EntityAlreadyExists. 555566667777 currently holds "renamed-account-alias"; try to
@@ -374,7 +374,7 @@ async fn test_accounts(database: &TempDatabase) {
         ])
         .await
         .expect_err("create-account-alias claiming another account's alias should fail");
-    assert_eq!(err.code(), Some("EntityAlreadyExists"), "Expected EntityAlreadyExists, got: {err}");
+    assert_eq!(err.code(), "EntityAlreadyExists", "Expected EntityAlreadyExists, got: {err}");
 
     // Re-asserting the same alias on the same account is a no-op (the UPDATE writes the same
     // value); it must succeed.
@@ -491,7 +491,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("Getting a nonexistent user should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity error, got: {err}");
 
     // List the user's tags and verify them.
     let result = database
@@ -651,7 +651,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("Tagging a nonexistent user should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity error, got: {err}");
 
     // Untagging a nonexistent user should fail.
     let err = database
@@ -671,7 +671,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("Untagging a nonexistent user should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity error, got: {err}");
 
     // Delete the user.
     database
@@ -706,9 +706,10 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("Deleting a non-existent user should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity error, got: {err}");
+    assert!(err.message().is_some());
     assert!(
-        err.message().unwrap_or_default().contains("cannot be found"),
+        err.message().unwrap().contains("cannot be found"),
         "Expected 'cannot be found' in error message, got: {err}"
     );
 
@@ -728,9 +729,10 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("Deleting a user that never existed should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity error, got: {err}");
+    assert!(err.message().is_some());
     assert!(
-        err.message().unwrap_or_default().contains("cannot be found"),
+        err.message().unwrap().contains("cannot be found"),
         "Expected 'cannot be found' in error message, got: {err}"
     );
 
@@ -852,7 +854,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("delete-user-permissions-boundary on a nonexistent user should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Invalid user name must surface as ValidationError before reaching the database.
     let err = database
@@ -870,7 +872,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("delete-user-permissions-boundary with an invalid user name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- put-user-permissions-boundary -----------------------------------------
     // Create a managed policy and a fresh user with no boundary, then set the boundary via the API.
@@ -988,7 +990,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-user-permissions-boundary on a nonexistent user should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // PB ARN pointing to a nonexistent policy must fail with NoSuchEntity.
     let err = database
@@ -1008,7 +1010,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-user-permissions-boundary with a nonexistent PB policy should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Malformed PB ARN must surface ValidationError.
     let err = database
@@ -1028,7 +1030,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-user-permissions-boundary with an invalid PB ARN should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // Invalid user name must surface as ValidationError before reaching the database.
     let err = database
@@ -1048,7 +1050,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-user-permissions-boundary with an invalid user name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // Clean up: clear PB, delete the user and policy.
     database
@@ -1198,7 +1200,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-user-policy with malformed JSON should fail");
-    assert_eq!(err.code(), Some("MalformedPolicyDocument"), "Expected MalformedPolicyDocument, got: {err}");
+    assert_eq!(err.code(), "MalformedPolicyDocument", "Expected MalformedPolicyDocument, got: {err}");
 
     let err = database
         .run([
@@ -1219,7 +1221,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-user-policy on a nonexistent user should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -1240,7 +1242,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-user-policy with an invalid user name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- get-user-policy ------------------------------------------------------
     let get_resp = database
@@ -1281,7 +1283,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("get-user-policy for a policy that is not attached should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -1300,7 +1302,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("get-user-policy on a nonexistent user should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -1319,7 +1321,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("get-user-policy with an invalid user name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- list-user-policies ---------------------------------------------------
     let list_resp = database
@@ -1378,7 +1380,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("list-user-policies on a nonexistent user should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -1395,7 +1397,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("list-user-policies with an invalid user name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- delete-user-policy ---------------------------------------------------
     database
@@ -1433,7 +1435,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("delete-user-policy for a policy that is not attached should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -1452,7 +1454,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("delete-user-policy on a nonexistent user should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -1471,7 +1473,7 @@ async fn test_users(database: &TempDatabase) {
         ])
         .await
         .expect_err("delete-user-policy with an invalid user name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 }
 
 async fn test_access_keys(database: &TempDatabase) {
@@ -1554,7 +1556,7 @@ async fn test_access_keys(database: &TempDatabase) {
         ])
         .await
         .expect_err("create-access-key on a nonexistent user should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -1571,7 +1573,7 @@ async fn test_access_keys(database: &TempDatabase) {
         ])
         .await
         .expect_err("create-access-key with an invalid user name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- list-access-keys -----------------------------------------------------
     let list_resp = database
@@ -1635,7 +1637,7 @@ async fn test_access_keys(database: &TempDatabase) {
         ])
         .await
         .expect_err("list-access-keys on a nonexistent user should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -1652,7 +1654,7 @@ async fn test_access_keys(database: &TempDatabase) {
         ])
         .await
         .expect_err("list-access-keys with an invalid user name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- update-access-key ----------------------------------------------------
     database
@@ -1735,7 +1737,7 @@ async fn test_access_keys(database: &TempDatabase) {
         ])
         .await
         .expect_err("update-access-key with Expired status should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     let err = database
         .run([
@@ -1756,7 +1758,7 @@ async fn test_access_keys(database: &TempDatabase) {
         .expect_err("update-access-key with an id that's the wrong length should fail");
     // Smithy shape regex requires len >= 16; 19 chars passes the regex, so the access key just
     // doesn't exist.
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -1775,7 +1777,7 @@ async fn test_access_keys(database: &TempDatabase) {
         ])
         .await
         .expect_err("update-access-key with a non-AKIA prefix should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- delete-access-key ----------------------------------------------------
     database
@@ -1847,7 +1849,7 @@ async fn test_access_keys(database: &TempDatabase) {
         ])
         .await
         .expect_err("delete-access-key on a nonexistent key should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -1864,7 +1866,7 @@ async fn test_access_keys(database: &TempDatabase) {
         ])
         .await
         .expect_err("delete-access-key with a non-AKIA prefix should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // Clean up: the user is empty now, delete it.
     database
@@ -1907,7 +1909,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("Creating a policy with an empty document should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError for empty document, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError for empty document, got: {err}");
 
     // -- delete-policy-version -------------------------------------------------
     // Create a policy with two versions: v1 is default, v2 is not.
@@ -1964,7 +1966,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("Deleting the default version should fail");
-    assert_eq!(err.code(), Some("DeleteConflict"), "Expected DeleteConflict, got: {err}");
+    assert_eq!(err.code(), "DeleteConflict", "Expected DeleteConflict, got: {err}");
 
     // Deleting a non-default version (v2) must succeed.
     database
@@ -1999,7 +2001,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("Re-deleting v2 should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Deleting a version on a non-existent policy must fail with NoSuchEntity.
     let err = database
@@ -2017,7 +2019,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("Deleting from a non-existent policy should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Wrong path on the ARN should also fail with NoSuchEntity.
     let err = database
@@ -2035,7 +2037,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("Deleting via wrong path should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // AWS-owned policy: addressing via "aws" in the ARN must map to account 000000000000.
     database
@@ -2105,7 +2107,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("Re-deleting v2 via aws should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // -- get-policy ----------------------------------------------------------
     let result = database
@@ -2161,7 +2163,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("Get with mismatched path should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // -- get-policy-version -------------------------------------------------
     let result = database
@@ -2200,7 +2202,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("Get nonexistent version should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // -- list-policies ------------------------------------------------------
     let result = database
@@ -2432,7 +2434,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("Set default to nonexistent version should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // -- tag-policy / untag-policy ------------------------------------------
     database
@@ -2528,7 +2530,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("Tag on missing policy should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // -- list-policy-tags ----------------------------------------------------
     // DelVersionPolicy has one tag (Env=Prod) left after the tag/untag section above.
@@ -2648,7 +2650,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("list-policy-tags on a nonexistent policy should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Malformed (but long enough) ARN must surface as ValidationError.
     let err = database
@@ -2664,14 +2666,14 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("list-policy-tags with a bad ARN should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // ARN below the 20-character minimum is rejected at the Smithy builder.
     let err = database
         .run(["ssbs", "--port", &port, "--username", "scratchstack", "list-policy-tags", "--policy-arn", "short-arn"])
         .await
         .expect_err("list-policy-tags with a short ARN should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- delete-policy -------------------------------------------------------
     // Deleting a nonexistent policy must fail with NoSuchEntity.
@@ -2688,7 +2690,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("Deleting a nonexistent policy should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Mismatched path must also fail with NoSuchEntity (DelVersionPolicy lives at /, not at
     // /wrong/).
@@ -2705,7 +2707,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("Deleting via wrong path should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Unparseable ARN surfaces as ValidationError.
     let err = database
@@ -2721,7 +2723,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("Deleting with a non-iam-service ARN should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // A policy with non-default versions remaining cannot be deleted. Use a fresh policy so we
     // don't tangle with the surrounding tests.
@@ -2770,7 +2772,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("Deleting a policy with non-default versions should fail");
-    assert_eq!(err.code(), Some("DeleteConflict"), "Expected DeleteConflict, got: {err}");
+    assert_eq!(err.code(), "DeleteConflict", "Expected DeleteConflict, got: {err}");
 
     // After pruning v2, deleting the policy should succeed and remove the remaining default
     // version via FK cascade.
@@ -2833,7 +2835,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("Re-deleting DelVersionPolicy should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // GetPolicy must agree that it's gone.
     let err = database
@@ -2849,7 +2851,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("Get-policy on deleted DelVersionPolicy should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // AWS-owned policy: deleting via the "aws" alias must hit the 000000000000 row.
     // AwsDelVersionPolicy has only v1 at this point (v2 was deleted above).
@@ -2880,7 +2882,7 @@ async fn test_policies(database: &TempDatabase) {
         ])
         .await
         .expect_err("Re-deleting AwsDelVersionPolicy via numeric account should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 }
 
 async fn test_groups(database: &TempDatabase) {
@@ -2956,7 +2958,7 @@ async fn test_groups(database: &TempDatabase) {
         ])
         .await
         .expect_err("Creating a duplicate group should fail");
-    assert!(err.code().is_some(), "Expected an error code, got: {err}");
+    assert_eq!(err.code(), "EntityAlreadyExists", "Expected EntityAlreadyExists, got: {err}");
 
     // Get the group and verify the output.
     let result = database
@@ -3001,7 +3003,7 @@ async fn test_groups(database: &TempDatabase) {
         ])
         .await
         .expect_err("Getting a nonexistent group should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity error, got: {err}");
 
     // List groups and verify both are present.
     let result = database
@@ -3091,7 +3093,7 @@ async fn test_groups(database: &TempDatabase) {
         ])
         .await
         .expect_err("Old group name should no longer exist after rename");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity error, got: {err}");
 
     // Update a nonexistent group should fail.
     let err = database
@@ -3111,7 +3113,7 @@ async fn test_groups(database: &TempDatabase) {
         ])
         .await
         .expect_err("Updating a nonexistent group should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity error, got: {err}");
 
     // Delete a group.
     database
@@ -3146,9 +3148,10 @@ async fn test_groups(database: &TempDatabase) {
         ])
         .await
         .expect_err("Deleting a non-existent group should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity error, got: {err}");
+    assert!(err.message().is_some());
     assert!(
-        err.message().unwrap_or_default().contains("cannot be found"),
+        err.message().unwrap().contains("cannot be found"),
         "Expected 'cannot be found' in error message, got: {err}"
     );
 
@@ -3267,7 +3270,7 @@ async fn test_groups(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-group-policy with malformed JSON should fail");
-    assert_eq!(err.code(), Some("MalformedPolicyDocument"), "Expected MalformedPolicyDocument, got: {err}");
+    assert_eq!(err.code(), "MalformedPolicyDocument", "Expected MalformedPolicyDocument, got: {err}");
 
     // put-group-policy on a nonexistent group must fail with NoSuchEntity.
     let err = database
@@ -3289,7 +3292,7 @@ async fn test_groups(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-group-policy on a nonexistent group should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Invalid group name must surface as ValidationError before reaching the database.
     let err = database
@@ -3311,7 +3314,7 @@ async fn test_groups(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-group-policy with an invalid group name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- get-group-policy -----------------------------------------------------
     let get_resp = database
@@ -3352,7 +3355,7 @@ async fn test_groups(database: &TempDatabase) {
         ])
         .await
         .expect_err("get-group-policy for a policy that is not attached should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -3371,7 +3374,7 @@ async fn test_groups(database: &TempDatabase) {
         ])
         .await
         .expect_err("get-group-policy on a nonexistent group should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -3390,7 +3393,7 @@ async fn test_groups(database: &TempDatabase) {
         ])
         .await
         .expect_err("get-group-policy with an invalid group name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- list-group-policies --------------------------------------------------
     let list_resp = database
@@ -3449,7 +3452,7 @@ async fn test_groups(database: &TempDatabase) {
         ])
         .await
         .expect_err("list-group-policies on a nonexistent group should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -3466,7 +3469,7 @@ async fn test_groups(database: &TempDatabase) {
         ])
         .await
         .expect_err("list-group-policies with an invalid group name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- delete-group-policy --------------------------------------------------
     database
@@ -3504,7 +3507,7 @@ async fn test_groups(database: &TempDatabase) {
         ])
         .await
         .expect_err("delete-group-policy for a policy that is not attached should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -3523,7 +3526,7 @@ async fn test_groups(database: &TempDatabase) {
         ])
         .await
         .expect_err("delete-group-policy on a nonexistent group should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -3542,7 +3545,7 @@ async fn test_groups(database: &TempDatabase) {
         ])
         .await
         .expect_err("delete-group-policy with an invalid group name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 }
 
 async fn test_group_membership(database: &TempDatabase) {
@@ -3672,7 +3675,7 @@ async fn test_group_membership(database: &TempDatabase) {
         ])
         .await
         .expect_err("Adding user to nonexistent group should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity error, got: {err}");
 
     // Adding a nonexistent user to a group should fail.
     let err = database
@@ -3692,7 +3695,7 @@ async fn test_group_membership(database: &TempDatabase) {
         ])
         .await
         .expect_err("Adding nonexistent user to group should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity error, got: {err}");
 
     // List groups for the user.
     let result = database
@@ -3733,7 +3736,7 @@ async fn test_group_membership(database: &TempDatabase) {
         ])
         .await
         .expect_err("Listing groups for nonexistent user should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity error, got: {err}");
 
     // Remove user from a group.
     database
@@ -3793,7 +3796,7 @@ async fn test_group_membership(database: &TempDatabase) {
         ])
         .await
         .expect_err("Removing non-member from group should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity error, got: {err}");
 
     // Removing user from nonexistent group should fail.
     let err = database
@@ -3813,7 +3816,7 @@ async fn test_group_membership(database: &TempDatabase) {
         ])
         .await
         .expect_err("Removing user from nonexistent group should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity error, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity error, got: {err}");
 }
 
 async fn test_roles(database: &TempDatabase) {
@@ -3909,7 +3912,7 @@ async fn test_roles(database: &TempDatabase) {
     assert_eq!(tags[1].get("Value").unwrap().as_str().unwrap(), "Platform");
 
     // Creating a duplicate role should fail.
-    let err = database
+    database
         .run([
             "ssbs",
             "--port",
@@ -3926,7 +3929,6 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("Creating a duplicate role should fail");
-    assert!(err.code().is_some(), "Expected an error code, got: {err}");
 
     // max-session-duration below the AWS minimum should fail validation.
     let err = database
@@ -3948,7 +3950,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("max-session-duration below 3600 should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- get-role --------------------------------------------------------------
     // Round-trip LambdaExecutor (created above with no PB, no tags).
@@ -4032,7 +4034,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("get-role on a nonexistent role should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // get-role with an invalid role name must surface as ValidationError.
     let err = database
@@ -4050,7 +4052,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("get-role with an invalid role name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- list-roles ------------------------------------------------------------
     // 555566667777 currently has LambdaExecutor (path /) and DeployRole (path /service-roles/).
@@ -4156,7 +4158,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("list-roles with an invalid path prefix should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- list-role-tags --------------------------------------------------------
     // DeployRole in 555566667777 was created above with two tags (Environment/Team).
@@ -4275,7 +4277,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("list-role-tags on a nonexistent role should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Invalid role name must surface ValidationError before reaching the database.
     let err = database
@@ -4293,7 +4295,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("list-role-tags with an invalid role name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- tag-role / untag-role -------------------------------------------------
     // LambdaExecutor in 555566667777 has no tags. Tag it with two tags.
@@ -4464,7 +4466,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("tag-role on a nonexistent role should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Untagging a nonexistent role must fail with NoSuchEntity.
     let err = database
@@ -4484,7 +4486,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("untag-role on a nonexistent role should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Invalid role name must surface ValidationError before reaching the database.
     let err = database
@@ -4504,7 +4506,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("tag-role with an invalid role name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     let err = database
         .run([
@@ -4523,7 +4525,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("untag-role with an invalid role name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- delete-role -----------------------------------------------------------
     // Create a fresh role and delete it. This leaves test_policy_attachments' role landscape
@@ -4578,7 +4580,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("Re-deleting DeleteMeCliRole should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Deleting a role that never existed must also fail with NoSuchEntity.
     let err = database
@@ -4596,7 +4598,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("Deleting a role that never existed should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Delete a role that has an attached managed policy: must fail with DeleteConflict and the
     // role must still exist afterwards. Use DeployRole (created above) and a managed policy
@@ -4653,7 +4655,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("Deleting a role with an attached managed policy should fail");
-    assert_eq!(err.code(), Some("DeleteConflict"), "Expected DeleteConflict, got: {err}");
+    assert_eq!(err.code(), "DeleteConflict", "Expected DeleteConflict, got: {err}");
 
     // Detach and then delete to leave the test database tidy.
     database
@@ -4712,7 +4714,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("delete-role with an invalid role name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- delete-role-permissions-boundary --------------------------------------
     // Create a managed policy and a role that uses it as its permissions boundary.
@@ -4834,7 +4836,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("delete-role-permissions-boundary on a nonexistent role should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Invalid role name must surface as ValidationError before reaching the database.
     let err = database
@@ -4852,7 +4854,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("delete-role-permissions-boundary with an invalid role name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- update-role / update-role-description ---------------------------------
     // LambdaExecutor in 555566667777 currently has the "Team=Platform" tag (from tag-role tests)
@@ -4971,7 +4973,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("update-role on a nonexistent role should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Out-of-range max_session_duration must surface as ValidationError before reaching the
     // database (the Smithy builder rejects the value).
@@ -4992,7 +4994,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("update-role with max_session_duration below 3600 should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // Invalid role name must surface as ValidationError before reaching the database.
     let err = database
@@ -5012,7 +5014,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("update-role with an invalid role name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // update-role-description replaces the description and prints the updated role.
     let result = database
@@ -5079,7 +5081,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("update-role-description on a nonexistent role should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Invalid role name must surface as ValidationError before reaching the database.
     let err = database
@@ -5099,7 +5101,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("update-role-description with an invalid role name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- put-role-permissions-boundary -----------------------------------------
     // Create a managed policy and a fresh role with no boundary, then set the boundary.
@@ -5219,7 +5221,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-role-permissions-boundary on a nonexistent role should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // PB ARN pointing to a nonexistent policy must fail with NoSuchEntity.
     let err = database
@@ -5239,7 +5241,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-role-permissions-boundary with a nonexistent PB policy should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Malformed PB ARN must surface ValidationError.
     let err = database
@@ -5259,7 +5261,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-role-permissions-boundary with an invalid PB ARN should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // Invalid role name must surface as ValidationError before reaching the database.
     let err = database
@@ -5279,7 +5281,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-role-permissions-boundary with an invalid role name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // Clean up: clear PB, delete the role and policy.
     database
@@ -5431,7 +5433,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-role-policy with malformed JSON should fail");
-    assert_eq!(err.code(), Some("MalformedPolicyDocument"), "Expected MalformedPolicyDocument, got: {err}");
+    assert_eq!(err.code(), "MalformedPolicyDocument", "Expected MalformedPolicyDocument, got: {err}");
 
     let err = database
         .run([
@@ -5452,7 +5454,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-role-policy on a nonexistent role should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -5473,7 +5475,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("put-role-policy with an invalid role name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- get-role-policy ------------------------------------------------------
     let get_resp = database
@@ -5514,7 +5516,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("get-role-policy for a policy that is not attached should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -5533,7 +5535,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("get-role-policy on a nonexistent role should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -5552,7 +5554,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("get-role-policy with an invalid role name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- list-role-policies ---------------------------------------------------
     let list_resp = database
@@ -5611,7 +5613,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("list-role-policies on a nonexistent role should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -5628,7 +5630,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("list-role-policies with an invalid role name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // -- delete-role-policy ---------------------------------------------------
     database
@@ -5666,7 +5668,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("delete-role-policy for a policy that is not attached should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -5685,7 +5687,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("delete-role-policy on a nonexistent role should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     let err = database
         .run([
@@ -5704,7 +5706,7 @@ async fn test_roles(database: &TempDatabase) {
         ])
         .await
         .expect_err("delete-role-policy with an invalid role name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 }
 
 async fn test_policy_attachments(database: &TempDatabase) {
@@ -5847,7 +5849,7 @@ async fn test_policy_attachments(database: &TempDatabase) {
         ])
         .await
         .expect_err("Attaching to nonexistent group should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Nonexistent user should fail.
     let err = database
@@ -5867,7 +5869,7 @@ async fn test_policy_attachments(database: &TempDatabase) {
         ])
         .await
         .expect_err("Attaching to nonexistent user should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Detach policy from user.
     let result = database
@@ -5907,7 +5909,7 @@ async fn test_policy_attachments(database: &TempDatabase) {
         ])
         .await
         .expect_err("Second detach-user-policy should fail (not attached)");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Detach policy from group.
     let result = database
@@ -5947,7 +5949,7 @@ async fn test_policy_attachments(database: &TempDatabase) {
         ])
         .await
         .expect_err("Second detach-group-policy should fail (not attached)");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Detaching from a nonexistent role should fail with NoSuchEntity.
     let err = database
@@ -5967,7 +5969,7 @@ async fn test_policy_attachments(database: &TempDatabase) {
         ])
         .await
         .expect_err("Detaching from nonexistent role should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // After the detach tests above, the user and group have no attached policies. Verify with
     // list-attached-user-policies and list-attached-group-policies.
@@ -6048,7 +6050,7 @@ async fn test_policy_attachments(database: &TempDatabase) {
         ])
         .await
         .expect_err("Listing attached policies for nonexistent user should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Re-attach the policy to the group and verify list-attached-group-policies shows it.
     database
@@ -6101,7 +6103,7 @@ async fn test_policy_attachments(database: &TempDatabase) {
         ])
         .await
         .expect_err("Listing attached policies for nonexistent group should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Listing attached policies for a nonexistent role should fail with NoSuchEntity (no
     // create-role CLI command, so this also smoke-tests that list-attached-role-policies is
@@ -6121,7 +6123,7 @@ async fn test_policy_attachments(database: &TempDatabase) {
         ])
         .await
         .expect_err("Listing attached policies for nonexistent role should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // ListEntitiesForPolicy — at this point AttachTestPolicy is attached to both attach-test-user
     // and AttachTestGroup (both re-attached above), so the default response should list both.
@@ -6193,7 +6195,7 @@ async fn test_policy_attachments(database: &TempDatabase) {
         ])
         .await
         .expect_err("Listing entities for nonexistent policy should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 }
 
 async fn test_session_token_encryption_keys(database: &TempDatabase) {
@@ -6276,7 +6278,7 @@ async fn test_session_token_encryption_keys(database: &TempDatabase) {
         ])
         .await
         .expect_err("issue-expires-at before issue-valid-from should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // accept_expires_at < issue_expires_at must fail with ValidationError.
     let err = database
@@ -6296,7 +6298,7 @@ async fn test_session_token_encryption_keys(database: &TempDatabase) {
         ])
         .await
         .expect_err("accept-expires-at before issue-expires-at should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // List with no filters; should include both keys we created above.
     let result = database
@@ -6413,7 +6415,7 @@ async fn test_session_token_encryption_keys(database: &TempDatabase) {
         ])
         .await
         .expect_err("Invalid filter name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // Malformed filter shorthand should surface as ValidationError.
     let err = database
@@ -6429,7 +6431,7 @@ async fn test_session_token_encryption_keys(database: &TempDatabase) {
         ])
         .await
         .expect_err("Malformed filter shorthand should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // get-session-token-encryption-key returns the full record for an existing key.
     let result = database
@@ -6470,7 +6472,7 @@ async fn test_session_token_encryption_keys(database: &TempDatabase) {
         ])
         .await
         .expect_err("Get of nonexistent key should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // get with a malformed id (wrong prefix) surfaces ValidationError.
     let err = database
@@ -6486,7 +6488,7 @@ async fn test_session_token_encryption_keys(database: &TempDatabase) {
         ])
         .await
         .expect_err("Get with bad prefix should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // Update only issue_valid_from on key1; other timestamps must stay at their current values.
     let result = database
@@ -6578,7 +6580,7 @@ async fn test_session_token_encryption_keys(database: &TempDatabase) {
         ])
         .await
         .expect_err("issue-expires-at before existing issue-valid-from should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // Update where the resulting accept_expires_at is before issue_expires_at must fail.
     let err = database
@@ -6596,7 +6598,7 @@ async fn test_session_token_encryption_keys(database: &TempDatabase) {
         ])
         .await
         .expect_err("accept-expires-at before existing issue-expires-at should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // Update of a valid-format-but-nonexistent id surfaces NoSuchEntity.
     let err = database
@@ -6614,7 +6616,7 @@ async fn test_session_token_encryption_keys(database: &TempDatabase) {
         ])
         .await
         .expect_err("Update of nonexistent key should fail");
-    assert_eq!(err.code(), Some("NoSuchEntity"), "Expected NoSuchEntity, got: {err}");
+    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity, got: {err}");
 
     // Update with a malformed id (wrong prefix) surfaces ValidationError.
     let err = database
@@ -6630,7 +6632,7 @@ async fn test_session_token_encryption_keys(database: &TempDatabase) {
         ])
         .await
         .expect_err("Update with bad prefix should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 }
 
 async fn test_assume_role(database: &TempDatabase) {
@@ -6711,7 +6713,7 @@ async fn test_assume_role(database: &TempDatabase) {
         ])
         .await
         .expect_err("assume-role without a current session token encryption key should fail");
-    assert_eq!(err.code(), Some("InternalFailure"), "Expected InternalFailure, got: {err}");
+    assert_eq!(err.code(), "InternalFailure", "Expected InternalFailure, got: {err}");
 
     // Create a session token encryption key that is current.
     database
@@ -6807,7 +6809,7 @@ async fn test_assume_role(database: &TempDatabase) {
         ])
         .await
         .expect_err("assume-role with an invalid role ARN should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // An ARN that is not a role ARN is rejected.
     let err = database
@@ -6825,7 +6827,7 @@ async fn test_assume_role(database: &TempDatabase) {
         ])
         .await
         .expect_err("assume-role with a non-role ARN should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // A nonexistent role surfaces as AccessDenied (matching AWS behavior).
     let err = database
@@ -6843,7 +6845,7 @@ async fn test_assume_role(database: &TempDatabase) {
         ])
         .await
         .expect_err("assume-role on a nonexistent role should fail");
-    assert_eq!(err.code(), Some("AccessDenied"), "Expected AccessDenied, got: {err}");
+    assert_eq!(err.code(), "AccessDenied", "Expected AccessDenied, got: {err}");
 
     // A session name shorter than 2 characters is rejected by request validation.
     let err = database
@@ -6861,7 +6863,7 @@ async fn test_assume_role(database: &TempDatabase) {
         ])
         .await
         .expect_err("assume-role with a too-short session name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // A duration below the 900-second minimum is rejected by request validation.
     let err = database
@@ -6881,7 +6883,7 @@ async fn test_assume_role(database: &TempDatabase) {
         ])
         .await
         .expect_err("assume-role with a too-short duration should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // A malformed inline session policy surfaces as MalformedPolicyDocument.
     let err = database
@@ -6901,7 +6903,7 @@ async fn test_assume_role(database: &TempDatabase) {
         ])
         .await
         .expect_err("assume-role with a malformed inline policy should fail");
-    assert_eq!(err.code(), Some("MalformedPolicyDocument"), "Expected MalformedPolicyDocument, got: {err}");
+    assert_eq!(err.code(), "MalformedPolicyDocument", "Expected MalformedPolicyDocument, got: {err}");
 
     // A nonexistent managed session policy surfaces as NoSuchEntity.
     let err = database
@@ -6921,7 +6923,7 @@ async fn test_assume_role(database: &TempDatabase) {
         ])
         .await
         .expect_err("assume-role with a nonexistent managed session policy should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 
     // Tag keys that differ only in case are rejected.
     let err = database
@@ -6942,7 +6944,7 @@ async fn test_assume_role(database: &TempDatabase) {
         ])
         .await
         .expect_err("assume-role with case-insensitive duplicate tag keys should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 }
 
 #[test]
@@ -6980,7 +6982,7 @@ fn list_stek_filters_top_level_list_rejected() {
           {Name=issue-valid-from-end-time,Values=2030-12-31T23:59:59Z}]"];
     let err = list_session_token_encryption_keys_filters_from_shorthand(&filters)
         .expect_err("top-level list shorthand is not supported");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 }
 
 #[test]
@@ -7002,7 +7004,7 @@ fn list_stek_filters_malformed_shorthand() {
     let filters = ["not-a-shorthand-keyval"];
     let err = list_session_token_encryption_keys_filters_from_shorthand(&filters)
         .expect_err("malformed shorthand should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 }
 
 #[test]
@@ -7010,7 +7012,7 @@ fn list_stek_filters_invalid_filter_name() {
     let filters = ["Name=not-a-real-filter,Values=2030-01-01T00:00:00Z"];
     let err = list_session_token_encryption_keys_filters_from_shorthand(&filters)
         .expect_err("invalid filter name should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 }
 
 #[test]
@@ -7018,7 +7020,7 @@ fn list_stek_filters_missing_name() {
     let filters = ["Values=2030-01-01T00:00:00Z"];
     let err = list_session_token_encryption_keys_filters_from_shorthand(&filters)
         .expect_err("missing Name field should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 }
 
 #[test]
@@ -7026,7 +7028,7 @@ fn list_stek_filters_unknown_field() {
     let filters = ["Name=issue-valid-from-start-time,Values=2030-01-01T00:00:00Z,Bogus=foo"];
     let err =
         list_session_token_encryption_keys_filters_from_shorthand(&filters).expect_err("unknown field should fail");
-    assert_eq!(err.code(), Some("ValidationError"), "Expected ValidationError, got: {err}");
+    assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
 }
 
 /// Convert a Vec<String-like> to a Vec<OsString>.

@@ -1,6 +1,7 @@
 //! Rust code generation library for Smithy shape models.
 use {
     derive_builder::Builder,
+    http::StatusCode,
     std::io::{Result as IoResult, Write},
 };
 
@@ -98,6 +99,87 @@ pub trait ShapeInfo {
     #[allow(unused_variables)] // Makes code completion show `w` instead of `_w`.
     fn generate<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
         Ok(())
+    }
+}
+
+/// Utility for converting a status code to an `http::StatusCode` constant string.
+pub(crate) fn status_code_from_u16(code: u16) -> &'static str {
+    let code = StatusCode::from_u16(code).expect("Invalid HTTP status code");
+
+    match code {
+        StatusCode::CONTINUE => "::scratchstack_core::http::StatusCode::CONTINUE",
+        StatusCode::SWITCHING_PROTOCOLS => "::scratchstack_core::http::StatusCode::SWITCHING_PROTOCOLS",
+        StatusCode::PROCESSING => "::scratchstack_core::http::StatusCode::PROCESSING",
+        StatusCode::EARLY_HINTS => "::scratchstack_core::http::StatusCode::EARLY_HINTS",
+        StatusCode::OK => "::scratchstack_core::http::StatusCode::OK",
+        StatusCode::CREATED => "::scratchstack_core::http::StatusCode::CREATED",
+        StatusCode::ACCEPTED => "::scratchstack_core::http::StatusCode::ACCEPTED",
+        StatusCode::NON_AUTHORITATIVE_INFORMATION => {
+            "::scratchstack_core::http::StatusCode::NON_AUTHORITATIVE_INFORMATION"
+        }
+        StatusCode::NO_CONTENT => "::scratchstack_core::http::StatusCode::NO_CONTENT",
+        StatusCode::RESET_CONTENT => "::scratchstack_core::http::StatusCode::RESET_CONTENT",
+        StatusCode::PARTIAL_CONTENT => "::scratchstack_core::http::StatusCode::PARTIAL_CONTENT",
+        StatusCode::MULTI_STATUS => "::scratchstack_core::http::StatusCode::MULTI_STATUS",
+        StatusCode::ALREADY_REPORTED => "::scratchstack_core::http::StatusCode::ALREADY_REPORTED",
+        StatusCode::IM_USED => "::scratchstack_core::http::StatusCode::IM_USED",
+        StatusCode::MULTIPLE_CHOICES => "::scratchstack_core::http::StatusCode::MULTIPLE_CHOICES",
+        StatusCode::MOVED_PERMANENTLY => "::scratchstack_core::http::StatusCode::MOVED_PERMANENTLY",
+        StatusCode::FOUND => "::scratchstack_core::http::StatusCode::FOUND",
+        StatusCode::SEE_OTHER => "::scratchstack_core::http::StatusCode::SEE_OTHER",
+        StatusCode::NOT_MODIFIED => "::scratchstack_core::http::StatusCode::NOT_MODIFIED",
+        StatusCode::USE_PROXY => "::scratchstack_core::http::StatusCode::USE_PROXY",
+        StatusCode::TEMPORARY_REDIRECT => "::scratchstack_core::http::StatusCode::TEMPORARY_REDIRECT",
+        StatusCode::PERMANENT_REDIRECT => "::scratchstack_core::http::StatusCode::PERMANENT_REDIRECT",
+        StatusCode::BAD_REQUEST => "::scratchstack_core::http::StatusCode::BAD_REQUEST",
+        StatusCode::UNAUTHORIZED => "::scratchstack_core::http::StatusCode::UNAUTHORIZED",
+        StatusCode::PAYMENT_REQUIRED => "::scratchstack_core::http::StatusCode::PAYMENT_REQUIRED",
+        StatusCode::FORBIDDEN => "::scratchstack_core::http::StatusCode::FORBIDDEN",
+        StatusCode::NOT_FOUND => "::scratchstack_core::http::StatusCode::NOT_FOUND",
+        StatusCode::METHOD_NOT_ALLOWED => "::scratchstack_core::http::StatusCode::METHOD_NOT_ALLOWED",
+        StatusCode::NOT_ACCEPTABLE => "::scratchstack_core::http::StatusCode::NOT_ACCEPTABLE",
+        StatusCode::PROXY_AUTHENTICATION_REQUIRED => {
+            "::scratchstack_core::http::StatusCode::PROXY_AUTHENTICATION_REQUIRED"
+        }
+        StatusCode::REQUEST_TIMEOUT => "::scratchstack_core::http::StatusCode::REQUEST_TIMEOUT",
+        StatusCode::CONFLICT => "::scratchstack_core::http::StatusCode::CONFLICT",
+        StatusCode::GONE => "::scratchstack_core::http::StatusCode::GONE",
+        StatusCode::LENGTH_REQUIRED => "::scratchstack_core::http::StatusCode::LENGTH_REQUIRED",
+        StatusCode::PRECONDITION_FAILED => "::scratchstack_core::http::StatusCode::PRECONDITION_FAILED",
+        StatusCode::PAYLOAD_TOO_LARGE => "::scratchstack_core::http::StatusCode::PAYLOAD_TOO_LARGE",
+        StatusCode::URI_TOO_LONG => "::scratchstack_core::http::StatusCode::URI_TOO_LONG",
+        StatusCode::UNSUPPORTED_MEDIA_TYPE => "::scratchstack_core::http::StatusCode::UNSUPPORTED_MEDIA_TYPE",
+        StatusCode::RANGE_NOT_SATISFIABLE => "::scratchstack_core::http::StatusCode::RANGE_NOT_SATISFIABLE",
+        StatusCode::EXPECTATION_FAILED => "::scratchstack_core::http::StatusCode::EXPECTATION_FAILED",
+        StatusCode::IM_A_TEAPOT => "::scratchstack_core::http::StatusCode::IM_A_TEAPOT",
+        StatusCode::MISDIRECTED_REQUEST => "::scratchstack_core::http::StatusCode::MISDIRECTED_REQUEST",
+        StatusCode::UNPROCESSABLE_ENTITY => "::scratchstack_core::http::StatusCode::UNPROCESSABLE_ENTITY",
+        StatusCode::LOCKED => "::scratchstack_core::http::StatusCode::LOCKED",
+        StatusCode::FAILED_DEPENDENCY => "::scratchstack_core::http::StatusCode::FAILED_DEPENDENCY",
+        StatusCode::TOO_EARLY => "::scratchstack_core::http::StatusCode::TOO_EARLY",
+        StatusCode::UPGRADE_REQUIRED => "::scratchstack_core::http::StatusCode::UPGRADE_REQUIRED",
+        StatusCode::PRECONDITION_REQUIRED => "::scratchstack_core::http::StatusCode::PRECONDITION_REQUIRED",
+        StatusCode::TOO_MANY_REQUESTS => "::scratchstack_core::http::StatusCode::TOO_MANY_REQUESTS",
+        StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE => {
+            "::scratchstack_core::http::StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE"
+        }
+        StatusCode::UNAVAILABLE_FOR_LEGAL_REASONS => {
+            "::scratchstack_core::http::StatusCode::UNAVAILABLE_FOR_LEGAL_REASONS"
+        }
+        StatusCode::INTERNAL_SERVER_ERROR => "::scratchstack_core::http::StatusCode::INTERNAL_SERVER_ERROR",
+        StatusCode::NOT_IMPLEMENTED => "::scratchstack_core::http::StatusCode::NOT_IMPLEMENTED",
+        StatusCode::BAD_GATEWAY => "::scratchstack_core::http::StatusCode::BAD_GATEWAY",
+        StatusCode::SERVICE_UNAVAILABLE => "::scratchstack_core::http::StatusCode::SERVICE_UNAVAILABLE",
+        StatusCode::GATEWAY_TIMEOUT => "::scratchstack_core::http::StatusCode::GATEWAY_TIMEOUT",
+        StatusCode::HTTP_VERSION_NOT_SUPPORTED => "::scratchstack_core::http::StatusCode::HTTP_VERSION_NOT_SUPPORTED",
+        StatusCode::VARIANT_ALSO_NEGOTIATES => "::scratchstack_core::http::StatusCode::VARIANT_ALSO_NEGOTIATES",
+        StatusCode::INSUFFICIENT_STORAGE => "::scratchstack_core::http::StatusCode::INSUFFICIENT_STORAGE",
+        StatusCode::LOOP_DETECTED => "::scratchstack_core::http::StatusCode::LOOP_DETECTED",
+        StatusCode::NOT_EXTENDED => "::scratchstack_core::http::StatusCode::NOT_EXTENDED",
+        StatusCode::NETWORK_AUTHENTICATION_REQUIRED => {
+            "::scratchstack_core::http::StatusCode::NETWORK_AUTHENTICATION_REQUIRED"
+        }
+        _ => panic!("Unsupported HTTP status code: {code}"),
     }
 }
 

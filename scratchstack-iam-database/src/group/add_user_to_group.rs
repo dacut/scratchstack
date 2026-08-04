@@ -5,6 +5,7 @@ use {
         user::validate_user_name,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError, operation::AddUserToGroupInternalRequest, types::error::NoSuchEntityException,
     },
@@ -54,7 +55,7 @@ pub async fn add_user_to_group(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up group in database: {e}");
+            error!("Failed to look up group in database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -78,7 +79,7 @@ pub async fn add_user_to_group(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up user in database: {e}");
+            error!("Failed to look up user in database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -94,7 +95,7 @@ pub async fn add_user_to_group(
     .execute(tx.as_mut())
     .await
     {
-        log::error!("Failed to add user to group in database: {e}");
+        error!("Failed to add user to group in database: {e}");
         return Err(internal_failure().into());
     }
 

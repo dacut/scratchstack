@@ -1,7 +1,8 @@
 //! Scratchstack bootsrap partition subcommands
 use {
-    crate::{Cli, Runnable, execute_in_transaction},
+    crate::{Cli, Runnable, execute_in_transaction, internal_failure},
     clap::Parser,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
@@ -44,7 +45,10 @@ impl Runnable for SetCurrentPartitionCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let request = SetCurrentPartitionRequest::builder().partition(self.partition.clone()).build()?;
+        let request = SetCurrentPartitionRequest::builder().partition(self.partition.clone()).build().map_err(|e| {
+            error!("Failed to build SetCurrentPartitionRequest: {e}");
+            internal_failure()
+        })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }

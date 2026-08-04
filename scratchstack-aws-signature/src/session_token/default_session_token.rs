@@ -1,8 +1,12 @@
 //! Default session token extractor implementation.
 use {
-    crate::{ExtractSessionToken, SessionTokenData, SignatureError, constants::*},
+    crate::{
+        ExtractSessionToken, InternalFailureError, InvalidClientTokenIdError, SessionTokenData, SignatureError,
+        constants::*, invalid_session_token_error,
+    },
     aes_gcm::{AeadCore, AeadInOut as _, Aes256Gcm, KeyInit as _, KeySizeUser, Nonce, aead::common::Generate as _},
     base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
+    log::error,
     std::{
         collections::HashMap,
         future::Future,
@@ -136,30 +140,18 @@ where
                 key_info.session_token_encryption_key_id,
                 key_info.encryption_algorithm,
             );
-            Err(SignatureError::InternalServiceError(
-                format!(
-                    "Unsupported encryption algorithm for session token encryption key {}: {:?}",
-                    key_info.session_token_encryption_key_id, key_info.encryption_algorithm
-                )
-                .into(),
-            ))?;
+            return Err(InternalFailureError::builder().message(ERR_MSG_INTERNAL_SERVICE_ERROR).build().into());
         }
 
         let nonce = Nonce::try_from(nonce.as_slice())
-            .map_err(|_| SignatureError::InvalidSessionToken(ERR_MSG_INVALID_SESSION_TOKEN.to_string()))?;
+            .map_err(|_| InvalidClientTokenIdError::builder().message(ERR_MSG_INVALID_SESSION_TOKEN).build())?;
         let associated_data = format!("AccountId={account_id}");
         let cipher = Aes256Gcm::new_from_slice(key_info.encryption_key.as_slice()).map_err(|e| {
             log::error!(
                 "Failed to create cipher for session token decryption with key {}: {e}",
                 key_info.session_token_encryption_key_id,
             );
-            SignatureError::InternalServiceError(
-                format!(
-                    "Failed to create cipher for session token decryption with key {}: {e}",
-                    key_info.session_token_encryption_key_id
-                )
-                .into(),
-            )
+            InternalFailureError::builder().message(ERR_MSG_INTERNAL_SERVICE_ERROR).build()
         })?;
 
         cipher
@@ -205,6 +197,17 @@ impl EncryptedSessionTokenData {
         session_token_data: &SessionTokenData,
         key_info: &SessionTokenEncryptionKeyInfo,
         account_id: &str,
+        request_id: Option<&str>,
+    ) -> Result<Self, SignatureError> {
+        let request_id = request_id.map(|s| s.into());
+        Self::encrypt_inner(session_token_data, key_info, account_id, request_id)
+    }
+
+    fn encrypt_inner(
+        session_token_data: &SessionTokenData,
+        key_info: &SessionTokenEncryptionKeyInfo,
+        account_id: &str,
+        request_id: Option<String>,
     ) -> Result<Self, SignatureError> {
         if key_info.encryption_algorithm != SessionTokenEncryptionAlgorithm::Aes256Gcm {
             log::error!(
@@ -212,49 +215,50 @@ impl EncryptedSessionTokenData {
                 key_info.session_token_encryption_key_id,
                 key_info.encryption_algorithm,
             );
-            return Err(SignatureError::InternalServiceError(
-                format!(
-                    "Unsupported encryption algorithm for session token encryption key {}: {:?}",
-                    key_info.session_token_encryption_key_id, key_info.encryption_algorithm
-                )
-                .into(),
-            ));
+            return Err(InternalFailureError::builder()
+                .message(ERR_MSG_INTERNAL_SERVICE_ERROR)
+                .maybe_request_id(request_id)
+                .build()
+                .into());
         }
 
         if account_id.len() != ACCOUNT_ID_LENGTH || !account_id.bytes().all(|b| b.is_ascii_digit()) {
-            return Err(SignatureError::InternalServiceError(
-                format!("Invalid account ID for session token: {account_id}").into(),
-            ));
+            error!("Invalid account ID for session token: {account_id}");
+            return Err(InternalFailureError::builder()
+                .message(ERR_MSG_INTERNAL_SERVICE_ERROR)
+                .maybe_request_id(request_id)
+                .build()
+                .into());
         }
 
-        let cipher = Aes256Gcm::new_from_slice(key_info.encryption_key.as_slice()).map_err(|e| {
-            log::error!(
-                "Failed to create cipher for session token encryption with key {}: {e}",
-                key_info.session_token_encryption_key_id,
-            );
-            SignatureError::InternalServiceError(
-                format!(
+        let cipher = match Aes256Gcm::new_from_slice(key_info.encryption_key.as_slice()) {
+            Ok(cipher) => cipher,
+            Err(e) => {
+                log::error!(
                     "Failed to create cipher for session token encryption with key {}: {e}",
-                    key_info.session_token_encryption_key_id
-                )
-                .into(),
-            )
-        })?;
+                    key_info.session_token_encryption_key_id,
+                );
+                return Err(InternalFailureError::builder().maybe_request_id(request_id).build().into());
+            }
+        };
 
         // Before encryption, this buffer holds the plaintext token data -- including the raw
         // secret key -- so it must be zeroized on every exit path. On success, the plaintext is
         // overwritten in place by the ciphertext.
-        let mut payload = Zeroizing::new(postcard::to_allocvec(session_token_data).map_err(|e| {
-            log::error!("Failed to serialize session token data: {e}");
-            SignatureError::InternalServiceError(format!("Failed to serialize session token data: {e}").into())
-        })?);
+        let mut payload = Zeroizing::new(match postcard::to_allocvec(session_token_data) {
+            Ok(payload) => payload,
+            Err(e) => {
+                log::error!("Failed to serialize session token data: {e}");
+                return Err(InternalFailureError::builder().maybe_request_id(request_id).build().into());
+            }
+        });
 
         let nonce = Nonce::<NonceSize>::generate_from_rng(&mut rand::rng());
         let associated_data = format!("AccountId={account_id}");
 
         cipher.encrypt_in_place(&nonce, associated_data.as_bytes(), &mut *payload).map_err(|e| {
             log::error!("Failed to encrypt session token data: {e}");
-            SignatureError::InternalServiceError(format!("Failed to encrypt session token data: {e}").into())
+            InternalFailureError::builder().maybe_request_id(request_id).build()
         })?;
 
         Ok(Self {
@@ -343,12 +347,13 @@ impl EncryptedSessionTokenData {
     /// Serialize this encrypted session token data into an opaque session token string.
     pub fn to_session_token(&self) -> Result<String, SignatureError> {
         let key_id_length = u8::try_from(self.key_id.len()).map_err(|_| {
-            SignatureError::InternalServiceError(
-                format!("Session token encryption key id is too long: {}", self.key_id).into(),
-            )
+            error!("Session token encryption key id is too long: {}", self.key_id);
+            InternalFailureError::builder().message(ERR_MSG_INTERNAL_SERVICE_ERROR).build()
         })?;
-        let encrypted_payload_length = u32::try_from(self.encrypted_payload.len())
-            .map_err(|_| SignatureError::InternalServiceError("Encrypted session token payload is too long".into()))?;
+        let encrypted_payload_length = u32::try_from(self.encrypted_payload.len()).map_err(|_| {
+            error!("Encrypted session token payload is too long");
+            InternalFailureError::builder().message(ERR_MSG_INTERNAL_SERVICE_ERROR).build()
+        })?;
 
         let mut body = Vec::with_capacity(
             1 + self.key_id.len() + ACCOUNT_ID_LENGTH + self.nonce.len() + 4 + self.encrypted_payload.len(),
@@ -362,7 +367,8 @@ impl EncryptedSessionTokenData {
 
         let session_token = format!("{}{}", CURRENT_TOKEN_VERSION as char, URL_SAFE_NO_PAD.encode(body));
         if session_token.len() > MAX_SESSION_TOKEN_SIZE {
-            return Err(SignatureError::InternalServiceError("Session token is too long".into()));
+            error!("Encrypted session token payload is too long");
+            return Err(InternalFailureError::builder().message(ERR_MSG_INTERNAL_SERVICE_ERROR).build().into());
         }
 
         Ok(session_token)
@@ -403,15 +409,13 @@ impl Service<String> for StaticKeyService {
         let key = self.0.get(&key_id).cloned();
         Box::pin(async move {
             key.ok_or_else(|| {
-                SignatureError::InvalidSessionToken(format!("KeyId {key_id} not found in StaticKeyService"))
+                InvalidClientTokenIdError::builder()
+                    .message(format!("KeyId {key_id} not found in StaticKeyService"))
+                    .build()
+                    .into()
             })
         })
     }
-}
-
-/// Helper function to create a `SignatureError::InvalidSessionToken` error with a default message.
-fn invalid_session_token_error() -> SignatureError {
-    SignatureError::InvalidSessionToken("Invalid session token".to_string())
 }
 
 // Compile-time checks that `DefaultSessionTokenExtractor` satisfies the bounds the rest of the
@@ -449,6 +453,7 @@ mod tests {
         chrono::{DateTime, Duration},
         scratchstack_aspen::Policy as AspenPolicy,
         scratchstack_aws_principal::{AssumedRole, SessionData, SessionValue},
+        scratchstack_core::error::ProvideErrorMetadata as _,
         std::{
             collections::{HashMap, HashSet},
             str::FromStr as _,
@@ -464,7 +469,9 @@ mod tests {
     /// Asserts that `result` is an `InvalidSessionToken` error carrying `expected_message`.
     fn assert_invalid_session_token<T>(result: Result<T, SignatureError>, expected_message: &str) {
         match result {
-            Err(SignatureError::InvalidSessionToken(message)) => assert_eq!(message, expected_message),
+            Err(SignatureError::InvalidClientTokenId(err)) => {
+                assert_eq!(err.message().as_deref(), Some(expected_message))
+            }
             _ => panic!("expected Err(SignatureError::InvalidSessionToken), got Ok()"),
         }
     }
@@ -593,7 +600,10 @@ mod tests {
         let token = encode_token(&build_token_body(TEST_KEY_ID, TEST_ACCOUNT_ID, &payload));
         let mut extractor = DefaultSessionTokenExtractor::new(test_key_service());
 
-        assert_invalid_session_token(extractor.ready().await.unwrap().call(token).await, "Invalid session token");
+        assert_invalid_session_token(
+            extractor.ready().await.unwrap().call(token).await,
+            "The security token included in the request is invalid",
+        );
     }
 
     #[tokio::test]
@@ -605,7 +615,10 @@ mod tests {
         let token = encode_token(&build_token_body(TEST_KEY_ID, "999999999999", &payload));
         let mut extractor = DefaultSessionTokenExtractor::new(test_key_service());
 
-        assert_invalid_session_token(extractor.ready().await.unwrap().call(token).await, "Invalid session token");
+        assert_invalid_session_token(
+            extractor.ready().await.unwrap().call(token).await,
+            "The security token included in the request is invalid",
+        );
     }
 
     #[tokio::test]
@@ -614,7 +627,10 @@ mod tests {
         let token = encode_token(&build_token_body(TEST_KEY_ID, TEST_ACCOUNT_ID, &payload));
         let mut extractor = DefaultSessionTokenExtractor::new(test_key_service());
 
-        assert_invalid_session_token(extractor.ready().await.unwrap().call(token).await, "Invalid session token");
+        assert_invalid_session_token(
+            extractor.ready().await.unwrap().call(token).await,
+            "The security token included in the request is invalid",
+        );
     }
 
     #[tokio::test]
@@ -625,7 +641,10 @@ mod tests {
         let token = encode_token(&build_token_body(TEST_KEY_ID, TEST_ACCOUNT_ID, &payload));
         let mut extractor = DefaultSessionTokenExtractor::new(test_key_service());
 
-        assert_invalid_session_token(extractor.ready().await.unwrap().call(token).await, "Invalid session token");
+        assert_invalid_session_token(
+            extractor.ready().await.unwrap().call(token).await,
+            "The security token included in the request is invalid",
+        );
     }
 
     #[test_log::test]
@@ -651,7 +670,10 @@ mod tests {
 
     #[test_log::test]
     fn test_from_session_token_empty() {
-        assert_invalid_session_token(EncryptedSessionTokenData::from_session_token(b""), "Invalid session token");
+        assert_invalid_session_token(
+            EncryptedSessionTokenData::from_session_token(b""),
+            "The security token included in the request is invalid",
+        );
     }
 
     #[test_log::test]
@@ -663,7 +685,7 @@ mod tests {
 
         assert_invalid_session_token(
             EncryptedSessionTokenData::from_session_token(token.as_bytes()),
-            "Invalid session token",
+            "The security token included in the request is invalid",
         );
     }
 
@@ -671,7 +693,7 @@ mod tests {
     fn test_from_session_token_invalid_base64() {
         assert_invalid_session_token(
             EncryptedSessionTokenData::from_session_token(b"0!not-base64!"),
-            "Invalid session token",
+            "The security token included in the request is invalid",
         );
     }
 
@@ -687,7 +709,7 @@ mod tests {
         for length in 0..body.len() {
             assert_invalid_session_token(
                 EncryptedSessionTokenData::from_session_token(encode_token(&body[..length]).as_bytes()),
-                "Invalid session token",
+                "The security token included in the request is invalid",
             );
         }
     }
@@ -702,7 +724,7 @@ mod tests {
 
         assert_invalid_session_token(
             EncryptedSessionTokenData::from_session_token(encode_token(&body).as_bytes()),
-            "Invalid session token",
+            "The security token included in the request is invalid",
         );
     }
 
@@ -714,7 +736,7 @@ mod tests {
 
         assert_invalid_session_token(
             EncryptedSessionTokenData::from_session_token(encode_token(&body).as_bytes()),
-            "Invalid session token",
+            "The security token included in the request is invalid",
         );
     }
 
@@ -737,7 +759,7 @@ mod tests {
             encryption_key: Zeroizing::new(TEST_KEY.to_vec()),
         };
 
-        let encrypted = EncryptedSessionTokenData::encrypt(&data, &key_info, TEST_ACCOUNT_ID).unwrap();
+        let encrypted = EncryptedSessionTokenData::encrypt(&data, &key_info, TEST_ACCOUNT_ID, None).unwrap();
         let session_token = encrypted.to_session_token().unwrap();
 
         let mut extractor = DefaultSessionTokenExtractor::new(test_key_service());
@@ -766,8 +788,8 @@ mod tests {
         // Non-numeric and wrong-length account IDs are rejected.
         for account_id in ["12345678901a", "123456789012345"] {
             assert!(matches!(
-                EncryptedSessionTokenData::encrypt(&data, &key_info, account_id),
-                Err(SignatureError::InternalServiceError(_))
+                EncryptedSessionTokenData::encrypt(&data, &key_info, account_id, None),
+                Err(SignatureError::InternalFailure(_))
             ));
         }
 
@@ -778,8 +800,8 @@ mod tests {
             encryption_key: Zeroizing::new(vec![0x42; 16]),
         };
         assert!(matches!(
-            EncryptedSessionTokenData::encrypt(&data, &short_key_info, TEST_ACCOUNT_ID),
-            Err(SignatureError::InternalServiceError(_))
+            EncryptedSessionTokenData::encrypt(&data, &short_key_info, TEST_ACCOUNT_ID, None),
+            Err(SignatureError::InternalFailure(_))
         ));
     }
 

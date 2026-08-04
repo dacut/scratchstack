@@ -11,6 +11,7 @@ use {
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
+    log::error,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
     scratchstack_shapes_iam::{
@@ -59,7 +60,7 @@ pub async fn get_role(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to fetch role from database: {e}");
+        error!("Failed to fetch role from database: {e}");
         internal_failure()
     })?;
 
@@ -83,7 +84,7 @@ pub async fn get_role(
         .resource(role_arn_resource(&path, &role_name_cased))
         .build()
         .map_err(|e| {
-            log::error!("Failed to construct ARN for role: {e}");
+            error!("Failed to construct ARN for role: {e}");
             internal_failure()
         })?;
 
@@ -97,12 +98,12 @@ pub async fn get_role(
         .fetch_optional(tx.as_mut())
         .await
         .map_err(|e| {
-            log::error!("Failed to fetch permissions boundary managed policy from database: {e}");
+            error!("Failed to fetch permissions boundary managed policy from database: {e}");
             internal_failure()
         })?;
 
         let pb_row = pb_row.ok_or_else(|| {
-            log::error!("Role references missing permissions boundary managed policy ID: {pb_id}");
+            error!("Role references missing permissions boundary managed policy ID: {pb_id}");
             internal_failure()
         })?;
 
@@ -112,11 +113,11 @@ pub async fn get_role(
 
         Some(
             AttachedPermissionsBoundary::builder()
-                .permissions_boundary_arn(Some(pb_arn.to_string()))
-                .permissions_boundary_type(Some(PermissionsBoundaryAttachmentType::Policy))
+                .permissions_boundary_arn(pb_arn)
+                .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                 .build()
                 .map_err(|e| {
-                    log::error!("Failed to construct permissions boundary for role: {e}");
+                    error!("Failed to build attached permissions boundary: {e}");
                     internal_failure()
                 })?,
         )
@@ -134,7 +135,7 @@ pub async fn get_role(
     .fetch_all(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to fetch role tags from database: {e}");
+        error!("Failed to fetch role tags from database: {e}");
         internal_failure()
     })?;
 
@@ -143,30 +144,30 @@ pub async fn get_role(
         let key: String = tag_row.get(0);
         let value: String = tag_row.get(1);
         tags.push(Tag::builder().key(key).value(value).build().map_err(|e| {
-            log::error!("Failed to construct tag object: {e}");
+            error!("Failed to construct Tag: {e}");
             internal_failure()
         })?);
     }
 
     let role = Role::builder()
-        .arn(arn.to_string())
-        .assume_role_policy_document(Some(assume_role_policy_document))
+        .arn(arn)
+        .assume_role_policy_document(assume_role_policy_document)
         .create_date(created_at)
-        .description(description)
-        .max_session_duration(max_session_duration)
+        .set_description(description)
+        .set_max_session_duration(max_session_duration)
         .path(path)
-        .permissions_boundary(permissions_boundary)
+        .set_permissions_boundary(permissions_boundary)
         .role_id(format!("{}{}", IamResourceType::Role.as_str(), role_id))
         .role_name(role_name_cased)
-        .tags(tags)
+        .set_tags(tags)
         .build()
         .map_err(|e| {
-            log::error!("Failed to construct role object: {e}");
+            error!("Failed to build Role: {e}");
             internal_failure()
         })?;
 
-    GetRoleResponse::builder().role(role).build().map_err(|e| {
-        log::error!("Failed to construct get role response object: {e}");
-        internal_failure().into()
-    })
+    Ok(GetRoleResponse::builder().role(role).build().map_err(|e| {
+        error!("Failed to construct GetRoleResponse: {e}");
+        internal_failure()
+    })?)
 }

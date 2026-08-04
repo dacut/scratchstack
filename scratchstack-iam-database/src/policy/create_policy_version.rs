@@ -2,6 +2,7 @@
 use {
     crate::{RequestExecutor, constants::*, internal_failure},
     indoc::indoc,
+    log::{error, info},
     scratchstack_arn::IamResourceArn,
     scratchstack_aspen::Policy as AspenPolicy,
     scratchstack_shapes_iam::{
@@ -44,7 +45,7 @@ pub async fn create_policy_version(
     let arn = match IamResourceArn::from_str(policy_arn) {
         Ok(arn) => arn,
         Err(e) => {
-            log::info!("Failed to parse policy ARN: {e}");
+            info!("Failed to parse policy ARN: {e}");
             return Err(ValidationError::builder().message("Invalid policy ARN".to_string()).build().into());
         }
     };
@@ -86,7 +87,7 @@ pub async fn create_policy_version(
             return Err(NoSuchEntityException::builder().message(message).build().into());
         }
         Err(e) => {
-            log::error!("Failed to query managed policy from database: {e}");
+            error!("Failed to query managed policy from database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -116,13 +117,13 @@ pub async fn create_policy_version(
     {
         Ok(row) => row,
         Err(e) => {
-            log::error!("Failed to insert managed policy version into database: {e}");
+            error!("Failed to insert managed policy version into database: {e}");
             return Err(internal_failure().into());
         }
     };
 
     let created_at: chrono::DateTime<chrono::Utc> = version_row.try_get(0).map_err(|e| {
-        log::error!("Failed to get created_at from database row: {e}");
+        error!("Failed to get created_at from database row: {e}");
         internal_failure()
     })?;
 
@@ -148,23 +149,24 @@ pub async fn create_policy_version(
     };
 
     if let Err(e) = update_query.execute(tx.as_mut()).await {
-        log::error!("Failed to update managed policy latest_version: {e}");
+        error!("Failed to update managed policy latest_version: {e}");
         return Err(internal_failure().into());
     }
 
     let version_id = format!("v{new_version}");
     let policy_version = PolicyVersion::builder()
-        .create_date(Some(created_at))
-        .document(Some(policy_document.to_string()))
-        .is_default_version(Some(set_as_default))
-        .version_id(Some(version_id))
+        .create_date(created_at)
+        .document(policy_document)
+        .is_default_version(set_as_default)
+        .version_id(version_id)
         .build()
         .map_err(|e| {
-            log::error!("Failed to construct PolicyVersion object: {e}");
+            error!("Failed to build PolicyVersion: {e}");
             internal_failure()
         })?;
 
-    Ok(CreatePolicyVersionResponse {
-        policy_version: Some(policy_version),
-    })
+    Ok(CreatePolicyVersionResponse::builder().policy_version(policy_version).build().map_err(|e| {
+        error!("Failed to build CreatePolicyVersionResponse: {e}");
+        internal_failure()
+    })?)
 }

@@ -42,7 +42,7 @@ scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features 
     "unstable",
 ] }
 scratchstack-cli-utils.path = "../scratchstack-cli-utils"
-scratchstack-errors.path = "../scratchstack-errors"
+scratchstack-core.path = "../scratchstack-core"
 scratchstack-hakari = { path = "../scratchstack-hakari" }
 scratchstack-pagination.path = "../scratchstack-pagination"
 scratchstack-shapes-iam.path = "../scratchstack-shapes-iam"

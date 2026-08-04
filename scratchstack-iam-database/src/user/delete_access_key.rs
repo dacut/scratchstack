@@ -8,6 +8,7 @@ use {
         user::{validate_access_key_id, validate_user_name},
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError, operation::DeleteAccessKeyInternalRequest, types::error::NoSuchEntityException,
     },
@@ -52,7 +53,7 @@ pub async fn delete_access_key(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to look up access key in database: {e}");
+        error!("Failed to look up access key in database: {e}");
         internal_failure()
     })?;
 
@@ -86,7 +87,7 @@ pub async fn delete_access_key(
         .execute(tx.as_mut())
         .await
         .map_err(|e| {
-            log::error!("Failed to delete access key from database: {e}");
+            error!("Failed to delete access key from database: {e}");
             internal_failure()
         })?;
 

@@ -1,7 +1,8 @@
 //! Scratchstack bootstrap policy subcommands
 use {
-    crate::{Cli, Runnable, execute_in_transaction, tag::tags_from_shorthand},
+    crate::{Cli, Runnable, execute_in_transaction, internal_failure, tag::tags_from_shorthand},
     clap::Parser,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
@@ -251,10 +252,14 @@ impl Runnable for CreatePolicyInternalCommand {
             .account_id(self.account_id.clone())
             .policy_name(self.policy_name.clone())
             .policy_document(self.policy_document.clone())
-            .description(self.description.clone())
-            .path(Some(self.path.clone()))
-            .tags(tags)
-            .build()?;
+            .set_description(self.description.clone())
+            .path(self.path.clone())
+            .set_tags(tags)
+            .build()
+            .map_err(|e| {
+                error!("Failed to build CreatePolicyInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -267,13 +272,15 @@ impl Runnable for CreatePolicyVersionCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let mut request_builder = CreatePolicyVersionRequest::builder()
+        let request = CreatePolicyVersionRequest::builder()
             .policy_arn(self.policy_arn.clone())
-            .policy_document(self.policy_document.clone());
-        if self.set_as_default {
-            request_builder = request_builder.set_as_default(Some(true));
-        }
-        let request = request_builder.build()?;
+            .policy_document(self.policy_document.clone())
+            .set_as_default(self.set_as_default)
+            .build()
+            .map_err(|e| {
+                error!("Failed to build CreatePolicyVersionRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -286,7 +293,10 @@ impl Runnable for DeletePolicyCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let request = DeletePolicyRequest::builder().policy_arn(self.policy_arn.clone()).build()?;
+        let request = DeletePolicyRequest::builder().policy_arn(self.policy_arn.clone()).build().map_err(|e| {
+            error!("Failed to build DeletePolicyRequest: {e}");
+            internal_failure()
+        })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -302,7 +312,11 @@ impl Runnable for DeletePolicyVersionCommand {
         let request = DeletePolicyVersionRequest::builder()
             .policy_arn(self.policy_arn.clone())
             .version_id(self.version_id.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build DeletePolicyVersionRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -315,7 +329,10 @@ impl Runnable for GetPolicyCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let request = GetPolicyRequest::builder().policy_arn(self.policy_arn.clone()).build()?;
+        let request = GetPolicyRequest::builder().policy_arn(self.policy_arn.clone()).build().map_err(|e| {
+            error!("Failed to build GetPolicyRequest: {e}");
+            internal_failure()
+        })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -331,7 +348,11 @@ impl Runnable for GetPolicyVersionCommand {
         let request = GetPolicyVersionRequest::builder()
             .policy_arn(self.policy_arn.clone())
             .version_id(self.version_id.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build GetPolicyVersionRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -344,23 +365,18 @@ impl Runnable for ListEntitiesForPolicyCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let mut builder = ListEntitiesForPolicyRequest::builder().policy_arn(self.policy_arn.clone());
-        if let Some(filter) = self.entity_filter {
-            builder = builder.entity_filter(Some(filter));
-        }
-        if let Some(filter) = self.policy_usage_filter {
-            builder = builder.policy_usage_filter(Some(filter));
-        }
-        if let Some(path_prefix) = &self.path_prefix {
-            builder = builder.path_prefix(Some(path_prefix.clone()));
-        }
-        if let Some(max_items) = self.max_items {
-            builder = builder.max_items(Some(max_items));
-        }
-        if let Some(marker) = &self.marker {
-            builder = builder.marker(Some(marker.clone()));
-        }
-        let request = builder.build()?;
+        let request = ListEntitiesForPolicyRequest::builder()
+            .policy_arn(self.policy_arn.clone())
+            .set_entity_filter(self.entity_filter.clone())
+            .set_policy_usage_filter(self.policy_usage_filter.clone())
+            .set_path_prefix(self.path_prefix.clone())
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build ListEntitiesForPolicyRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -373,26 +389,19 @@ impl Runnable for ListPoliciesInternalCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let mut builder = ListPoliciesInternalRequest::builder().account_id(self.account_id.clone());
-        if let Some(scope) = self.scope {
-            builder = builder.scope(Some(scope));
-        }
-        if self.only_attached {
-            builder = builder.only_attached(Some(true));
-        }
-        if let Some(path_prefix) = &self.path_prefix {
-            builder = builder.path_prefix(Some(path_prefix.clone()));
-        }
-        if let Some(filter) = self.policy_usage_filter {
-            builder = builder.policy_usage_filter(Some(filter));
-        }
-        if let Some(max_items) = self.max_items {
-            builder = builder.max_items(Some(max_items));
-        }
-        if let Some(marker) = &self.marker {
-            builder = builder.marker(Some(marker.clone()));
-        }
-        let request = builder.build()?;
+        let request = ListPoliciesInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .set_scope(self.scope)
+            .only_attached(self.only_attached)
+            .set_path_prefix(self.path_prefix.clone())
+            .set_policy_usage_filter(self.policy_usage_filter)
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build ListPoliciesInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -405,14 +414,15 @@ impl Runnable for ListPolicyTagsCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let mut builder = ListPolicyTagsRequest::builder().policy_arn(self.policy_arn.clone());
-        if let Some(max_items) = self.max_items {
-            builder = builder.max_items(Some(max_items));
-        }
-        if let Some(marker) = &self.marker {
-            builder = builder.marker(Some(marker.clone()));
-        }
-        let request = builder.build()?;
+        let request = ListPolicyTagsRequest::builder()
+            .policy_arn(self.policy_arn.clone())
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build ListPolicyTagsRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -425,14 +435,15 @@ impl Runnable for ListPolicyVersionsCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let mut builder = ListPolicyVersionsRequest::builder().policy_arn(self.policy_arn.clone());
-        if let Some(max_items) = self.max_items {
-            builder = builder.max_items(Some(max_items));
-        }
-        if let Some(marker) = &self.marker {
-            builder = builder.marker(Some(marker.clone()));
-        }
-        let request = builder.build()?;
+        let request = ListPolicyVersionsRequest::builder()
+            .policy_arn(self.policy_arn.clone())
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build ListPolicyVersionsRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -448,7 +459,11 @@ impl Runnable for SetDefaultPolicyVersionCommand {
         let request = SetDefaultPolicyVersionRequest::builder()
             .policy_arn(self.policy_arn.clone())
             .version_id(self.version_id.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build SetDefaultPolicyVersionRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -462,7 +477,11 @@ impl Runnable for TagPolicyCommand {
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
         let tags = tags_from_shorthand(&self.tags)?;
-        let request = TagPolicyRequest::builder().policy_arn(self.policy_arn.clone()).tags(tags).build()?;
+        let request =
+            TagPolicyRequest::builder().policy_arn(self.policy_arn.clone()).set_tags(tags).build().map_err(|e| {
+                error!("Failed to build TagPolicyRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -477,8 +496,12 @@ impl Runnable for UntagPolicyCommand {
     {
         let request = UntagPolicyRequest::builder()
             .policy_arn(self.policy_arn.clone())
-            .tag_keys(self.tag_keys.clone())
-            .build()?;
+            .set_tag_keys(self.tag_keys.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build UntagPolicyRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }

@@ -8,6 +8,7 @@ use {
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{GetPolicyVersionRequest, GetPolicyVersionResponse},
@@ -66,7 +67,7 @@ pub async fn get_policy_version(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to query managed policy version from database: {e}");
+        error!("Failed to query managed policy version from database: {e}");
         internal_failure()
     })?
     .ok_or_else(|| {
@@ -76,17 +77,18 @@ pub async fn get_policy_version(
     })?;
 
     let policy_version = PolicyVersion::builder()
-        .create_date(Some(row.created_at))
-        .document(Some(row.policy_document))
-        .is_default_version(Some(version_number == row.default_version))
-        .version_id(Some(format!("v{version_number}")))
+        .create_date(row.created_at)
+        .document(row.policy_document)
+        .is_default_version(version_number == row.default_version)
+        .version_id(format!("v{version_number}"))
         .build()
         .map_err(|e| {
-            log::error!("Failed to construct PolicyVersion object: {e}");
+            error!("Failed to build PolicyVersion: {e}");
             internal_failure()
         })?;
 
-    Ok(GetPolicyVersionResponse {
-        policy_version: Some(policy_version),
-    })
+    Ok(GetPolicyVersionResponse::builder().policy_version(policy_version).build().map_err(|e| {
+        error!("Failed to build GetPolicyVersionResponse: {e}");
+        internal_failure()
+    })?)
 }

@@ -6,6 +6,7 @@ use {
         tag::validate_tag_key,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError, operation::UntagPolicyRequest, types::error::ValidationError,
     },
@@ -43,7 +44,7 @@ pub async fn untag_policy(tx: &mut PgTransaction<'_>, policy_arn: &str, tag_keys
         .execute(tx.as_mut())
         .await
         {
-            log::error!("Failed to delete managed policy tag: {e}");
+            error!("Failed to delete managed policy tag: {e}");
             return Err(internal_failure().into());
         }
     }

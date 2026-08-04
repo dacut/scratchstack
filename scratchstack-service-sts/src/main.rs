@@ -20,6 +20,8 @@ pub(crate) mod model;
 pub(crate) mod operations;
 pub(crate) mod service;
 
+pub(crate) use constants::*;
+
 use {
     crate::{
         config::{ResolvedStsServiceConfig, StsServiceConfig},
@@ -30,15 +32,21 @@ use {
         routing::{get, post, put},
     },
     clap::Parser,
+    http::Method,
     log::{debug, error, info},
+    scratchstack_aws_signature::{AwsSigV4VerifierLayer, NoSignedHeaderRequirements, SignatureErrorToXmlResponse},
     scratchstack_config::Resolvable as _,
-    scratchstack_http_framework::TlsListener,
+    scratchstack_core::tls::TlsListener,
     scratchstack_iam_database::GetSigningKeyFromDatabase,
-    std::{path::PathBuf, process::exit, sync::Arc},
+    std::{
+        path::PathBuf,
+        process::{ExitCode, exit},
+        sync::Arc,
+    },
     tokio::{net::TcpListener, runtime::Builder as RuntimeBuilder},
 };
 
-const DEFAULT_CONFIG_FILENAME: &str = "scratchstack.cfg";
+const DEFAULT_CONFIG_FILENAME: &str = "scratchstack-sts.cfg";
 // const CONTENT_LENGTH_LIMIT: u64 = 10 << 20;
 
 #[derive(Parser)]
@@ -49,7 +57,7 @@ struct CliOptions {
     config: Option<PathBuf>,
 }
 
-fn main() {
+fn main() -> ExitCode {
     env_logger::init();
     let cli = CliOptions::parse();
 
@@ -93,7 +101,13 @@ fn main() {
         }
     };
 
-    println!("{:#?}", runtime.block_on(run_server_from_config(config)));
+    match runtime.block_on(run_server_from_config(config)) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            error!("Server error: {}", e);
+            ExitCode::FAILURE
+        }
+    }
 }
 
 #[allow(unused_variables, clippy::useless_vec)]
@@ -101,16 +115,33 @@ async fn run_server_from_config(config: ResolvedStsServiceConfig) -> Result<(), 
     use crate::service::serve_request;
 
     let common = config.common;
+    debug!("Connecting to database at {}", common.database.url);
     let pool = common.database.pool_options.connect(&common.database.url).await?;
     let pool = Arc::new(pool);
+    let partition = common.scope.partition.clone();
     let region = common.scope.region.clone();
     let allowed_content_types = vec!["application/x-www-form-urlencoded".to_string()];
     let gsk = GetSigningKeyFromDatabase::new(pool, &common.scope.partition, &common.scope.region, "sts");
     // let service_impl = StsService {};
-    // let error_mapper = XmlErrorMapper::new(STS_XML_NS);
+    let error_mapper = SignatureErrorToXmlResponse::builder().xmlns(XML_NS_STS).build();
+    let verifier = AwsSigV4VerifierLayer::builder()
+        .region(region.clone())
+        .service("sts")
+        .allowed_request_methods(vec![Method::GET, Method::POST, Method::PUT])
+        .allowed_content_types(vec!["application/x-www-form-urlencoded".to_string()])
+        .signed_header_requirements(NoSignedHeaderRequirements)
+        .get_signing_key(gsk)
+        .error_mapper(error_mapper)
+        .build();
 
-    let app =
-        Router::new().route("/", get(serve_request)).route("/", post(serve_request)).route("/", put(serve_request));
+    debug!("Creating Axum router and server");
+
+    let app = Router::new()
+        .route("/", get(serve_request))
+        .route("/", post(serve_request))
+        .route("/", put(serve_request))
+        .layer(verifier);
+    debug!("Binding TCP listener to {}", common.listener.socket_addr);
     let listener = TcpListener::bind(&common.listener.socket_addr).await?;
 
     match common.listener.tls {

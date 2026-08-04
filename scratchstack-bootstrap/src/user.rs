@@ -1,7 +1,8 @@
 //! Scratchstack bootsrap create-user subcommand
 use {
-    crate::{Cli, Runnable, execute_in_transaction, tag::tags_from_shorthand},
+    crate::{Cli, Runnable, execute_in_transaction, internal_failure, tag::tags_from_shorthand},
     clap::Parser,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
@@ -384,7 +385,11 @@ impl Runnable for AttachUserPolicyInternalCommand {
             .account_id(self.account_id.clone())
             .policy_arn(self.policy_arn.clone())
             .user_name(self.user_name.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build AttachUserPolicyInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -399,8 +404,12 @@ impl Runnable for CreateAccessKeyInternalCommand {
     {
         let request = CreateAccessKeyInternalRequest::builder()
             .account_id(self.account_id.clone())
-            .user_name(Some(self.user_name.clone()))
-            .build()?;
+            .user_name(self.user_name.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build CreateAccessKeyInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -413,15 +422,19 @@ impl Runnable for CreateUserInternalCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let mut builder = CreateUserInternalRequest::builder()
+        let tags = tags_from_shorthand(&self.tags)?;
+        let request = CreateUserInternalRequest::builder()
             .account_id(self.account_id.clone())
             .path(self.path.clone())
             .user_name(self.user_name.clone())
-            .permissions_boundary(self.permissions_boundary.clone());
-        let tags = tags_from_shorthand(&self.tags)?;
-        builder = builder.tags(tags);
+            .set_permissions_boundary(self.permissions_boundary.clone())
+            .set_tags(tags)
+            .build()
+            .map_err(|e| {
+                error!("Failed to build CreateUserInternalRequest: {e}");
+                internal_failure()
+            })?;
 
-        let request = builder.build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -437,8 +450,12 @@ impl Runnable for DeleteAccessKeyInternalCommand {
         let request = DeleteAccessKeyInternalRequest::builder()
             .account_id(self.account_id.clone())
             .access_key_id(self.access_key_id.clone())
-            .user_name(self.user_name.clone())
-            .build()?;
+            .set_user_name(self.user_name.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build DeleteAccessKeyInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -451,10 +468,14 @@ impl Runnable for DeleteUserInternalCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let request = DeleteUserInternalRequest {
-            account_id: self.account_id.clone(),
-            user_name: self.user_name.clone(),
-        };
+        let request = DeleteUserInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .user_name(self.user_name.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build DeleteUserInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -467,10 +488,14 @@ impl Runnable for DeleteUserPermissionsBoundaryInternalCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let request = DeleteUserPermissionsBoundaryInternalRequest {
-            account_id: self.account_id.clone(),
-            user_name: self.user_name.clone(),
-        };
+        let request = DeleteUserPermissionsBoundaryInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .user_name(self.user_name.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build DeleteUserPermissionsBoundaryInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -487,7 +512,11 @@ impl Runnable for DeleteUserPolicyInternalCommand {
             .account_id(self.account_id.clone())
             .user_name(self.user_name.clone())
             .policy_name(self.policy_name.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build DeleteUserPolicyInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -504,7 +533,11 @@ impl Runnable for DetachUserPolicyInternalCommand {
             .account_id(self.account_id.clone())
             .policy_arn(self.policy_arn.clone())
             .user_name(self.user_name.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build DetachUserPolicyInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -518,9 +551,13 @@ impl Runnable for GetUserInternalCommand {
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
         let request = GetUserInternalRequest::builder()
-            .user_name(Some(self.user_name.clone()))
+            .user_name(self.user_name.clone())
             .account_id(self.account_id.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build GetUserInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -537,7 +574,11 @@ impl Runnable for GetUserPolicyInternalCommand {
             .account_id(self.account_id.clone())
             .user_name(self.user_name.clone())
             .policy_name(self.policy_name.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build GetUserPolicyInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -552,10 +593,14 @@ impl Runnable for ListAccessKeysInternalCommand {
     {
         let request = ListAccessKeysInternalRequest::builder()
             .account_id(self.account_id.clone())
-            .user_name(Some(self.user_name.clone()))
-            .max_items(self.max_items)
-            .marker(self.marker.clone())
-            .build()?;
+            .user_name(self.user_name.clone())
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build ListAccessKeysInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -571,10 +616,14 @@ impl Runnable for ListAttachedUserPoliciesInternalCommand {
         let request = ListAttachedUserPoliciesInternalRequest::builder()
             .account_id(self.account_id.clone())
             .user_name(self.user_name.clone())
-            .path_prefix(self.path_prefix.clone())
-            .max_items(self.max_items)
-            .marker(self.marker.clone())
-            .build()?;
+            .set_path_prefix(self.path_prefix.clone())
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build ListAttachedUserPoliciesInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -590,9 +639,13 @@ impl Runnable for ListUserPoliciesInternalCommand {
         let request = ListUserPoliciesInternalRequest::builder()
             .account_id(self.account_id.clone())
             .user_name(self.user_name.clone())
-            .max_items(self.max_items)
-            .marker(self.marker.clone())
-            .build()?;
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build ListUserPoliciesInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -605,12 +658,16 @@ impl Runnable for ListUsersInternalCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let request = ListUsersInternalRequest {
-            account_id: self.account_id.clone(),
-            path_prefix: self.path_prefix.clone(),
-            max_items: self.max_items,
-            marker: self.marker.clone(),
-        };
+        let request = ListUsersInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .set_path_prefix(self.path_prefix.clone())
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build ListUsersInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -623,12 +680,16 @@ impl Runnable for ListUserTagsInternalCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let request = ListUserTagsInternalRequest {
-            account_id: self.account_id.clone(),
-            user_name: self.user_name.clone(),
-            max_items: self.max_items,
-            marker: self.marker.clone(),
-        };
+        let request = ListUserTagsInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .user_name(self.user_name.clone())
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build ListUserTagsInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -645,8 +706,12 @@ impl Runnable for TagUserInternalCommand {
         let request = TagUserInternalRequest::builder()
             .account_id(self.account_id.clone())
             .user_name(self.user_name.clone())
-            .tags(tags)
-            .build()?;
+            .set_tags(tags)
+            .build()
+            .map_err(|e| {
+                error!("Failed to build TagUserInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -662,8 +727,12 @@ impl Runnable for UntagUserInternalCommand {
         let request = UntagUserInternalRequest::builder()
             .account_id(self.account_id.clone())
             .user_name(self.user_name.clone())
-            .tag_keys(self.tag_keys.clone())
-            .build()?;
+            .set_tag_keys(self.tag_keys.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build UntagUserInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -680,8 +749,12 @@ impl Runnable for UpdateAccessKeyInternalCommand {
             .account_id(self.account_id.clone())
             .access_key_id(self.access_key_id.clone())
             .status(self.status)
-            .user_name(self.user_name.clone())
-            .build()?;
+            .set_user_name(self.user_name.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build UpdateAccessKeyInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -694,12 +767,16 @@ impl Runnable for UpdateUserInternalCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let request = UpdateUserInternalRequest {
-            account_id: self.account_id.clone(),
-            user_name: self.user_name.clone(),
-            new_path: self.new_path.clone(),
-            new_user_name: self.new_user_name.clone(),
-        };
+        let request = UpdateUserInternalRequest::builder()
+            .account_id(self.account_id.clone())
+            .user_name(self.user_name.clone())
+            .set_new_path(self.new_path.clone())
+            .set_new_user_name(self.new_user_name.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build UpdateUserInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -733,7 +810,11 @@ impl Runnable for PutUserPermissionsBoundaryInternalCommand {
             .account_id(self.account_id.clone())
             .permissions_boundary(self.permissions_boundary.clone())
             .user_name(self.user_name.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build PutUserPermissionsBoundaryInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -771,7 +852,11 @@ impl Runnable for PutUserPolicyInternalCommand {
             .user_name(self.user_name.clone())
             .policy_name(self.policy_name.clone())
             .policy_document(self.policy_document.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build PutUserPolicyInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }

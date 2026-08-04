@@ -5,6 +5,7 @@ use {
         user::validate_user_name,
     },
     indoc::indoc,
+    log::error,
     scratchstack_aspen::Policy as AspenPolicy,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -64,7 +65,7 @@ pub async fn put_user_policy(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up user in database: {e}");
+            error!("Failed to look up user in database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -83,7 +84,7 @@ pub async fn put_user_policy(
     .execute(tx.as_mut())
     .await
     {
-        log::error!("Failed to insert/update user inline policy in database: {e}");
+        error!("Failed to insert/update user inline policy in database: {e}");
         return Err(internal_failure().into());
     }
 

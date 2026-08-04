@@ -1,8 +1,8 @@
 use {
-    crate::{KeyLengthError, constants::*, crypto::hmac_sha256},
+    crate::{KeyLengthError, SignatureError, constants::*, crypto::hmac_sha256},
     base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
+    bon::Builder,
     chrono::NaiveDate,
-    derive_builder::Builder,
     scratchstack_aws_principal::{Principal, SessionData},
     serde::{
         Deserialize, Serialize,
@@ -15,7 +15,7 @@ use {
         str::FromStr,
     },
     subtle::{Choice, ConstantTimeEq},
-    tower::{BoxError, service_fn, util::ServiceFn},
+    tower::{service_fn, util::ServiceFn},
     zeroize::{Zeroize, ZeroizeOnDrop},
 };
 
@@ -400,60 +400,63 @@ impl KServiceKey {
 #[non_exhaustive]
 pub struct GetSigningKeyRequest {
     /// The access key used in the request.
-    #[builder(setter(into))]
+    #[builder(into)]
     access_key: String,
 
     /// The session token provided in the request, if any.
-    #[builder(setter(into), default)]
+    #[builder(into)]
     session_token: Option<String>,
 
     /// The date of the request.
     request_date: NaiveDate,
 
     /// The region of the request.
-    #[builder(setter(into))]
+    #[builder(into)]
     region: String,
 
     /// The service of the request.
-    #[builder(setter(into))]
+    #[builder(into)]
     service: String,
+
+    /// The request id of the request, if available.
+    request_id: Option<String>,
 }
 
 impl GetSigningKeyRequest {
-    /// Create a [GetSigningKeyRequestBuilder] to construct a [GetSigningKeyRequest].
-    #[inline]
-    pub fn builder() -> GetSigningKeyRequestBuilder {
-        GetSigningKeyRequestBuilder::default()
-    }
-
     /// Retrieve the access key used in the request.
-    #[inline]
+    #[inline(always)]
     pub fn access_key(&self) -> &str {
         &self.access_key
     }
 
     /// Retrieve the session token provided in the request, if any.
-    #[inline]
+    #[inline(always)]
     pub fn session_token(&self) -> Option<&str> {
         self.session_token.as_deref()
     }
 
     /// Retrieve the date of the request.
-    #[inline]
+    #[inline(always)]
     pub fn request_date(&self) -> NaiveDate {
         self.request_date
     }
 
     /// Retrieve the region of the request.
-    #[inline]
+    #[inline(always)]
     pub fn region(&self) -> &str {
         &self.region
     }
 
     /// Retrieve the service of the request.
-    #[inline]
+    #[inline(always)]
     pub fn service(&self) -> &str {
         &self.service
+    }
+
+    /// Retrieve the request id of the request if available.
+    #[inline(always)]
+    pub fn request_id(&self) -> Option<&str> {
+        self.request_id.as_deref()
     }
 }
 
@@ -478,11 +481,11 @@ impl Debug for GetSigningKeyRequest {
 #[derive(Builder, Clone, Debug)]
 pub struct GetSigningKeyResponse {
     /// The principal actors of the request.
-    #[builder(setter(into))]
+    #[builder(into)]
     pub(crate) principal: Principal,
 
     /// The session data associated with the principal.
-    #[builder(setter(into), default)]
+    #[builder(into, default)]
     pub(crate) session_data: SessionData,
 
     /// The signing key.
@@ -490,12 +493,6 @@ pub struct GetSigningKeyResponse {
 }
 
 impl GetSigningKeyResponse {
-    /// Create a [`GetSigningKeyResponseBuilder`] to construct a `GetSigningKeyResponse`.
-    #[inline]
-    pub fn builder() -> GetSigningKeyResponseBuilder {
-        GetSigningKeyResponseBuilder::default()
-    }
-
     /// Retrieve the principal actors of the request.
     #[inline]
     pub fn principal(&self) -> &Principal {
@@ -529,7 +526,7 @@ impl GetSigningKeyResponse {
 pub fn service_for_signing_key_fn<F, Fut>(f: F) -> ServiceFn<F>
 where
     F: FnOnce(GetSigningKeyRequest) -> Fut + Send + 'static,
-    Fut: Future<Output = Result<GetSigningKeyResponse, BoxError>> + Send + 'static,
+    Fut: Future<Output = Result<GetSigningKeyResponse, SignatureError>> + Send + 'static,
 {
     service_fn(f)
 }
@@ -640,13 +637,13 @@ mod tests {
     fn test_gsk_derived() {
         let date = NaiveDate::from_ymd_opt(2015, 8, 30).unwrap();
 
-        let gsk_req1a = GetSigningKeyRequest {
-            access_key: "AKIDEXAMPLE".to_string(),
-            session_token: Some("token".to_string()),
-            request_date: date,
-            region: "us-east-1".to_string(),
-            service: "example".to_string(),
-        };
+        let gsk_req1a = GetSigningKeyRequest::builder()
+            .access_key("AKIDEXAMPLE")
+            .session_token("token")
+            .request_date(date)
+            .region("us-east-1")
+            .service("example")
+            .build();
 
         // Make sure we can debug print the request, and that the session token is redacted.
         let debug = format!("{gsk_req1a:?}");
@@ -668,8 +665,7 @@ mod tests {
         );
         let principal = Principal::from(AssumedRole::new("aws", "123456789012", "role", "session").unwrap());
 
-        let gsk_resp1a =
-            GetSigningKeyResponse::builder().signing_key(signing_key).principal(principal).build().unwrap();
+        let gsk_resp1a = GetSigningKeyResponse::builder().signing_key(signing_key).principal(principal).build();
 
         // Make sure we can debug print the response.
         let _ = format!("{:?}", gsk_resp1a);
@@ -689,7 +685,7 @@ mod tests {
             "example",
         );
         let principal = Principal::from(AssumedRole::new("aws", "123456789012", "role", "session").unwrap());
-        let response = GetSigningKeyResponse::builder().principal(principal).signing_key(signing_key).build().unwrap();
+        let response = GetSigningKeyResponse::builder().principal(principal).signing_key(signing_key).build();
         assert!(response.principal().as_assumed_role().is_some());
         assert!(response.session_data().is_empty());
     }

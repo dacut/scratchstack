@@ -6,6 +6,7 @@ use {
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
+    log::error,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
     scratchstack_shapes_iam::{
@@ -72,7 +73,7 @@ pub async fn list_groups_for_user(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to check if user exists in database: {e}");
+        error!("Failed to check if user exists in database: {e}");
         internal_failure()
     })?;
     if user_exists.is_none() {
@@ -99,7 +100,7 @@ pub async fn list_groups_for_user(
 
     if let Some(marker) = marker {
         let info: ListGroupsForUserMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListGroupsForUser: {e}");
+            error!("Failed to decrypt pagination token for ListGroupsForUser: {e}");
             internal_failure()
         })?;
         sql.push(" AND g.group_name_lower >= ");
@@ -111,7 +112,7 @@ pub async fn list_groups_for_user(
     sql.push_bind(max_items as i32 + 1);
 
     let rows = sql.build_query_as::<ListGroupsForUserRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch groups for user from database: {e}");
+        error!("Failed to fetch groups for user from database: {e}");
         internal_failure()
     })?;
     let mut results = Vec::with_capacity(rows.len().min(max_items));
@@ -126,7 +127,7 @@ pub async fn list_groups_for_user(
                     })
                     .await
                     .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListGroupsForUser: {e}");
+                        error!("Failed to encrypt pagination token for ListGroupsForUser: {e}");
                         internal_failure()
                     })?,
             );
@@ -140,7 +141,7 @@ pub async fn list_groups_for_user(
             .resource(format!("group{}{}", row.path, row.group_name_cased))
             .build()
             .map_err(|e| {
-                log::error!("Failed to construct ARN for group: {e}");
+                error!("Failed to construct ARN for group: {e}");
                 internal_failure()
             })?;
 
@@ -153,20 +154,19 @@ pub async fn list_groups_for_user(
                 .group_name(row.group_name_cased)
                 .build()
                 .map_err(|e| {
-                    log::error!("Failed to construct group object: {e}");
+                    error!("Failed to construct Group: {e}");
                     internal_failure()
                 })?,
         );
     }
 
-    let mut builder = ListGroupsForUserResponse::builder();
-    builder = builder.groups(results);
-    if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
-    }
-
-    builder.build().map_err(|e| {
-        log::error!("Failed to build ListGroupsForUserResponse: {e}");
-        internal_failure().into()
-    })
+    Ok(ListGroupsForUserResponse::builder()
+        .set_groups(results)
+        .is_truncated(next_marker.is_some())
+        .set_marker(next_marker)
+        .build()
+        .map_err(|e| {
+            error!("Failed to construct ListGroupsForUserResponse: {e}");
+            internal_failure()
+        })?)
 }

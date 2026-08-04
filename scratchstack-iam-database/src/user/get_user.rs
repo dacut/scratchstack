@@ -11,6 +11,7 @@ use {
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
+    log::error,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
     scratchstack_shapes_iam::{
@@ -65,7 +66,7 @@ pub async fn get_user(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to fetch user from database: {e}");
+        error!("Failed to fetch user from database: {e}");
         internal_failure()
     })?;
 
@@ -86,7 +87,7 @@ pub async fn get_user(
         .resource(user_arn_resource(&path, &user_name_cased))
         .build()
         .map_err(|e| {
-            log::error!("Failed to construct ARN for user: {e}");
+            error!("Failed to construct ARN for user: {e}");
             internal_failure()
         })?;
 
@@ -100,12 +101,12 @@ pub async fn get_user(
         .fetch_optional(tx.as_mut())
         .await
         .map_err(|e| {
-            log::error!("Failed to fetch permissions boundary managed policy from database: {e}");
+            error!("Failed to fetch permissions boundary managed policy from database: {e}");
             internal_failure()
         })?;
 
         let pb_row = pb_row.ok_or_else(|| {
-            log::error!("User references missing permissions boundary managed policy ID: {pb_id}");
+            error!("User references missing permissions boundary managed policy ID: {pb_id}");
             internal_failure()
         })?;
 
@@ -115,11 +116,11 @@ pub async fn get_user(
 
         Some(
             AttachedPermissionsBoundary::builder()
-                .permissions_boundary_arn(Some(pb_arn.to_string()))
-                .permissions_boundary_type(Some(PermissionsBoundaryAttachmentType::Policy))
+                .permissions_boundary_arn(pb_arn)
+                .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                 .build()
                 .map_err(|e| {
-                    log::error!("Failed to construct permissions boundary for user: {e}");
+                    error!("Failed to construct AttachedPermissionsBoundary: {e}");
                     internal_failure()
                 })?,
         )
@@ -138,7 +139,7 @@ pub async fn get_user(
     .fetch_all(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to fetch user tags from database: {e}");
+        error!("Failed to fetch user tags from database: {e}");
         internal_failure()
     })?;
 
@@ -147,24 +148,27 @@ pub async fn get_user(
         let key: String = tag_row.get(0);
         let value: String = tag_row.get(1);
         tags.push(Tag::builder().key(key).value(value).build().map_err(|e| {
-            log::error!("Failed to construct tag object: {e}");
+            error!("Failed to construct Tag: {e}");
             internal_failure()
         })?);
     }
 
     let user = User::builder()
-        .arn(arn.to_string())
+        .arn(arn)
         .create_date(created_at)
         .path(path)
-        .tags(tags)
+        .set_tags(tags)
         .user_id(format!("{}{}", IamResourceType::User.as_str(), user_id))
         .user_name(user_name_cased)
-        .permissions_boundary(permissions_boundary)
+        .set_permissions_boundary(permissions_boundary)
         .build()
         .map_err(|e| {
-            log::error!("Failed to construct user object: {e}");
+            error!("Failed to construct User: {e}");
             internal_failure()
         })?;
 
-    Ok(GetUserResponse::builder().user(user).build().unwrap())
+    Ok(GetUserResponse::builder().user(user).build().map_err(|e| {
+        error!("Failed to construct GetUserResponse: {e}");
+        internal_failure()
+    })?)
 }

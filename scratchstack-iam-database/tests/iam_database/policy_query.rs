@@ -206,7 +206,7 @@ pub async fn test_list_policy_versions_pagination(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let page1 = ListPolicyVersionsRequest::builder()
         .policy_arn(arn.to_string())
-        .max_items(Some(2))
+        .max_items(2)
         .build()
         .expect("Failed to build ListPolicyVersionsRequest")
         .execute(&mut tx)
@@ -221,8 +221,8 @@ pub async fn test_list_policy_versions_pagination(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let page2 = ListPolicyVersionsRequest::builder()
         .policy_arn(arn.to_string())
-        .max_items(Some(2))
-        .marker(Some(marker))
+        .max_items(2)
+        .marker(marker)
         .build()
         .expect("Failed to build ListPolicyVersionsRequest")
         .execute(&mut tx)
@@ -242,8 +242,8 @@ pub async fn test_list_policies_local(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListPoliciesInternalRequest::builder()
         .account_id("123456789012".to_string())
-        .scope(Some(PolicyScopeType::Local))
-        .max_items(Some(1000))
+        .scope(PolicyScopeType::Local)
+        .max_items(1000)
         .build()
         .expect("Failed to build ListPoliciesInternalRequest")
         .execute(&mut tx)
@@ -261,8 +261,8 @@ pub async fn test_list_policies_aws(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListPoliciesInternalRequest::builder()
         .account_id("123456789012".to_string())
-        .scope(Some(PolicyScopeType::Aws))
-        .max_items(Some(1000))
+        .scope(PolicyScopeType::Aws)
+        .max_items(1000)
         .build()
         .expect("Failed to build ListPoliciesInternalRequest")
         .execute(&mut tx)
@@ -279,8 +279,8 @@ pub async fn test_list_policies_all(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListPoliciesInternalRequest::builder()
         .account_id("123456789012".to_string())
-        .scope(Some(PolicyScopeType::All))
-        .max_items(Some(1000))
+        .scope(PolicyScopeType::All)
+        .max_items(1000)
         .build()
         .expect("Failed to build ListPoliciesInternalRequest")
         .execute(&mut tx)
@@ -297,9 +297,9 @@ pub async fn test_list_policies_path_prefix(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListPoliciesInternalRequest::builder()
         .account_id("123456789012".to_string())
-        .scope(Some(PolicyScopeType::Local))
-        .path_prefix(Some("/engineering/".to_string()))
-        .max_items(Some(1000))
+        .scope(PolicyScopeType::Local)
+        .path_prefix("/engineering/".to_string())
+        .max_items(1000)
         .build()
         .expect("Failed to build ListPoliciesInternalRequest")
         .execute(&mut tx)
@@ -330,9 +330,9 @@ pub async fn test_list_policies_only_attached(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListPoliciesInternalRequest::builder()
         .account_id("123456789012".to_string())
-        .scope(Some(PolicyScopeType::All))
-        .only_attached(Some(true))
-        .max_items(Some(1000))
+        .scope(PolicyScopeType::All)
+        .only_attached(true)
+        .max_items(1000)
         .build()
         .expect("Failed to build ListPoliciesInternalRequest")
         .execute(&mut tx)
@@ -390,9 +390,9 @@ pub async fn test_list_policies_only_attached(pool: &sqlx::PgPool) {
 
     let resp = ListPoliciesInternalRequest::builder()
         .account_id("123456789012".to_string())
-        .scope(Some(PolicyScopeType::Local))
-        .only_attached(Some(true))
-        .max_items(Some(1000))
+        .scope(PolicyScopeType::Local)
+        .only_attached(true)
+        .max_items(1000)
         .build()
         .expect("Failed to build ListPoliciesInternalRequest")
         .execute(&mut tx)
@@ -413,9 +413,9 @@ pub async fn test_list_policies_usage_filter_pb(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListPoliciesInternalRequest::builder()
         .account_id("123456789012".to_string())
-        .scope(Some(PolicyScopeType::All))
-        .policy_usage_filter(Some(PolicyUsageType::PermissionsBoundary))
-        .max_items(Some(1000))
+        .scope(PolicyScopeType::All)
+        .policy_usage_filter(PolicyUsageType::PermissionsBoundary)
+        .max_items(1000)
         .build()
         .expect("Failed to build ListPoliciesInternalRequest")
         .execute(&mut tx)
@@ -439,9 +439,9 @@ pub async fn test_list_policies_usage_filter_permissions_policy(pool: &sqlx::PgP
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListPoliciesInternalRequest::builder()
         .account_id("123456789012".to_string())
-        .scope(Some(PolicyScopeType::All))
-        .policy_usage_filter(Some(PolicyUsageType::PermissionsPolicy))
-        .max_items(Some(1000))
+        .scope(PolicyScopeType::All)
+        .policy_usage_filter(PolicyUsageType::PermissionsPolicy)
+        .max_items(1000)
         .build()
         .expect("Failed to build ListPoliciesInternalRequest")
         .execute(&mut tx)
@@ -472,7 +472,7 @@ pub async fn test_list_policies_pagination(pool: &sqlx::PgPool) {
             .policy_name(format!("PaginationPolicy{i}"))
             .policy_document(VALID_POLICY_DOCUMENT.to_string())
             .account_id("123456789012".to_string())
-            .path(Some("/pagination/".to_string()))
+            .path("/pagination/".to_string())
             .build()
             .expect("Failed to build CreatePolicyInternalRequest")
             .execute(&mut tx)
@@ -483,15 +483,12 @@ pub async fn test_list_policies_pagination(pool: &sqlx::PgPool) {
     let list_page = async |tx: &mut sqlx::PgTransaction<'_>,
                            marker: Option<String>|
            -> scratchstack_shapes_iam::operation::ListPoliciesResponse {
-        let mut builder = ListPoliciesInternalRequest::builder()
+        ListPoliciesInternalRequest::builder()
             .account_id("123456789012".to_string())
-            .scope(Some(PolicyScopeType::Local))
-            .path_prefix(Some("/pagination/".to_string()))
-            .max_items(Some(2));
-        if let Some(marker) = marker {
-            builder = builder.marker(Some(marker));
-        }
-        builder
+            .scope(PolicyScopeType::Local)
+            .path_prefix("/pagination/".to_string())
+            .max_items(2)
+            .set_marker(marker)
             .build()
             .expect("Failed to build ListPoliciesInternalRequest")
             .execute(tx)
@@ -570,7 +567,7 @@ pub async fn test_list_entities_for_policy_user_filter(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListEntitiesForPolicyRequest::builder()
         .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
-        .entity_filter(Some(EntityType::User))
+        .entity_filter(EntityType::User)
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
         .execute(&mut tx)
@@ -588,7 +585,7 @@ pub async fn test_list_entities_for_policy_group_filter(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListEntitiesForPolicyRequest::builder()
         .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
-        .entity_filter(Some(EntityType::Group))
+        .entity_filter(EntityType::Group)
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
         .execute(&mut tx)
@@ -606,7 +603,7 @@ pub async fn test_list_entities_for_policy_role_filter(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListEntitiesForPolicyRequest::builder()
         .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
-        .entity_filter(Some(EntityType::Role))
+        .entity_filter(EntityType::Role)
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
         .execute(&mut tx)
@@ -627,7 +624,7 @@ pub async fn test_list_entities_for_policy_pb_filter(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListEntitiesForPolicyRequest::builder()
         .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
-        .policy_usage_filter(Some(PolicyUsageType::PermissionsBoundary))
+        .policy_usage_filter(PolicyUsageType::PermissionsBoundary)
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
         .execute(&mut tx)
@@ -651,7 +648,7 @@ pub async fn test_list_entities_for_policy_pagination(pool: &sqlx::PgPool) {
 
     let page1 = ListEntitiesForPolicyRequest::builder()
         .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
-        .max_items(Some(2))
+        .max_items(2)
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
         .execute(&mut tx)
@@ -669,8 +666,8 @@ pub async fn test_list_entities_for_policy_pagination(pool: &sqlx::PgPool) {
 
     let page2 = ListEntitiesForPolicyRequest::builder()
         .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
-        .max_items(Some(2))
-        .marker(Some(marker))
+        .max_items(2)
+        .marker(marker)
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
         .execute(&mut tx)
@@ -709,7 +706,7 @@ pub async fn test_list_entities_for_policy_path_prefix(pool: &sqlx::PgPool) {
     CreateGroupInternalRequest::builder()
         .account_id("123456789012".to_string())
         .group_name("EngineeringGroup".to_string())
-        .path(Some("/engineering/".to_string()))
+        .path("/engineering/".to_string())
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
         .execute(&mut tx)
@@ -727,7 +724,7 @@ pub async fn test_list_entities_for_policy_path_prefix(pool: &sqlx::PgPool) {
 
     let resp = ListEntitiesForPolicyRequest::builder()
         .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
-        .path_prefix(Some("/engineering/".to_string()))
+        .path_prefix("/engineering/".to_string())
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
         .execute(&mut tx)
@@ -748,7 +745,7 @@ pub async fn test_list_entities_for_policy_invalid_filter(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = ListEntitiesForPolicyRequest::builder()
         .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
-        .entity_filter(Some(EntityType::AWSManagedPolicy))
+        .entity_filter(EntityType::AWSManagedPolicy)
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
         .execute(&mut tx)
@@ -878,7 +875,7 @@ pub async fn test_list_entities_for_policy_within_section_pagination(pool: &sqlx
     // Page through with max_items=2.
     let page1 = ListEntitiesForPolicyRequest::builder()
         .policy_arn("arn:test-partition:iam::123456789012:policy/WithinSectionPaginationPolicy".to_string())
-        .max_items(Some(2))
+        .max_items(2)
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
         .execute(&mut tx)
@@ -888,8 +885,8 @@ pub async fn test_list_entities_for_policy_within_section_pagination(pool: &sqlx
 
     let page2 = ListEntitiesForPolicyRequest::builder()
         .policy_arn("arn:test-partition:iam::123456789012:policy/WithinSectionPaginationPolicy".to_string())
-        .max_items(Some(2))
-        .marker(Some(marker))
+        .max_items(2)
+        .marker(marker)
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
         .execute(&mut tx)
@@ -1005,7 +1002,7 @@ pub async fn test_list_policy_tags_pagination(pool: &sqlx::PgPool) {
         .collect();
     TagPolicyRequest::builder()
         .policy_arn(pol_arn.to_string())
-        .tags(tags)
+        .set_tags(tags)
         .build()
         .expect("Failed to build TagPolicyRequest")
         .execute(&mut tx)
@@ -1017,11 +1014,10 @@ pub async fn test_list_policy_tags_pagination(pool: &sqlx::PgPool) {
     let list_page = async |tx: &mut sqlx::PgTransaction<'_>,
                            marker: Option<String>|
            -> scratchstack_shapes_iam::operation::ListPolicyTagsResponse {
-        let mut builder = ListPolicyTagsRequest::builder().policy_arn(pol_arn.to_string()).max_items(Some(2));
-        if let Some(marker) = marker {
-            builder = builder.marker(Some(marker));
-        }
-        builder
+        ListPolicyTagsRequest::builder()
+            .policy_arn(pol_arn.to_string())
+            .max_items(2)
+            .set_marker(marker)
             .build()
             .expect("Failed to build ListPolicyTagsRequest")
             .execute(tx)

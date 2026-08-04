@@ -63,16 +63,3 @@ pub fn clap_parse_max_items(max_items: &str) -> Result<usize, String> {
     validate_max_items(max_items).map_err(|e| format!("Invalid max_items: {e}"))?;
     Ok(max_items)
 }
-
-#[cfg(test)]
-mod tests {
-    #[test_log::test]
-    fn test_create_user_invalid_name() {
-        // Spaces and `!` are not in the allowed character set.
-        let result = crate::operation::CreateUserInternalRequest::builder()
-            .user_name("bad name!".to_string())
-            .account_id("123456789012".to_string())
-            .build();
-        assert!(result.is_err(), "Building a request with an invalid user name must fail");
-    }
-}

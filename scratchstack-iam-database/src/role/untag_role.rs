@@ -5,6 +5,7 @@ use {
         tag::validate_tag_key,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::UntagRoleInternalRequest,
@@ -63,7 +64,7 @@ pub async fn untag_role(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up role in database: {e}");
+            error!("Failed to look up role in database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -80,7 +81,7 @@ pub async fn untag_role(
         .execute(tx.as_mut())
         .await
         {
-            log::error!("Failed to delete role tag from database: {e}");
+            error!("Failed to delete role tag from database: {e}");
             return Err(internal_failure().into());
         }
     }

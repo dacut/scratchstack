@@ -1,7 +1,8 @@
 //! Scratchstack bootstrap group subcommands
 use {
-    crate::{Cli, Runnable, execute_in_transaction},
+    crate::{Cli, Runnable, execute_in_transaction, internal_failure},
     clap::Parser,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
@@ -225,8 +226,12 @@ impl Runnable for CreateGroupInternalCommand {
         let request = CreateGroupInternalRequest::builder()
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
-            .path(Some(self.path.clone()))
-            .build()?;
+            .path(self.path.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build CreateGroupInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -242,7 +247,11 @@ impl Runnable for DeleteGroupInternalCommand {
         let request = DeleteGroupInternalRequest::builder()
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build DeleteGroupInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -259,7 +268,11 @@ impl Runnable for DeleteGroupPolicyInternalCommand {
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
             .policy_name(self.policy_name.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build DeleteGroupPolicyInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -275,7 +288,11 @@ impl Runnable for GetGroupInternalCommand {
         let request = GetGroupInternalRequest::builder()
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build GetGroupInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -292,7 +309,11 @@ impl Runnable for GetGroupPolicyInternalCommand {
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
             .policy_name(self.policy_name.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build GetGroupPolicyInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -308,10 +329,14 @@ impl Runnable for ListAttachedGroupPoliciesInternalCommand {
         let request = ListAttachedGroupPoliciesInternalRequest::builder()
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
-            .path_prefix(self.path_prefix.clone())
-            .max_items(self.max_items)
-            .marker(self.marker.clone())
-            .build()?;
+            .set_path_prefix(self.path_prefix.clone())
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build ListAttachedGroupPoliciesInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -327,9 +352,13 @@ impl Runnable for ListGroupPoliciesInternalCommand {
         let request = ListGroupPoliciesInternalRequest::builder()
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
-            .max_items(self.max_items)
-            .marker(self.marker.clone())
-            .build()?;
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
+            .build()
+            .map_err(|e| {
+                error!("Failed to build ListGroupPoliciesInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -434,7 +463,11 @@ impl Runnable for AddUserToGroupInternalCommand {
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
             .user_name(self.user_name.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build AddUserToGroupInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -469,7 +502,11 @@ impl Runnable for RemoveUserFromGroupInternalCommand {
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
             .user_name(self.user_name.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build RemoveUserFromGroupInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -486,7 +523,11 @@ impl Runnable for AttachGroupPolicyInternalCommand {
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
             .policy_arn(self.policy_arn.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build AttachGroupPolicyInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -503,7 +544,11 @@ impl Runnable for DetachGroupPolicyInternalCommand {
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
             .policy_arn(self.policy_arn.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build DetachGroupPolicyInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -541,7 +586,11 @@ impl Runnable for PutGroupPolicyInternalCommand {
             .group_name(self.group_name.clone())
             .policy_name(self.policy_name.clone())
             .policy_document(self.policy_document.clone())
-            .build()?;
+            .build()
+            .map_err(|e| {
+                error!("Failed to build PutGroupPolicyInternalRequest: {e}");
+                internal_failure()
+            })?;
         execute_in_transaction(cli, vars, &request).await
     }
 }

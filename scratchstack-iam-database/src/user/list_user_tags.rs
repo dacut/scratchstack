@@ -5,6 +5,7 @@ use {
         make_iam_paginator, partition::get_current_partition_or_fail, user::validate_user_name,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListUserTagsInternalRequest, ListUserTagsResponse},
@@ -65,7 +66,7 @@ pub async fn list_user_tags(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to check if user exists in database: {e}");
+        error!("Failed to check if user exists in database: {e}");
         internal_failure()
     })?;
     if user_exists.is_none() {
@@ -92,7 +93,7 @@ pub async fn list_user_tags(
 
     if let Some(marker) = marker {
         let m: ListUserTagsMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListUserTags: {e}");
+            error!("Failed to decrypt pagination token for ListUserTags: {e}");
             internal_failure()
         })?;
         sql.push(" AND t.key_lower >= ");
@@ -104,7 +105,7 @@ pub async fn list_user_tags(
     sql.push_bind(max_items as i32 + 1);
 
     let rows = sql.build_query_as::<ListUserTagsRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch user tags from database: {e}");
+        error!("Failed to fetch user tags from database: {e}");
         internal_failure()
     })?;
     let mut results = Vec::with_capacity(rows.len().min(max_items));
@@ -119,7 +120,7 @@ pub async fn list_user_tags(
                     })
                     .await
                     .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListUserTags: {e}");
+                        error!("Failed to encrypt pagination token for ListUserTags: {e}");
                         internal_failure()
                     })?,
             );
@@ -127,19 +128,18 @@ pub async fn list_user_tags(
         }
 
         results.push(Tag::builder().key(row.key_cased).value(row.value).build().map_err(|e| {
-            log::error!("Failed to construct tag object: {e}");
+            error!("Failed to construct Tag: {e}");
             internal_failure()
         })?);
     }
 
-    let mut builder = ListUserTagsResponse::builder();
-    builder = builder.tags(results);
-    if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
-    }
-
-    builder.build().map_err(|e| {
-        log::error!("Failed to build ListUserTagsResponse: {e}");
-        internal_failure().into()
-    })
+    Ok(ListUserTagsResponse::builder()
+        .set_tags(results)
+        .is_truncated(next_marker.is_some())
+        .set_marker(next_marker)
+        .build()
+        .map_err(|e| {
+            error!("Failed to construct ListUserTagsResponse: {e}");
+            internal_failure()
+        })?)
 }

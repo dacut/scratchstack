@@ -6,6 +6,7 @@ use {
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListPolicyVersionsRequest, ListPolicyVersionsResponse},
@@ -74,7 +75,7 @@ pub async fn list_policy_versions(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to query managed policy from database: {e}");
+        error!("Failed to query managed policy from database: {e}");
         internal_failure()
     })?
     .ok_or_else(|| NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())?;
@@ -90,7 +91,7 @@ pub async fn list_policy_versions(
 
     if let Some(marker) = marker {
         let info: ListPolicyVersionsMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListPolicyVersions: {e}");
+            error!("Failed to decrypt pagination token for ListPolicyVersions: {e}");
             internal_failure()
         })?;
         sql.push(" AND managed_policy_version <= ");
@@ -101,7 +102,7 @@ pub async fn list_policy_versions(
     sql.push_bind(max_items as i32 + 1);
 
     let rows = sql.build_query_as::<ListPolicyVersionsRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch managed policy versions from database: {e}");
+        error!("Failed to fetch managed policy versions from database: {e}");
         internal_failure()
     })?;
 
@@ -117,7 +118,7 @@ pub async fn list_policy_versions(
                     })
                     .await
                     .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListPolicyVersions: {e}");
+                        error!("Failed to encrypt pagination token for ListPolicyVersions: {e}");
                         internal_failure()
                     })?,
             );
@@ -126,20 +127,24 @@ pub async fn list_policy_versions(
 
         versions.push(
             PolicyVersion::builder()
-                .create_date(Some(row.created_at))
-                .is_default_version(Some(row.managed_policy_version == policy_row.default_version))
-                .version_id(Some(format!("v{}", row.managed_policy_version)))
+                .create_date(row.created_at)
+                .is_default_version(row.managed_policy_version == policy_row.default_version)
+                .version_id(format!("v{}", row.managed_policy_version))
                 .build()
                 .map_err(|e| {
-                    log::error!("Failed to construct PolicyVersion object: {e}");
+                    error!("Failed to build PolicyVersion: {e}");
                     internal_failure()
                 })?,
         );
     }
 
-    Ok(ListPolicyVersionsResponse {
-        versions,
-        is_truncated: Some(next_marker.is_some()),
-        marker: next_marker,
-    })
+    Ok(ListPolicyVersionsResponse::builder()
+        .set_versions(versions)
+        .is_truncated(next_marker.is_some())
+        .set_marker(next_marker)
+        .build()
+        .map_err(|e| {
+            error!("Failed to build ListPolicyVersionsResponse: {e}");
+            internal_failure()
+        })?)
 }

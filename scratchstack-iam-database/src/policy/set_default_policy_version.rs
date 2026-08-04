@@ -7,6 +7,7 @@ use {
         policy::{parse_policy_arn, parse_policy_version_id},
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::SetDefaultPolicyVersionRequest,
@@ -61,7 +62,7 @@ pub async fn set_default_policy_version(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to query managed policy from database: {e}");
+        error!("Failed to query managed policy from database: {e}");
         internal_failure()
     })?
     .ok_or_else(|| NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())?;
@@ -79,7 +80,7 @@ pub async fn set_default_policy_version(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to query managed policy version from database: {e}");
+        error!("Failed to query managed policy version from database: {e}");
         internal_failure()
     })?;
 
@@ -100,7 +101,7 @@ pub async fn set_default_policy_version(
     .execute(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to update managed policy default_version: {e}");
+        error!("Failed to update managed policy default_version: {e}");
         internal_failure()
     })?;
 

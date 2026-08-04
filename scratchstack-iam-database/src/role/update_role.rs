@@ -2,6 +2,7 @@
 use {
     crate::{RequestExecutor, account::validate_account_id, constants::*, internal_failure, role::validate_role_name},
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{UpdateRoleInternalRequest, UpdateRoleResponse},
@@ -58,7 +59,7 @@ pub async fn update_role(
         {
             Ok(result) => result,
             Err(e) => {
-                log::error!("Failed to update role in database: {e}");
+                error!("Failed to update role in database: {e}");
                 return Err(internal_failure().into());
             }
         };
@@ -80,7 +81,7 @@ pub async fn update_role(
         .fetch_optional(tx.as_mut())
         .await
         .map_err(|e| {
-            log::error!("Failed to query role in database: {e}");
+            error!("Failed to query role in database: {e}");
             internal_failure()
         })?;
 
@@ -92,8 +93,8 @@ pub async fn update_role(
         }
     }
 
-    UpdateRoleResponse::builder().build().map_err(|e| {
-        log::error!("Failed to build UpdateRoleResponse: {e}");
-        internal_failure().into()
-    })
+    Ok(UpdateRoleResponse::builder().build().map_err(|e| {
+        error!("Failed to build UpdateRoleResponse: {e}");
+        internal_failure()
+    })?)
 }

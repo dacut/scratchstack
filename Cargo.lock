@@ -176,18 +176,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
-name = "aws-credential-types"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e93964ffdaf57857f544be3666a5f57570bb699e934700f11b49708f61bb556e"
-dependencies = [
- "aws-smithy-async",
- "aws-smithy-runtime-api",
- "aws-smithy-types",
- "zeroize",
-]
-
-[[package]]
 name = "aws-lc-rs"
 version = "1.17.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -211,57 +199,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aws-smithy-async"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f02e407fb3b54891734224b9ffac8a71fdd35f542500fa1af95754a6b2beb316"
-dependencies = [
- "futures-util",
- "pin-project-lite",
- "tokio",
-]
-
-[[package]]
-name = "aws-smithy-runtime-api"
-version = "1.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b98f2e1fd67ec06618f9c291e5e495a468e60519e44c9c1979cd0521f3affdb"
-dependencies = [
- "aws-smithy-async",
- "aws-smithy-runtime-api-macros",
- "aws-smithy-types",
- "bytes",
- "http 0.2.12",
- "http 1.4.2",
- "pin-project-lite",
- "tokio",
- "tracing",
- "zeroize",
-]
-
-[[package]]
-name = "aws-smithy-runtime-api-macros"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "221eaa237ddf1ca79b60d1372aad77e47f9c0ea5b3ce5099da8c61d027dc77b3"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "aws-smithy-schema"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d56e0a4e53127a632224e43633b0fe045fa9e1e3cfc68b9830f1115e103f910"
-dependencies = [
- "aws-smithy-runtime-api",
- "aws-smithy-types",
- "http 1.4.2",
-]
-
-[[package]]
 name = "aws-smithy-types"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -270,11 +207,7 @@ dependencies = [
  "base64-simd",
  "bytes",
  "bytes-utils",
- "http 0.2.12",
- "http 1.4.2",
- "http-body 0.4.6",
- "http-body 1.1.0",
- "http-body-util",
+ "http",
  "itoa",
  "num-integer",
  "pin-project-lite",
@@ -282,21 +215,6 @@ dependencies = [
  "ryu",
  "serde",
  "time",
-]
-
-[[package]]
-name = "aws-types"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eec1cd5469f328c782dc3e33d4153cf118a54e33cbb3356d60d16f89883e1f94"
-dependencies = [
- "aws-credential-types",
- "aws-smithy-async",
- "aws-smithy-runtime-api",
- "aws-smithy-schema",
- "aws-smithy-types",
- "rustc_version",
- "tracing",
 ]
 
 [[package]]
@@ -310,8 +228,8 @@ dependencies = [
  "bytes",
  "form_urlencoded",
  "futures-util",
- "http 1.4.2",
- "http-body 1.1.0",
+ "http",
+ "http-body",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -341,8 +259,8 @@ checksum = "08c78f31d7b1291f7ee735c1c6780ccde7785daae9a9206026862dab7d8792d1"
 dependencies = [
  "bytes",
  "futures-core",
- "http 1.4.2",
- "http-body 1.1.0",
+ "http",
+ "http-body",
  "http-body-util",
  "mime",
  "pin-project-lite",
@@ -422,6 +340,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa"
 dependencies = [
  "hybrid-array",
+]
+
+[[package]]
+name = "bon"
+version = "3.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a602c73c7b0148ec6d12af6fd5cc7a46e2eacc8878271a999abac56eed12f561"
+dependencies = [
+ "bon-macros",
+ "rustversion",
+]
+
+[[package]]
+name = "bon-macros"
+version = "3.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6dee98b0db6a962de883bf5d20362dee4d7ca0d12fe39a7c6c73c844e1cd7c1f"
+dependencies = [
+ "darling",
+ "ident_case",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "rustversion",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -1189,7 +1132,7 @@ dependencies = [
  "fnv",
  "futures-core",
  "futures-sink",
- "http 1.4.2",
+ "http",
  "indexmap",
  "slab",
  "tokio",
@@ -1283,17 +1226,6 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "0.2.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "601cbb57e577e2f5ef5be8e7b83f0f63994f25aa94d673e54a92d5c516d101f1"
-dependencies = [
- "bytes",
- "fnv",
- "itoa",
-]
-
-[[package]]
-name = "http"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6970f50e31d6fc17d3fa27329444bfa74e196cf62e95052a3f6fee181dba6425"
@@ -1304,23 +1236,12 @@ dependencies = [
 
 [[package]]
 name = "http-body"
-version = "0.4.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ceab25649e9960c0311ea418d17bee82c0dcec1bd053b5f9a66e265a693bed2"
-dependencies = [
- "bytes",
- "http 0.2.12",
- "pin-project-lite",
-]
-
-[[package]]
-name = "http-body"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca2a8f2913ee65f60facd6a5905613afaa448497a0230cc41ce022d93290bc2c"
 dependencies = [
  "bytes",
- "http 1.4.2",
+ "http",
 ]
 
 [[package]]
@@ -1331,8 +1252,8 @@ checksum = "e9f41fd6a08e4d4ec69df65976da761afd5ad5e58a9d4acb46bd1c953a9e3ff2"
 dependencies = [
  "bytes",
  "futures-core",
- "http 1.4.2",
- "http-body 1.1.0",
+ "http",
+ "http-body",
  "pin-project-lite",
 ]
 
@@ -1384,8 +1305,8 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "h2",
- "http 1.4.2",
- "http-body 1.1.0",
+ "http",
+ "http-body",
  "httparse",
  "httpdate",
  "itoa",
@@ -1401,7 +1322,7 @@ version = "0.27.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33ca68d021ef39cf6463ab54c1d0f5daf03377b70561305bb89a8f83aab66e0f"
 dependencies = [
- "http 1.4.2",
+ "http",
  "hyper",
  "hyper-util",
  "rustls",
@@ -1420,8 +1341,8 @@ dependencies = [
  "bytes",
  "futures-channel",
  "futures-util",
- "http 1.4.2",
- "http-body 1.1.0",
+ "http",
+ "http-body",
  "hyper",
  "ipnet",
  "libc",
@@ -2107,6 +2028,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prettyplease"
+version = "0.2.37"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
+dependencies = [
+ "proc-macro2",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2289,8 +2220,8 @@ dependencies = [
  "futures-core",
  "futures-util",
  "h2",
- "http 1.4.2",
- "http-body 1.1.0",
+ "http",
+ "http-body",
  "http-body-util",
  "hyper",
  "hyper-rustls",
@@ -2328,7 +2259,7 @@ checksum = "07bc3f1384cffa4f274dad2d4ddd73aed32fed8f786d96c6be8aa4e5fd3c3b58"
 dependencies = [
  "anyhow",
  "async-trait",
- "http 1.4.2",
+ "http",
  "reqwest",
  "serde",
  "thiserror",
@@ -2345,7 +2276,7 @@ dependencies = [
  "async-trait",
  "futures",
  "getrandom 0.2.17",
- "http 1.4.2",
+ "http",
  "hyper",
  "reqwest",
  "reqwest-middleware",
@@ -2365,7 +2296,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "getrandom 0.2.17",
- "http 1.4.2",
+ "http",
  "matchit",
  "reqwest",
  "reqwest-middleware",
@@ -2619,6 +2550,7 @@ dependencies = [
  "ascii-casing",
  "axum",
  "base64 0.23.0",
+ "bon",
  "bytes",
  "chrono",
  "derive_builder",
@@ -2626,19 +2558,19 @@ dependencies = [
  "env_logger",
  "hex",
  "hmac",
- "http 1.4.2",
- "http-body 1.1.0",
+ "http-body",
  "http-body-util",
  "lazy_static",
  "log",
  "postcard",
+ "pretty_assertions",
  "qualifier_attr",
  "rand",
  "regex",
  "scratchstack-arn",
  "scratchstack-aspen",
  "scratchstack-aws-principal",
- "scratchstack-errors",
+ "scratchstack-core",
  "scratchstack-hakari",
  "serde",
  "sha2 0.11.0",
@@ -2663,6 +2595,7 @@ dependencies = [
  "pretty_assertions",
  "rpassword",
  "scratchstack-cli-utils",
+ "scratchstack-core",
  "scratchstack-hakari",
  "scratchstack-iam-database",
  "scratchstack-shapes-iam",
@@ -2709,11 +2642,31 @@ dependencies = [
 ]
 
 [[package]]
-name = "scratchstack-errors"
+name = "scratchstack-core"
 version = "0.12.0"
 dependencies = [
- "http 1.4.2",
+ "axum",
+ "base64 0.23.0",
+ "bon",
+ "bytes",
+ "chrono",
+ "env_logger",
+ "http-body-util",
+ "log",
+ "pretty_assertions",
+ "quick-xml",
+ "rand",
+ "regex",
+ "scratchstack-arn",
+ "scratchstack-aws-principal",
  "scratchstack-hakari",
+ "serde",
+ "sqlx",
+ "test-log",
+ "tokio",
+ "tokio-rustls",
+ "tower",
+ "uuid",
 ]
 
 [[package]]
@@ -2724,7 +2677,7 @@ dependencies = [
  "aes-gcm",
  "anstream",
  "axum",
- "base64 0.23.0",
+ "base64 0.22.1",
  "bitflags 2.13.1",
  "byteorder",
  "cc",
@@ -2790,38 +2743,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "scratchstack-http-framework"
-version = "0.12.0"
-dependencies = [
- "axum",
- "base64 0.23.0",
- "bytes",
- "chrono",
- "derive_builder",
- "env_logger",
- "http 1.4.2",
- "http-body 1.1.0",
- "http-body-util",
- "log",
- "pretty_assertions",
- "quick-xml",
- "rand",
- "regex",
- "scratchstack-arn",
- "scratchstack-aws-principal",
- "scratchstack-aws-signature",
- "scratchstack-errors",
- "scratchstack-hakari",
- "serde",
- "sqlx",
- "test-log",
- "tokio",
- "tokio-rustls",
- "tower",
- "uuid",
-]
-
-[[package]]
 name = "scratchstack-iam-database"
 version = "0.12.0"
 dependencies = [
@@ -2848,7 +2769,7 @@ dependencies = [
  "scratchstack-aws-principal",
  "scratchstack-aws-signature",
  "scratchstack-cli-utils",
- "scratchstack-errors",
+ "scratchstack-core",
  "scratchstack-hakari",
  "scratchstack-pagination",
  "scratchstack-shapes-iam",
@@ -2897,8 +2818,8 @@ dependencies = [
  "env_logger",
  "form_urlencoded",
  "futures",
- "http 1.4.2",
- "http-body 1.1.0",
+ "http",
+ "http-body",
  "log",
  "pretty_assertions",
  "quick-xml",
@@ -2907,8 +2828,8 @@ dependencies = [
  "scratchstack-aws-principal",
  "scratchstack-aws-signature",
  "scratchstack-config",
+ "scratchstack-core",
  "scratchstack-hakari",
- "scratchstack-http-framework",
  "scratchstack-iam-database",
  "serde",
  "sqlx",
@@ -2923,14 +2844,15 @@ name = "scratchstack-service-sts"
 version = "0.12.0"
 dependencies = [
  "axum",
+ "bon",
  "chrono",
  "clap",
- "derive_builder",
  "env_logger",
  "form_urlencoded",
  "futures",
- "http 1.4.2",
- "http-body 1.1.0",
+ "http",
+ "http-body",
+ "lazy_static",
  "log",
  "pretty_assertions",
  "quick-xml",
@@ -2939,9 +2861,10 @@ dependencies = [
  "scratchstack-aws-principal",
  "scratchstack-aws-signature",
  "scratchstack-config",
+ "scratchstack-core",
  "scratchstack-hakari",
- "scratchstack-http-framework",
  "scratchstack-iam-database",
+ "scratchstack-shapes-sts",
  "serde",
  "sqlx",
  "test-log",
@@ -2955,6 +2878,7 @@ name = "scratchstack-shapegen"
 version = "0.12.0"
 dependencies = [
  "derive_builder",
+ "http",
  "indoc",
  "log",
  "scratchstack-hakari",
@@ -2969,15 +2893,13 @@ name = "scratchstack-shapes-iam"
 version = "0.12.0"
 dependencies = [
  "anyhow",
- "aws-smithy-runtime-api",
- "aws-smithy-types",
- "aws-types",
+ "bon",
  "chrono",
  "clap",
- "derive_builder",
  "env_logger",
  "regex",
  "scratchstack-cli-utils",
+ "scratchstack-core",
  "scratchstack-hakari",
  "scratchstack-shapegen",
  "serde",
@@ -2990,16 +2912,16 @@ name = "scratchstack-shapes-sts"
 version = "0.12.0"
 dependencies = [
  "anyhow",
- "aws-smithy-runtime-api",
- "aws-smithy-types",
- "aws-types",
+ "bon",
  "chrono",
  "clap",
  "derive_builder",
  "env_logger",
+ "http",
  "log",
  "regex",
  "scratchstack-cli-utils",
+ "scratchstack-core",
  "scratchstack-hakari",
  "scratchstack-shapegen",
  "scratchstack-shapes-iam",
@@ -3776,8 +3698,8 @@ dependencies = [
  "bitflags 2.13.1",
  "bytes",
  "futures-util",
- "http 1.4.2",
- "http-body 1.1.0",
+ "http",
+ "http-body",
  "pin-project-lite",
  "tower",
  "tower-layer",

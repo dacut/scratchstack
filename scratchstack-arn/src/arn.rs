@@ -159,6 +159,18 @@ impl Display for Arn {
     }
 }
 
+impl From<Arn> for String {
+    fn from(arn: Arn) -> Self {
+        arn.to_string()
+    }
+}
+
+impl From<&Arn> for String {
+    fn from(arn: &Arn) -> Self {
+        arn.to_string()
+    }
+}
+
 /// Parse a string into an [`Arn`].
 impl FromStr for Arn {
     /// [`ArnError`] is returned if the string is not a valid ARN.

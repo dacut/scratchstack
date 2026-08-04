@@ -1,16 +1,16 @@
 use {
     crate::{
-        GetSigningKeyRequest, GetSigningKeyResponse, KSigningKey, SignatureError, SignedHeaderRequirements,
-        auth::SigV4AuthenticatorResponse, body::IntoRequestBytes, canonical::CanonicalRequest, constants::*,
-        crypto::hmac_sha256,
+        GetSigningKeyRequest, GetSigningKeyResponse, KSigningKey, SignatureDoesNotMatchError, SignatureError,
+        SignedHeaderRequirements, auth::SigV4AuthenticatorResponse, body::IntoRequestBytes,
+        canonical::CanonicalRequest, constants::*, crypto::hmac_sha256,
     },
     bytes::Bytes,
     chrono::{DateTime, Duration, Utc},
-    http::request::{Parts, Request},
     log::trace,
+    scratchstack_core::http::request::{Parts, Request},
     std::future::Future,
     subtle::ConstantTimeEq,
-    tower::{BoxError, Service},
+    tower::Service,
 };
 
 /// Options that can be used to configure the signature service.
@@ -142,7 +142,7 @@ pub struct StreamingSignatureState {
 ///   is the current time, `Utc::now()`.
 /// * `required_headers` - The headers that are required to be signed in the request in addition to
 ///   the default SigV4 headers. If none, use
-///   [`NO_ADDITIONAL_SIGNED_HEADERS`][crate::NO_ADDITIONAL_SIGNED_HEADERS].
+///   [`NoSignedHeaderRequirements`][crate::NoSignedHeaderRequirements].
 /// * `options` - [`SignatureOptions`] that affect the behavior of the signature validation. For
 ///   most services, use `SignatureOptions::default()`.
 ///
@@ -151,20 +151,21 @@ pub struct StreamingSignatureState {
 /// malformed or the request was not properly signed. The validation follows the
 /// [AWS Auth Error Ordering](https://github.com/dacut/scratchstack-aws-signature/blob/main/docs/AWS%20Auth%20Error%20Ordering.pdf)
 /// document.
-pub async fn sigv4_validate_request<B, G, F, S>(
-    request: Request<B>,
+pub async fn sigv4_validate_request<Body, GskSvc, GskFut, SignHdrReqs>(
+    request: Request<Body>,
     region: &str,
     service: &str,
-    get_signing_key: &mut G,
+    get_signing_key: &mut GskSvc,
     server_timestamp: DateTime<Utc>,
-    required_headers: &S,
+    required_headers: SignHdrReqs,
     options: SignatureOptions,
-) -> Result<(Parts, Bytes, SigV4AuthenticatorResponse), BoxError>
+) -> Result<(Parts, Bytes, SigV4AuthenticatorResponse), SignatureError>
 where
-    B: IntoRequestBytes,
-    G: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = BoxError, Future = F> + Send,
-    F: Future<Output = Result<GetSigningKeyResponse, BoxError>> + Send,
-    S: SignedHeaderRequirements,
+    Body: IntoRequestBytes,
+    GskSvc:
+        Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = SignatureError, Future = GskFut> + Send,
+    GskFut: Future<Output = Result<GetSigningKeyResponse, SignatureError>> + Send,
+    SignHdrReqs: SignedHeaderRequirements,
 {
     let (parts, body) = request.into_parts();
     let body = body.into_request_bytes().await?;
@@ -201,7 +202,7 @@ where
 ///   is the current time, `Utc::now()`.
 /// * `required_headers` - The headers that are required to be signed in the request in addition to
 ///   the default SigV4 headers. If none, use
-///   [`NO_ADDITIONAL_SIGNED_HEADERS`][crate::NO_ADDITIONAL_SIGNED_HEADERS].
+///   [`NoSignedHeaderRequirements`][crate::NoSignedHeaderRequirements].
 /// * `options` - [`SignatureOptions`] that affect the behavior of the signature validation. For
 ///   most services, use `SignatureOptions::default()`.
 ///
@@ -219,12 +220,12 @@ pub async fn sigv4_validate_streaming_headers<B, G, F, S>(
     service: &str,
     get_signing_key: &mut G,
     server_timestamp: DateTime<Utc>,
-    required_headers: &S,
+    required_headers: S,
     options: SignatureOptions,
-) -> Result<StreamingSignatureState, BoxError>
+) -> Result<StreamingSignatureState, SignatureError>
 where
-    G: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = BoxError, Future = F> + Send,
-    F: Future<Output = Result<GetSigningKeyResponse, BoxError>> + Send,
+    G: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = SignatureError, Future = F> + Send,
+    F: Future<Output = Result<GetSigningKeyResponse, SignatureError>> + Send,
     S: SignedHeaderRequirements,
 {
     let canonical_request = CanonicalRequest::from_request_and_body_hash(request, body_hash, options)?;
@@ -302,7 +303,7 @@ impl StreamingSignatureState {
         if !is_equal {
             trace!("Chunk signature mismatch: expected '{}', got '{}'", expected_signature, chunk_signature);
             self.prev_signature = chunk_signature;
-            Err(SignatureError::SignatureDoesNotMatch(Some(MSG_REQUEST_SIGNATURE_MISMATCH.to_string())))
+            Err(SignatureDoesNotMatchError::builder().message(ERR_MSG_REQUEST_SIGNATURE_MISMATCH).build().into())
         } else {
             self.prev_signature = chunk_signature;
             Ok(())
@@ -314,22 +315,24 @@ impl StreamingSignatureState {
 mod tests {
     use {
         crate::{
-            GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, NO_ADDITIONAL_SIGNED_HEADERS, SignatureError,
+            GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, NoSignedHeaderRequirements, SignatureError,
             SignatureOptions, SignedHeaderRequirements, VecSignedHeaderRequirements, auth::SigV4AuthenticatorResponse,
             constants::*, service_for_signing_key_fn, sigv4_validate_request, sigv4_validate_streaming_headers,
         },
         bytes::Bytes,
         chrono::{DateTime, Duration, NaiveDate, Utc},
-        http::{
-            method::Method,
-            request::{Parts, Request},
-            uri::{PathAndQuery, Uri},
-        },
         lazy_static::lazy_static,
         scratchstack_aws_principal::{Principal, User},
-        scratchstack_errors::ServiceError,
-        std::{borrow::Cow, future::Future, str::FromStr},
-        tower::BoxError,
+        scratchstack_core::{
+            error::ProvideErrorMetadata as _,
+            http::{
+                StatusCode,
+                method::Method,
+                request::{Parts, Request},
+                uri::{PathAndQuery, Uri},
+            },
+        },
+        std::{borrow::Cow, future::Future, pin::Pin, str::FromStr},
     };
 
     lazy_static! {
@@ -343,16 +346,9 @@ mod tests {
         ($test:expr, $expected:ident) => {
             match $test {
                 Ok(ref v) => panic!("Expected Err({}); got Ok({:?})", stringify!($expected), v),
-                Err(e) => match e.downcast::<SignatureError>() {
-                    Ok(e) => {
-                        let e_string = e.to_string();
-                        let e_debug = format!("{:?}", e);
-                        match *e {
-                            SignatureError::$expected(_) => e_string,
-                            _ => panic!("Expected {}; got {}: {}", stringify!($expected), e_debug, e_string),
-                        }
-                    }
-                    Err(ref other) => panic!("Expected {}; got {:#?}: {}", stringify!($expected), &other, &other),
+                Err(e) => match e {
+                    SignatureError::$expected(e) => e.to_string(),
+                    _ => panic!("Expected {}; got {:?}: {:?}", stringify!($expected), e, e.message()),
                 },
             }
         };
@@ -371,9 +367,8 @@ mod tests {
 
     fn make_get_signing_key_fn(
         secret_key: &str,
-    ) -> impl Fn(
-        GetSigningKeyRequest,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<GetSigningKeyResponse, BoxError>> + Send>> {
+    ) -> impl Fn(GetSigningKeyRequest) -> Pin<Box<dyn Future<Output = Result<GetSigningKeyResponse, SignatureError>> + Send>>
+    {
         let secret_key = secret_key.to_string();
         move |req: GetSigningKeyRequest| {
             let secret_key = secret_key.clone();
@@ -382,20 +377,20 @@ mod tests {
                 let k_signing = k_secret.to_ksigning(req.request_date(), req.region(), req.service());
 
                 let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
-                Ok(GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build().unwrap())
+                Ok(GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build())
             })
         }
     }
 
-    async fn get_signing_key(req: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, BoxError> {
+    async fn get_signing_key(req: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, SignatureError> {
         let k_secret = KSecretKey::from_str("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY").unwrap();
         let k_signing = k_secret.to_ksigning(req.request_date(), req.region(), req.service());
 
         let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
-        Ok(GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build().unwrap())
+        Ok(GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build())
     }
 
-    async fn run_auth_test(auth_str: &str) -> Result<(Parts, Bytes, SigV4AuthenticatorResponse), BoxError> {
+    async fn run_auth_test(auth_str: &str) -> Result<(Parts, Bytes, SigV4AuthenticatorResponse), SignatureError> {
         let uri = Uri::builder().path_and_query(PathAndQuery::from_static("/")).build().unwrap();
         let request = Request::builder()
             .method(Method::GET)
@@ -412,7 +407,7 @@ mod tests {
             TEST_SERVICE,
             &mut get_signing_key_svc,
             *TEST_TIMESTAMP,
-            &NO_ADDITIONAL_SIGNED_HEADERS,
+            NoSignedHeaderRequirements,
             SignatureOptions::URL_ENCODE_FORM,
         )
         .await
@@ -444,7 +439,7 @@ mod tests {
                 TEST_SERVICE,
                 &mut gsk_service,
                 *TEST_TIMESTAMP,
-                &NO_ADDITIONAL_SIGNED_HEADERS,
+                NoSignedHeaderRequirements,
                 SignatureOptions::URL_ENCODE_FORM
             )
             .await,
@@ -474,7 +469,7 @@ mod tests {
                 TEST_SERVICE,
                 &mut gsk_service,
                 *TEST_TIMESTAMP,
-                &NO_ADDITIONAL_SIGNED_HEADERS,
+                NoSignedHeaderRequirements,
                 SignatureOptions::URL_ENCODE_FORM
             )
             .await,
@@ -565,7 +560,7 @@ mod tests {
                 TEST_SERVICE,
                 &mut get_signing_key_svc.clone(),
                 *TEST_TIMESTAMP,
-                &required_headers,
+                required_headers,
                 SignatureOptions::URL_ENCODE_FORM,
             )
             .await;
@@ -574,9 +569,7 @@ mod tests {
                 assert!(result.is_ok());
             } else {
                 let e = result.unwrap_err();
-                assert!(e.source().is_none());
-                let e = e.downcast_ref::<SignatureError>().expect("Expected SignatureError");
-                match (i, e) {
+                match (i, &e) {
                     (0, SignatureError::MalformedQueryString(_)) => {
                         assert_eq!(e.to_string().as_str(), "Illegal hex character in escape % pattern: %yy")
                     }
@@ -767,7 +760,7 @@ mod tests {
                 TEST_SERVICE,
                 &mut get_signing_key_svc.clone(),
                 *TEST_TIMESTAMP,
-                &required_headers,
+                required_headers,
                 SignatureOptions::URL_ENCODE_FORM,
             )
             .await;
@@ -776,164 +769,162 @@ mod tests {
                 assert!(result.is_ok());
             } else {
                 let e = result.unwrap_err();
-                assert!(e.source().is_none());
-                let e = e.downcast::<SignatureError>().unwrap();
-                match (i, &*e) {
+                match (i, &e) {
                     (0, SignatureError::MalformedQueryString(_)) => {
                         assert_eq!(e.to_string().as_str(), "Illegal hex character in escape % pattern: %yy");
-                        assert_eq!(e.error_code(), "MalformedQueryString");
-                        assert_eq!(e.http_status(), 400);
+                        assert_eq!(e.code(), "MalformedQueryString");
+                        assert_eq!(e.http_status(), Some(StatusCode::BAD_REQUEST));
                     }
                     (1, SignatureError::MissingAuthenticationToken(_)) => {
                         assert_eq!(e.to_string().as_str(), "Request is missing Authentication Token");
-                        assert_eq!(e.error_code(), "MissingAuthenticationToken");
-                        assert_eq!(e.http_status(), 400);
+                        assert_eq!(e.code(), "MissingAuthenticationToken");
+                        assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
                     }
                     (2, SignatureError::IncompleteSignature(_)) => {
                         assert_eq!(e.to_string().as_str(), "Unsupported AWS 'algorithm': 'AWS5-HMAC-SHA256'.");
-                        assert_eq!(e.error_code(), "IncompleteSignature");
-                        assert_eq!(e.http_status(), 400);
+                        assert_eq!(e.code(), "IncompleteSignature");
+                        assert_eq!(e.http_status(), Some(StatusCode::BAD_REQUEST));
                     }
                     (3, SignatureError::IncompleteSignature(_)) => {
                         assert_eq!(
                             e.to_string().as_str(),
                             "'FooBar' not a valid key=value pair (missing equal-sign) in Authorization header: 'AWS4-HMAC-SHA256 FooBar, BazBurp'"
                         );
-                        assert_eq!(e.error_code(), "IncompleteSignature");
-                        assert_eq!(e.http_status(), 400);
+                        assert_eq!(e.code(), "IncompleteSignature");
+                        assert_eq!(e.http_status(), Some(StatusCode::BAD_REQUEST));
                     }
                     (4, SignatureError::IncompleteSignature(_)) => {
                         assert_eq!(
                             e.to_string().as_str(),
                             "Authorization header requires 'Credential' parameter. Authorization header requires 'Signature' parameter. Authorization header requires 'SignedHeaders' parameter. Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256"
                         );
-                        assert_eq!(e.error_code(), "IncompleteSignature");
-                        assert_eq!(e.http_status(), 400);
+                        assert_eq!(e.code(), "IncompleteSignature");
+                        assert_eq!(e.http_status(), Some(StatusCode::BAD_REQUEST));
                     }
                     (5, SignatureError::IncompleteSignature(_)) => {
                         assert_eq!(
                             e.to_string().as_str(),
                             "Authorization header requires 'Signature' parameter. Authorization header requires 'SignedHeaders' parameter. Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256"
                         );
-                        assert_eq!(e.error_code(), "IncompleteSignature");
-                        assert_eq!(e.http_status(), 400);
+                        assert_eq!(e.code(), "IncompleteSignature");
+                        assert_eq!(e.http_status(), Some(StatusCode::BAD_REQUEST));
                     }
                     (6, SignatureError::IncompleteSignature(_)) => {
                         assert_eq!(
                             e.to_string().as_str(),
                             "Authorization header requires 'SignedHeaders' parameter. Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256"
                         );
-                        assert_eq!(e.error_code(), "IncompleteSignature");
-                        assert_eq!(e.http_status(), 400);
+                        assert_eq!(e.code(), "IncompleteSignature");
+                        assert_eq!(e.http_status(), Some(StatusCode::BAD_REQUEST));
                     }
                     (7, SignatureError::IncompleteSignature(_)) => {
                         assert_eq!(
                             e.to_string().as_str(),
                             "Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header. Authorization=AWS4-HMAC-SHA256"
                         );
-                        assert_eq!(e.error_code(), "IncompleteSignature");
-                        assert_eq!(e.http_status(), 400);
+                        assert_eq!(e.code(), "IncompleteSignature");
+                        assert_eq!(e.http_status(), Some(StatusCode::BAD_REQUEST));
                     }
                     (8, SignatureError::SignatureDoesNotMatch(_)) => {
                         assert_eq!(
                             e.to_string().as_str(),
                             "'Host' or ':authority' must be a 'SignedHeader' in the AWS Authorization."
                         );
-                        assert_eq!(e.error_code(), "SignatureDoesNotMatch");
-                        assert_eq!(e.http_status(), 403);
+                        assert_eq!(e.code(), "SignatureDoesNotMatch");
+                        assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
                     }
                     (9, SignatureError::SignatureDoesNotMatch(_)) => {
                         assert_eq!(
                             e.to_string().as_str(),
                             "'Content-Type' must be a 'SignedHeader' in the AWS Authorization."
                         );
-                        assert_eq!(e.error_code(), "SignatureDoesNotMatch");
-                        assert_eq!(e.http_status(), 403);
+                        assert_eq!(e.code(), "SignatureDoesNotMatch");
+                        assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
                     }
                     (10, SignatureError::SignatureDoesNotMatch(_)) => {
                         assert_eq!(e.to_string().as_str(), "'ETag' must be a 'SignedHeader' in the AWS Authorization.");
-                        assert_eq!(e.error_code(), "SignatureDoesNotMatch");
-                        assert_eq!(e.http_status(), 403);
+                        assert_eq!(e.code(), "SignatureDoesNotMatch");
+                        assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
                     }
                     (11, SignatureError::SignatureDoesNotMatch(_)) => {
                         assert_eq!(
                             e.to_string().as_str(),
                             "'x-amz-request-id' must be a 'SignedHeader' in the AWS Authorization."
                         );
-                        assert_eq!(e.error_code(), "SignatureDoesNotMatch");
-                        assert_eq!(e.http_status(), 403);
+                        assert_eq!(e.code(), "SignatureDoesNotMatch");
+                        assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
                     }
                     (12, SignatureError::IncompleteSignature(_)) => {
                         assert_eq!(
                             e.to_string().as_str(),
                             "Date must be in ISO-8601 'basic format'. Got '2015/08/30T12/36/00Z'. See http://en.wikipedia.org/wiki/ISO_8601"
                         );
-                        assert_eq!(e.error_code(), "IncompleteSignature");
-                        assert_eq!(e.http_status(), 400);
+                        assert_eq!(e.code(), "IncompleteSignature");
+                        assert_eq!(e.http_status(), Some(StatusCode::BAD_REQUEST));
                     }
                     (13, SignatureError::SignatureDoesNotMatch(_)) => {
                         assert_eq!(
                             e.to_string().as_str(),
                             "Signature expired: 20150830T122059Z is now earlier than 20150830T122100Z (20150830T123600Z - 15 min.)"
                         );
-                        assert_eq!(e.error_code(), "SignatureDoesNotMatch");
-                        assert_eq!(e.http_status(), 403);
+                        assert_eq!(e.code(), "SignatureDoesNotMatch");
+                        assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
                     }
                     (14, SignatureError::SignatureDoesNotMatch(_)) => {
                         assert_eq!(
                             e.to_string().as_str(),
                             "Signature not yet current: 20150830T125101Z is still later than 20150830T125100Z (20150830T123600Z + 15 min.)"
                         );
-                        assert_eq!(e.error_code(), "SignatureDoesNotMatch");
-                        assert_eq!(e.http_status(), 403);
+                        assert_eq!(e.code(), "SignatureDoesNotMatch");
+                        assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
                     }
                     (15, SignatureError::IncompleteSignature(_)) => {
                         assert_eq!(
                             e.to_string().as_str(),
                             "Credential must have exactly 5 slash-delimited elements, e.g. keyid/date/region/service/term, got 'AKIDEXAMPLE'"
                         );
-                        assert_eq!(e.error_code(), "IncompleteSignature");
-                        assert_eq!(e.http_status(), 400);
+                        assert_eq!(e.code(), "IncompleteSignature");
+                        assert_eq!(e.http_status(), Some(StatusCode::BAD_REQUEST));
                     }
                     (16, SignatureError::SignatureDoesNotMatch(_)) => {
                         assert_eq!(
                             e.to_string().as_str(),
                             "Credential should be scoped to a valid region, not 'wrong-region'. Credential should be scoped to correct service: 'service'. Credential should be scoped with a valid terminator: 'aws4_request', not 'aws5_request'. Date in Credential scope does not match YYYYMMDD from ISO-8601 version of date from HTTP: 'foobar' != '20150830', from '20150830T122100Z'."
                         );
-                        assert_eq!(e.error_code(), "SignatureDoesNotMatch");
-                        assert_eq!(e.http_status(), 403);
+                        assert_eq!(e.code(), "SignatureDoesNotMatch");
+                        assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
                     }
                     (17, SignatureError::SignatureDoesNotMatch(_)) => {
                         assert_eq!(
                             e.to_string().as_str(),
                             "Credential should be scoped to a valid region, not 'wrong-region'. Credential should be scoped to correct service: 'service'. Credential should be scoped with a valid terminator: 'aws4_request', not 'aws5_request'."
                         );
-                        assert_eq!(e.error_code(), "SignatureDoesNotMatch");
-                        assert_eq!(e.http_status(), 403);
+                        assert_eq!(e.code(), "SignatureDoesNotMatch");
+                        assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
                     }
                     (18, SignatureError::SignatureDoesNotMatch(_)) => {
                         assert_eq!(
                             e.to_string().as_str(),
                             "Credential should be scoped to correct service: 'service'. Credential should be scoped with a valid terminator: 'aws4_request', not 'aws5_request'."
                         );
-                        assert_eq!(e.error_code(), "SignatureDoesNotMatch");
-                        assert_eq!(e.http_status(), 403);
+                        assert_eq!(e.code(), "SignatureDoesNotMatch");
+                        assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
                     }
                     (19, SignatureError::SignatureDoesNotMatch(_)) => {
                         assert_eq!(
                             e.to_string().as_str(),
                             "Credential should be scoped with a valid terminator: 'aws4_request', not 'aws5_request'."
                         );
-                        assert_eq!(e.error_code(), "SignatureDoesNotMatch");
-                        assert_eq!(e.http_status(), 403);
+                        assert_eq!(e.code(), "SignatureDoesNotMatch");
+                        assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
                     }
                     (20, SignatureError::SignatureDoesNotMatch(_)) => {
                         assert_eq!(
                             e.to_string().as_str(),
                             "The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details."
                         );
-                        assert_eq!(e.error_code(), "SignatureDoesNotMatch");
-                        assert_eq!(e.http_status(), 403);
+                        assert_eq!(e.code(), "SignatureDoesNotMatch");
+                        assert_eq!(e.http_status(), Some(StatusCode::FORBIDDEN));
                     }
                     _ => panic!("Incorrect error returned on run {}: {:?}", i, e),
                 }
@@ -986,7 +977,7 @@ mod tests {
                 "service",
                 &mut get_signing_key_svc,
                 *TEST_TIMESTAMP,
-                &NO_ADDITIONAL_SIGNED_HEADERS,
+                NoSignedHeaderRequirements,
                 SignatureOptions::default()
             )
             .await
@@ -1010,7 +1001,7 @@ mod tests {
                 "service",
                 &mut get_signing_key_svc,
                 *TEST_TIMESTAMP,
-                &NO_ADDITIONAL_SIGNED_HEADERS,
+                NoSignedHeaderRequirements,
                 SignatureOptions::S3,
             )
             .await
@@ -1066,7 +1057,7 @@ mod tests {
             "s3",
             &mut get_signing_key_svc,
             timestamp,
-            &required_headers,
+            required_headers,
             signature_options,
         )
         .await
@@ -1103,7 +1094,7 @@ mod tests {
         let req = Request::builder()
             .method(Method::GET)
             .uri("https://example.com:1234/test-bucket/test-object?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA7N4QX2J9L6MZ8T3P%2F20150830%2Feu-central-1%2Fs3%2Faws4_request&X-Amz-Date=20150830T123602Z&X-Amz-Expires=86400&X-Amz-SignedHeaders=host&X-Amz-Signature=353ce66394a6cf278a1047c0158ab2c0d1050cae1138c51d47fd3b6bb2198492")
-            .header(http::header::HOST, "example.com:1234")
+            .header(scratchstack_core::http::header::HOST, "example.com:1234")
             .body(Bytes::from("The body of pre-signed URL request should be ignored as it is unsigned".as_bytes()))
             .unwrap();
 
@@ -1114,7 +1105,7 @@ mod tests {
                 "s3",
                 &mut get_signing_key_svc,
                 *TEST_TIMESTAMP,
-                &NO_ADDITIONAL_SIGNED_HEADERS,
+                NoSignedHeaderRequirements,
                 SignatureOptions::S3,
             )
             .await
@@ -1137,7 +1128,7 @@ mod tests {
         let req = Request::builder()
             .method(Method::GET)
             .uri("https://127.0.0.1:8899/test-bucket/?location=")
-            .header(http::header::HOST, "127.0.0.1:8899")
+            .header(scratchstack_core::http::header::HOST, "127.0.0.1:8899")
             .header("X-Amz-Date", "20260723T150030Z")
             .header("X-Amz-Content-Sha256", "UNSIGNED-PAYLOAD")
             .header(
@@ -1161,7 +1152,7 @@ mod tests {
                 "s3",
                 &mut get_signing_key_svc,
                 request_timestamp,
-                &NO_ADDITIONAL_SIGNED_HEADERS,
+                NoSignedHeaderRequirements,
                 SignatureOptions::S3,
             )
             .await

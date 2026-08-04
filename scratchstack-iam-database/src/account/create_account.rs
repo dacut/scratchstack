@@ -6,6 +6,7 @@ use {
         internal_failure,
     },
     indoc::indoc,
+    log::error,
     rand::random_range,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -89,24 +90,14 @@ async fn create_account_with_id(
                 .build()
                 .into());
         }
-        log::error!("Failed to insert account into database: {e}");
+        error!("Failed to insert account into database: {e}");
         return Err(internal_failure().into());
     }
 
-    let mut acct_builder = Account::builder().account_id(account_id);
-    if let Some(email) = email {
-        acct_builder = acct_builder.email(email);
-    }
-    if let Some(account_alias) = account_alias {
-        acct_builder = acct_builder.account_alias(account_alias);
-    }
-    let account = acct_builder.build().map_err(|e| {
-        log::error!("Failed to build Account: {e}");
-        internal_failure()
-    })?;
-    Ok(CreateAccountResponse {
-        account,
-    })
+    let account =
+        Account::builder().account_id(account_id).set_email(email).set_account_alias(account_alias).build()?;
+
+    Ok(CreateAccountResponse::builder().account(account).build()?)
 }
 
 /// Create a new account on the database with a random account ID.
@@ -121,7 +112,7 @@ async fn create_account_with_random_account_id(
         let mut savepoint = match tx.begin().await {
             Ok(sp) => sp,
             Err(e) => {
-                log::error!("Failed to create savepoint: {e}");
+                error!("Failed to create savepoint: {e}");
                 return Err(internal_failure().into());
             }
         };
@@ -129,7 +120,7 @@ async fn create_account_with_random_account_id(
         match create_account_with_id(&mut savepoint, account_id, email.clone(), account_alias.clone()).await {
             Ok(response) => {
                 if let Err(e) = savepoint.commit().await {
-                    log::error!("Failed to commit savepoint: {e}");
+                    error!("Failed to commit savepoint: {e}");
                     return Err(internal_failure().into());
                 }
                 return Ok(response);
@@ -141,7 +132,7 @@ async fn create_account_with_random_account_id(
                 // error would keep looping, but collisions on 12-digit random IDs are
                 // extremely unlikely to repeat.
                 if let Err(e) = savepoint.rollback().await {
-                    log::error!("Failed to rollback savepoint: {e}");
+                    error!("Failed to rollback savepoint: {e}");
                     return Err(internal_failure().into());
                 }
                 continue;
@@ -149,7 +140,7 @@ async fn create_account_with_random_account_id(
             Err(other) => {
                 // Validation error or something else — don't retry.
                 if let Err(e) = savepoint.rollback().await {
-                    log::error!("Failed to rollback savepoint: {e}");
+                    error!("Failed to rollback savepoint: {e}");
                     return Err(internal_failure().into());
                 }
                 return Err(other);

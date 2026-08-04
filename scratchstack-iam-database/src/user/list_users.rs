@@ -5,6 +5,7 @@ use {
         make_iam_paginator, partition::get_current_partition_or_fail, path::validate_path_prefix,
     },
     chrono::{DateTime, Utc},
+    log::{error, warn},
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
     scratchstack_shapes_iam::{
@@ -80,7 +81,7 @@ pub async fn list_users(
 
     if let Some(marker) = marker {
         let info: ListUsersMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListUsers: {e}");
+            error!("Failed to decrypt pagination token for ListUsers: {e}");
             internal_failure()
         })?;
         sql.push(" AND user_name_lower >= ");
@@ -92,7 +93,7 @@ pub async fn list_users(
     sql.push_bind(max_items as i32 + 1);
 
     let rows = sql.build_query_as::<ListUsersRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch users from database: {e}");
+        error!("Failed to fetch users from database: {e}");
         internal_failure()
     })?;
     let mut results = Vec::with_capacity(rows.len().min(max_items));
@@ -107,7 +108,7 @@ pub async fn list_users(
                     })
                     .await
                     .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListUsers: {e}");
+                        error!("Failed to encrypt pagination token for ListUsers: {e}");
                         internal_failure()
                     })?,
             );
@@ -121,24 +122,24 @@ pub async fn list_users(
             .resource(format!("user/{}", row.user_name_cased))
             .build()
             .map_err(|e| {
-                log::error!("Failed to construct ARN for user: {e}");
+                error!("Failed to construct ARN for user: {e}");
                 internal_failure()
             })?;
 
         let permissions_boundary = if let Some(pb_id) = row.permissions_boundary_managed_policy_id {
             // FIXME: The ARN here is incorrect; we need to translate the managed policy ID back into
             // its path and name.
-            log::warn!(
+            warn!(
                 "Permissions boundary ARN for user is incorrect because we don't have the policy name and path available"
             );
             let arn = format!("arn:{partition}:{SERVICE_KEY_IAM}::{account_id}:{ARN_RESOURCE_TYPE_POLICY}/{pb_id}");
             Some(
                 AttachedPermissionsBoundary::builder()
-                    .permissions_boundary_arn(Some(arn))
-                    .permissions_boundary_type(Some(PermissionsBoundaryAttachmentType::Policy))
+                    .permissions_boundary_arn(arn)
+                    .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                     .build()
                     .map_err(|e| {
-                        log::error!("Failed to construct permissions boundary for user: {e}");
+                        error!("Failed to construct AttachedPermissionsBoundary: {e}");
                         internal_failure()
                     })?,
             )
@@ -153,23 +154,22 @@ pub async fn list_users(
                 .path(row.path)
                 .user_id(format!("{}{}", IamResourceType::User.as_str(), row.user_id))
                 .user_name(row.user_name_cased)
-                .permissions_boundary(permissions_boundary)
+                .set_permissions_boundary(permissions_boundary)
                 .build()
                 .map_err(|e| {
-                    log::error!("Failed to construct user object: {e}");
+                    error!("Failed to construct User: {e}");
                     internal_failure()
                 })?,
         );
     }
 
-    let mut builder = ListUsersResponse::builder();
-    builder = builder.users(results);
-    if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
-    }
-
-    builder.build().map_err(|e| {
-        log::error!("Failed to build ListUsersResponse: {e}");
-        internal_failure().into()
-    })
+    Ok(ListUsersResponse::builder()
+        .set_users(results)
+        .is_truncated(next_marker.is_some())
+        .set_marker(next_marker)
+        .build()
+        .map_err(|e| {
+            error!("Failed to construct ListUsersResponse: {e}");
+            internal_failure()
+        })?)
 }

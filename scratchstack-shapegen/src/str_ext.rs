@@ -20,8 +20,14 @@ pub trait StrExt {
     /// This is used to convert Smithy shape names to Rust type names.
     fn to_pascal_case(&self) -> String;
 
-    /// Convert a string identifier to snake case. This is used to convert Smithy member names to Rust field names.
-    fn to_snake_case(&self) -> String;
+    /// Convert a string identifier to a Rust identifier in snake case. This is used to convert
+    /// Smithy member names to Rust field names.
+    fn to_rust_ident(&self) -> String {
+        self.to_rust_ident_affixed("", "")
+    }
+
+    /// Convert a string identifier to a Rust identifier with an optional prefix and suffix.
+    fn to_rust_ident_affixed(&self, prefix: &str, suffix: &str) -> String;
 }
 
 impl StrExt for str {
@@ -69,8 +75,9 @@ impl StrExt for str {
         result
     }
 
-    fn to_snake_case(&self) -> String {
-        let mut result = String::new();
+    fn to_rust_ident_affixed(&self, prefix: &str, suffix: &str) -> String {
+        let mut result = String::with_capacity(prefix.len() + self.len() + suffix.len());
+        result.push_str(prefix);
         let mut prev_char_was_uppercase = false;
 
         for (i, c) in self.chars().enumerate() {
@@ -85,6 +92,8 @@ impl StrExt for str {
                 prev_char_was_uppercase = false;
             }
         }
+
+        result.push_str(suffix);
 
         if RUST_IDENTS.contains(&result.as_str()) {
             result = format!("r#{result}");
@@ -107,7 +116,7 @@ impl StrExt for String {
         self.as_str().to_pascal_case()
     }
 
-    fn to_snake_case(&self) -> String {
-        self.as_str().to_snake_case()
+    fn to_rust_ident_affixed(&self, prefix: &str, suffix: &str) -> String {
+        self.as_str().to_rust_ident_affixed(prefix, suffix)
     }
 }

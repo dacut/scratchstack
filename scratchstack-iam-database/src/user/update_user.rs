@@ -5,6 +5,7 @@ use {
         user::validate_user_name,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError, operation::UpdateUserInternalRequest, types::error::NoSuchEntityException,
     },
@@ -65,7 +66,7 @@ pub async fn update_user(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to update user in database: {e}");
+            error!("Failed to update user in database: {e}");
             return Err(internal_failure().into());
         }
     };

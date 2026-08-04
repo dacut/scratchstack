@@ -6,12 +6,13 @@ use {
         policy::build_policy_arn, role::role_arn_resource,
     },
     chrono::{DateTime, Utc},
+    log::error,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListRolesInternalRequest, ListRolesResponse},
-        types::{AttachedPermissionsBoundary, PermissionsBoundaryAttachmentType, Role, Tag},
+        types::{AttachedPermissionsBoundary, PermissionsBoundaryAttachmentType, Role},
     },
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, QueryBuilder, postgres::PgTransaction},
@@ -93,7 +94,7 @@ pub async fn list_roles(
 
     if let Some(marker) = marker {
         let info: ListRolesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListRoles: {e}");
+            error!("Failed to decrypt pagination token for ListRoles: {e}");
             internal_failure()
         })?;
         sql.push(" AND r.role_name_lower >= ");
@@ -105,7 +106,7 @@ pub async fn list_roles(
     sql.push_bind(max_items as i32 + 1);
 
     let rows = sql.build_query_as::<ListRolesRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch roles from database: {e}");
+        error!("Failed to fetch roles from database: {e}");
         internal_failure()
     })?;
 
@@ -121,7 +122,7 @@ pub async fn list_roles(
                     })
                     .await
                     .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListRoles: {e}");
+                        error!("Failed to encrypt pagination token for ListRoles: {e}");
                         internal_failure()
                     })?,
             );
@@ -135,7 +136,7 @@ pub async fn list_roles(
             .resource(role_arn_resource(&row.path, &row.role_name_cased))
             .build()
             .map_err(|e| {
-                log::error!("Failed to construct ARN for role: {e}");
+                error!("Failed to construct ARN for role: {e}");
                 internal_failure()
             })?;
 
@@ -145,7 +146,7 @@ pub async fn list_roles(
             let (pb_path, pb_name_cased) = match (row.pb_path.as_deref(), row.pb_name_cased.as_deref()) {
                 (Some(pb_path), Some(pb_name_cased)) => (pb_path, pb_name_cased),
                 _ => {
-                    log::error!("Role references missing permissions boundary managed policy ID: {pb_id}");
+                    error!("Role references missing permissions boundary managed policy ID: {pb_id}");
                     return Err(internal_failure().into());
                 }
             };
@@ -153,11 +154,11 @@ pub async fn list_roles(
 
             Some(
                 AttachedPermissionsBoundary::builder()
-                    .permissions_boundary_arn(Some(pb_arn.to_string()))
-                    .permissions_boundary_type(Some(PermissionsBoundaryAttachmentType::Policy))
+                    .permissions_boundary_arn(pb_arn)
+                    .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                     .build()
                     .map_err(|e| {
-                        log::error!("Failed to construct permissions boundary for role: {e}");
+                        error!("Failed to build AttachedPermissionsBoundary: {e}");
                         internal_failure()
                     })?,
             )
@@ -167,32 +168,30 @@ pub async fn list_roles(
 
         results.push(
             Role::builder()
-                .arn(arn.to_string())
-                .assume_role_policy_document(Some(row.assume_role_policy_document))
+                .arn(arn)
+                .assume_role_policy_document(row.assume_role_policy_document)
                 .create_date(row.created_at)
-                .description(row.description)
-                .max_session_duration(row.max_session_duration)
+                .set_description(row.description)
+                .set_max_session_duration(row.max_session_duration)
                 .path(row.path)
-                .permissions_boundary(permissions_boundary)
+                .set_permissions_boundary(permissions_boundary)
                 .role_id(format!("{}{}", IamResourceType::Role.as_str(), row.role_id))
                 .role_name(row.role_name_cased)
-                .tags(Vec::<Tag>::new())
                 .build()
                 .map_err(|e| {
-                    log::error!("Failed to construct role object: {e}");
+                    error!("Failed to build Role: {e}");
                     internal_failure()
                 })?,
         );
     }
 
-    let mut builder = ListRolesResponse::builder();
-    builder = builder.roles(results);
-    if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
-    }
-
-    builder.build().map_err(|e| {
-        log::error!("Failed to build ListRolesResponse: {e}");
-        internal_failure().into()
-    })
+    Ok(ListRolesResponse::builder()
+        .set_roles(results)
+        .is_truncated(next_marker.is_some())
+        .set_marker(next_marker)
+        .build()
+        .map_err(|e| {
+            error!("Failed to build ListRolesResponse: {e}");
+            internal_failure()
+        })?)
 }

@@ -6,6 +6,7 @@ use {
         policy::build_policy_arn, user::validate_user_name,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListAttachedUserPoliciesInternalRequest, ListAttachedUserPoliciesResponse},
@@ -89,7 +90,7 @@ pub async fn list_attached_user_policies(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up user in database: {e}");
+            error!("Failed to look up user in database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -114,7 +115,7 @@ pub async fn list_attached_user_policies(
 
     if let Some(marker) = marker {
         let info: ListAttachedUserPoliciesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListAttachedUserPolicies: {e}");
+            error!("Failed to decrypt pagination token for ListAttachedUserPolicies: {e}");
             internal_failure()
         })?;
         sql.push(" AND (mp.managed_policy_name_lower, mp.managed_policy_id) >= (");
@@ -129,7 +130,7 @@ pub async fn list_attached_user_policies(
     sql.push_bind(max_items as i32 + 1);
 
     let rows = sql.build_query_as::<ListAttachedPolicyRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch attached user policies from database: {e}");
+        error!("Failed to fetch attached user policies from database: {e}");
         internal_failure()
     })?;
 
@@ -146,7 +147,7 @@ pub async fn list_attached_user_policies(
                     })
                     .await
                     .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListAttachedUserPolicies: {e}");
+                        error!("Failed to encrypt pagination token for ListAttachedUserPolicies: {e}");
                         internal_failure()
                     })?,
             );
@@ -154,26 +155,23 @@ pub async fn list_attached_user_policies(
         }
 
         let arn = build_policy_arn(&partition, &row.account_id, &row.path, &row.managed_policy_name_cased)?;
-        results.push(
-            AttachedPolicy::builder()
-                .policy_arn(Some(arn.to_string()))
-                .policy_name(Some(row.managed_policy_name_cased))
-                .build()
-                .map_err(|e| {
-                    log::error!("Failed to construct AttachedPolicy: {e}");
+        let attached_policy =
+            AttachedPolicy::builder().policy_arn(arn).policy_name(row.managed_policy_name_cased).build().map_err(
+                |e| {
+                    error!("Failed to construct AttachedPolicy: {e}");
                     internal_failure()
-                })?,
-        );
+                },
+            )?;
+        results.push(attached_policy);
     }
 
-    let mut builder = ListAttachedUserPoliciesResponse::builder();
-    builder = builder.attached_policies(results);
-    if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
-    }
-
-    builder.build().map_err(|e| {
-        log::error!("Failed to build ListAttachedUserPoliciesResponse: {e}");
-        internal_failure().into()
-    })
+    Ok(ListAttachedUserPoliciesResponse::builder()
+        .set_attached_policies(results)
+        .is_truncated(next_marker.is_some())
+        .set_marker(next_marker)
+        .build()
+        .map_err(|e| {
+            error!("Failed to construct ListAttachedUserPoliciesResponse: {e}");
+            internal_failure()
+        })?)
 }

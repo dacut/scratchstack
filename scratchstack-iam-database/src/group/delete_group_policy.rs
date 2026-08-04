@@ -5,6 +5,7 @@ use {
         policy::validate_policy_name,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError, operation::DeleteGroupPolicyInternalRequest, types::error::NoSuchEntityException,
     },
@@ -54,7 +55,7 @@ pub async fn delete_group_policy(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up group in database: {e}");
+            error!("Failed to look up group in database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -70,7 +71,7 @@ pub async fn delete_group_policy(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to delete group inline policy from database: {e}");
+            error!("Failed to delete group inline policy from database: {e}");
             return Err(internal_failure().into());
         }
     };

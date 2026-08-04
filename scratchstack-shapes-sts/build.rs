@@ -56,6 +56,7 @@ fn generate_sts_shapes() {
         &common_exceptions.as_object().unwrap().keys().collect::<Vec<_>>(),
     );
 
+    model.resolve_self();
     model.resolve();
 
     let out_dir = var("OUT_DIR").expect("OUT_DIR environment variable not set");
@@ -90,6 +91,14 @@ fn get_common_exception_shapes() -> JsonValue {
         "com.amazonaws.sts#InternalFailure": {
             "documentation": "The request can't be processed right now because of an internal server issue. Try again later. If the problem persists, contact AWS Support.",
             "httpResponseCode": 500
+        },
+        "com.amazonaws.sts#InvalidAction": {
+            "documentation": "An invalid action was specified in the request.",
+            "httpResponseCode": 403
+        },
+        "com.amazonaws.sts#InvalidClientTokenId": {
+            "documentation": "The security token included in the request is invalid.",
+            "httpResponseCode": 403
         },
         "com.amazonaws.sts#InvalidParameterCombination": {
             "documentation": "Parameters that must not be used together were used together. Remove one of the conflicting parameters and try again.",
@@ -146,6 +155,13 @@ fn get_common_exception_shapes() -> JsonValue {
         "com.amazonaws.sts#ValidationError": {
             "documentation": "The input doesn't meet the required format or constraints. Check that all required parameters are included and that values are valid.",
             "httpResponseCode": 400
+        },
+
+        // These types are not listed in the official AWS STS documentation but have been verified
+        // as being used by the service.
+        "com.amazonaws.sts#InvalidAction": {
+            "documentation": "The action specified in the request is invalid or not recognized by the service.",
+            "httpResponseCode": 400,
         }
     })
 }
@@ -206,6 +222,7 @@ fn create_exception_shape(model: &mut SmithyModel, exc_name: &str, exc_def: &Jso
             traits,
         },
         members,
+        xmlns: None,
     };
 
     model.shapes.insert(exc_name.to_string(), Rc::new(RefCell::new(Shape::Structure(error_struct))));

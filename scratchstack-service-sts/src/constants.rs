@@ -1,18 +1,22 @@
+/// Action: GetCallerIdentity
+pub(crate) const ACTION_GET_CALLER_IDENTITY: &str = "GetCallerIdentity";
+
 /// Content-Type string for HTML forms
 #[allow(dead_code)]
 pub(crate) const CT_APPLICATION_X_WWW_FORM_URLENCODED: &str = "application/x-www-form-urlencoded";
 
-/// Error code for InvalidAction errors
-pub(crate) const ERR_CODE_INVALID_ACTION: &str = "InvalidAction";
-
-/// Error type for Sender errors
-pub(crate) const ERR_TYPE_SENDER: &str = "Sender";
+/// Error type for Receiver errors
+#[allow(unused)]
+pub(crate) const ERR_TYPE_RECEIVER: &str = "Receiver";
 
 /// HTTP header for `Content-Type`
 pub(crate) const HDR_CONTENT_TYPE: &str = "content-type";
 
 /// HTTP header for `X-Amzn-RequestId`
 pub(crate) const HDR_X_AMZN_REQUEST_ID: &str = "x-amzn-requestid";
+
+/// Error message: Internal failure
+pub(crate) const MSG_INTERNAL_FAILURE: &str = "Internal failure";
 
 /// Query parameter for Action
 pub(crate) const QP_ACTION: &str = "Action";

@@ -5,6 +5,7 @@ use {
         partition::get_current_partition_or_fail, path::validate_path_prefix, policy::parse_policy_arn,
     },
     indoc::{formatdoc, indoc},
+    log::error,
     scratchstack_aws_principal::IamResourceType,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -145,14 +146,14 @@ pub async fn list_entities_for_policy(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up managed policy in database: {e}");
+            error!("Failed to look up managed policy in database: {e}");
             return Err(internal_failure().into());
         }
     };
 
     let resume: Option<ListEntitiesForPolicyMarker> = if let Some(marker) = marker {
         Some(paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListEntitiesForPolicy: {e}");
+            error!("Failed to decrypt pagination token for ListEntitiesForPolicy: {e}");
             internal_failure()
         })?)
     } else {
@@ -209,7 +210,7 @@ pub async fn list_entities_for_policy(
                         })
                         .await
                         .map_err(|e| {
-                            log::error!("Failed to encrypt pagination token for ListEntitiesForPolicy: {e}");
+                            error!("Failed to encrypt pagination token for ListEntitiesForPolicy: {e}");
                             internal_failure()
                         })?,
                 );
@@ -218,31 +219,31 @@ pub async fn list_entities_for_policy(
             match section {
                 EntitySection::Group => groups.push(
                     PolicyGroup::builder()
-                        .group_id(Some(format!("{}{}", IamResourceType::Group.as_str(), row.entity_id)))
-                        .group_name(Some(row.entity_name_cased))
+                        .group_id(format!("{}{}", IamResourceType::Group.as_str(), row.entity_id))
+                        .group_name(row.entity_name_cased)
                         .build()
                         .map_err(|e| {
-                            log::error!("Failed to construct PolicyGroup: {e}");
+                            error!("Failed to build PolicyGroup: {e}");
                             internal_failure()
                         })?,
                 ),
                 EntitySection::Role => roles.push(
                     PolicyRole::builder()
-                        .role_id(Some(format!("{}{}", IamResourceType::Role.as_str(), row.entity_id)))
-                        .role_name(Some(row.entity_name_cased))
+                        .role_id(format!("{}{}", IamResourceType::Role.as_str(), row.entity_id))
+                        .role_name(row.entity_name_cased)
                         .build()
                         .map_err(|e| {
-                            log::error!("Failed to construct PolicyRole: {e}");
+                            error!("Failed to build PolicyRole: {e}");
                             internal_failure()
                         })?,
                 ),
                 EntitySection::User => users.push(
                     PolicyUser::builder()
-                        .user_id(Some(format!("{}{}", IamResourceType::User.as_str(), row.entity_id)))
-                        .user_name(Some(row.entity_name_cased))
+                        .user_id(format!("{}{}", IamResourceType::User.as_str(), row.entity_id))
+                        .user_name(row.entity_name_cased)
                         .build()
                         .map_err(|e| {
-                            log::error!("Failed to construct PolicyUser: {e}");
+                            error!("Failed to build PolicyUser: {e}");
                             internal_failure()
                         })?,
                 ),
@@ -250,13 +251,17 @@ pub async fn list_entities_for_policy(
         }
     }
 
-    Ok(ListEntitiesForPolicyResponse {
-        policy_groups: groups,
-        policy_roles: roles,
-        policy_users: users,
-        is_truncated: Some(next_marker.is_some()),
-        marker: next_marker,
-    })
+    Ok(ListEntitiesForPolicyResponse::builder()
+        .set_policy_groups(groups)
+        .set_policy_roles(roles)
+        .set_policy_users(users)
+        .is_truncated(next_marker.is_some())
+        .set_marker(next_marker)
+        .build()
+        .map_err(|e| {
+            error!("Failed to build ListEntitiesForPolicyResponse: {e}");
+            internal_failure()
+        })?)
 }
 
 /// Fetch rows from the requested section (groups/roles/users) attached to or boundaried by a
@@ -317,7 +322,7 @@ async fn fetch_section_rows(
     sql.push_bind(limit);
 
     sql.build_query_as::<EntityRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch attached entities for ListEntitiesForPolicy ({section}): {e}");
+        error!("Failed to fetch attached entities for ListEntitiesForPolicy ({section}): {e}");
         internal_failure().into()
     })
 }

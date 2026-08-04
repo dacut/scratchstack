@@ -13,6 +13,7 @@ use {
         tag::{validate_tag_key, validate_tag_value},
     },
     indoc::indoc,
+    log::error,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
     scratchstack_shapes_iam::{
@@ -109,14 +110,14 @@ pub async fn create_role(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to insert role into database: {e}");
+            error!("Failed to insert role into database: {e}");
             return Err(internal_failure().into());
         }
     };
     let created_at: chrono::DateTime<chrono::Utc> = match result.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
-            log::error!("Failed to get created_at from database row: {e}");
+            error!("Failed to get created_at from database row: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -137,33 +138,30 @@ pub async fn create_role(
         .execute(tx.as_mut())
         .await
         {
-            log::error!("Failed to insert role tag into database: {e}");
+            error!("Failed to insert role tag into database: {e}");
             return Err(internal_failure().into());
         }
     }
 
-    let arn = match Arn::builder()
+    let arn = Arn::builder()
         .partition(partition)
         .service(SERVICE_KEY_IAM)
         .account_id(account_id)
         .resource(role_arn_resource(path, role_name))
         .build()
-    {
-        Ok(arn) => arn,
-        Err(e) => {
-            log::error!("Failed to construct ARN for new role: {e}");
-            return Err(internal_failure().into());
-        }
-    };
+        .map_err(|e| {
+            error!("Failed to construct ARN for new role: {e}");
+            internal_failure()
+        })?;
 
     let permissions_boundary = if let Some(pb) = permissions_boundary {
         Some(
             AttachedPermissionsBoundary::builder()
-                .permissions_boundary_arn(Some(pb.to_string()))
-                .permissions_boundary_type(Some(PermissionsBoundaryAttachmentType::Policy))
+                .permissions_boundary_arn(pb)
+                .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                 .build()
                 .map_err(|e| {
-                    log::error!("Failed to construct permissions boundary for new role: {e}");
+                    error!("Failed to build attached permissions boundary: {e}");
                     internal_failure()
                 })?,
         )
@@ -172,21 +170,24 @@ pub async fn create_role(
     };
 
     let role = Role::builder()
-        .arn(arn.to_string())
-        .assume_role_policy_document(Some(assume_role_policy_document.to_string()))
+        .arn(arn)
+        .assume_role_policy_document(assume_role_policy_document)
         .create_date(created_at)
-        .description(description.map(|d| d.to_string()))
-        .max_session_duration(max_session_duration)
-        .path(path.to_string())
-        .permissions_boundary(permissions_boundary)
+        .set_description(description.map(str::to_string))
+        .set_max_session_duration(max_session_duration)
+        .path(path)
+        .set_permissions_boundary(permissions_boundary)
         .role_id(role_id)
-        .role_name(role_name.to_string())
-        .tags(tags.to_vec())
+        .role_name(role_name)
+        .set_tags(tags)
         .build()
         .map_err(|e| {
-            log::error!("Failed to construct role object for new role: {e}");
+            error!("Failed to build Role: {e}");
             internal_failure()
         })?;
 
-    Ok(CreateRoleResponse::builder().role(role).build().unwrap())
+    Ok(CreateRoleResponse::builder().role(role).build().map_err(|e| {
+        error!("Failed to build CreateRoleResponse: {e}");
+        internal_failure()
+    })?)
 }

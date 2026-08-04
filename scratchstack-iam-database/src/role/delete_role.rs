@@ -2,6 +2,7 @@
 use {
     crate::{RequestExecutor, account::validate_account_id, constants::*, internal_failure, role::validate_role_name},
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::DeleteRoleInternalRequest,
@@ -49,7 +50,7 @@ pub async fn delete_role(tx: &mut PgTransaction<'_>, account_id: &str, role_name
                 );
                 return Err(DeleteConflictException::builder().message(message).build().into());
             }
-            log::error!("Failed to delete role from database: {e}");
+            error!("Failed to delete role from database: {e}");
             return Err(internal_failure().into());
         }
     };

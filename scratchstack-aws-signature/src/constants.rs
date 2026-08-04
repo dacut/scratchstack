@@ -8,6 +8,7 @@
 //! they should use hard-coded strings so the tests are also testing for misspellings.
 //!
 //! Please keep this file organized alphabetically. (This can be a bit hard with comments, etc.)
+#![allow(unused)]
 
 /// Default allowed timestamp mismatch in minutes.
 pub(crate) const ALLOWED_MISMATCH_MINUTES: i64 = 15;
@@ -31,7 +32,6 @@ pub(crate) const CHARSET: &str = "charset";
 pub(crate) const CREDENTIAL: &[u8] = b"Credential";
 
 /// The default size of a secret key in bytes.
-#[allow(unused)]
 pub(crate) const DEFAULT_SECRET_KEY_SIZE: usize = 40;
 
 /// The default size of a raw secret key in bytes before encoding.
@@ -82,14 +82,126 @@ pub(crate) const ERR_CODE_MISSING_REQUIRED_HEADER: &str = "MissingRequiredHeader
 /// Error code: SignatureDoesNotMatch
 pub(crate) const ERR_CODE_SIGNATURE_DOES_NOT_MATCH: &str = "SignatureDoesNotMatch";
 
+/// Error message: `"Authorization header requires 'Credential' parameter."`
+pub(crate) const ERR_MSG_AUTH_HEADER_REQ_CREDENTIAL: &str = "Authorization header requires 'Credential' parameter.";
+
+/// Error message: `"Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header."`
+pub(crate) const ERR_MSG_AUTH_HEADER_REQ_DATE: &str =
+    "Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header.";
+
+/// Error message: `"Authorization header requires 'Signature' parameter."`
+pub(crate) const ERR_MSG_AUTH_HEADER_REQ_SIGNATURE: &str = "Authorization header requires 'Signature' parameter.";
+
+/// Error message: `"Authorization header requires 'SignedHeaders' parameter."`
+pub(crate) const ERR_MSG_AUTH_HEADER_REQ_SIGNED_HEADERS: &str =
+    "Authorization header requires 'SignedHeaders' parameter.";
+
+/// Error message: `"Credential must have exactly 5 slash-delimited elements, e.g. keyid/date/region/service/term,"`
+pub(crate) const ERR_MSG_CREDENTIAL_MUST_HAVE_FIVE_PARTS: &str =
+    "Credential must have exactly 5 slash-delimited elements, e.g. keyid/date/region/service/term,";
+
+/// Error message: `"The request contains a query parameter that duplicates a header value."`
+#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
+pub(crate) const ERR_MSG_DUPLICATE_HEADER_AND_QUERY_PARAMETER: &str =
+    "The request contains a query parameter that duplicates a header value";
+
+/// Error message: `"The security token included in the request is expired."`
+pub(crate) const ERR_MSG_EXPIRED_SECURITY_TOKEN: &str = "The security token included in the request is expired";
+
+/// Error message: `"'Host' or ':authority' must be a 'SignedHeader' in the AWS Authorization."`
+pub(crate) const ERR_MSG_HOST_AUTHORITY_MUST_BE_SIGNED: &str =
+    "'Host' or ':authority' must be a 'SignedHeader' in the AWS Authorization.";
+
+/// Error message: `"Illegal hex character in escape % pattern: %"`
+pub(crate) const ERR_MSG_ILLEGAL_HEX_CHAR: &str = "Illegal hex character in escape % pattern: %";
+
+/// Error message: `"Incomplete trailing escape % sequence"`
+pub(crate) const ERR_MSG_INCOMPLETE_TRAILING_ESCAPE: &str = "Incomplete trailing escape % sequence";
+
+/// Error message: `"The AWS access key provided does not exist in our records"`
+pub(crate) const ERR_MSG_INVALID_ACCESS_KEY: &str = "The AWS access key provided does not exist in our records";
+
+/// Error message: `"Invalid request header"`
+pub(crate) const ERR_MSG_INVALID_HEADER: &str = "Invalid request header";
+
+/// Error message: `"Invalid request method"`
+pub(crate) const ERR_MSG_INVALID_METHOD: &str = "Invalid request method";
+
+/// Error message: `"Invalid request query string"`
+pub(crate) const ERR_MSG_INVALID_QUERY_STRING: &str = "Invalid request query string";
+
+/// Error message: `"The security token included in the request is invalid."`
+pub(crate) const ERR_MSG_INVALID_SECURITY_TOKEN: &str = "The security token included in the request is invalid";
+
+/// Error message: Invalid session token
+pub(crate) const ERR_MSG_INVALID_SESSION_TOKEN: &str = "Invalid session token";
+
+/// Error message: `"Invalid x-amz-content-sha256 value"`
+#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
+pub(crate) const ERR_MSG_INVALID_XACS_VALUE: &str = "Invalid x-amz-content-sha256 value";
+
+/// Error message: `"The URI path includes invalid components"`
+pub(crate) const ERR_MSG_INVALID_URI_PATH: &str = "The URI path includes invalid components";
+
+/// Error message: `"Internal Service Error"`
+pub(crate) const ERR_MSG_INTERNAL_SERVICE_ERROR: &str = "Internal Service Error";
+
 /// Error message: Key too long
 pub(crate) const ERR_MSG_KEY_TOO_LONG: &str = "Key too long";
 
 /// Error message: Key too short
 pub(crate) const ERR_MSG_KEY_TOO_SHORT: &str = "Key too short";
 
-/// Error message: Invalid session token
-pub(crate) const ERR_MSG_INVALID_SESSION_TOKEN: &str = "Invalid session token";
+/// Error message: `"Malformed X-Amz-Content-Sha256 header value"`
+#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
+pub(crate) const ERR_MSG_MALFORMED_XACS_HEADER_VALUE: &str = "Malformed X-Amz-Content-Sha256 header value";
+
+/// Error message: `"Malformed X-Amz-Content-Sha256 query parameter"`
+#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
+pub(crate) const ERR_MSG_MALFORMED_XACS_QUERY_PARAMETER: &str = "Malformed X-Amz-Content-Sha256 query parameter";
+
+/// Error message: `"Request is missing Authentication Token"`
+pub(crate) const ERR_MSG_MISSING_AUTH_TOKEN: &str = "Request is missing Authentication Token";
+
+/// Error message: `"Request is missing a required header"`
+pub(crate) const ERR_MSG_REQUEST_MISSING_REQUIRED_HEADER: &str = "Request is missing a required header";
+
+/// Error message: `"AWS query-string parameters must include 'X-Amz-Credential'"`
+pub(crate) const ERR_MSG_QUERY_STRING_MUST_INCLUDE_CREDENTIAL: &str =
+    "AWS query-string parameters must include 'X-Amz-Credential'.";
+
+/// Error message: `"AWS query-string parameters must include 'X-Amz-Sigature'"`
+pub(crate) const ERR_MSG_QUERY_STRING_MUST_INCLUDE_SIGNATURE: &str =
+    "AWS query-string parameters must include 'X-Amz-Signature'.";
+
+/// Error message: `"AWS query-string parameters must include 'X-Amz-SignedHeaders'"`
+pub(crate) const ERR_MSG_QUERY_STRING_MUST_INCLUDE_SIGNED_HEADERS: &str =
+    "AWS query-string parameters must include 'X-Amz-SignedHeaders'.";
+
+/// Error message: `"AWS query-string parameters must include 'X-Amz-Date'"`
+pub(crate) const ERR_MSG_QUERY_STRING_MUST_INCLUDE_DATE: &str =
+    "AWS query-string parameters must include 'X-Amz-Date'.";
+
+/// Error message: `"Re-examine the query-string parameters."`
+pub(crate) const ERR_MSG_REEXAMINE_QUERY_STRING_PARAMS: &str = "Re-examine the query-string parameters.";
+
+/// Error message: `"Request is missing the X-Amz-Content-Sha256 header or query parameter"`
+#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
+pub(crate) const ERR_MSG_REQUEST_MISSING_XACS: &str =
+    "Request is missing the X-Amz-Content-Sha256 header or query parameter";
+
+/// Error message: `"The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details."`
+pub(crate) const ERR_MSG_REQUEST_SIGNATURE_MISMATCH: &str = "The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.";
+
+/// Error message: `"Unsupported AWS 'algorithm': "`
+pub(crate) const ERR_MSG_UNSUPPORTED_ALGORITHM: &str = "Unsupported AWS 'algorithm': ";
+
+/// Error message: `"The request body used an unsupported character set encoding. Currently only UTF-8 is supported."`
+pub(crate) const ERR_MSG_UNSUPPORTED_BODY_ENCODING: &str =
+    "The request body used an unsupported character set encoding. Currently only UTF-8 is supported.";
+
+/// Error message: `"The content-type of the request is unsupported"`
+pub(crate) const ERR_MSG_UNSUPPORTED_CONTENT_TYPE: &str = "The content-type of the request is unsupported";
 
 /// Header for `authorization`
 pub(crate) const HDR_AUTHORIZATION: &str = "authorization";
@@ -144,85 +256,6 @@ pub(crate) const MAX_SESSION_TOKEN_SIZE: usize = 1 << 20; // 1 MiB
 /// Maximum size of a secret key in bytes.
 pub(crate) const MAX_SECRET_KEY_SIZE: usize = 256;
 
-/// Error message: `"Authorization header requires 'Credential' parameter."`
-pub(crate) const MSG_AUTH_HEADER_REQ_CREDENTIAL: &str = "Authorization header requires 'Credential' parameter.";
-
-/// Error message: `"Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header."`
-pub(crate) const MSG_AUTH_HEADER_REQ_DATE: &str =
-    "Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header.";
-
-/// Error message: `"Authorization header requires 'Signature' parameter."`
-pub(crate) const MSG_AUTH_HEADER_REQ_SIGNATURE: &str = "Authorization header requires 'Signature' parameter.";
-
-/// Error message: `"Authorization header requires 'SignedHeaders' parameter."`
-pub(crate) const MSG_AUTH_HEADER_REQ_SIGNED_HEADERS: &str = "Authorization header requires 'SignedHeaders' parameter.";
-
-/// Error message: `"Credential must have exactly 5 slash-delimited elements, e.g. keyid/date/region/service/term,"`
-pub(crate) const MSG_CREDENTIAL_MUST_HAVE_FIVE_PARTS: &str =
-    "Credential must have exactly 5 slash-delimited elements, e.g. keyid/date/region/service/term,";
-
-/// Error message: `"The request contains a query parameter that duplicates a header value."`
-#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
-pub(crate) const MSG_DUPLICATE_HEADER_AND_QUERY_PARAMETER: &str =
-    "The request contains a query parameter that duplicates a header value.";
-
-/// Error message: `"'Host' or ':authority' must be a 'SignedHeader' in the AWS Authorization."`
-pub(crate) const MSG_HOST_AUTHORITY_MUST_BE_SIGNED: &str =
-    "'Host' or ':authority' must be a 'SignedHeader' in the AWS Authorization.";
-
-/// Error message: `"Illegal hex character in escape % pattern: %"`
-pub(crate) const MSG_ILLEGAL_HEX_CHAR: &str = "Illegal hex character in escape % pattern: %";
-
-/// Error message: `"Incomplete trailing escape % sequence"`
-pub(crate) const MSG_INCOMPLETE_TRAILING_ESCAPE: &str = "Incomplete trailing escape % sequence";
-
-/// Error message: `"Invalid x-amz-content-sha256 value"`
-#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
-pub(crate) const MSG_INVALID_XACS_VALUE: &str = "Invalid x-amz-content-sha256 value";
-
-/// Error message: `"Internal Service Error"`
-pub(crate) const MSG_INTERNAL_SERVICE_ERROR: &str = "Internal Service Error";
-
-/// Error message: `"Malformed X-Amz-Content-Sha256 header value"`
-#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
-pub(crate) const MSG_MALFORMED_XACS_HEADER_VALUE: &str = "Malformed X-Amz-Content-Sha256 header value";
-
-/// Error message: `"Malformed X-Amz-Content-Sha256 query parameter"`
-#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
-pub(crate) const MSG_MALFORMED_XACS_QUERY_PARAMETER: &str = "Malformed X-Amz-Content-Sha256 query parameter";
-
-/// Error message: `"AWS query-string parameters must include 'X-Amz-Credential'"`
-pub(crate) const MSG_QUERY_STRING_MUST_INCLUDE_CREDENTIAL: &str =
-    "AWS query-string parameters must include 'X-Amz-Credential'.";
-
-/// Error message: `"AWS query-string parameters must include 'X-Amz-Sigature'"`
-pub(crate) const MSG_QUERY_STRING_MUST_INCLUDE_SIGNATURE: &str =
-    "AWS query-string parameters must include 'X-Amz-Signature'.";
-
-/// Error message: `"AWS query-string parameters must include 'X-Amz-SignedHeaders'"`
-pub(crate) const MSG_QUERY_STRING_MUST_INCLUDE_SIGNED_HEADERS: &str =
-    "AWS query-string parameters must include 'X-Amz-SignedHeaders'.";
-
-/// Error message: `"AWS query-string parameters must include 'X-Amz-Date'"`
-pub(crate) const MSG_QUERY_STRING_MUST_INCLUDE_DATE: &str = "AWS query-string parameters must include 'X-Amz-Date'.";
-
-/// Error message: `"Re-examine the query-string parameters."`
-pub(crate) const MSG_REEXAMINE_QUERY_STRING_PARAMS: &str = "Re-examine the query-string parameters.";
-
-/// Error message: `"Request is missing Authentication Token"`
-pub(crate) const MSG_REQUEST_MISSING_AUTH_TOKEN: &str = "Request is missing Authentication Token";
-
-/// Error message: `"Request is missing the X-Amz-Content-Sha256 header or query parameter"`
-#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
-pub(crate) const MSG_REQUEST_MISSING_XACS: &str =
-    "Request is missing the X-Amz-Content-Sha256 header or query parameter";
-
-/// Error message: `"The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details."`
-pub(crate) const MSG_REQUEST_SIGNATURE_MISMATCH: &str = "The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.";
-
-/// Error message: `"Unsupported AWS 'algorithm': "`
-pub(crate) const MSG_UNSUPPORTED_ALGORITHM: &str = "Unsupported AWS 'algorithm': ";
-
 /// Query parameter for the signature algorithm
 pub(crate) const QP_X_AMZ_ALGORITHM: &str = "X-Amz-Algorithm";
 
@@ -268,25 +301,25 @@ pub(crate) const TEST_REGION: &str = "us-east-1";
 pub(crate) const TEST_SERVICE: &str = "service";
 
 /// Token used for `x-amz-content-sha256` when the payload is streamed and signed with SigV4a
-#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
+// XXX: Will this be needed? (S3-specific)
 pub(crate) const XACS_STREAMING_AWS4_ECDSA_P256_SHA256_PAYLOAD: &str = "STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD";
 
 /// Token used for `x-amz-content-sha256` when the payload is streamed and signed with SigV4a and has trailers
-#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
+// XXX: Will this be needed? (S3-specific)
 pub(crate) const XACS_STREAMING_AWS4_ECDSA_P256_SHA256_PAYLOAD_TRAILER: &str =
     "STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD-TRAILER";
 
 /// Token used for `x-amz-content-sha256` when the payload is streamed and SigV4 signed
-#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
+// XXX: Will this be needed? (S3-specific)
 pub(crate) const XACS_STREAMING_AWS4_HMAC_SHA256_PAYLOAD: &str = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD";
 
 /// Token used for `x-amz-content-sha256` when the payload is streamed and SigV4 signed and has trailers
-#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
+// XXX: Will this be needed? (S3-specific)
 pub(crate) const XACS_STREAMING_AWS4_HMAC_SHA256_PAYLOAD_TRAILER: &str = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER";
 
 /// Token used for `x-amz-content-sha256` when the payload is streamed and unsigned and has
 /// trailers
-#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
+// XXX: Will this be needed? (S3-specific)
 pub(crate) const XACS_STREAMING_UNSIGNED_PAYLOAD_TRAILER: &str = "STREAMING-UNSIGNED-PAYLOAD-TRAILER";
 
 /// Token used for `x-amz-content-sha256` when the payload is unsigned

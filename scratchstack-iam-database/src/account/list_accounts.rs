@@ -4,6 +4,7 @@ use {
         RequestExecutor, constants::*, constrain_max_items, internal_failure, make_iam_paginator,
         partition::get_current_partition_or_fail,
     },
+    log::{error, warn},
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListAccountsRequest, ListAccountsResponse},
@@ -56,7 +57,7 @@ pub async fn list_accounts(
             ListAccountsFilterName::AccountAlias => "alias",
             ListAccountsFilterName::Email => "email",
             _ => {
-                log::warn!("Received unsupported filter key: {:?}", filter.name);
+                warn!("Received unsupported filter key: {:?}", filter.name);
                 continue;
             }
         };
@@ -67,7 +68,7 @@ pub async fn list_accounts(
 
     if let Some(marker) = marker {
         let info: ListAccountsMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListAccounts: {e}");
+            error!("Failed to decrypt pagination token for ListAccounts: {e}");
             internal_failure()
         })?;
         sql.push(" AND account_id > ");
@@ -79,7 +80,7 @@ pub async fn list_accounts(
     sql.push_bind(max_items as i32 + 1);
 
     let rows = sql.build_query_as::<ListAccountsRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch accounts from database: {e}");
+        error!("Failed to fetch accounts from database: {e}");
         internal_failure()
     })?;
 
@@ -101,7 +102,7 @@ pub async fn list_accounts(
                     })
                     .await
                     .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListAccounts: {e}");
+                        error!("Failed to encrypt pagination token for ListAccounts: {e}");
                         internal_failure()
                     })?,
             );

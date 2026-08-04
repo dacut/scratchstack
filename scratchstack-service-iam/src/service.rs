@@ -1,7 +1,7 @@
 use {
     crate::{constants::*, model},
     axum::{body::Body, extract::Form, http::StatusCode, response::Response},
-    scratchstack_http_framework::RequestId,
+    scratchstack_core::request_id::RequestId,
     std::collections::HashMap,
 };
 

@@ -5,6 +5,7 @@ use {
         path::validate_path,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError, operation::UpdateGroupInternalRequest, types::error::NoSuchEntityException,
     },
@@ -65,7 +66,7 @@ pub async fn update_group(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to update group in database: {e}");
+            error!("Failed to update group in database: {e}");
             return Err(internal_failure().into());
         }
     };

@@ -21,14 +21,15 @@ axum = { workspace = true, features = [
     "tower-log",
     "tracing",
 ] }
+bon.workspace = true
 chrono.workspace = true
 clap = { workspace = true, features = ["derive"] }
-derive_builder.workspace = true
 env_logger.workspace = true
 form_urlencoded.workspace = true
 futures.workspace = true
 http.workspace = true
 http-body.workspace = true
+lazy_static.workspace = true
 log.workspace = true
 quick-xml = { workspace = true, features = ["serialize"] }
 rustls.workspace = true
@@ -38,11 +39,10 @@ scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features 
 ] }
 scratchstack-aws-principal.path = "../scratchstack-aws-principal"
 scratchstack-config.path = "../scratchstack-config"
-scratchstack-hakari = { path = "../scratchstack-hakari" }
+scratchstack-core.path = "../scratchstack-core"
+scratchstack-hakari.path = "../scratchstack-hakari"
 scratchstack-iam-database.path = "../scratchstack-iam-database"
-scratchstack-http-framework = { path = "../scratchstack-http-framework", features = [
-    "tls",
-] }
+scratchstack-shapes-sts.path = "../scratchstack-shapes-sts"
 serde = { workspace = true, features = ["derive"] }
 sqlx = { workspace = true, features = [
     "all-databases",

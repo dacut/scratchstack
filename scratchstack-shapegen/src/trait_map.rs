@@ -143,6 +143,13 @@ impl TraitMap {
         Some(result)
     }
 
+    /// Returns the API XML namespace, if any, for this shape.
+    pub fn xml_namespace(&self) -> Option<&str> {
+        let xmlns = self.0.get(&TraitId::SmithyApiXmlNamespace)?;
+        let xmlns_map = xmlns.as_object()?;
+        xmlns_map.get("uri").and_then(|v| v.as_str())
+    }
+
     /// Writes documentation comments for this shape to the given output.
     pub fn write_docs(&self, w: &mut dyn Write, indent: &str) -> IoResult<()> {
         if let Some(doc_any) = self.0.get(&TraitId::SmithyApiDocumentation)

@@ -4,6 +4,7 @@ use {
         RequestExecutor, account::validate_account_id, constants::*, group::validate_group_name, internal_failure,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::DeleteGroupInternalRequest,
@@ -51,7 +52,7 @@ pub async fn delete_group(tx: &mut PgTransaction<'_>, account_id: &str, group_na
                 );
                 return Err(DeleteConflictException::builder().message(message).build().into());
             }
-            log::error!("Failed to delete group from database: {e}");
+            error!("Failed to delete group from database: {e}");
             return Err(internal_failure().into());
         }
     };

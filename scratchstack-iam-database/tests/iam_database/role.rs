@@ -32,9 +32,9 @@ const TRUST_POLICY: &str = r#"{"Version":"2012-10-17","Statement":[{"Effect":"Al
 pub async fn test_create_role_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreateRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY)
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx)
@@ -58,10 +58,10 @@ pub async fn test_create_role_simple(pool: &sqlx::PgPool) {
 pub async fn test_create_role_with_path(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreateRoleInternalRequest::builder()
-        .role_name("DeployRole".to_string())
-        .path(Some("/service-roles/".to_string()))
-        .account_id("123456789012".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .role_name("DeployRole")
+        .path("/service-roles/")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY)
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx)
@@ -83,11 +83,11 @@ pub async fn test_create_role_with_path(pool: &sqlx::PgPool) {
 pub async fn test_create_role_with_description_and_duration(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreateRoleInternalRequest::builder()
-        .role_name("LongSessionRole".to_string())
-        .account_id("123456789012".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
-        .description(Some("Role for long-running batch jobs.".to_string()))
-        .max_session_duration(Some(14400))
+        .role_name("LongSessionRole")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY)
+        .description("Role for long-running batch jobs.")
+        .max_session_duration(14400)
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx)
@@ -105,21 +105,11 @@ pub async fn test_create_role_with_description_and_duration(pool: &sqlx::PgPool)
 pub async fn test_create_role_with_tags(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreateRoleInternalRequest::builder()
-        .role_name("TaggedRole".to_string())
-        .account_id("210987654321".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
-        .tags(vec![
-            Tag::builder()
-                .key("Environment".to_string())
-                .value("Production".to_string())
-                .build()
-                .expect("Failed to build Environment tag"),
-            Tag::builder()
-                .key("Team".to_string())
-                .value("Platform".to_string())
-                .build()
-                .expect("Failed to build Team tag"),
-        ])
+        .role_name("TaggedRole")
+        .account_id("210987654321")
+        .assume_role_policy_document(TRUST_POLICY)
+        .tags(Tag::builder().key("Environment").value("Production").build().expect("Failed to build Environment tag"))
+        .tags(Tag::builder().key("Team").value("Platform").build().expect("Failed to build Team tag"))
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx)
@@ -144,10 +134,10 @@ pub async fn test_create_role_with_permissions_boundary(pool: &sqlx::PgPool) {
     // The test data has "Example-Managed-Policy-1" in account 123456789012 at path "/".
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreateRoleInternalRequest::builder()
-        .role_name("BoundedRole".to_string())
-        .account_id("123456789012".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
-        .permissions_boundary(Some("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string()))
+        .role_name("BoundedRole")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY)
+        .permissions_boundary("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx)
@@ -167,9 +157,9 @@ pub async fn test_create_role_duplicate_name(pool: &sqlx::PgPool) {
     // "LambdaExecutor" was committed by test_create_role_simple; re-inserting it must fail.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = CreateRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY)
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx)
@@ -182,9 +172,9 @@ pub async fn test_create_role_duplicate_name(pool: &sqlx::PgPool) {
 pub fn test_create_role_invalid_name() {
     // Spaces and `!` are not in the allowed character set.
     let result = CreateRoleInternalRequest::builder()
-        .role_name("bad role!".to_string())
-        .account_id("123456789012".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .role_name("bad role!")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY)
         .build();
     assert!(result.is_err(), "Building a request with an invalid role name must fail");
 }
@@ -193,19 +183,19 @@ pub fn test_create_role_invalid_name() {
 pub fn test_create_role_invalid_max_session_duration() {
     // 60 seconds is well below the 3600 minimum.
     let result = CreateRoleInternalRequest::builder()
-        .role_name("ShortSessionRole".to_string())
-        .account_id("123456789012".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
-        .max_session_duration(Some(60))
+        .role_name("ShortSessionRole")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY)
+        .max_session_duration(60)
         .build();
     assert!(result.is_err(), "Building a request with max_session_duration below 3600 must fail");
 
     // 100000 seconds is well above the 43200 maximum.
     let result = CreateRoleInternalRequest::builder()
-        .role_name("VeryLongSessionRole".to_string())
-        .account_id("123456789012".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
-        .max_session_duration(Some(100000))
+        .role_name("VeryLongSessionRole")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY)
+        .max_session_duration(100000)
         .build();
     assert!(result.is_err(), "Building a request with max_session_duration above 43200 must fail");
 }
@@ -214,9 +204,9 @@ pub fn test_create_role_invalid_max_session_duration() {
 pub async fn test_create_role_nonexistent_account(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = CreateRoleInternalRequest::builder()
-        .role_name("OrphanRole".to_string())
-        .account_id("999999999999".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .role_name("OrphanRole")
+        .account_id("999999999999")
+        .assume_role_policy_document(TRUST_POLICY)
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx)
@@ -229,10 +219,10 @@ pub async fn test_create_role_nonexistent_account(pool: &sqlx::PgPool) {
 pub async fn test_create_role_nonexistent_permissions_boundary(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = CreateRoleInternalRequest::builder()
-        .role_name("MissingBoundaryRole".to_string())
-        .account_id("123456789012".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
-        .permissions_boundary(Some("arn:aws:iam::123456789012:policy/NonExistentPolicy".to_string()))
+        .role_name("MissingBoundaryRole")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY)
+        .permissions_boundary("arn:aws:iam::123456789012:policy/NonExistentPolicy")
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx)
@@ -246,9 +236,9 @@ pub async fn test_delete_role_simple(pool: &sqlx::PgPool) {
     // Create a fresh role so this test is self-contained.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateRoleInternalRequest::builder()
-        .role_name("DeleteMeRole".to_string())
-        .account_id("123456789012".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .role_name("DeleteMeRole")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY)
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx)
@@ -258,8 +248,8 @@ pub async fn test_delete_role_simple(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeleteRoleInternalRequest::builder()
-        .role_name("DeleteMeRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("DeleteMeRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
         .execute(&mut tx)
@@ -270,8 +260,8 @@ pub async fn test_delete_role_simple(pool: &sqlx::PgPool) {
     // Re-deleting the same role must fail with NoSuchEntity.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteRoleInternalRequest::builder()
-        .role_name("DeleteMeRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("DeleteMeRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
         .execute(&mut tx)
@@ -286,16 +276,10 @@ pub async fn test_delete_role_simple(pool: &sqlx::PgPool) {
 pub async fn test_delete_role_cascades_tags(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateRoleInternalRequest::builder()
-        .role_name("DeleteMeTaggedRole".to_string())
-        .account_id("123456789012".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
-        .tags(vec![
-            Tag::builder()
-                .key("Environment".to_string())
-                .value("Dev".to_string())
-                .build()
-                .expect("Failed to build Environment tag"),
-        ])
+        .role_name("DeleteMeTaggedRole")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY)
+        .tags(Tag::builder().key("Environment").value("Dev").build().expect("Failed to build Environment tag"))
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx)
@@ -321,8 +305,8 @@ pub async fn test_delete_role_cascades_tags(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeleteRoleInternalRequest::builder()
-        .role_name("DeleteMeTaggedRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("DeleteMeTaggedRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
         .execute(&mut tx)
@@ -344,9 +328,9 @@ pub async fn test_delete_role_cascades_tags(pool: &sqlx::PgPool) {
 pub async fn test_delete_role_attached_policy_fails(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateRoleInternalRequest::builder()
-        .role_name("DeleteMeAttachedRole".to_string())
-        .account_id("123456789012".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .role_name("DeleteMeAttachedRole")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY)
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx)
@@ -370,8 +354,8 @@ pub async fn test_delete_role_attached_policy_fails(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteRoleInternalRequest::builder()
-        .role_name("DeleteMeAttachedRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("DeleteMeAttachedRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
         .execute(&mut tx)
@@ -390,8 +374,8 @@ pub async fn test_delete_role_attached_policy_fails(pool: &sqlx::PgPool) {
         .await
         .expect("Failed to detach managed policy");
     DeleteRoleInternalRequest::builder()
-        .role_name("DeleteMeAttachedRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("DeleteMeAttachedRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
         .execute(&mut tx)
@@ -405,9 +389,9 @@ pub async fn test_delete_role_attached_policy_fails(pool: &sqlx::PgPool) {
 pub async fn test_delete_role_inline_policy_fails(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateRoleInternalRequest::builder()
-        .role_name("DeleteMeInlineRole".to_string())
-        .account_id("123456789012".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .role_name("DeleteMeInlineRole")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY)
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx)
@@ -434,8 +418,8 @@ pub async fn test_delete_role_inline_policy_fails(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteRoleInternalRequest::builder()
-        .role_name("DeleteMeInlineRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("DeleteMeInlineRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
         .execute(&mut tx)
@@ -452,8 +436,8 @@ pub async fn test_delete_role_inline_policy_fails(pool: &sqlx::PgPool) {
         .await
         .expect("Failed to remove inline policy");
     DeleteRoleInternalRequest::builder()
-        .role_name("DeleteMeInlineRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("DeleteMeInlineRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
         .execute(&mut tx)
@@ -466,8 +450,8 @@ pub async fn test_delete_role_inline_policy_fails(pool: &sqlx::PgPool) {
 pub async fn test_delete_role_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteRoleInternalRequest::builder()
-        .role_name("NoSuchDeleteRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("NoSuchDeleteRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
         .execute(&mut tx)
@@ -479,10 +463,7 @@ pub async fn test_delete_role_nonexistent(pool: &sqlx::PgPool) {
 
 /// Building a request with an invalid role name must fail before touching the database.
 pub fn test_delete_role_invalid_name() {
-    let result = DeleteRoleInternalRequest::builder()
-        .role_name("bad role!".to_string())
-        .account_id("123456789012".to_string())
-        .build();
+    let result = DeleteRoleInternalRequest::builder().role_name("bad role!").account_id("123456789012").build();
     assert!(result.is_err(), "Building a delete request with an invalid role name must fail");
 }
 
@@ -493,9 +474,9 @@ pub async fn test_delete_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
     // verifies the PB exists by name, but we just need any seeded managed_policy_id here).
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateRoleInternalRequest::builder()
-        .role_name("DeleteMePbRole".to_string())
-        .account_id("123456789012".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .role_name("DeleteMePbRole")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY)
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx)
@@ -526,8 +507,8 @@ pub async fn test_delete_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeleteRolePermissionsBoundaryInternalRequest::builder()
-        .role_name("DeleteMePbRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("DeleteMePbRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRolePermissionsBoundaryInternalRequest")
         .execute(&mut tx)
@@ -546,8 +527,8 @@ pub async fn test_delete_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
     // Clean up.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeleteRoleInternalRequest::builder()
-        .role_name("DeleteMePbRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("DeleteMePbRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
         .execute(&mut tx)
@@ -561,8 +542,8 @@ pub async fn test_delete_role_permissions_boundary_no_boundary(pool: &sqlx::PgPo
     // LambdaExecutor was committed earlier in test_create_role_simple with no PB.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeleteRolePermissionsBoundaryInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRolePermissionsBoundaryInternalRequest")
         .execute(&mut tx)
@@ -575,8 +556,8 @@ pub async fn test_delete_role_permissions_boundary_no_boundary(pool: &sqlx::PgPo
 pub async fn test_delete_role_permissions_boundary_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteRolePermissionsBoundaryInternalRequest::builder()
-        .role_name("NoSuchPbRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("NoSuchPbRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRolePermissionsBoundaryInternalRequest")
         .execute(&mut tx)
@@ -590,8 +571,8 @@ pub async fn test_delete_role_permissions_boundary_nonexistent(pool: &sqlx::PgPo
 /// touching the database.
 pub fn test_delete_role_permissions_boundary_invalid_name() {
     let result = DeleteRolePermissionsBoundaryInternalRequest::builder()
-        .role_name("bad role!".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("bad role!")
+        .account_id("123456789012")
         .build();
     assert!(result.is_err(), "Building a request with an invalid role name must fail");
 }
@@ -601,8 +582,8 @@ pub fn test_delete_role_permissions_boundary_invalid_name() {
 pub async fn test_get_role_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
         .execute(&mut tx)
@@ -626,8 +607,8 @@ pub async fn test_get_role_simple(pool: &sqlx::PgPool) {
 pub async fn test_get_role_with_path(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetRoleInternalRequest::builder()
-        .role_name("DeployRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("DeployRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
         .execute(&mut tx)
@@ -645,8 +626,8 @@ pub async fn test_get_role_with_path(pool: &sqlx::PgPool) {
 pub async fn test_get_role_with_tags(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetRoleInternalRequest::builder()
-        .role_name("TaggedRole".to_string())
-        .account_id("210987654321".to_string())
+        .role_name("TaggedRole")
+        .account_id("210987654321")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
         .execute(&mut tx)
@@ -675,10 +656,10 @@ pub async fn test_get_role_with_permissions_boundary(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateRoleInternalRequest::builder()
-        .role_name("GetMePbRole".to_string())
-        .account_id("123456789012".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
-        .permissions_boundary(Some(pb_arn.to_string()))
+        .role_name("GetMePbRole")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY)
+        .permissions_boundary(pb_arn)
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx)
@@ -688,8 +669,8 @@ pub async fn test_get_role_with_permissions_boundary(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetRoleInternalRequest::builder()
-        .role_name("GetMePbRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("GetMePbRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
         .execute(&mut tx)
@@ -704,16 +685,16 @@ pub async fn test_get_role_with_permissions_boundary(pool: &sqlx::PgPool) {
     // Clean up through the API.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeleteRolePermissionsBoundaryInternalRequest::builder()
-        .role_name("GetMePbRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("GetMePbRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRolePermissionsBoundaryInternalRequest")
         .execute(&mut tx)
         .await
         .expect("Failed to clear GetMePbRole PB");
     DeleteRoleInternalRequest::builder()
-        .role_name("GetMePbRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("GetMePbRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
         .execute(&mut tx)
@@ -726,8 +707,8 @@ pub async fn test_get_role_with_permissions_boundary(pool: &sqlx::PgPool) {
 pub async fn test_get_role_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = GetRoleInternalRequest::builder()
-        .role_name("NoSuchGetRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("NoSuchGetRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
         .execute(&mut tx)
@@ -739,10 +720,7 @@ pub async fn test_get_role_nonexistent(pool: &sqlx::PgPool) {
 
 /// Building a GetRole request with an invalid role name must fail before touching the database.
 pub fn test_get_role_invalid_name() {
-    let result = GetRoleInternalRequest::builder()
-        .role_name("bad role!".to_string())
-        .account_id("123456789012".to_string())
-        .build();
+    let result = GetRoleInternalRequest::builder().role_name("bad role!").account_id("123456789012").build();
     assert!(result.is_err(), "Building a request with an invalid role name must fail");
 }
 
@@ -752,7 +730,7 @@ pub fn test_get_role_invalid_name() {
 pub async fn test_list_roles(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListRolesInternalRequest::builder()
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListRolesInternalRequest")
         .execute(&mut tx)
@@ -791,8 +769,8 @@ pub async fn test_list_roles(pool: &sqlx::PgPool) {
 pub async fn test_list_roles_with_path_prefix(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListRolesInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .path_prefix(Some("/service-roles/".to_string()))
+        .account_id("123456789012")
+        .path_prefix("/service-roles/")
         .build()
         .expect("Failed to build ListRolesInternalRequest")
         .execute(&mut tx)
@@ -810,8 +788,8 @@ pub async fn test_list_roles_with_path_prefix(pool: &sqlx::PgPool) {
 pub async fn test_list_roles_path_prefix_no_match(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListRolesInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .path_prefix(Some("/no-such-prefix/".to_string()))
+        .account_id("123456789012")
+        .path_prefix("/no-such-prefix/")
         .build()
         .expect("Failed to build ListRolesInternalRequest")
         .execute(&mut tx)
@@ -827,7 +805,7 @@ pub async fn test_list_roles_empty_account(pool: &sqlx::PgPool) {
     // roles attached.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListRolesInternalRequest::builder()
-        .account_id("876543210000".to_string())
+        .account_id("876543210000")
         .build()
         .expect("Failed to build ListRolesInternalRequest")
         .execute(&mut tx)
@@ -845,9 +823,9 @@ pub async fn test_list_roles_pagination(pool: &sqlx::PgPool) {
     for i in 0..5 {
         CreateRoleInternalRequest::builder()
             .role_name(format!("PaginationRole{i}"))
-            .path(Some("/pagination/".to_string()))
-            .account_id("123456789012".to_string())
-            .assume_role_policy_document(TRUST_POLICY.to_string())
+            .path("/pagination/")
+            .account_id("123456789012")
+            .assume_role_policy_document(TRUST_POLICY)
             .build()
             .expect("Failed to build CreateRoleInternalRequest")
             .execute(&mut tx)
@@ -858,14 +836,11 @@ pub async fn test_list_roles_pagination(pool: &sqlx::PgPool) {
     let list_page = async |tx: &mut sqlx::PgTransaction<'_>,
                            marker: Option<String>|
            -> scratchstack_shapes_iam::operation::ListRolesResponse {
-        let mut builder = ListRolesInternalRequest::builder()
-            .account_id("123456789012".to_string())
-            .path_prefix(Some("/pagination/".to_string()))
-            .max_items(Some(2));
-        if let Some(marker) = marker {
-            builder = builder.marker(Some(marker));
-        }
-        builder
+        ListRolesInternalRequest::builder()
+            .account_id("123456789012")
+            .path_prefix("/pagination/")
+            .max_items(2)
+            .set_marker(marker)
             .build()
             .expect("Failed to build ListRolesInternalRequest")
             .execute(tx)
@@ -903,10 +878,8 @@ pub async fn test_list_roles_pagination(pool: &sqlx::PgPool) {
 /// Building a ListRoles request with a path prefix that lacks a leading slash must fail at the
 /// Smithy shape regex (^/...) before reaching the database.
 pub fn test_list_roles_invalid_path_prefix() {
-    let result = ListRolesInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .path_prefix(Some("no-leading-slash/".to_string()))
-        .build();
+    let result =
+        ListRolesInternalRequest::builder().account_id("123456789012").path_prefix("no-leading-slash/").build();
     assert!(result.is_err(), "Building a request with an invalid path prefix must fail");
 }
 
@@ -915,8 +888,8 @@ pub fn test_list_roles_invalid_path_prefix() {
 pub async fn test_list_role_tags(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListRoleTagsInternalRequest::builder()
-        .role_name("TaggedRole".to_string())
-        .account_id("210987654321".to_string())
+        .role_name("TaggedRole")
+        .account_id("210987654321")
         .build()
         .expect("Failed to build ListRoleTagsInternalRequest")
         .execute(&mut tx)
@@ -937,8 +910,8 @@ pub async fn test_list_role_tags(pool: &sqlx::PgPool) {
 pub async fn test_list_role_tags_empty(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListRoleTagsInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListRoleTagsInternalRequest")
         .execute(&mut tx)
@@ -961,10 +934,10 @@ pub async fn test_list_role_tags_pagination(pool: &sqlx::PgPool) {
         })
         .collect();
     CreateRoleInternalRequest::builder()
-        .role_name("PaginationTagsRole".to_string())
-        .account_id("123456789012".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
-        .tags(tags)
+        .role_name("PaginationTagsRole")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY)
+        .set_tags(tags)
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx)
@@ -974,14 +947,11 @@ pub async fn test_list_role_tags_pagination(pool: &sqlx::PgPool) {
     let list_page = async |tx: &mut sqlx::PgTransaction<'_>,
                            marker: Option<String>|
            -> scratchstack_shapes_iam::operation::ListRoleTagsResponse {
-        let mut builder = ListRoleTagsInternalRequest::builder()
-            .role_name("PaginationTagsRole".to_string())
-            .account_id("123456789012".to_string())
-            .max_items(Some(2));
-        if let Some(marker) = marker {
-            builder = builder.marker(Some(marker));
-        }
-        builder
+        ListRoleTagsInternalRequest::builder()
+            .role_name("PaginationTagsRole")
+            .account_id("123456789012")
+            .max_items(2)
+            .set_marker(marker)
             .build()
             .expect("Failed to build ListRoleTagsInternalRequest")
             .execute(tx)
@@ -1020,8 +990,8 @@ pub async fn test_list_role_tags_pagination(pool: &sqlx::PgPool) {
 pub async fn test_list_role_tags_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = ListRoleTagsInternalRequest::builder()
-        .role_name("NoSuchTagsRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("NoSuchTagsRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListRoleTagsInternalRequest")
         .execute(&mut tx)
@@ -1034,10 +1004,7 @@ pub async fn test_list_role_tags_nonexistent(pool: &sqlx::PgPool) {
 /// Building a ListRoleTags request with an invalid role name must fail before touching the
 /// database.
 pub fn test_list_role_tags_invalid_name() {
-    let result = ListRoleTagsInternalRequest::builder()
-        .role_name("bad role!".to_string())
-        .account_id("123456789012".to_string())
-        .build();
+    let result = ListRoleTagsInternalRequest::builder().role_name("bad role!").account_id("123456789012").build();
     assert!(result.is_err(), "Building a request with an invalid role name must fail");
 }
 
@@ -1046,20 +1013,10 @@ pub async fn test_tag_role(pool: &sqlx::PgPool) {
     // LambdaExecutor was created in account 123456789012 by test_create_role_simple with no tags.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     TagRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .tags(vec![
-            Tag::builder()
-                .key("Dept".to_string())
-                .value("Engineering".to_string())
-                .build()
-                .expect("Failed to build tag"),
-            Tag::builder()
-                .key("CostCenter".to_string())
-                .value("1234".to_string())
-                .build()
-                .expect("Failed to build tag"),
-        ])
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .tags(Tag::builder().key("Dept").value("Engineering").build().expect("Failed to build tag"))
+        .tags(Tag::builder().key("CostCenter").value("1234").build().expect("Failed to build tag"))
         .build()
         .expect("Failed to build TagRoleInternalRequest")
         .execute(&mut tx)
@@ -1070,8 +1027,8 @@ pub async fn test_tag_role(pool: &sqlx::PgPool) {
     // Verify tags via ListRoleTags.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListRoleTagsInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListRoleTagsInternalRequest")
         .execute(&mut tx)
@@ -1091,11 +1048,9 @@ pub async fn test_tag_role(pool: &sqlx::PgPool) {
 pub async fn test_tag_role_upsert(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     TagRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .tags(vec![
-            Tag::builder().key("Dept".to_string()).value("Finance".to_string()).build().expect("Failed to build tag"),
-        ])
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .tags(Tag::builder().key("Dept").value("Finance").build().expect("Failed to build tag"))
         .build()
         .expect("Failed to build TagRoleInternalRequest")
         .execute(&mut tx)
@@ -1106,8 +1061,8 @@ pub async fn test_tag_role_upsert(pool: &sqlx::PgPool) {
     // Verify the value was updated and the other tag is still present.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListRoleTagsInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListRoleTagsInternalRequest")
         .execute(&mut tx)
@@ -1126,11 +1081,9 @@ pub async fn test_tag_role_upsert(pool: &sqlx::PgPool) {
 pub async fn test_tag_role_nonexistent_role(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = TagRoleInternalRequest::builder()
-        .role_name("NoSuchTagRole".to_string())
-        .account_id("123456789012".to_string())
-        .tags(vec![
-            Tag::builder().key("Key".to_string()).value("Value".to_string()).build().expect("Failed to build tag"),
-        ])
+        .role_name("NoSuchTagRole")
+        .account_id("123456789012")
+        .tags(Tag::builder().key("Key").value("Value").build().expect("Failed to build tag"))
         .build()
         .expect("Failed to build TagRoleInternalRequest")
         .execute(&mut tx)
@@ -1144,9 +1097,8 @@ pub async fn test_tag_role_nonexistent_role(pool: &sqlx::PgPool) {
 pub async fn test_tag_role_empty_tags(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = TagRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .tags(vec![])
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build TagRoleInternalRequest")
         .execute(&mut tx)
@@ -1160,9 +1112,9 @@ pub async fn test_untag_role(pool: &sqlx::PgPool) {
     // LambdaExecutor currently has CostCenter and Dept tags from the tag/upsert tests.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     UntagRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .tag_keys(vec!["Dept".to_string()])
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .tag_keys("Dept")
         .build()
         .expect("Failed to build UntagRoleInternalRequest")
         .execute(&mut tx)
@@ -1173,8 +1125,8 @@ pub async fn test_untag_role(pool: &sqlx::PgPool) {
     // Verify only CostCenter remains.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListRoleTagsInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListRoleTagsInternalRequest")
         .execute(&mut tx)
@@ -1191,9 +1143,9 @@ pub async fn test_untag_role(pool: &sqlx::PgPool) {
 pub async fn test_untag_role_nonexistent_key(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     UntagRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .tag_keys(vec!["NoSuchTag".to_string()])
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .tag_keys("NoSuchTag")
         .build()
         .expect("Failed to build UntagRoleInternalRequest")
         .execute(&mut tx)
@@ -1206,9 +1158,8 @@ pub async fn test_untag_role_nonexistent_key(pool: &sqlx::PgPool) {
 pub async fn test_untag_role_empty_keys(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = UntagRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .tag_keys(vec![])
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build UntagRoleInternalRequest")
         .execute(&mut tx)
@@ -1221,9 +1172,9 @@ pub async fn test_untag_role_empty_keys(pool: &sqlx::PgPool) {
 pub async fn test_untag_role_nonexistent_role(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = UntagRoleInternalRequest::builder()
-        .role_name("NoSuchUntagRole".to_string())
-        .account_id("123456789012".to_string())
-        .tag_keys(vec!["Key".to_string()])
+        .role_name("NoSuchUntagRole")
+        .account_id("123456789012")
+        .tag_keys("Key")
         .build()
         .expect("Failed to build UntagRoleInternalRequest")
         .execute(&mut tx)
@@ -1238,9 +1189,9 @@ pub async fn test_update_role_description_only(pool: &sqlx::PgPool) {
     // LambdaExecutor was committed earlier with no description and no max_session_duration.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     UpdateRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .description(Some("Description set via UpdateRole.".to_string()))
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .description("Description set via UpdateRole.")
         .build()
         .expect("Failed to build UpdateRoleInternalRequest")
         .execute(&mut tx)
@@ -1250,8 +1201,8 @@ pub async fn test_update_role_description_only(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
         .execute(&mut tx)
@@ -1266,9 +1217,9 @@ pub async fn test_update_role_description_only(pool: &sqlx::PgPool) {
 pub async fn test_update_role_max_session_duration_only(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     UpdateRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .max_session_duration(Some(7200))
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .max_session_duration(7200)
         .build()
         .expect("Failed to build UpdateRoleInternalRequest")
         .execute(&mut tx)
@@ -1278,8 +1229,8 @@ pub async fn test_update_role_max_session_duration_only(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
         .execute(&mut tx)
@@ -1295,10 +1246,10 @@ pub async fn test_update_role_max_session_duration_only(pool: &sqlx::PgPool) {
 pub async fn test_update_role_both_fields(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     UpdateRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .description(Some("Updated again.".to_string()))
-        .max_session_duration(Some(10800))
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .description("Updated again.")
+        .max_session_duration(10800)
         .build()
         .expect("Failed to build UpdateRoleInternalRequest")
         .execute(&mut tx)
@@ -1308,8 +1259,8 @@ pub async fn test_update_role_both_fields(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
         .execute(&mut tx)
@@ -1324,8 +1275,8 @@ pub async fn test_update_role_both_fields(pool: &sqlx::PgPool) {
 pub async fn test_update_role_no_fields(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     UpdateRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateRoleInternalRequest")
         .execute(&mut tx)
@@ -1336,8 +1287,8 @@ pub async fn test_update_role_no_fields(pool: &sqlx::PgPool) {
     // Confirm the previous values are still in place.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
         .execute(&mut tx)
@@ -1352,9 +1303,9 @@ pub async fn test_update_role_no_fields(pool: &sqlx::PgPool) {
 pub async fn test_update_role_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = UpdateRoleInternalRequest::builder()
-        .role_name("NoSuchUpdateRole".to_string())
-        .account_id("123456789012".to_string())
-        .description(Some("Will not be applied.".to_string()))
+        .role_name("NoSuchUpdateRole")
+        .account_id("123456789012")
+        .description("Will not be applied.")
         .build()
         .expect("Failed to build UpdateRoleInternalRequest")
         .execute(&mut tx)
@@ -1368,26 +1319,23 @@ pub async fn test_update_role_nonexistent(pool: &sqlx::PgPool) {
 /// fail at the Smithy builder before reaching the database.
 pub fn test_update_role_invalid_max_session_duration() {
     let result = UpdateRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .max_session_duration(Some(60))
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .max_session_duration(60)
         .build();
     assert!(result.is_err(), "Building a request with max_session_duration below 3600 must fail");
 
     let result = UpdateRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .max_session_duration(Some(100000))
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .max_session_duration(100000)
         .build();
     assert!(result.is_err(), "Building a request with max_session_duration above 43200 must fail");
 }
 
 /// Building an UpdateRole request with an invalid role name must fail before touching the database.
 pub fn test_update_role_invalid_name() {
-    let result = UpdateRoleInternalRequest::builder()
-        .role_name("bad role!".to_string())
-        .account_id("123456789012".to_string())
-        .build();
+    let result = UpdateRoleInternalRequest::builder().role_name("bad role!").account_id("123456789012").build();
     assert!(result.is_err(), "Building a request with an invalid role name must fail");
 }
 
@@ -1395,9 +1343,9 @@ pub fn test_update_role_invalid_name() {
 pub async fn test_update_role_description_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = UpdateRoleDescriptionInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .description("Description set via UpdateRoleDescription.".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .description("Description set via UpdateRoleDescription.")
         .build()
         .expect("Failed to build UpdateRoleDescriptionInternalRequest")
         .execute(&mut tx)
@@ -1414,8 +1362,8 @@ pub async fn test_update_role_description_simple(pool: &sqlx::PgPool) {
     // Double-check via GetRole that the change persisted.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let get_resp = GetRoleInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
         .execute(&mut tx)
@@ -1429,8 +1377,8 @@ pub async fn test_update_role_description_simple(pool: &sqlx::PgPool) {
 pub async fn test_update_role_description_empty(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = UpdateRoleDescriptionInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
         .description(String::new())
         .build()
         .expect("Failed to build UpdateRoleDescriptionInternalRequest")
@@ -1447,9 +1395,9 @@ pub async fn test_update_role_description_empty(pool: &sqlx::PgPool) {
 pub async fn test_update_role_description_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = UpdateRoleDescriptionInternalRequest::builder()
-        .role_name("NoSuchUpdateDescRole".to_string())
-        .account_id("123456789012".to_string())
-        .description("anything".to_string())
+        .role_name("NoSuchUpdateDescRole")
+        .account_id("123456789012")
+        .description("anything")
         .build()
         .expect("Failed to build UpdateRoleDescriptionInternalRequest")
         .execute(&mut tx)
@@ -1463,9 +1411,9 @@ pub async fn test_update_role_description_nonexistent(pool: &sqlx::PgPool) {
 /// the database.
 pub fn test_update_role_description_invalid_name() {
     let result = UpdateRoleDescriptionInternalRequest::builder()
-        .role_name("bad role!".to_string())
-        .account_id("123456789012".to_string())
-        .description("ok".to_string())
+        .role_name("bad role!")
+        .account_id("123456789012")
+        .description("ok")
         .build();
     assert!(result.is_err(), "Building a request with an invalid role name must fail");
 }
@@ -1477,18 +1425,18 @@ pub async fn test_put_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateRoleInternalRequest::builder()
-        .role_name("PutMePbRole".to_string())
-        .account_id("123456789012".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .role_name("PutMePbRole")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY)
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx)
         .await
         .expect("Failed to create PutMePbRole");
     PutRolePermissionsBoundaryInternalRequest::builder()
-        .role_name("PutMePbRole".to_string())
-        .account_id("123456789012".to_string())
-        .permissions_boundary(pb_arn.to_string())
+        .role_name("PutMePbRole")
+        .account_id("123456789012")
+        .permissions_boundary(pb_arn)
         .build()
         .expect("Failed to build PutRolePermissionsBoundaryInternalRequest")
         .execute(&mut tx)
@@ -1498,8 +1446,8 @@ pub async fn test_put_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetRoleInternalRequest::builder()
-        .role_name("PutMePbRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("PutMePbRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
         .execute(&mut tx)
@@ -1513,9 +1461,9 @@ pub async fn test_put_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
     // Calling Put again on a role that already has a PB must succeed.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     PutRolePermissionsBoundaryInternalRequest::builder()
-        .role_name("PutMePbRole".to_string())
-        .account_id("123456789012".to_string())
-        .permissions_boundary(pb_arn.to_string())
+        .role_name("PutMePbRole")
+        .account_id("123456789012")
+        .permissions_boundary(pb_arn)
         .build()
         .expect("Failed to build PutRolePermissionsBoundaryInternalRequest")
         .execute(&mut tx)
@@ -1526,16 +1474,16 @@ pub async fn test_put_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
     // Clean up.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeleteRolePermissionsBoundaryInternalRequest::builder()
-        .role_name("PutMePbRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("PutMePbRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRolePermissionsBoundaryInternalRequest")
         .execute(&mut tx)
         .await
         .expect("Failed to clear PutMePbRole PB");
     DeleteRoleInternalRequest::builder()
-        .role_name("PutMePbRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("PutMePbRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
         .execute(&mut tx)
@@ -1548,9 +1496,9 @@ pub async fn test_put_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
 pub async fn test_put_role_permissions_boundary_nonexistent_role(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = PutRolePermissionsBoundaryInternalRequest::builder()
-        .role_name("NoSuchPutPbRole".to_string())
-        .account_id("123456789012".to_string())
-        .permissions_boundary("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .role_name("NoSuchPutPbRole")
+        .account_id("123456789012")
+        .permissions_boundary("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build PutRolePermissionsBoundaryInternalRequest")
         .execute(&mut tx)
@@ -1565,9 +1513,9 @@ pub async fn test_put_role_permissions_boundary_nonexistent_role(pool: &sqlx::Pg
 pub async fn test_put_role_permissions_boundary_nonexistent_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = PutRolePermissionsBoundaryInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .permissions_boundary("arn:test-partition:iam::123456789012:policy/NoSuchPolicy".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .permissions_boundary("arn:test-partition:iam::123456789012:policy/NoSuchPolicy")
         .build()
         .expect("Failed to build PutRolePermissionsBoundaryInternalRequest")
         .execute(&mut tx)
@@ -1581,10 +1529,10 @@ pub async fn test_put_role_permissions_boundary_nonexistent_policy(pool: &sqlx::
 pub async fn test_put_role_permissions_boundary_invalid_arn(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = PutRolePermissionsBoundaryInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
         // Long enough to pass the shape's min-length check, but not a valid ARN.
-        .permissions_boundary("not-an-arn-but-long-enough-to-pass".to_string())
+        .permissions_boundary("not-an-arn-but-long-enough-to-pass")
         .build()
         .expect("Failed to build PutRolePermissionsBoundaryInternalRequest")
         .execute(&mut tx)
@@ -1598,9 +1546,9 @@ pub async fn test_put_role_permissions_boundary_invalid_arn(pool: &sqlx::PgPool)
 /// touching the database.
 pub fn test_put_role_permissions_boundary_invalid_name() {
     let result = PutRolePermissionsBoundaryInternalRequest::builder()
-        .role_name("bad role!".to_string())
-        .account_id("123456789012".to_string())
-        .permissions_boundary("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .role_name("bad role!")
+        .account_id("123456789012")
+        .permissions_boundary("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1")
         .build();
     assert!(result.is_err(), "Building a request with an invalid role name must fail");
 }
@@ -1623,10 +1571,10 @@ const INLINE_ROLE_POLICY_UNKNOWN_PRINCIPAL: &str = r#"{
 pub async fn test_put_role_policy_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     PutRolePolicyInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineRead".to_string())
-        .policy_document(INLINE_ROLE_POLICY_S3.to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .policy_name("InlineRead")
+        .policy_document(INLINE_ROLE_POLICY_S3)
         .build()
         .expect("Failed to build PutRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -1652,10 +1600,10 @@ pub async fn test_put_role_policy_simple(pool: &sqlx::PgPool) {
 pub async fn test_put_role_policy_replaces(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     PutRolePolicyInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineRead".to_string())
-        .policy_document(INLINE_ROLE_POLICY_EC2.to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .policy_name("InlineRead")
+        .policy_document(INLINE_ROLE_POLICY_EC2)
         .build()
         .expect("Failed to build PutRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -1692,10 +1640,10 @@ pub async fn test_put_role_policy_replaces(pool: &sqlx::PgPool) {
 pub async fn test_put_role_policy_invalid_principal_accepted(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     PutRolePolicyInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineWithMissingPrincipal".to_string())
-        .policy_document(INLINE_ROLE_POLICY_UNKNOWN_PRINCIPAL.to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .policy_name("InlineWithMissingPrincipal")
+        .policy_document(INLINE_ROLE_POLICY_UNKNOWN_PRINCIPAL)
         .build()
         .expect("Failed to build PutRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -1708,10 +1656,10 @@ pub async fn test_put_role_policy_invalid_principal_accepted(pool: &sqlx::PgPool
 pub async fn test_put_role_policy_invalid_document(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = PutRolePolicyInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineBroken".to_string())
-        .policy_document("{ not valid aspen json }".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .policy_name("InlineBroken")
+        .policy_document("{ not valid aspen json }")
         .build()
         .expect("Failed to build PutRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -1728,10 +1676,10 @@ pub async fn test_put_role_policy_invalid_document(pool: &sqlx::PgPool) {
 pub async fn test_put_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = PutRolePolicyInternalRequest::builder()
-        .role_name("NoSuchPutPolicyRole".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("AnyName".to_string())
-        .policy_document(INLINE_ROLE_POLICY_S3.to_string())
+        .role_name("NoSuchPutPolicyRole")
+        .account_id("123456789012")
+        .policy_name("AnyName")
+        .policy_document(INLINE_ROLE_POLICY_S3)
         .build()
         .expect("Failed to build PutRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -1745,10 +1693,10 @@ pub async fn test_put_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
 /// database.
 pub fn test_put_role_policy_invalid_name() {
     let result = PutRolePolicyInternalRequest::builder()
-        .role_name("bad role!".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("AnyName".to_string())
-        .policy_document(INLINE_ROLE_POLICY_S3.to_string())
+        .role_name("bad role!")
+        .account_id("123456789012")
+        .policy_name("AnyName")
+        .policy_document(INLINE_ROLE_POLICY_S3)
         .build();
     assert!(result.is_err(), "Building a request with an invalid role name must fail");
 }
@@ -1757,9 +1705,9 @@ pub fn test_put_role_policy_invalid_name() {
 pub async fn test_get_role_policy_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetRolePolicyInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineRead".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .policy_name("InlineRead")
         .build()
         .expect("Failed to build GetRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -1777,9 +1725,9 @@ pub async fn test_get_role_policy_simple(pool: &sqlx::PgPool) {
 pub async fn test_get_role_policy_case_insensitive_lookup(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetRolePolicyInternalRequest::builder()
-        .role_name("lambdaexecutor".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("inlineread".to_string())
+        .role_name("lambdaexecutor")
+        .account_id("123456789012")
+        .policy_name("inlineread")
         .build()
         .expect("Failed to build GetRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -1794,9 +1742,9 @@ pub async fn test_get_role_policy_case_insensitive_lookup(pool: &sqlx::PgPool) {
 pub async fn test_get_role_policy_nonexistent_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = GetRolePolicyInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("NotAttached".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .policy_name("NotAttached")
         .build()
         .expect("Failed to build GetRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -1810,9 +1758,9 @@ pub async fn test_get_role_policy_nonexistent_policy(pool: &sqlx::PgPool) {
 pub async fn test_get_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = GetRolePolicyInternalRequest::builder()
-        .role_name("NoSuchGetPolicyRole".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("AnyName".to_string())
+        .role_name("NoSuchGetPolicyRole")
+        .account_id("123456789012")
+        .policy_name("AnyName")
         .build()
         .expect("Failed to build GetRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -1826,9 +1774,9 @@ pub async fn test_get_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
 /// database.
 pub fn test_get_role_policy_invalid_name() {
     let result = GetRolePolicyInternalRequest::builder()
-        .role_name("bad role!".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("AnyName".to_string())
+        .role_name("bad role!")
+        .account_id("123456789012")
+        .policy_name("AnyName")
         .build();
     assert!(result.is_err(), "Building a request with an invalid role name must fail");
 }
@@ -1838,8 +1786,8 @@ pub fn test_get_role_policy_invalid_name() {
 pub async fn test_list_role_policies_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListRolePoliciesInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListRolePoliciesInternalRequest")
         .execute(&mut tx)
@@ -1856,17 +1804,17 @@ pub async fn test_list_role_policies_simple(pool: &sqlx::PgPool) {
 pub async fn test_list_role_policies_empty(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateRoleInternalRequest::builder()
-        .role_name("ListPoliciesEmptyRole".to_string())
-        .account_id("123456789012".to_string())
-        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .role_name("ListPoliciesEmptyRole")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY)
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx)
         .await
         .expect("Failed to create ListPoliciesEmptyRole");
     let resp = ListRolePoliciesInternalRequest::builder()
-        .role_name("ListPoliciesEmptyRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("ListPoliciesEmptyRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListRolePoliciesInternalRequest")
         .execute(&mut tx)
@@ -1876,8 +1824,8 @@ pub async fn test_list_role_policies_empty(pool: &sqlx::PgPool) {
     assert_eq!(resp.is_truncated, None);
 
     DeleteRoleInternalRequest::builder()
-        .role_name("ListPoliciesEmptyRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("ListPoliciesEmptyRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
         .execute(&mut tx)
@@ -1890,9 +1838,9 @@ pub async fn test_list_role_policies_empty(pool: &sqlx::PgPool) {
 pub async fn test_list_role_policies_pagination(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let page1 = ListRolePoliciesInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .max_items(Some(1))
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .max_items(1)
         .build()
         .expect("Failed to build ListRolePoliciesInternalRequest")
         .execute(&mut tx)
@@ -1903,10 +1851,10 @@ pub async fn test_list_role_policies_pagination(pool: &sqlx::PgPool) {
     let marker = page1.marker.clone().expect("Expected a pagination marker");
 
     let page2 = ListRolePoliciesInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .max_items(Some(1))
-        .marker(Some(marker))
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .max_items(1)
+        .marker(marker)
         .build()
         .expect("Failed to build ListRolePoliciesInternalRequest")
         .execute(&mut tx)
@@ -1923,8 +1871,8 @@ pub async fn test_list_role_policies_pagination(pool: &sqlx::PgPool) {
 pub async fn test_list_role_policies_nonexistent_role(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = ListRolePoliciesInternalRequest::builder()
-        .role_name("NoSuchListPoliciesRole".to_string())
-        .account_id("123456789012".to_string())
+        .role_name("NoSuchListPoliciesRole")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListRolePoliciesInternalRequest")
         .execute(&mut tx)
@@ -1937,10 +1885,7 @@ pub async fn test_list_role_policies_nonexistent_role(pool: &sqlx::PgPool) {
 /// Building a ListRolePolicies request with an invalid role name must fail before touching the
 /// database.
 pub fn test_list_role_policies_invalid_name() {
-    let result = ListRolePoliciesInternalRequest::builder()
-        .role_name("bad role!".to_string())
-        .account_id("123456789012".to_string())
-        .build();
+    let result = ListRolePoliciesInternalRequest::builder().role_name("bad role!").account_id("123456789012").build();
     assert!(result.is_err(), "Building a request with an invalid role name must fail");
 }
 
@@ -1949,9 +1894,9 @@ pub async fn test_delete_role_policy_simple(pool: &sqlx::PgPool) {
     // The "InlineWithMissingPrincipal" inline policy was added in test_put_role_policy_invalid_principal_accepted.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeleteRolePolicyInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineWithMissingPrincipal".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .policy_name("InlineWithMissingPrincipal")
         .build()
         .expect("Failed to build DeleteRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -1989,9 +1934,9 @@ pub async fn test_delete_role_policy_simple(pool: &sqlx::PgPool) {
 pub async fn test_delete_role_policy_nonexistent_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteRolePolicyInternalRequest::builder()
-        .role_name("LambdaExecutor".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("NotAttached".to_string())
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .policy_name("NotAttached")
         .build()
         .expect("Failed to build DeleteRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -2005,9 +1950,9 @@ pub async fn test_delete_role_policy_nonexistent_policy(pool: &sqlx::PgPool) {
 pub async fn test_delete_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteRolePolicyInternalRequest::builder()
-        .role_name("NoSuchDeletePolicyRole".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("AnyName".to_string())
+        .role_name("NoSuchDeletePolicyRole")
+        .account_id("123456789012")
+        .policy_name("AnyName")
         .build()
         .expect("Failed to build DeleteRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -2021,9 +1966,9 @@ pub async fn test_delete_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
 /// database.
 pub fn test_delete_role_policy_invalid_name() {
     let result = DeleteRolePolicyInternalRequest::builder()
-        .role_name("bad role!".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("AnyName".to_string())
+        .role_name("bad role!")
+        .account_id("123456789012")
+        .policy_name("AnyName")
         .build();
     assert!(result.is_err(), "Building a request with an invalid role name must fail");
 }
@@ -2045,9 +1990,9 @@ pub async fn test_assume_role(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = AssumeRoleRequest::builder()
-        .role_arn("arn:aws:iam::123456789012:role/example-role-1".to_string())
-        .role_session_name("test-session".to_string())
-        .source_identity(Some("test-identity".to_string()))
+        .role_arn("arn:aws:iam::123456789012:role/example-role-1")
+        .role_session_name("test-session")
+        .source_identity("test-identity")
         .build()
         .expect("Failed to build AssumeRoleRequest")
         .execute(&mut tx)
@@ -2100,8 +2045,8 @@ pub async fn test_assume_role(pool: &sqlx::PgPool) {
 pub async fn test_assume_role_nonexistent_role(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = AssumeRoleRequest::builder()
-        .role_arn("arn:aws:iam::123456789012:role/does-not-exist".to_string())
-        .role_session_name("test-session".to_string())
+        .role_arn("arn:aws:iam::123456789012:role/does-not-exist")
+        .role_session_name("test-session")
         .build()
         .expect("Failed to build AssumeRoleRequest")
         .execute(&mut tx)
@@ -2115,8 +2060,8 @@ pub async fn test_assume_role_nonexistent_role(pool: &sqlx::PgPool) {
 pub async fn test_assume_role_invalid_arn(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = AssumeRoleRequest::builder()
-        .role_arn("arn:aws:iam::123456789012:user/example-user-1".to_string())
-        .role_session_name("test-session".to_string())
+        .role_arn("arn:aws:iam::123456789012:user/example-user-1")
+        .role_session_name("test-session")
         .build()
         .expect("Failed to build AssumeRoleRequest")
         .execute(&mut tx)
@@ -2130,9 +2075,9 @@ pub async fn test_assume_role_invalid_arn(pool: &sqlx::PgPool) {
 pub async fn test_assume_role_malformed_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = AssumeRoleRequest::builder()
-        .role_arn("arn:aws:iam::123456789012:role/example-role-1".to_string())
-        .role_session_name("test-session".to_string())
-        .policy(Some("not a policy document".to_string()))
+        .role_arn("arn:aws:iam::123456789012:role/example-role-1")
+        .role_session_name("test-session")
+        .policy("not a policy document")
         .build()
         .expect("Failed to build AssumeRoleRequest")
         .execute(&mut tx)

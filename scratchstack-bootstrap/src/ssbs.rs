@@ -27,8 +27,8 @@ mod tests;
 
 use {
     crate::{account::*, group::*, partition::*, policy::*, role::*, session_token_encryption_key::*, user::*},
-    aws_smithy_types::error::metadata::ProvideErrorMetadata,
     clap::{Parser, Subcommand},
+    scratchstack_core::error::ProvideErrorMetadata,
     scratchstack_iam_database::RequestExecutor,
     scratchstack_shapes_iam::{error_meta::Error as IamError, types::error::InternalFailure},
     serde::Serialize as _,
@@ -524,9 +524,14 @@ impl Commands {
 
 /// Format a service error in the AWS CLI style.
 pub(crate) fn format_service_error<E: ProvideErrorMetadata>(error: &E, operation: &str) -> String {
-    let code = error.code().unwrap_or("Unknown");
-    let message = error.message().unwrap_or_default();
-    format!("An error occurred ({code}) when calling the {operation} operation: {message}")
+    let code = error.code();
+    let message = error.message();
+
+    if let Some(message) = message {
+        format!("An error occurred ({code}) when calling the {operation} operation: {message}")
+    } else {
+        format!("An error occurred ({code}) when calling the {operation} operation")
+    }
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -914,6 +919,13 @@ where
 
 /// Internal failure message constant.
 const MSG_INTERNAL_FAILURE: &str = "An internal error has occurred.";
+
+/// Construct a generic `InternalFailure` with the standard internal-failure message. Use
+/// this for every "unexpected database/builder/etc. error" call site — never leak
+/// underlying details to the caller (those go to the log).
+pub(crate) fn internal_failure() -> InternalFailure {
+    InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build()
+}
 
 /// Connect to the database, run a [`RequestExecutor`] inside a transaction, and commit.
 ///

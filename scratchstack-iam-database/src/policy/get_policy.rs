@@ -12,6 +12,7 @@ use {
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
+    log::error,
     scratchstack_aws_principal::IamResourceType,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -65,7 +66,7 @@ pub async fn get_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Result<
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to query managed policy from database: {e}");
+        error!("Failed to query managed policy from database: {e}");
         internal_failure()
     })?
     .ok_or_else(|| NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())?;
@@ -85,20 +86,25 @@ pub async fn get_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Result<
     };
 
     let policy = Policy::builder()
-        .arn(Some(arn.to_string()))
-        .attachment_count(attachment_count)
-        .create_date(Some(policy_row.created_at))
-        .default_version_id(Some(format!("v{}", policy_row.default_version)))
-        .description(policy_row.description)
-        .is_attachable(Some(!policy_row.deprecated))
-        .path(Some(policy_row.path))
-        .permissions_boundary_usage_count(permissions_boundary_usage_count)
-        .policy_id(Some(format!("{}{}", IamResourceType::ManagedPolicy.as_str(), policy_row.managed_policy_id)))
-        .policy_name(Some(policy_row.managed_policy_name_cased))
-        .update_date(Some(policy_row.update_date))
-        .tags(tags)
-        .build()?;
-    Ok(GetPolicyResponse {
-        policy: Some(policy),
-    })
+        .arn(arn)
+        .set_attachment_count(attachment_count)
+        .create_date(policy_row.created_at)
+        .default_version_id(format!("v{}", policy_row.default_version))
+        .set_description(policy_row.description)
+        .is_attachable(!policy_row.deprecated)
+        .path(policy_row.path)
+        .set_permissions_boundary_usage_count(permissions_boundary_usage_count)
+        .policy_id(format!("{}{}", IamResourceType::ManagedPolicy.as_str(), policy_row.managed_policy_id))
+        .policy_name(policy_row.managed_policy_name_cased)
+        .update_date(policy_row.update_date)
+        .set_tags(tags)
+        .build()
+        .map_err(|e| {
+            error!("Failed to build Policy: {e}");
+            internal_failure()
+        })?;
+    Ok(GetPolicyResponse::builder().policy(policy).build().map_err(|e| {
+        error!("Failed to build GetPolicyResponse: {e}");
+        internal_failure()
+    })?)
 }

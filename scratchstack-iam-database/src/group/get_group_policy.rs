@@ -5,6 +5,7 @@ use {
         policy::validate_policy_name,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{GetGroupPolicyInternalRequest, GetGroupPolicyResponse},
@@ -48,7 +49,7 @@ pub async fn get_group_policy(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to look up group in database: {e}");
+        error!("Failed to look up group in database: {e}");
         internal_failure()
     })?;
 
@@ -72,7 +73,7 @@ pub async fn get_group_policy(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to fetch group inline policy from database: {e}");
+        error!("Failed to fetch group inline policy from database: {e}");
         internal_failure()
     })?;
 
@@ -86,13 +87,9 @@ pub async fn get_group_policy(
         }
     };
 
-    GetGroupPolicyResponse::builder()
+    Ok(GetGroupPolicyResponse::builder()
         .group_name(group_name_cased)
         .policy_name(policy_name_cased)
         .policy_document(policy_document)
-        .build()
-        .map_err(|e| {
-            log::error!("Failed to build GetGroupPolicyResponse: {e}");
-            internal_failure().into()
-        })
+        .build()?)
 }

@@ -6,6 +6,7 @@ use {
         tag::{validate_tag_key, validate_tag_value},
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::TagPolicyRequest,
@@ -58,7 +59,7 @@ pub async fn tag_policy(tx: &mut PgTransaction<'_>, policy_arn: &str, tags: &[Ta
         .execute(tx.as_mut())
         .await
         {
-            log::error!("Failed to insert/update managed policy tag: {e}");
+            error!("Failed to insert/update managed policy tag: {e}");
             return Err(internal_failure().into());
         }
     }

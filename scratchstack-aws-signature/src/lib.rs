@@ -131,6 +131,7 @@
 )]
 #![cfg_attr(doc, feature(doc_cfg))]
 
+mod axum_layer;
 mod body;
 mod chronoutil;
 pub(crate) mod constants;
@@ -144,14 +145,14 @@ pub mod auth;
 pub mod canonical;
 
 pub use {
-    body::*, error::*, scratchstack_aws_principal as principal, scratchstack_errors as errors, session_token::*,
-    signature::*, signing_key::*,
+    axum_layer::*, body::*, error::*, scratchstack_aws_principal as principal, session_token::*, signature::*,
+    signing_key::*,
 };
 
 #[doc(inline)]
 pub use canonical::{
-    ConstSignedHeaderRequirements, NO_ADDITIONAL_SIGNED_HEADERS, NoSignedHeaderRequirements, SignedHeaderRequirements,
-    SliceSignedHeaderRequirements, VecSignedHeaderRequirements,
+    ConstSignedHeaderRequirements, NoSignedHeaderRequirements, SignedHeaderRequirements, SliceSignedHeaderRequirements,
+    VecSignedHeaderRequirements,
 };
 
 #[cfg(doc)]

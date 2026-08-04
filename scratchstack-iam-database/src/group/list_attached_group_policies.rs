@@ -6,6 +6,7 @@ use {
         policy::build_policy_arn,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListAttachedGroupPoliciesInternalRequest, ListAttachedGroupPoliciesResponse},
@@ -89,7 +90,7 @@ pub async fn list_attached_group_policies(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up group in database: {e}");
+            error!("Failed to look up group in database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -114,7 +115,7 @@ pub async fn list_attached_group_policies(
 
     if let Some(marker) = marker {
         let info: ListAttachedGroupPoliciesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListAttachedGroupPolicies: {e}");
+            error!("Failed to decrypt pagination token for ListAttachedGroupPolicies: {e}");
             internal_failure()
         })?;
         sql.push(" AND (mp.managed_policy_name_lower, mp.managed_policy_id) >= (");
@@ -128,7 +129,7 @@ pub async fn list_attached_group_policies(
     sql.push_bind(max_items as i32 + 1);
 
     let rows = sql.build_query_as::<ListAttachedGroupPolicyRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch attached group policies from database: {e}");
+        error!("Failed to fetch attached group policies from database: {e}");
         internal_failure()
     })?;
 
@@ -145,7 +146,7 @@ pub async fn list_attached_group_policies(
                     })
                     .await
                     .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListAttachedGroupPolicies: {e}");
+                        error!("Failed to encrypt pagination token for ListAttachedGroupPolicies: {e}");
                         internal_failure()
                     })?,
             );
@@ -153,26 +154,16 @@ pub async fn list_attached_group_policies(
         }
 
         let arn = build_policy_arn(&partition, &row.account_id, &row.path, &row.managed_policy_name_cased)?;
-        results.push(
-            AttachedPolicy::builder()
-                .policy_arn(Some(arn.to_string()))
-                .policy_name(Some(row.managed_policy_name_cased))
-                .build()
-                .map_err(|e| {
-                    log::error!("Failed to construct AttachedPolicy: {e}");
-                    internal_failure()
-                })?,
-        );
+        results.push(AttachedPolicy::builder().policy_arn(arn).policy_name(row.managed_policy_name_cased).build()?);
     }
 
-    let mut builder = ListAttachedGroupPoliciesResponse::builder();
-    builder = builder.attached_policies(results);
-    if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
-    }
-
-    builder.build().map_err(|e| {
-        log::error!("Failed to build ListAttachedGroupPoliciesResponse: {e}");
-        internal_failure().into()
-    })
+    Ok(ListAttachedGroupPoliciesResponse::builder()
+        .set_attached_policies(results)
+        .is_truncated(next_marker.is_some())
+        .set_marker(next_marker)
+        .build()
+        .map_err(|e| {
+            error!("Failed to construct ListAttachedGroupPoliciesResponse: {e}");
+            internal_failure()
+        })?)
 }

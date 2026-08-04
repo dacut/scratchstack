@@ -5,6 +5,7 @@ use {
         make_iam_paginator, partition::get_current_partition_or_fail, path::validate_path_prefix,
     },
     chrono::{DateTime, Utc},
+    log::error,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
     scratchstack_shapes_iam::{
@@ -78,7 +79,7 @@ pub async fn list_groups(
 
     if let Some(marker) = marker {
         let info: ListGroupsMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListGroups: {e}");
+            error!("Failed to decrypt pagination token for ListGroups: {e}");
             internal_failure()
         })?;
         sql.push(" AND group_name_lower >= ");
@@ -90,7 +91,7 @@ pub async fn list_groups(
     sql.push_bind(max_items as i32 + 1);
 
     let rows = sql.build_query_as::<ListGroupsRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch groups from database: {e}");
+        error!("Failed to fetch groups from database: {e}");
         internal_failure()
     })?;
     let mut results = Vec::with_capacity(rows.len().min(max_items));
@@ -105,7 +106,7 @@ pub async fn list_groups(
                     })
                     .await
                     .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListGroups: {e}");
+                        error!("Failed to encrypt pagination token for ListGroups: {e}");
                         internal_failure()
                     })?,
             );
@@ -119,7 +120,7 @@ pub async fn list_groups(
             .resource(format!("group{}{}", row.path, row.group_name_cased))
             .build()
             .map_err(|e| {
-                log::error!("Failed to construct ARN for group: {e}");
+                error!("Failed to construct ARN for group: {e}");
                 internal_failure()
             })?;
 
@@ -132,20 +133,19 @@ pub async fn list_groups(
                 .group_name(row.group_name_cased)
                 .build()
                 .map_err(|e| {
-                    log::error!("Failed to construct group object: {e}");
+                    error!("Failed to construct Group: {e}");
                     internal_failure()
                 })?,
         );
     }
 
-    let mut builder = ListGroupsResponse::builder();
-    builder = builder.groups(results);
-    if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
-    }
-
-    builder.build().map_err(|e| {
-        log::error!("Failed to build ListGroupsResponse: {e}");
-        internal_failure().into()
-    })
+    Ok(ListGroupsResponse::builder()
+        .set_groups(results)
+        .is_truncated(next_marker.is_some())
+        .set_marker(next_marker)
+        .build()
+        .map_err(|e| {
+            error!("Failed to construct ListGroupsResponse: {e}");
+            internal_failure()
+        })?)
 }

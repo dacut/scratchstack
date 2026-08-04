@@ -21,16 +21,16 @@ serde_json = { workspace = true }
 
 [dependencies]
 anyhow.workspace = true
-aws-smithy-runtime-api.workspace = true
-aws-smithy-types.workspace = true
-aws-types.workspace = true
+bon.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true, optional = true, features = ["derive"] }
 derive_builder.workspace = true
+http.workspace = true
 log.workspace = true
 regex.workspace = true
 scratchstack-cli-utils = { path = "../scratchstack-cli-utils", optional = true }
-scratchstack-hakari = { path = "../scratchstack-hakari" }
+scratchstack-core.path = "../scratchstack-core"
+scratchstack-hakari.path = "../scratchstack-hakari"
 scratchstack-shapes-iam.path = "../scratchstack-shapes-iam"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

@@ -5,6 +5,7 @@ use {
         role::validate_role_name,
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{GetRolePolicyInternalRequest, GetRolePolicyResponse},
@@ -48,7 +49,7 @@ pub async fn get_role_policy(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to look up role in database: {e}");
+        error!("Failed to look up role in database: {e}");
         internal_failure()
     })?;
 
@@ -72,7 +73,7 @@ pub async fn get_role_policy(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to fetch role inline policy from database: {e}");
+        error!("Failed to fetch role inline policy from database: {e}");
         internal_failure()
     })?;
 
@@ -86,13 +87,13 @@ pub async fn get_role_policy(
         }
     };
 
-    GetRolePolicyResponse::builder()
+    Ok(GetRolePolicyResponse::builder()
         .role_name(role_name_cased)
         .policy_name(policy_name_cased)
         .policy_document(policy_document)
         .build()
         .map_err(|e| {
-            log::error!("Failed to build GetRolePolicyResponse: {e}");
-            internal_failure().into()
-        })
+            error!("Failed to construct GetRolePolicyResponse: {e}");
+            internal_failure()
+        })?)
 }

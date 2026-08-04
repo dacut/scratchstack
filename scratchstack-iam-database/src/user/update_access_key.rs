@@ -8,6 +8,7 @@ use {
         user::{validate_access_key_id, validate_user_name},
     },
     indoc::indoc,
+    log::error,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::UpdateAccessKeyInternalRequest,
@@ -68,7 +69,7 @@ pub async fn update_access_key(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to look up access key in database: {e}");
+        error!("Failed to look up access key in database: {e}");
         internal_failure()
     })?;
 
@@ -103,7 +104,7 @@ pub async fn update_access_key(
         .execute(tx.as_mut())
         .await
         .map_err(|e| {
-            log::error!("Failed to update access key in database: {e}");
+            error!("Failed to update access key in database: {e}");
             internal_failure()
         })?;
 

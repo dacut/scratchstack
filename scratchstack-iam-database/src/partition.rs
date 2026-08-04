@@ -2,6 +2,7 @@
 use {
     crate::{RequestExecutor, internal_failure},
     indoc::indoc,
+    log::error,
     scratchstack_arn::utils::validate_partition,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -28,7 +29,7 @@ pub async fn get_current_partition(tx: &mut PgTransaction<'_>) -> Result<GetCurr
     let result = match query("SELECT partition FROM iam.partition").fetch_all(tx.as_mut()).await {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to query partition from database: {e}");
+            error!("Failed to query partition from database: {e}");
             return Err(internal_failure().into());
         }
     };
@@ -36,28 +37,28 @@ pub async fn get_current_partition(tx: &mut PgTransaction<'_>) -> Result<GetCurr
 
     for row in result {
         if partition.is_some() {
-            log::error!("Multiple partitions found in database");
+            error!("Multiple partitions found in database");
             return Err(internal_failure().into());
         }
 
         partition = Some(match row.try_get(0) {
             Ok(partition) => partition,
             Err(e) => {
-                log::error!("Failed to get partition from database row: {}", e);
+                error!("Failed to get partition from database row: {}", e);
                 return Err(internal_failure().into());
             }
         });
     }
 
     let Some(partition) = partition else {
-        log::error!("No partition found in database");
+        error!("No partition found in database");
         return Err(internal_failure().into());
     };
 
-    GetCurrentPartitionResponse::builder().partition(partition).build().map_err(|e| {
-        log::error!("Failed to build GetCurrentPartitionResponse: {e}");
-        internal_failure().into()
-    })
+    Ok(GetCurrentPartitionResponse::builder().partition(partition).build().map_err(|e| {
+        error!("Failed to construct GetCurrentPartitionResponse: {e}");
+        internal_failure()
+    })?)
 }
 
 /// Retrieve the current partition of the service, failing if it is not set.
@@ -66,7 +67,7 @@ pub async fn get_current_partition_or_fail(tx: &mut PgTransaction<'_>) -> Result
     if let Some(partition) = resp.partition {
         Ok(partition.to_string())
     } else {
-        log::error!("No partition found in database");
+        error!("No partition found in database");
         Err(internal_failure().into())
     }
 }
@@ -100,7 +101,7 @@ pub async fn set_current_partition(
     if let Err(e) =
         query("DELETE FROM iam.partition WHERE partition != $1").bind(req.partition.clone()).execute(tx.as_mut()).await
     {
-        log::error!("Failed to delete old partitions from database: {e}");
+        error!("Failed to delete old partitions from database: {e}");
         return Err(internal_failure().into());
     }
 
@@ -114,12 +115,12 @@ pub async fn set_current_partition(
     .execute(tx.as_mut())
     .await
     {
-        log::error!("Failed to insert partition into database: {e}");
+        error!("Failed to insert partition into database: {e}");
         return Err(internal_failure().into());
     }
 
-    SetCurrentPartitionResponse::builder().partition(req.partition.clone()).build().map_err(|e| {
-        log::error!("Failed to build SetCurrentPartitionResponse: {e}");
-        internal_failure().into()
-    })
+    Ok(SetCurrentPartitionResponse::builder().partition(req.partition.clone()).build().map_err(|e| {
+        error!("Failed to construct SetCurrentPartitionResponse: {e}");
+        internal_failure()
+    })?)
 }
