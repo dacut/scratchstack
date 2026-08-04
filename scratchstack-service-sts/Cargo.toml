@@ -21,9 +21,9 @@ axum = { workspace = true, features = [
     "tower-log",
     "tracing",
 ] }
+bon.workspace = true
 chrono.workspace = true
 clap = { workspace = true, features = ["derive"] }
-derive_builder.workspace = true
 env_logger.workspace = true
 form_urlencoded.workspace = true
 futures.workspace = true

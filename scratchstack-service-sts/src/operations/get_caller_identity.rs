@@ -20,10 +20,10 @@ fn security_token_invalid(request_id: RequestId) -> Result<Response, BoxError> {
                 .r#type("Sender")
                 .code("InvalidClientTokenId")
                 .message("The security token included in the request is invalid.")
-                .build()?,
+                .build(),
         )
         .request_id(request_id)
-        .build()?
+        .build()
         .respond(StatusCode::FORBIDDEN)
 }
 
@@ -54,9 +54,9 @@ pub(crate) async fn get_caller_identity(
                             .account(arn.account_id())
                             .arn(arn.to_string())
                             .user_id(user_id.unwrap_or_default())
-                            .build()?,
+                            .build(),
                     )
-                    .build()?;
+                    .build();
                 return cid_result.respond(StatusCode::OK, request_id);
             }
 
