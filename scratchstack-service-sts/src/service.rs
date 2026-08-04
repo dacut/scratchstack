@@ -19,7 +19,6 @@ pub(crate) async fn serve_request(
             .r#type(ERR_TYPE_SENDER)
             .message(format!("Could not find operation {action} for version {version}"))
             .build()
-            .expect("Failed to build error response")
             .respond(StatusCode::BAD_REQUEST, request_id)
             .expect("Failed to build error response");
     }
