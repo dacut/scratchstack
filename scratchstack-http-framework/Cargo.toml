@@ -18,6 +18,7 @@ tls = ["axum", "dep:tokio-rustls", "tokio/net"]
 [dependencies]
 axum = { workspace = true, optional = true }
 base64.workspace = true
+bon.workspace = true
 bytes.workspace = true
 chrono = { workspace = true, features = ["clock", "std"] }
 derive_builder.workspace = true

@@ -6,8 +6,8 @@ use {
         http::{HeaderValue, StatusCode, method::Method},
         response::Response,
     },
+    bon::Builder,
     chrono::Utc,
-    derive_builder::Builder,
     log::{info, trace},
     scratchstack_aws_signature::{
         GetSigningKeyRequest, GetSigningKeyResponse, SignatureError, SignatureOptions, SignedHeaderRequirements,
@@ -33,11 +33,11 @@ use {
 #[derive(Builder)]
 pub struct AwsSigV4VerifierLayer<G, E, SHR> {
     /// The region this service is operating in.
-    #[builder(setter(into))]
+    #[builder(into)]
     region: String,
 
     /// The name of this service.
-    #[builder(setter(into))]
+    #[builder(into)]
     service: String,
 
     /// The allowed HTTP request methods.
@@ -60,19 +60,6 @@ pub struct AwsSigV4VerifierLayer<G, E, SHR> {
     /// Options for the signature verification process.
     #[builder(default)]
     signature_options: SignatureOptions,
-}
-
-impl<G, E, SHR> AwsSigV4VerifierLayer<G, E, SHR>
-where
-    G: Clone,
-    E: Clone,
-    SHR: Clone,
-{
-    /// Create a new [`AwsSigV4VerifierLayerBuilder`] for constructing an `AwsSigV4VerifierLayer`.
-    #[inline]
-    pub fn builder() -> AwsSigV4VerifierLayerBuilder<G, E, SHR> {
-        AwsSigV4VerifierLayerBuilder::default()
-    }
 }
 
 impl<G, E, SHR> Clone for AwsSigV4VerifierLayer<G, E, SHR>
@@ -604,8 +591,7 @@ mod tests {
             .get_signing_key(sigfn)
             .error_mapper(err_handler)
             .signed_header_requirements(NoSignedHeaderRequirements)
-            .build()
-            .unwrap();
+            .build();
         let app = Router::new().route("/", get(hello_response)).layer(verifier);
         let request =
             Request::builder().method(Method::GET).uri("/").body(Body::empty()).expect("Failed to build request");
@@ -633,8 +619,7 @@ mod tests {
             .error_mapper(err_handler)
             .signed_header_requirements(NoSignedHeaderRequirements)
             .signature_options(signature_options)
-            .build()
-            .unwrap();
+            .build();
         let app = Router::new().route("/", get(hello_response)).layer(verifier);
         let request =
             Request::builder().method(Method::GET).uri("/").header("Host", "example.amazonaws.com").header("X-Amz-Date", "20150830T123600Z").header("Authorization", "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, SignedHeaders=host;x-amz-date, Signature=5fa00fa31553b73ebf1942676e86291e8372ff2a2260956d9b8aae1d763fbf31").body(Body::empty()).expect("Failed to build request");
@@ -662,8 +647,7 @@ mod tests {
             .error_mapper(err_handler)
             .signed_header_requirements(NoSignedHeaderRequirements)
             .signature_options(signature_options)
-            .build()
-            .unwrap();
+            .build();
         let app = Router::new().route("/", get(hello_response)).layer(verifier);
         let request =
             Request::builder().method(Method::GET).uri("/").header("Host", "example.amazonaws.com").header("X-Amz-Date", "20150830T123600Z").header("Authorization", "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, SignedHeaders=host;x-amz-date, Signature=0000000000000000000000000000000000000000000000000000000000000000").body(Body::empty()).expect("Failed to build request");
