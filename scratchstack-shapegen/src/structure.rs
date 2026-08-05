@@ -305,7 +305,7 @@ impl Structure {
         // Error structure itself
         writeln!(w, "#[derive(::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::PartialEq, ::std::fmt::Debug)]")?;
         writeln!(w, "pub struct {rust_typename} {{")?;
-        writeln!(w, "    /// Metadata for this request.")?;
+        writeln!(w, "    /// Metadata for this error.")?;
         writeln!(w, "    pub meta: ::aws_smithy_types::error::metadata::ErrorMetadata,")?;
         writeln!(w, "}}")?;
         writeln!(w)?;
