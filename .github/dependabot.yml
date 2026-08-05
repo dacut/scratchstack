@@ -9,6 +9,7 @@ updates:
   - package-ecosystem: "cargo"
     directory: "/"
     exclude-paths:
+      - "scratchstack-hakari/**"
       - "scratchstack-services/**"
     groups:
       all-dependencies:
