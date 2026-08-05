@@ -17,7 +17,7 @@ aes = { version = "0.9", default-features = false, features = ["zeroize"] }
 aes-gcm = { version = "0.11", features = ["zeroize"] }
 anstream = { version = "1" }
 axum = { version = "0.8", features = ["http2", "macros"] }
-base64 = { version = "0.22" }
+base64 = { version = "0.23" }
 bitflags = { version = "2", default-features = false, features = ["serde"] }
 byteorder = { version = "1", default-features = false, features = ["std"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
@@ -77,7 +77,7 @@ aes = { version = "0.9", default-features = false, features = ["zeroize"] }
 aes-gcm = { version = "0.11", features = ["zeroize"] }
 anstream = { version = "1" }
 axum = { version = "0.8", features = ["http2", "macros"] }
-base64 = { version = "0.22" }
+base64 = { version = "0.23" }
 bitflags = { version = "2", default-features = false, features = ["serde"] }
 byteorder = { version = "1", default-features = false, features = ["std"] }
 cc = { version = "1", default-features = false, features = ["parallel"] }
