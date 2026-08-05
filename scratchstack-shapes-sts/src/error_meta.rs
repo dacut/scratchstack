@@ -60,8 +60,10 @@ impl From<Error> for ::scratchstack_shapes_iam::error_meta::Error {
             _ => {
                 ::log::error!("Converting unhandled STS error to IAM error: {:?}", e);
                 Self::InternalFailure(Box::new(::scratchstack_shapes_iam::types::error::InternalFailure {
-                    message: Some("An internal error has occurred.".to_string()),
-                    meta: ::aws_smithy_types::error::ErrorMetadata::builder().code("InternalFailure").build(),
+                    meta: ::aws_smithy_types::error::ErrorMetadata::builder()
+                        .code("InternalFailure")
+                        .message("An internal error has occurred")
+                        .build(),
                 }))
             }
         }
@@ -73,7 +75,6 @@ macro_rules! from_iam {
         impl From<::scratchstack_shapes_iam::types::error::$ty> for Error {
             fn from(e: ::scratchstack_shapes_iam::types::error::$ty) -> Self {
                 Self::$ty(Box::new(crate::types::error::$ty {
-                    message: e.message,
                     meta: e.meta,
                 }))
             }

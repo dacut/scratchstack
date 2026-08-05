@@ -32,7 +32,6 @@ macro_rules! unified_error {
         impl From<::scratchstack_shapes_iam::types::error::$ty> for $ty {
             fn from(e: ::scratchstack_shapes_iam::types::error::$ty) -> Self {
                 Self {
-                    message: e.message,
                     meta: e.meta,
                 }
             }
@@ -41,7 +40,6 @@ macro_rules! unified_error {
         impl From<::std::boxed::Box<::scratchstack_shapes_iam::types::error::$ty>> for ::std::boxed::Box<$ty> {
             fn from(e: ::std::boxed::Box<::scratchstack_shapes_iam::types::error::$ty>) -> Self {
                 Box::new($ty {
-                    message: e.message,
                     meta: e.meta,
                 })
             }
@@ -50,7 +48,6 @@ macro_rules! unified_error {
         impl From<$ty> for ::scratchstack_shapes_iam::types::error::$ty {
             fn from(e: $ty) -> Self {
                 Self {
-                    message: e.message,
                     meta: e.meta,
                 }
             }
@@ -59,7 +56,6 @@ macro_rules! unified_error {
         impl From<::std::boxed::Box<$ty>> for ::std::boxed::Box<::scratchstack_shapes_iam::types::error::$ty> {
             fn from(e: ::std::boxed::Box<$ty>) -> Self {
                 Box::new(::scratchstack_shapes_iam::types::error::$ty {
-                    message: e.message,
                     meta: e.meta,
                 })
             }
