@@ -2793,7 +2793,7 @@ dependencies = [
  "aes-gcm",
  "anstream",
  "axum",
- "base64 0.23.1",
+ "base64 0.22.1",
  "bitflags 2.13.1",
  "byteorder",
  "cc",
