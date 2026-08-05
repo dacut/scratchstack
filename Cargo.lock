@@ -377,9 +377,9 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "base64"
-version = "0.23.0"
+version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b25655df2c3cdd83c5e5b293b88acd880332b2ddadd7c30ac43144fdc0033da9"
+checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "base64-simd"
@@ -440,7 +440,7 @@ version = "3.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dee98b0db6a962de883bf5d20362dee4d7ca0d12fe39a7c6c73c844e1cd7c1f"
 dependencies = [
- "darling",
+ "darling 0.23.0",
  "ident_case",
  "prettyplease",
  "proc-macro2",
@@ -751,8 +751,18 @@ version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc7f46116c46ff9ab3eb1597a45688b6715c6e628b5c133e288e709a29bcb4ee"
 dependencies = [
- "darling_core",
- "darling_macro",
+ "darling_core 0.20.11",
+ "darling_macro 0.20.11",
+]
+
+[[package]]
+name = "darling"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25ae13da2f202d56bd7f91c25fba009e7717a1e4a1cc98a76d844b65ae912e9d"
+dependencies = [
+ "darling_core 0.23.0",
+ "darling_macro 0.23.0",
 ]
 
 [[package]]
@@ -770,12 +780,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "darling_core"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9865a50f7c335f53564bb694ef660825eb8610e0a53d3e11bf1b0d3df31e03b0"
+dependencies = [
+ "ident_case",
+ "proc-macro2",
+ "quote",
+ "strsim",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "darling_macro"
 version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc34b93ccb385b40dc71c6fceac4b2ad23662c7eeb248cf10d529b7e055b6ead"
 dependencies = [
- "darling_core",
+ "darling_core 0.20.11",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "darling_macro"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac3984ec7bd6cfa798e62b4a642426a5be0e68f9401cfc2a01e3fa9ea2fcdb8d"
+dependencies = [
+ "darling_core 0.23.0",
  "quote",
  "syn 2.0.119",
 ]
@@ -832,7 +866,7 @@ version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d5bcf7b024d6835cfb3d473887cd966994907effbe9227e8c8219824d06c4e8"
 dependencies = [
- "darling",
+ "darling 0.20.11",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -2615,7 +2649,7 @@ dependencies = [
 name = "scratchstack-aspen"
 version = "0.12.0"
 dependencies = [
- "base64 0.23.0",
+ "base64 0.23.1",
  "chrono",
  "derive_builder",
  "env_logger",
@@ -2637,7 +2671,7 @@ dependencies = [
 name = "scratchstack-aws-principal"
 version = "0.12.0"
 dependencies = [
- "base64 0.23.0",
+ "base64 0.23.1",
  "chrono",
  "scratchstack-arn",
  "scratchstack-hakari",
@@ -2653,7 +2687,7 @@ dependencies = [
  "aes-gcm",
  "ascii-casing",
  "axum",
- "base64 0.23.0",
+ "base64 0.23.1",
  "bytes",
  "chrono",
  "derive_builder",
@@ -2759,7 +2793,7 @@ dependencies = [
  "aes-gcm",
  "anstream",
  "axum",
- "base64 0.23.0",
+ "base64 0.23.1",
  "bitflags 2.13.1",
  "byteorder",
  "cc",
@@ -2829,7 +2863,7 @@ name = "scratchstack-http-framework"
 version = "0.12.0"
 dependencies = [
  "axum",
- "base64 0.23.0",
+ "base64 0.23.1",
  "bon",
  "bytes",
  "chrono",
@@ -2864,7 +2898,7 @@ dependencies = [
  "ascii-casing",
  "aws-smithy-types",
  "base32",
- "base64 0.23.0",
+ "base64 0.23.1",
  "chrono",
  "clap",
  "derive_builder",
@@ -2906,7 +2940,7 @@ version = "0.12.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
- "base64 0.23.0",
+ "base64 0.23.1",
  "chrono",
  "derive_builder",
  "env_logger",
