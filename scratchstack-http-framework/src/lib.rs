@@ -29,3 +29,17 @@ pub use sigv4::*;
 mod tls;
 #[cfg(feature = "tls")]
 pub use tls::*;
+
+/// Trait for types that can _potentially_ provide a request id.
+///
+/// This is applied to error and response types.
+pub trait ProvideRequestId {
+    /// Returns the request id if available.
+    fn request_id(&self) -> Option<&str>;
+}
+
+/// Trait for types that can provide the service's XML namespace.
+pub trait ProvideXmlNamespace {
+    /// Returns the XML namespace for the service.
+    fn xml_namespace(&self) -> &str;
+}
