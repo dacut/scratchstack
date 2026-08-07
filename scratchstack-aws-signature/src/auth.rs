@@ -10,7 +10,8 @@
 
 use {
     crate::{
-        GetSigningKeyRequest, GetSigningKeyResponse, KSigningKey, SignatureError, constants::*, crypto::hmac_sha256,
+        GetSigningKeyRequest, GetSigningKeyResponse, KSigningKey, SignatureDoesNotMatchError, SignatureError,
+        constants::*, crypto::hmac_sha256,
     },
     chrono::{DateTime, Duration, Utc},
     derive_builder::Builder,

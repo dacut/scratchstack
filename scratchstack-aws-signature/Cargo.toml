@@ -25,8 +25,10 @@ unstable = []
 aes = { workspace = true, optional = true, features = ["zeroize"] }
 aes-gcm = { workspace = true, optional = true, features = ["zeroize"] }
 ascii-casing = { workspace = true, features = ["serde"] }
+aws-smithy-types.workspace = true
 axum = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
+bon.workspace = true
 bytes.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 derive_builder.workspace = true
