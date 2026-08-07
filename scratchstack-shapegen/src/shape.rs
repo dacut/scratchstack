@@ -305,6 +305,15 @@ impl Shape {
         }
     }
 
+    /// If this shape is a service, returns a reference to it.
+    #[must_use]
+    pub fn as_service(&self) -> Option<&Service> {
+        match self {
+            Self::Service(s) => Some(s),
+            _ => None,
+        }
+    }
+
     /// If this shape is a structure, returns a reference to it.
     #[must_use]
     pub fn as_structure(&self) -> Option<&Structure> {

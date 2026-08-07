@@ -3,7 +3,7 @@ use {
     serde::{Deserialize, Serialize},
     serde_json::Value,
     std::{
-        cell::RefCell,
+        cell::{Ref, RefCell},
         collections::{BTreeMap, HashSet},
         io::{Result as IoResult, Write},
         rc::Rc,
@@ -30,6 +30,10 @@ pub struct SmithyModel {
     /// generate try_from implementations from CLI input.
     #[serde(skip, default)]
     pub input_reachable_shapes: HashSet<String>,
+
+    /// The XML namespace for this service.
+    #[serde(skip)]
+    pub xmlns: Option<String>,
 }
 
 impl SmithyModel {
@@ -41,8 +45,25 @@ impl SmithyModel {
         });
     }
 
-    /// Resolve all shapes in the model by calling `resolve` on each shape until all shapes are resolved.
+    /// Resolve the model itself without resolving any subshapes.
+    pub fn resolve_self(&mut self) {
+        // Find the XML namespace for this service so we can pass it to each shape.
+        let service_shape = self.get_service().unwrap();
+        let service = service_shape.as_service().unwrap();
+        let xmlns = service.base.traits.xml_namespace().unwrap().to_string();
+        drop(service_shape);
+        self.xmlns = Some(xmlns);
+    }
+
+    /// Resolve all shapes in the model by calling `resolve` on each shape until all shapes are
+    /// resolved.
+    ///
+    /// resolve_self must be invoked before this is called.
     pub fn resolve(&self) {
+        if self.xmlns.is_none() {
+            panic!("resolve_self must be called before resolve");
+        }
+
         for (shape_name, shape) in &self.shapes {
             if shape_name.starts_with("smithy.api#") {
                 continue;
@@ -57,6 +78,19 @@ impl SmithyModel {
     #[must_use]
     pub fn get_shape(&self, shape_id: &str) -> Option<Rc<RefCell<Shape>>> {
         self.shapes.get(shape_id).cloned()
+    }
+
+    /// Returns the service shape for this Smithy model.
+    #[must_use]
+    pub fn get_service(&self) -> Option<Ref<'_, Shape>> {
+        for shape in self.shapes.values() {
+            let shape = shape.borrow();
+            if let Shape::Service(_) = &*shape {
+                return Some(shape);
+            }
+        }
+
+        None
     }
 
     /// Generates Rust code for the Smithy model.

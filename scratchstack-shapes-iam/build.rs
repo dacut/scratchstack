@@ -122,6 +122,7 @@ fn generate_iam_shapes() -> AnyResult<()> {
         &common_exceptions.as_object().unwrap().keys().collect::<Vec<_>>(),
     );
 
+    model.resolve_self();
     model.resolve();
 
     let out_dir = var("OUT_DIR").expect("OUT_DIR environment variable not set");

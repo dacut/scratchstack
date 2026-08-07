@@ -142,7 +142,8 @@ mod tests {
 
     #[test]
     fn test_deserialize_service_model() {
-        let m: SmithyModel = serde_json::from_str(IAM_MODEL).expect("Failed to deserialize IAM service model");
+        let mut m: SmithyModel = serde_json::from_str(IAM_MODEL).expect("Failed to deserialize IAM service model");
+        m.resolve_self();
         m.resolve();
         let mut w = Writers::builder()
             .error_meta(NullWriter)
