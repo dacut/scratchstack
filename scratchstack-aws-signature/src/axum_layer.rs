@@ -15,8 +15,8 @@ use {
     chrono::Utc,
     log::{error, info, trace},
     scratchstack_core::{
-        ProvideRequestId, RequestId,
-        error::{ErrorType, GenericError, ProvideErrorMetadata},
+        RequestId,
+        error::GenericError,
         response::{ErrorResponseEnvelope, Responder as _},
     },
     std::{
@@ -254,8 +254,10 @@ where
                 );
                 return Ok(error_mapper
                     .map_error(
-                        SignatureError::InvalidRequestMethod(format!("Unsupported request method '{}", req.method()))
-                            .into(),
+                        SignatureError::InvalidRequestMethod(
+                            format!("Unsupported request method '{}", req.method()).into(),
+                        )
+                        .into(),
                         Some(request_id),
                     )
                     .await);
@@ -289,10 +291,8 @@ where
                     );
                     return Ok(error_mapper
                         .map_error(
-                            SignatureError::InvalidContentType(
-                                "The content-type of the request is unsupported".to_string(),
-                            )
-                            .into(),
+                            SignatureError::InvalidContentType("The content-type of the request is unsupported".into())
+                                .into(),
                             Some(request_id),
                         )
                         .await);
@@ -403,69 +403,18 @@ impl XmlErrorMapper {
     }
 }
 
-/// Adapts a [`SignatureError`] to the error metadata traits used by the shared response envelope.
-///
-/// [`SignatureError`] builds its message through [`Display`] rather than storing one, and knows
-/// nothing about request ids -- those are attached by this layer. This carries both alongside the
-/// error so the envelope can render them.
-struct SignatureErrorResponse {
-    error_type: ErrorType,
-    code: &'static str,
-    message: Option<String>,
-    http_status: StatusCode,
-    request_id: Option<String>,
-}
-
-impl SignatureErrorResponse {
-    fn new(error: &SignatureError, request_id: Option<RequestId>) -> Self {
-        let message = error.to_string();
-
-        Self {
-            error_type: error.error_type(),
-            code: error.error_code(),
-            // `SignatureDoesNotMatch` is allowed to carry no message at all; don't emit an empty one.
-            message: if message.is_empty() {
-                None
-            } else {
-                Some(message)
-            },
-            http_status: SignatureError::http_status(error),
-            request_id: request_id.map(|id| id.to_string()),
-        }
-    }
-}
-
-impl ProvideErrorMetadata for SignatureErrorResponse {
-    fn error_type(&self) -> ErrorType {
-        self.error_type
-    }
-
-    fn code(&self) -> &str {
-        self.code
-    }
-
-    fn message(&self) -> Option<&str> {
-        self.message.as_deref()
-    }
-
-    fn http_status(&self) -> Option<StatusCode> {
-        Some(self.http_status)
-    }
-}
-
-impl ProvideRequestId for SignatureErrorResponse {
-    fn request_id(&self) -> Option<&str> {
-        self.request_id.as_deref()
-    }
-}
-
 impl ErrorMapper for XmlErrorMapper {
     async fn map_error(self, e: BoxError, request_id: Option<RequestId>) -> Response<Body> {
         match e.downcast::<SignatureError>() {
             Ok(e) => {
                 trace!("XmlErrorMapper: mapping SignatureError {:?} to XML, http status: {}", e, e.http_status());
-                let response = SignatureErrorResponse::new(&e, request_id);
-                ErrorResponseEnvelope::new_with_xmlns(&response, &self.namespace).respond()
+                // The error knows its own code, status and message; all this layer adds is the
+                // request id, which is generated per-request rather than at the failure site.
+                let e = match request_id {
+                    Some(request_id) => e.with_request_id(request_id),
+                    None => *e,
+                };
+                ErrorResponseEnvelope::new_with_xmlns(&e, &self.namespace).respond()
             }
             Err(any) => {
                 error!("Error is not a SignatureError: {any}");
@@ -480,6 +429,7 @@ impl ErrorMapper for XmlErrorMapper {
         }
     }
 }
+
 #[cfg(test)]
 mod tests {
     use {
@@ -778,7 +728,7 @@ mod tests {
             Ok(response)
         } else {
             Err(Box::new(SignatureError::InvalidClientTokenId(
-                "The AWS access key provided does not exist in our records".to_string(),
+                "The AWS access key provided does not exist in our records".into(),
             )))
         }
     }
@@ -794,12 +744,12 @@ mod tests {
                 match token {
                     "invalid" => {
                         return Err(Box::new(SignatureError::InvalidClientTokenId(
-                            "The security token included in the request is invalid".to_string(),
+                            "The security token included in the request is invalid".into(),
                         )));
                     }
                     "expired" => {
                         return Err(Box::new(SignatureError::ExpiredToken(
-                            "The security token included in the request is expired".to_string(),
+                            "The security token included in the request is expired".into(),
                         )));
                     }
                     _ => (),
@@ -815,7 +765,7 @@ mod tests {
                 Ok(response)
             } else {
                 Err(SignatureError::InvalidClientTokenId(
-                    "The AWS access key provided does not exist in our records".to_string(),
+                    "The AWS access key provided does not exist in our records".into(),
                 )
                 .into())
             }
@@ -859,7 +809,7 @@ mod tests {
         }
 
         fn call(&mut self, _req: GetSigningKeyRequest) -> Self::Future {
-            Box::pin(async move { Err(SignatureError::InternalServiceError("Internal Failure".into()).into()) })
+            Box::pin(async move { Err(SignatureError::internal_service_error("Internal Failure").into()) })
         }
     }
 }

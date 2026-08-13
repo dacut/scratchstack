@@ -144,6 +144,36 @@ pub(crate) const MAX_SESSION_TOKEN_SIZE: usize = 1 << 20; // 1 MiB
 /// Maximum size of a secret key in bytes.
 pub(crate) const MAX_SECRET_KEY_SIZE: usize = 256;
 
+/// Default error message for `ExpiredToken`.
+pub(crate) const MSG_EXPIRED_TOKEN: &str = "The security token included in the request is expired";
+
+/// Default error message for `IncompleteSignature`.
+pub(crate) const MSG_INCOMPLETE_SIGNATURE: &str = "The request signature does not conform to AWS standards";
+
+/// Default error message for `InvalidBodyEncoding`.
+pub(crate) const MSG_INVALID_BODY_ENCODING: &str = "The request body used an unsupported character set encoding";
+
+/// Default error message for `InvalidClientTokenId`.
+pub(crate) const MSG_INVALID_CLIENT_TOKEN_ID: &str = "The AWS access key provided does not exist in our records";
+
+/// Default error message for `InvalidContentType`.
+pub(crate) const MSG_INVALID_CONTENT_TYPE: &str = "The content-type of the request is unsupported";
+
+/// Default error message for `InvalidRequestMethod`.
+pub(crate) const MSG_INVALID_REQUEST_METHOD: &str = "Invalid request method";
+
+/// Default error message for `InvalidURIPath`.
+pub(crate) const MSG_INVALID_URI_PATH: &str = "The URI path includes invalid components";
+
+/// Default error message for `MalformedHeader`.
+pub(crate) const MSG_MALFORMED_HEADER: &str = "Invalid request header";
+
+/// Default error message for `MalformedQueryString`.
+pub(crate) const MSG_MALFORMED_QUERY_STRING: &str = "Invalid request query string";
+
+/// Default error message for `MissingRequiredHeader`.
+pub(crate) const MSG_MISSING_REQUIRED_HEADER: &str = "Request is missing a required header";
+
 /// Error message: `"Authorization header requires 'Credential' parameter."`
 pub(crate) const MSG_AUTH_HEADER_REQ_CREDENTIAL: &str = "Authorization header requires 'Credential' parameter.";
 

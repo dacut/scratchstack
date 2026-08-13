@@ -125,36 +125,40 @@ impl SigV4Authenticator {
         // Rule 10: Make sure date isn't expired...
         if req_ts < min_ts {
             trace!("prevalidate: request timestamp {} is before minimum timestamp {}", req_ts, min_ts);
-            return Err(SignatureError::SignatureDoesNotMatch(Some(format!(
-                "Signature expired: {} is now earlier than {} ({} - {}.)",
-                req_ts.format(ISO8601_COMPACT_FORMAT),
-                min_ts.format(ISO8601_COMPACT_FORMAT),
-                server_timestamp.format(ISO8601_COMPACT_FORMAT),
-                duration_to_string(allowed_mismatch)
-            ))));
+            return Err(SignatureError::SignatureDoesNotMatch(
+                format!(
+                    "Signature expired: {} is now earlier than {} ({} - {}.)",
+                    req_ts.format(ISO8601_COMPACT_FORMAT),
+                    min_ts.format(ISO8601_COMPACT_FORMAT),
+                    server_timestamp.format(ISO8601_COMPACT_FORMAT),
+                    duration_to_string(allowed_mismatch)
+                )
+                .into(),
+            ));
         }
 
         // Rule 11: ... or too far into the future.
         if req_ts > max_ts {
             trace!("prevalidate: request timestamp {} is after maximum timestamp {}", req_ts, max_ts);
-            return Err(SignatureError::SignatureDoesNotMatch(Some(format!(
-                "Signature not yet current: {} is still later than {} ({} + {}.)",
-                req_ts.format(ISO8601_COMPACT_FORMAT),
-                max_ts.format(ISO8601_COMPACT_FORMAT),
-                server_timestamp.format(ISO8601_COMPACT_FORMAT),
-                duration_to_string(allowed_mismatch)
-            ))));
+            return Err(SignatureError::SignatureDoesNotMatch(
+                format!(
+                    "Signature not yet current: {} is still later than {} ({} + {}.)",
+                    req_ts.format(ISO8601_COMPACT_FORMAT),
+                    max_ts.format(ISO8601_COMPACT_FORMAT),
+                    server_timestamp.format(ISO8601_COMPACT_FORMAT),
+                    duration_to_string(allowed_mismatch)
+                )
+                .into(),
+            ));
         }
 
         // Rule 12: Credential scope must have exactly five elements.
         let credential_parts = self.credential().split('/').collect::<Vec<&str>>();
         if credential_parts.len() != 5 {
             trace!("prevalidate: credential has {} parts, expected 5", credential_parts.len());
-            return Err(SignatureError::IncompleteSignature(format!(
-                "{} got '{}'",
-                MSG_CREDENTIAL_MUST_HAVE_FIVE_PARTS,
-                self.credential()
-            )));
+            return Err(SignatureError::IncompleteSignature(
+                format!("{} got '{}'", MSG_CREDENTIAL_MUST_HAVE_FIVE_PARTS, self.credential()).into(),
+            ));
         }
 
         let cscope_date = credential_parts[1];
@@ -198,7 +202,7 @@ impl SigV4Authenticator {
         }
 
         if !cscope_errors.is_empty() {
-            return Err(SignatureError::SignatureDoesNotMatch(Some(cscope_errors.join(" "))));
+            return Err(SignatureError::SignatureDoesNotMatch(cscope_errors.join(" ").into()));
         }
 
         Ok(())
@@ -239,7 +243,7 @@ impl SigV4Authenticator {
                 debug!("get_signing_key: error getting signing key: {}", e);
                 match e.downcast::<SignatureError>() {
                     Ok(sig_err) => Err(*sig_err),
-                    Err(e) => Err(SignatureError::InternalServiceError(e)),
+                    Err(e) => Err(SignatureError::internal_service_error(e)),
                 }
             }
         }
@@ -295,7 +299,7 @@ impl SigV4Authenticator {
         let is_equal: bool = signature_bytes.ct_eq(expected_signature_bytes).into();
         if !is_equal {
             trace!("Signature mismatch: expected '{}', got '{}'", expected_signature, self.signature());
-            Err(SignatureError::SignatureDoesNotMatch(Some(MSG_REQUEST_SIGNATURE_MISMATCH.to_string())))
+            Err(SignatureError::SignatureDoesNotMatch(MSG_REQUEST_SIGNATURE_MISMATCH.into()))
         } else {
             Ok(response.into())
         }
@@ -322,7 +326,7 @@ impl SigV4Authenticator {
         let is_equal: bool = signature_bytes.ct_eq(expected_signature_bytes).into();
         if !is_equal {
             trace!("Signature mismatch: expected '{}', got '{}'", expected_signature, self.signature());
-            Err(SignatureError::SignatureDoesNotMatch(Some(MSG_REQUEST_SIGNATURE_MISMATCH.to_string())))
+            Err(SignatureError::SignatureDoesNotMatch(MSG_REQUEST_SIGNATURE_MISMATCH.into()))
         } else {
             Ok(())
         }
@@ -490,7 +494,7 @@ mod tests {
                 }
                 "invalid" => {
                     return Err(Box::new(SignatureError::InvalidClientTokenId(
-                        "The security token included in the request is invalid".to_string(),
+                        "The security token included in the request is invalid".into(),
                     )));
                 }
                 "io-error" => {
@@ -499,7 +503,7 @@ mod tests {
                 }
                 "expired" => {
                     return Err(Box::new(SignatureError::ExpiredToken(
-                        "The security token included in the request is expired".to_string(),
+                        "The security token included in the request is expired".into(),
                     )));
                 }
                 _ => (),
@@ -517,7 +521,7 @@ mod tests {
                 Ok(response)
             }
             _ => Err(Box::new(SignatureError::InvalidClientTokenId(
-                "The AWS access key provided does not exist in our records".to_string(),
+                "The AWS access key provided does not exist in our records".into(),
             ))),
         }
     }
@@ -568,7 +572,7 @@ mod tests {
 
         if let SignatureError::SignatureDoesNotMatch(ref msg) = e {
             assert_eq!(
-                msg.as_ref().unwrap(),
+                msg.message.as_str(),
                 "Signature expired: 20150830T122059Z is now earlier than 20150830T122100Z (20150830T123600Z - 15 min.)"
             );
             assert_eq!(e.error_code(), "SignatureDoesNotMatch");
@@ -593,7 +597,7 @@ mod tests {
 
         if let SignatureError::SignatureDoesNotMatch(ref msg) = e {
             assert_eq!(
-                msg.as_ref().unwrap(),
+                msg.message.as_str(),
                 "Signature not yet current: 20150830T125101Z is still later than 20150830T125100Z (20150830T123600Z + 15 min.)"
             );
             assert_eq!(e.error_code(), "SignatureDoesNotMatch");
@@ -710,11 +714,11 @@ mod tests {
             .await
             .unwrap_err();
 
-        if let SignatureError::InternalServiceError(ref err) = e {
-            assert_eq!(format!("{:?}", err), r#""internal service error""#);
-            assert_eq!(e.to_string(), "internal service error");
+        if let SignatureError::InternalServiceError(_) = e {
+            // The underlying detail went to the log; only the generic message is carried.
+            assert_eq!(e.to_string(), "Internal Service Error");
             assert_eq!(e.error_code(), "InternalFailure");
-            assert_eq!(e.http_status(), 500);
+            assert_eq!(SignatureError::http_status(&e), 500);
         } else {
             panic!("Unexpected error: {:?}", e);
         }
@@ -733,17 +737,12 @@ mod tests {
             .await
             .unwrap_err();
 
-        if let SignatureError::IO(_) = e {
-            let e_string = e.to_string();
-            assert!(
-                e_string.contains("No such file or directory")
-                    || e_string.contains("The system cannot find the file specified"),
-                "Error message: {:#?}",
-                e_string
-            );
+        if let SignatureError::InternalServiceError(_) = e {
+            // An I/O failure must not leak the path or the OS error text to the caller.
+            assert_eq!(e.to_string(), "Internal Service Error");
             assert_eq!(e.error_code(), "InternalFailure");
-            assert_eq!(e.http_status(), 500);
-            assert!(e.source().is_some());
+            assert_eq!(SignatureError::http_status(&e), 500);
+            assert!(e.source().is_none());
         } else {
             panic!("Unexpected error: {:?}", e);
         }

@@ -60,12 +60,12 @@ impl Service<String> for DatabaseKeyService {
         Box::pin(async move {
             pool.acquire().await.map_err(|e| {
                 log::error!("Failed to acquire database connection: {e}");
-                SignatureError::InternalServiceError(Box::new(e))
+                SignatureError::internal_service_error(e)
             })?;
 
             let mut tx = pool.begin().await.map_err(|e| {
                 log::error!("Failed to begin database transaction: {e}");
-                SignatureError::InternalServiceError(Box::new(e))
+                SignatureError::internal_service_error(e)
             })?;
 
             query(indoc! {"
@@ -78,7 +78,7 @@ impl Service<String> for DatabaseKeyService {
             .await
             .map_err(|e| {
                 log::error!("Failed to fetch session token encryption key: {e}");
-                SignatureError::InternalServiceError(Box::new(e))
+                SignatureError::internal_service_error(e)
             })?;
             todo!()
         })

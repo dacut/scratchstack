@@ -123,9 +123,10 @@ impl CanonicalRequest {
                     Some(charset) => match encoding_rs::Encoding::for_label(charset.as_bytes()) {
                         Some(encoding) => encoding,
                         None => {
-                            return Err(SignatureError::InvalidBodyEncoding(format!(
-                                "application/x-www-form-urlencoded body uses unsupported charset '{charset}'"
-                            )));
+                            return Err(SignatureError::InvalidBodyEncoding(
+                                format!("application/x-www-form-urlencoded body uses unsupported charset '{charset}'")
+                                    .into(),
+                            ));
                         }
                     },
                     None => {
@@ -136,10 +137,13 @@ impl CanonicalRequest {
 
                 let (body_query, _, has_errors) = encoding.decode(&body);
                 if has_errors {
-                    return Err(SignatureError::InvalidBodyEncoding(format!(
-                        "Invalid body data encountered parsing application/x-www-form-urlencoded with charset '{}'",
-                        encoding.name()
-                    )));
+                    return Err(SignatureError::InvalidBodyEncoding(
+                        format!(
+                            "Invalid body data encountered parsing application/x-www-form-urlencoded with charset '{}'",
+                            encoding.name()
+                        )
+                        .into(),
+                    ));
                 }
 
                 query_parameters.extend(query_string_to_normalized_map(&body_query)?);
@@ -206,7 +210,7 @@ impl CanonicalRequest {
         options: SignatureOptions,
     ) -> Result<Self, SignatureError> {
         if options.url_encode_form {
-            return Err(SignatureError::InternalServiceError(MSG_INTERNAL_SERVICE_ERROR.into()));
+            return Err(SignatureError::internal_service_error(MSG_INTERNAL_SERVICE_ERROR));
         }
         let canonical_path = canonicalize_uri_path(request.uri().path(), options.s3)?;
         let query_parameters = query_string_to_normalized_map(request.uri().query().unwrap_or(""))?;
@@ -353,14 +357,15 @@ impl CanonicalRequest {
     ) -> Result<SigV4Authenticator, SignatureError> {
         // Rule 9: The date must be in ISO 8601 format.
         let timestamp_str = auth_params.timestamp_str.as_str();
-        let timestamp = DateTime::<FixedOffset>::parse_from_iso8601(timestamp_str)
-            .map_err(|_| {
-                SignatureError::IncompleteSignature(format!(
+        let timestamp =
+            DateTime::<FixedOffset>::parse_from_iso8601(timestamp_str)
+                .map_err(|_| {
+                    SignatureError::IncompleteSignature(format!(
                     "Date must be in ISO-8601 'basic format'. Got '{}'. See http://en.wikipedia.org/wiki/ISO_8601",
                     auth_params.timestamp_str
-                ))
-            })?
-            .with_timezone(&Utc);
+                ).into())
+                })?
+                .with_timezone(&Utc);
         let mut builder = auth_params.builder;
         builder.request_timestamp(timestamp);
 
@@ -390,9 +395,11 @@ impl CanonicalRequest {
             (Some(auth_header), None) => self.get_auth_parameters_from_auth_header(&auth_header[0])?,
             // Use first algorithm (per rule 7a).
             (None, Some(sig_algs)) => self.get_auth_parameters_from_query_parameters(&sig_algs[0])?,
-            (Some(_), Some(_)) => return Err(SignatureError::SignatureDoesNotMatch(None)),
+            (Some(_), Some(_)) => {
+                return Err(SignatureError::SignatureDoesNotMatch(::std::default::Default::default()));
+            }
             (None, None) => {
-                return Err(SignatureError::MissingAuthenticationToken(MSG_REQUEST_MISSING_AUTH_TOKEN.to_string()));
+                return Err(SignatureError::MissingAuthenticationToken(MSG_REQUEST_MISSING_AUTH_TOKEN.into()));
             }
         };
 
@@ -405,26 +412,24 @@ impl CanonicalRequest {
             }
         }
         if !found_host {
-            return Err(SignatureError::SignatureDoesNotMatch(Some(MSG_HOST_AUTHORITY_MUST_BE_SIGNED.to_string())));
+            return Err(SignatureError::SignatureDoesNotMatch(MSG_HOST_AUTHORITY_MUST_BE_SIGNED.into()));
         }
 
         for header in signed_header_requirements.always_present() {
             let header_lower = header.to_lowercase();
             if !params.signed_headers.contains(&header_lower) {
-                return Err(SignatureError::SignatureDoesNotMatch(Some(format!(
-                    "'{}' must be a 'SignedHeader' in the AWS Authorization.",
-                    header
-                ))));
+                return Err(SignatureError::SignatureDoesNotMatch(
+                    format!("'{}' must be a 'SignedHeader' in the AWS Authorization.", header).into(),
+                ));
             }
         }
 
         for header in signed_header_requirements.if_in_request() {
             let header_lower = header.to_lowercase();
             if self.headers.contains_key(&header_lower) && !params.signed_headers.contains(&header_lower) {
-                return Err(SignatureError::SignatureDoesNotMatch(Some(format!(
-                    "'{}' must be a 'SignedHeader' in the AWS Authorization.",
-                    header
-                ))));
+                return Err(SignatureError::SignatureDoesNotMatch(
+                    format!("'{}' must be a 'SignedHeader' in the AWS Authorization.", header).into(),
+                ));
             }
         }
 
@@ -432,10 +437,9 @@ impl CanonicalRequest {
             let header_lower = header.to_lowercase();
             for http_header in self.headers.keys() {
                 if http_header.starts_with(&header_lower) && !params.signed_headers.contains(http_header) {
-                    return Err(SignatureError::SignatureDoesNotMatch(Some(format!(
-                        "'{}' must be a 'SignedHeader' in the AWS Authorization.",
-                        http_header
-                    ))));
+                    return Err(SignatureError::SignatureDoesNotMatch(
+                        format!("'{}' must be a 'SignedHeader' in the AWS Authorization.", http_header).into(),
+                    ));
                 }
             }
         }
@@ -456,11 +460,9 @@ impl CanonicalRequest {
         let parts = auth_header.splitn(2, |c| *c == b' ').collect::<Vec<&'a [u8]>>();
         let algorithm = parts[0];
         if algorithm != AWS4_HMAC_SHA256_BYTES {
-            return Err(SignatureError::IncompleteSignature(format!(
-                "{}'{}'.",
-                MSG_UNSUPPORTED_ALGORITHM,
-                String::from_utf8_lossy(algorithm)
-            )));
+            return Err(SignatureError::IncompleteSignature(
+                format!("{}'{}'.", MSG_UNSUPPORTED_ALGORITHM, String::from_utf8_lossy(algorithm)).into(),
+            ));
         }
 
         let parameters = if parts.len() > 1 {
@@ -483,11 +485,14 @@ impl CanonicalRequest {
 
             // Rule 6b: All parameters must be in key=value format.
             if parts.len() != 2 {
-                return Err(SignatureError::IncompleteSignature(format!(
-                    "'{}' not a valid key=value pair (missing equal-sign) in Authorization header: '{}'",
-                    latin1_to_string(parameter),
-                    latin1_to_string(auth_header)
-                )));
+                return Err(SignatureError::IncompleteSignature(
+                    format!(
+                        "'{}' not a valid key=value pair (missing equal-sign) in Authorization header: '{}'",
+                        latin1_to_string(parameter),
+                        latin1_to_string(auth_header)
+                    )
+                    .into(),
+                ));
             }
 
             // Rule 6c: Use the last value for each key; overwriting is ok.
@@ -531,11 +536,9 @@ impl CanonicalRequest {
         }
 
         if !missing_messages.is_empty() {
-            return Err(SignatureError::IncompleteSignature(format!(
-                "{} Authorization={}",
-                missing_messages.join(" "),
-                latin1_to_string(algorithm)
-            )));
+            return Err(SignatureError::IncompleteSignature(
+                format!("{} Authorization={}", missing_messages.join(" "), latin1_to_string(algorithm)).into(),
+            ));
         }
 
         // Get the session token if present.
@@ -560,7 +563,7 @@ impl CanonicalRequest {
     fn get_auth_parameters_from_query_parameters(&self, query_alg: &str) -> Result<AuthParams, SignatureError> {
         // Rule 7a: Make sure the X-Amz-Algorithm query parameter is "AWS4-HMAC-SHA256".
         if query_alg != AWS4_HMAC_SHA256 {
-            return Err(SignatureError::MissingAuthenticationToken(MSG_REQUEST_MISSING_AUTH_TOKEN.to_string()));
+            return Err(SignatureError::MissingAuthenticationToken(MSG_REQUEST_MISSING_AUTH_TOKEN.into()));
         }
 
         let mut missing_messages = Vec::new();
@@ -594,11 +597,9 @@ impl CanonicalRequest {
         }
 
         if !missing_messages.is_empty() {
-            return Err(SignatureError::IncompleteSignature(format!(
-                "{} {}",
-                missing_messages.join(" "),
-                MSG_REEXAMINE_QUERY_STRING_PARAMS
-            )));
+            return Err(SignatureError::IncompleteSignature(
+                format!("{} {}", missing_messages.join(" "), MSG_REEXAMINE_QUERY_STRING_PARAMS).into(),
+            ));
         }
 
         // Get the session token if present.
@@ -886,7 +887,7 @@ pub fn canonicalize_uri_path(uri_path: &str, s3: bool) -> Result<String, Signatu
 
     // All other paths must be abolute.
     if !uri_path.starts_with('/') {
-        return Err(SignatureError::InvalidURIPath(format!("Path is not absolute: {}", uri_path)));
+        return Err(SignatureError::InvalidURIPath(format!("Path is not absolute: {}", uri_path).into()));
     }
 
     let uri_path = if s3 {
@@ -912,10 +913,9 @@ pub fn canonicalize_uri_path(uri_path: &str, s3: bool) -> Result<String, Signatu
 
             if i <= 1 {
                 // This isn't allowed at the beginning!
-                return Err(SignatureError::InvalidURIPath(format!(
-                    "Relative path entry '..' navigates above root: {}",
-                    uri_path
-                )));
+                return Err(SignatureError::InvalidURIPath(
+                    format!("Relative path entry '..' navigates above root: {}", uri_path).into(),
+                ));
             }
 
             components.remove(i - 1);
@@ -1105,11 +1105,11 @@ fn normalize_uri_element(uri_el: &str, uri_el_type: UriElement) -> Result<String
                 return Err(match uri_el_type {
                     UriElement::Path => {
                         // AWS Auth Error Ordering Rule 1.
-                        SignatureError::InvalidURIPath(MSG_INCOMPLETE_TRAILING_ESCAPE.to_string())
+                        SignatureError::InvalidURIPath(MSG_INCOMPLETE_TRAILING_ESCAPE.into())
                     }
                     UriElement::Query => {
                         // AWS Auth Error Ordering Rule 4.
-                        SignatureError::MalformedQueryString(MSG_INCOMPLETE_TRAILING_ESCAPE.to_string())
+                        SignatureError::MalformedQueryString(MSG_INCOMPLETE_TRAILING_ESCAPE.into())
                     }
                 });
             }
@@ -1133,9 +1133,9 @@ fn normalize_uri_element(uri_el: &str, uri_el_type: UriElement) -> Result<String
                     let message = format!("{}{}{}", MSG_ILLEGAL_HEX_CHAR, hex_digits[0] as char, hex_digits[1] as char);
                     return Err(match uri_el_type {
                         // AWS Auth Error Ordering Rule 1.
-                        UriElement::Path => SignatureError::InvalidURIPath(message),
+                        UriElement::Path => SignatureError::InvalidURIPath(message.into()),
                         // AWS Auth Error Ordering Rule 4.
-                        UriElement::Query => SignatureError::MalformedQueryString(message),
+                        UriElement::Query => SignatureError::MalformedQueryString(message.into()),
                     });
                 }
             }
@@ -1489,7 +1489,7 @@ mod tests {
 
             let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap_err();
             if let SignatureError::InvalidURIPath(msg) = e {
-                assert_eq!(msg.as_str(), error_message);
+                assert_eq!(msg.message.as_str(), error_message);
             }
         }
     }
@@ -1529,7 +1529,7 @@ mod tests {
 
             let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap_err();
             if let SignatureError::MalformedQueryString(msg) = e {
-                assert_eq!(msg.as_str(), error_message);
+                assert_eq!(msg.message.as_str(), error_message);
             }
         }
     }
@@ -1695,7 +1695,7 @@ mod tests {
         let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap_err();
         if let SignatureError::InvalidBodyEncoding(msg) = e {
             assert_eq!(
-                msg.as_str(),
+                msg.message.as_str(),
                 "Invalid body data encountered parsing application/x-www-form-urlencoded with charset 'UTF-8'"
             )
         } else {
@@ -1736,7 +1736,7 @@ mod tests {
 
         let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap_err();
         if let SignatureError::MalformedQueryString(msg) = e {
-            assert_eq!(msg.as_str(), "Illegal hex character in escape % pattern: %yy")
+            assert_eq!(msg.message.as_str(), "Illegal hex character in escape % pattern: %yy")
         } else {
             panic!("Unexpected error: {:?}", e);
         }
@@ -1754,7 +1754,7 @@ mod tests {
 
         let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap_err();
         if let SignatureError::MalformedQueryString(msg) = e {
-            assert_eq!(msg.as_str(), "Illegal hex character in escape % pattern: %tt")
+            assert_eq!(msg.message.as_str(), "Illegal hex character in escape % pattern: %tt")
         } else {
             panic!("Unexpected error: {:?}", e);
         }
@@ -1772,7 +1772,7 @@ mod tests {
 
         let e = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap_err();
         if let SignatureError::MalformedQueryString(msg) = e {
-            assert_eq!(msg.as_str(), "Incomplete trailing escape % sequence")
+            assert_eq!(msg.message.as_str(), "Incomplete trailing escape % sequence")
         } else {
             panic!("Unexpected error: {:?}", e);
         }
@@ -1830,7 +1830,7 @@ mod tests {
             let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
             if let SignatureError::IncompleteSignature(msg) = e {
                 let error_message = format!("{} Authorization=AWS4-HMAC-SHA256", error_messages.join(" "));
-                assert_eq!(msg.as_str(), error_message.as_str());
+                assert_eq!(msg.message.as_str(), error_message.as_str());
             } else {
                 panic!("Unexpected error: {:?}", e);
             }
@@ -1854,7 +1854,7 @@ mod tests {
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::IncompleteSignature(msg) = e {
             assert_eq!(
-                msg.as_str(),
+                msg.message.as_str(),
                 "'SignedHeadersdate;host' not a valid key=value pair (missing equal-sign) in Authorization header: 'AWS4-HMAC-SHA256 Credential=1234, SignedHeadersdate;host'"
             );
         } else {
@@ -1908,7 +1908,7 @@ mod tests {
             let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
             if let SignatureError::IncompleteSignature(msg) = e {
                 let error_message = format!("{} Re-examine the query-string parameters.", error_messages.join(" "));
-                assert_eq!(msg.as_str(), error_message.as_str());
+                assert_eq!(msg.message.as_str(), error_message.as_str());
             } else {
                 panic!("Unexpected error: {:?}", e);
             }
@@ -1985,8 +1985,10 @@ mod tests {
         assert_eq!(format!("{:?}", required_headers), format!("{:?}", required_headers2));
         let e = cr.get_auth_parameters(&required_headers).unwrap_err();
         if let SignatureError::SignatureDoesNotMatch(msg) = e {
-            let msg = msg.expect("Expected error message");
-            assert_eq!(msg.as_str(), "'Host' or ':authority' must be a 'SignedHeader' in the AWS Authorization.");
+            assert_eq!(
+                msg.message.as_str(),
+                "'Host' or ':authority' must be a 'SignedHeader' in the AWS Authorization."
+            );
         } else {
             panic!("Unexpected error: {:?}", e);
         }
@@ -2004,8 +2006,10 @@ mod tests {
         let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::SignatureDoesNotMatch(msg) = e {
-            let msg = msg.expect("Expected error message");
-            assert_eq!(msg.as_str(), "'Host' or ':authority' must be a 'SignedHeader' in the AWS Authorization.");
+            assert_eq!(
+                msg.message.as_str(),
+                "'Host' or ':authority' must be a 'SignedHeader' in the AWS Authorization."
+            );
         } else {
             panic!("Unexpected error: {:?}", e);
         }
@@ -2053,7 +2057,7 @@ mod tests {
         let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::MissingAuthenticationToken(msg) = e {
-            assert_eq!(msg.as_str(), "Request is missing Authentication Token");
+            assert_eq!(msg.message.as_str(), "Request is missing Authentication Token");
         } else {
             panic!("Unexpected error: {:?}", e);
         }
@@ -2074,8 +2078,7 @@ mod tests {
         let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::SignatureDoesNotMatch(ref msg) = e {
-            assert!(msg.is_none());
-            assert_eq!(e.to_string(), "");
+            assert_eq!(msg.message.as_str(), MSG_REQUEST_SIGNATURE_MISMATCH);
         } else {
             panic!("Unexpected error: {:?}", e);
         }
@@ -2096,7 +2099,7 @@ mod tests {
         let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::IncompleteSignature(msg) = e {
-            assert_eq!(msg.as_str(), "Unsupported AWS 'algorithm': 'AWS3-HMAC-SHA256'.");
+            assert_eq!(msg.message.as_str(), "Unsupported AWS 'algorithm': 'AWS3-HMAC-SHA256'.");
         } else {
             panic!("Unexpected error: {:?}", e);
         }
@@ -2116,7 +2119,7 @@ mod tests {
         let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let e = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap_err();
         if let SignatureError::MissingAuthenticationToken(msg) = e {
-            assert_eq!(msg.as_str(), "Request is missing Authentication Token");
+            assert_eq!(msg.message.as_str(), "Request is missing Authentication Token");
         } else {
             panic!("Unexpected error: {:?}", e);
         }
