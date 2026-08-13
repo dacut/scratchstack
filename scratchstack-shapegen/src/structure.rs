@@ -1,5 +1,5 @@
 use {
-    super::{Member, ShapeBase, ShapeInfo, SmithyModel, StrExt, Writers},
+    super::{Member, ShapeBase, ShapeInfo, SmithyModel, StrExt, Writers, status_code_const},
     serde::{Deserialize, Serialize},
     std::{
         collections::BTreeMap,
@@ -61,7 +61,6 @@ impl ShapeInfo for Structure {
         if is_error {
             self.write_error_decl(&mut w.types_error)?;
             self.write_error_impl(&mut w.types_error)?;
-            self.write_error_builder_impl(&mut w.types_error)?;
         } else if is_input || is_output {
             self.write_rust_decl(&mut w.operation)?;
             self.write_rust_impl(&mut w.operation)?;
@@ -295,222 +294,169 @@ impl Structure {
         Ok(())
     }
 
-    /// Writes the Rust declaration for the main body of an error struct.
+    /// Writes the Rust declaration for an error structure.
+    ///
+    /// Modelled errors carry only a message and a request id; everything else about them (code,
+    /// HTTP status, sender/receiver) is fixed by the model and rendered as trait impls rather
+    /// than stored per-instance.
     fn write_error_decl(&self, w: &mut dyn Write) -> IoResult<()> {
         let rust_typename = self.base.rust_typename();
 
         // Write the documentation comments for the structure, if any.
         self.base.traits.write_docs(w, "")?;
 
-        // Error structure itself
-        writeln!(w, "#[derive(::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::PartialEq, ::std::fmt::Debug)]")?;
+        writeln!(
+            w,
+            "#[derive(::bon::Builder, ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]"
+        )?;
         writeln!(w, "pub struct {rust_typename} {{")?;
-        writeln!(w, "    /// Metadata for this error.")?;
-        writeln!(w, "    pub meta: ::aws_smithy_types::error::metadata::ErrorMetadata,")?;
-        writeln!(w, "}}")?;
+        writeln!(w, "    /// The human-readable error message, if any.")?;
+        writeln!(w, "    #[builder(into)]")?;
+        writeln!(w, "    pub message: ::std::option::Option<::std::string::String>,")?;
         writeln!(w)?;
-
-        // Error builder structure
-        writeln!(w, "/// Builder for [`{rust_typename}`].")?;
-        writeln!(w, "#[derive(::std::fmt::Debug)]")?;
-        writeln!(w, "pub struct {rust_typename}Builder {{")?;
-        writeln!(w, "    /// Metadata builder.")?;
-        writeln!(w, "    meta: ::aws_smithy_types::error::metadata::Builder,")?;
+        writeln!(w, "    /// The request id associated with the request, if available.")?;
+        writeln!(w, "    #[builder(into)]")?;
+        writeln!(w, "    pub request_id: ::std::option::Option<::std::string::String>,")?;
         writeln!(w, "}}")?;
         writeln!(w)?;
 
         Ok(())
     }
 
-    /// Writes implementations for the error struct.
+    /// Writes the `Display`, `Error`, `ProvideErrorMetadata`, `ProvideRequestId`, `Deserialize`,
+    /// and `Serialize` implementations for an error structure.
     fn write_error_impl(&self, w: &mut dyn Write) -> IoResult<()> {
         let rust_typename = self.base.rust_typename();
         let code = self.error_code();
-        let error_type = self.base.traits.error().unwrap();
+        let http_status = status_code_const(
+            self.base
+                .traits
+                .http_error()
+                .unwrap_or_else(|| panic!("No httpError trait set for error shape {rust_typename}")),
+        );
 
-        // Struct impl, returning a builder
-        writeln!(w, r#"impl {rust_typename} {{"#)?;
-        writeln!(w, r#"    /// Returns a [`{rust_typename}Builder`] for constructing a `{rust_typename}`."#)?;
-        writeln!(w, r#"    pub fn builder() -> {rust_typename}Builder {{"#)?;
-        writeln!(w, r#"        {rust_typename}Builder::default()"#)?;
-        writeln!(w, r#"    }}"#)?;
-        writeln!(w, r#"}}"#)?;
-
-        // Default impl
-        writeln!(w, r#"impl ::std::default::Default for {rust_typename} {{"#)?;
-        writeln!(w, r#"    fn default() -> Self {{"#)?;
-        writeln!(w, r#"        let meta = ::aws_smithy_types::error::metadata::ErrorMetadata::builder()"#)?;
-        writeln!(w, r#"            .code("{code}")"#)?;
-        writeln!(w, r#"            .build();"#)?;
-        writeln!(w, r#"        Self {{"#)?;
-        writeln!(w, r#"            meta,"#)?;
-        writeln!(w, r#"        }}"#)?;
-        writeln!(w, r#"    }}"#)?;
-        writeln!(w, r#"}}"#)?;
-        writeln!(w)?;
-
-        // Deserialize impl
-        writeln!(w, r#"impl<'de> ::serde::Deserialize<'de> for {rust_typename} {{"#)?;
-        writeln!(
-            w,
-            r#"    fn deserialize<D: ::serde::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {{"#
-        )?;
-        writeln!(w, r#"        struct {rust_typename}Visitor;"#)?;
-        writeln!(w, r#"        impl<'de> ::serde::de::Visitor<'de> for {rust_typename}Visitor {{"#)?;
-        writeln!(w, r#"            type Value = {rust_typename};"#)?;
-        writeln!(
-            w,
-            r#"            fn expecting(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {{"#
-        )?;
-        writeln!(w, r#"                formatter.write_str("{rust_typename}")"#)?;
-        writeln!(w, r#"            }}"#)?;
-        writeln!(w)?;
-        writeln!(
-            w,
-            r#"            fn visit_map<A: ::serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {{"#
-        )?;
-        writeln!(
-            w,
-            r#"                let mut meta_builder = ::aws_smithy_types::error::metadata::ErrorMetadata::builder().code("{code}");"#
-        )?;
-        writeln!(w, r#"                while let Some(entry) = map.next_entry()? {{"#)?;
-        writeln!(w, r#"                    let (key, value): (&'de str, String) = entry;"#)?;
-        writeln!(w)?;
-        writeln!(w, r#"                    match key {{"#)?;
-        writeln!(w, r#"                        "Code" | "code" => meta_builder = meta_builder.code(value),"#)?;
-        writeln!(w, r#"                        "Message" | "message" => meta_builder = meta_builder.message(value),"#)?;
-        writeln!(
-            w,
-            r#"                        "RequestId" | "request_id" => meta_builder = meta_builder.custom("request_id", value),"#
-        )?;
-        writeln!(w, r#"                        _ => (),"#)?;
-        writeln!(w, r#"                    }}"#)?;
-        writeln!(w, r#"                }}"#)?;
-        writeln!(w)?;
-        writeln!(w, r#"                Ok({rust_typename} {{"#)?;
-        writeln!(w, r#"                    meta: meta_builder.build(),"#)?;
-        writeln!(w, r#"                }})"#)?;
-        writeln!(w, r#"            }}"#)?;
-        writeln!(w, r#"        }}"#)?;
-        writeln!(w)?;
-
-        writeln!(w, r#"        deserializer.deserialize_map({rust_typename}Visitor)"#)?;
-        writeln!(w, r#"    }}"#)?;
-        writeln!(w, r#"}}"#)?;
-        writeln!(w)?;
+        // Smithy spells these "client"/"server"; the AWS query protocol puts "Sender"/"Receiver"
+        // on the wire. Map once, here, and use the result everywhere below -- deriving the two
+        // spellings independently is how they drift apart.
+        let error_type = match self.base.traits.error().as_deref() {
+            Some("client") => "Sender",
+            Some("server") => "Receiver",
+            other => panic!("Unknown error type {other:?} for error shape {rust_typename}"),
+        };
 
         // Display impl
-        writeln!(w, r#"impl ::std::fmt::Display for {rust_typename} {{"#)?;
-        writeln!(w, r#"    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {{"#)?;
-        writeln!(w, r#"        f.write_str("{rust_typename}")?;"#)?;
-        writeln!(w, r#"        if let ::std::option::Option::Some(message) = self.meta.message() {{"#)?;
-        writeln!(w, r#"            ::std::write!(f, ": {{message}}")?;"#)?;
-        writeln!(w, r#"        }}"#)?;
-        writeln!(w, r#"        ::std::result::Result::Ok(())"#)?;
-        writeln!(w, r#"    }}"#)?;
-        writeln!(w, r#"}}"#)?;
+        writeln!(w, "impl ::std::fmt::Display for {rust_typename} {{")?;
+        writeln!(w, "    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {{")?;
+        writeln!(w, "        f.write_str(\"{rust_typename}\")?;")?;
+        writeln!(w, "        if let ::std::option::Option::Some(message) = &self.message {{")?;
+        writeln!(w, "            ::std::write!(f, \": {{message}}\")?;")?;
+        writeln!(w, "        }}")?;
+        writeln!(w, "        ::std::result::Result::Ok(())")?;
+        writeln!(w, "    }}")?;
+        writeln!(w, "}}")?;
         writeln!(w)?;
 
         // Error impl
-        writeln!(w, r#"impl ::std::error::Error for {rust_typename} {{}}"#)?;
-        writeln!(w)?;
-
-        // RequestId impl
-        writeln!(w, r#"impl ::aws_types::request_id::RequestId for {rust_typename} {{"#)?;
-        writeln!(w, r#"    #[inline(always)]"#)?;
-        writeln!(w, r#"    fn request_id(&self) -> ::std::option::Option<&str> {{"#)?;
-        writeln!(w, r#"        ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(self).request_id()"#)?;
-        writeln!(w, r#"    }}"#)?;
-        writeln!(w, r#"}}"#)?;
-        writeln!(w)?;
-
-        // ProvideErrorKind impl
-        writeln!(w, r#"impl ::aws_smithy_types::retry::ProvideErrorKind for {rust_typename} {{"#)?;
-        writeln!(w, r#"    #[inline(always)]"#)?;
-        writeln!(
-            w,
-            r#"    fn retryable_error_kind(&self) -> ::std::option::Option<::aws_smithy_types::retry::ErrorKind> {{"#
-        )?;
-        if error_type == "client" {
-            writeln!(w, r#"        ::std::option::Option::Some(::aws_smithy_types::retry::ErrorKind::ClientError)"#)?;
-        } else {
-            writeln!(w, r#"        ::std::option::Option::Some(::aws_smithy_types::retry::ErrorKind::ServerError)"#)?;
-        }
-        writeln!(w, r#"    }}"#)?;
-        writeln!(w)?;
-        writeln!(w, r#"    #[inline(always)]"#)?;
-        writeln!(w, r#"    fn code(&self) -> ::std::option::Option<&str> {{"#)?;
-        writeln!(w, r#"        ::std::option::Option::Some("{code}")"#)?;
-        writeln!(w, r#"    }}"#)?;
-        writeln!(w, r#"}}"#)?;
+        writeln!(w, "impl ::std::error::Error for {rust_typename} {{}}")?;
         writeln!(w)?;
 
         // ProvideErrorMetadata impl
-        writeln!(w, r#"impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for {rust_typename} {{"#)?;
-        writeln!(w, r#"    #[inline(always)]"#)?;
-        writeln!(w, r#"    fn meta(&self) -> &::aws_smithy_types::error::metadata::ErrorMetadata {{"#)?;
-        writeln!(w, r#"        &self.meta"#)?;
-        writeln!(w, r#"    }}"#)?;
-        writeln!(w, r#"}}"#)?;
+        writeln!(w, "impl ::scratchstack_core::error::ProvideErrorMetadata for {rust_typename} {{")?;
+        writeln!(w, "    #[inline(always)]")?;
+        writeln!(w, "    fn error_type(&self) -> ::scratchstack_core::error::ErrorType {{")?;
+        writeln!(w, "        ::scratchstack_core::error::ErrorType::{error_type}")?;
+        writeln!(w, "    }}")?;
+        writeln!(w)?;
+        writeln!(w, "    #[inline(always)]")?;
+        writeln!(w, "    fn code(&self) -> &str {{")?;
+        writeln!(w, "        \"{code}\"")?;
+        writeln!(w, "    }}")?;
+        writeln!(w)?;
+        writeln!(w, "    #[inline(always)]")?;
+        writeln!(w, "    fn message(&self) -> ::std::option::Option<&str> {{")?;
+        writeln!(w, "        self.message.as_deref()")?;
+        writeln!(w, "    }}")?;
+        writeln!(w)?;
+        writeln!(w, "    #[inline(always)]")?;
+        writeln!(w, "    fn http_status(&self) -> ::std::option::Option<::scratchstack_core::http::StatusCode> {{")?;
+        writeln!(w, "        ::std::option::Option::Some({http_status})")?;
+        writeln!(w, "    }}")?;
+        writeln!(w, "}}")?;
+        writeln!(w)?;
+
+        // ProvideRequestId impl
+        writeln!(w, "impl ::scratchstack_core::ProvideRequestId for {rust_typename} {{")?;
+        writeln!(w, "    #[inline(always)]")?;
+        writeln!(w, "    fn request_id(&self) -> ::std::option::Option<&str> {{")?;
+        writeln!(w, "        self.request_id.as_deref()")?;
+        writeln!(w, "    }}")?;
+        writeln!(w, "}}")?;
+        writeln!(w)?;
+
+        // Deserialize impl
+        writeln!(w, "impl<'de> ::serde::Deserialize<'de> for {rust_typename} {{")?;
+        writeln!(
+            w,
+            "    fn deserialize<D: ::serde::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {{"
+        )?;
+        writeln!(w, "        struct {rust_typename}Visitor;")?;
+        writeln!(w, "        impl<'de> ::serde::de::Visitor<'de> for {rust_typename}Visitor {{")?;
+        writeln!(w, "            type Value = {rust_typename};")?;
+        writeln!(w, "            fn expecting(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {{")?;
+        writeln!(w, "                formatter.write_str(\"{rust_typename}\")")?;
+        writeln!(w, "            }}")?;
+        writeln!(w)?;
+        writeln!(
+            w,
+            "            fn visit_map<A: ::serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {{"
+        )?;
+        writeln!(w, "                let mut result = {rust_typename}::default();")?;
+        writeln!(w, "                while let ::std::option::Option::Some(entry) = map.next_entry()? {{")?;
+        writeln!(w, "                    let (key, value): (&'de str, ::std::string::String) = entry;")?;
+        writeln!(w)?;
+        writeln!(w, "                    match key {{")?;
+        writeln!(
+            w,
+            "                        \"Message\" | \"message\" => result.message = ::std::option::Option::Some(value),"
+        )?;
+        writeln!(
+            w,
+            "                        \"RequestId\" | \"request_id\" => result.request_id = ::std::option::Option::Some(value),"
+        )?;
+        writeln!(w, "                        _ => (),")?;
+        writeln!(w, "                    }}")?;
+        writeln!(w, "                }}")?;
+        writeln!(w)?;
+        writeln!(w, "                ::std::result::Result::Ok(result)")?;
+        writeln!(w, "            }}")?;
+        writeln!(w, "        }}")?;
+        writeln!(w)?;
+        writeln!(w, "        deserializer.deserialize_map({rust_typename}Visitor)")?;
+        writeln!(w, "    }}")?;
+        writeln!(w, "}}")?;
+        writeln!(w)?;
+
+        // Serialize impl. This renders the inner `<Error>` element; the request id belongs to the
+        // surrounding envelope and is deliberately not emitted here.
+        writeln!(w, "impl ::serde::Serialize for {rust_typename} {{")?;
+        writeln!(
+            w,
+            "    fn serialize<S: ::serde::ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {{"
+        )?;
+        writeln!(w, "        use ::serde::ser::SerializeMap as _;")?;
+        writeln!(w, "        let mut m = serializer.serialize_map(::std::option::Option::None)?;")?;
+        writeln!(w, "        m.serialize_entry(\"Type\", \"{error_type}\")?;")?;
+        writeln!(w, "        m.serialize_entry(\"Code\", \"{code}\")?;")?;
+        writeln!(w, "        if let ::std::option::Option::Some(message) = self.message.as_ref() {{")?;
+        writeln!(w, "            m.serialize_entry(\"Message\", message)?;")?;
+        writeln!(w, "        }}")?;
+        writeln!(w, "        m.end()")?;
+        writeln!(w, "    }}")?;
+        writeln!(w, "}}")?;
         writeln!(w)?;
 
         Ok(())
     }
-
-    fn write_error_builder_impl(&self, w: &mut dyn Write) -> IoResult<()> {
-        let rust_typename = self.base.rust_typename();
-        let code = self.error_code();
-
-        writeln!(w, r#"impl ::std::default::Default for {rust_typename}Builder {{"#)?;
-        writeln!(w, r#"    fn default() -> Self {{"#)?;
-        writeln!(
-            w,
-            r#"        Self {{ meta: ::aws_smithy_types::error::metadata::ErrorMetadata::builder().code("{code}") }}"#
-        )?;
-        writeln!(w, r#"    }}"#)?;
-        writeln!(w, r#"}}"#)?;
-        writeln!(w)?;
-        writeln!(w, r#"impl {rust_typename}Builder {{"#)?;
-        writeln!(w, r#"    /// Sets the error code, overriding the default `"{code}"` value."#)?;
-        writeln!(w, r#"    #[inline(always)]"#)?;
-        writeln!(w, r#"    pub fn code(mut self, code: impl ::std::convert::Into<::std::string::String>) -> Self {{"#)?;
-        writeln!(w, r#"        self.meta = self.meta.code(code);"#)?;
-        writeln!(w, r#"        self"#)?;
-        writeln!(w, r#"    }}"#)?;
-        writeln!(w)?;
-        writeln!(w, r#"    /// Sets the error message."#)?;
-        writeln!(w, r#"    #[inline(always)]"#)?;
-        writeln!(
-            w,
-            r#"    pub fn message(mut self, message: impl ::std::convert::Into<::std::string::String>) -> Self {{"#
-        )?;
-        writeln!(w, r#"        self.meta = self.meta.message(message);"#)?;
-        writeln!(w, r#"        self"#)?;
-        writeln!(w, r#"    }}"#)?;
-        writeln!(w)?;
-        writeln!(w, r#"    /// Set a custom field on the error metadata"#)?;
-        writeln!(w, r#"    #[inline(always)]"#)?;
-        writeln!(
-            w,
-            r#"    pub fn custom(mut self, key: &'static str, value: impl ::std::convert::Into<::std::string::String>) -> Self {{"#
-        )?;
-        writeln!(w, r#"        self.meta = self.meta.custom(key, value);"#)?;
-        writeln!(w, r#"        self"#)?;
-        writeln!(w, r#"    }}"#)?;
-        writeln!(w)?;
-        writeln!(w, r#"    /// Creates the error."#)?;
-        writeln!(w, r#"    #[inline(always)]"#)?;
-        writeln!(w, r#"    pub fn build(self) -> {rust_typename} {{"#)?;
-        writeln!(w, r#"        {rust_typename} {{"#)?;
-        writeln!(w, r#"            meta: self.meta.build(),"#)?;
-        writeln!(w, r#"        }}"#)?;
-        writeln!(w, r#"    }}"#)?;
-        writeln!(w, r#"}}"#)?;
-        writeln!(w)?;
-
-        Ok(())
-    }
-
     /// Returns the struct's field Rust type for a member (matching `write_rust_decl`).
     fn builder_field_type(&self, member: &Member) -> String {
         let is_optional = !member.traits.is_required();
