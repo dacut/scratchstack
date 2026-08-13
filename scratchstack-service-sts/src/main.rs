@@ -44,7 +44,7 @@ use {
     tokio::{net::TcpListener, runtime::Builder as RuntimeBuilder},
 };
 
-const DEFAULT_CONFIG_FILENAME: &str = "scratchstack.cfg";
+const DEFAULT_CONFIG_FILENAME: &str = "scratchstack-sts.cfg.toml";
 // const CONTENT_LENGTH_LIMIT: u64 = 10 << 20;
 
 #[derive(Parser)]

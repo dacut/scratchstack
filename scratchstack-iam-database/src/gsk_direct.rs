@@ -136,10 +136,10 @@ where
     match access_prefix {
         "AKIA" => {
             let result = query_as(indoc! {"
-                SELECT iam_user_credential.user_id, account_id, path, user_name_cased, secret_key
-                FROM iam_user_credential
-                INNER JOIN iam_user
-                ON iam_user_credential.user_id = iam_user.user_id
+                SELECT 'AIDA'||iam.user_credentials.user_id, account_id, path, user_name_cased, secret_key
+                FROM iam.user_credentials
+                INNER JOIN iam.users
+                ON iam.user_credentials.user_id = iam.users.user_id
                 WHERE access_key_id = $1
                 "})
             .bind(access_suffix)
