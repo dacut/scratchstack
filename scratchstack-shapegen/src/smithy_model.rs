@@ -3,7 +3,7 @@ use {
     serde::{Deserialize, Serialize},
     serde_json::Value,
     std::{
-        cell::RefCell,
+        cell::{Ref, RefCell},
         collections::{BTreeMap, HashSet},
         io::{Result as IoResult, Write},
         rc::Rc,
@@ -30,6 +30,13 @@ pub struct SmithyModel {
     /// generate try_from implementations from CLI input.
     #[serde(skip, default)]
     pub input_reachable_shapes: HashSet<String>,
+
+    /// The XML namespace for this service, taken from the service shape's `xmlNamespace` trait.
+    ///
+    /// This is resolved during a call to [`resolve`][Self::resolve] and handed down to every shape
+    /// that needs to render itself into an XML envelope.
+    #[serde(skip, default)]
+    pub xmlns: Option<String>,
 }
 
 impl SmithyModel {
@@ -42,7 +49,17 @@ impl SmithyModel {
     }
 
     /// Resolve all shapes in the model by calling `resolve` on each shape until all shapes are resolved.
-    pub fn resolve(&self) {
+    ///
+    /// The service's XML namespace is resolved first, since individual shapes copy it out of the
+    /// model as they resolve.
+    pub fn resolve(&mut self) {
+        let xmlns = {
+            let service_shape = self.get_service().expect("Model has no service shape");
+            let service = service_shape.as_service().expect("Service shape is not a service");
+            service.base.traits.xml_namespace().expect("Service shape has no xmlNamespace trait").to_string()
+        };
+        self.xmlns = Some(xmlns);
+
         for (shape_name, shape) in &self.shapes {
             if shape_name.starts_with("smithy.api#") {
                 continue;
@@ -57,6 +74,12 @@ impl SmithyModel {
     #[must_use]
     pub fn get_shape(&self, shape_id: &str) -> Option<Rc<RefCell<Shape>>> {
         self.shapes.get(shape_id).cloned()
+    }
+
+    /// Returns the service shape for this Smithy model, if it has one.
+    #[must_use]
+    pub fn get_service(&self) -> Option<Ref<'_, Shape>> {
+        self.shapes.values().map(|shape| shape.borrow()).find(|shape| matches!(**shape, Shape::Service(_)))
     }
 
     /// Generates Rust code for the Smithy model.

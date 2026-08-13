@@ -305,6 +305,15 @@ impl Shape {
         }
     }
 
+    /// If this shape is a service, returns a reference to it.
+    #[must_use]
+    pub fn as_service(&self) -> Option<&Service> {
+        match self {
+            Self::Service(s) => Some(s),
+            _ => None,
+        }
+    }
+
     /// If this shape is a structure, returns a reference to it.
     #[must_use]
     pub fn as_structure(&self) -> Option<&Structure> {
@@ -339,6 +348,12 @@ impl Shape {
     #[must_use]
     pub fn is_enum(&self) -> bool {
         matches!(self, Self::Enum(_))
+    }
+
+    /// Indicates whether this shape is the unit type.
+    #[must_use]
+    pub fn is_unit(&self) -> bool {
+        matches!(self, Self::Unit(_))
     }
 
     /// Indicates whether this shape can have CLI shorthand parsing implemented for it.

@@ -143,6 +143,14 @@ impl TraitMap {
         Some(result)
     }
 
+    /// Returns the API XML namespace, if any, for this shape.
+    ///
+    /// Only the service shape carries this in practice; every other shape in the model inherits it
+    /// via [`SmithyModel::xmlns`](crate::SmithyModel::xmlns).
+    pub fn xml_namespace(&self) -> Option<&str> {
+        self.0.get(&TraitId::SmithyApiXmlNamespace)?.as_object()?.get("uri")?.as_str()
+    }
+
     /// Writes documentation comments for this shape to the given output.
     pub fn write_docs(&self, w: &mut dyn Write, indent: &str) -> IoResult<()> {
         if let Some(doc_any) = self.0.get(&TraitId::SmithyApiDocumentation)
