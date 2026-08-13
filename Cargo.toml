@@ -19,6 +19,21 @@ members = [
 ]
 resolver = "2"
 
+[profile.release]
+codegen-units = 1
+debug = "none"
+lto = "fat"
+opt-level = "s"
+panic = "abort"
+strip = "symbols"
+
+[profile.dev]
+debug = "full"
+lto = "thin"
+opt-level = 0
+panic = "unwind"
+strip = "none"
+
 [workspace.package]
 authors = ["David Cuthbert <dacut@kanga.org>"]
 edition = "2024"
