@@ -70,6 +70,9 @@ pub(crate) const MSG_ACCESS_KEY_PROVIDED_DOES_NOT_EXIST: &str =
 /// Error message: `"Internal failure"`.
 pub(crate) const MSG_INTERNAL_FAILURE: &str = "Internal failure";
 
+/// Error message: `"The security token included in the request is invalid"`
+pub(crate) const MSG_SECURITY_TOKEN_INVALID: &str = "The security token included in the request is invalid";
+
 /// Operation name for ListAccessKeys
 pub(crate) const OP_LIST_ACCESS_KEYS: &str = "ListAccessKeys";
 
