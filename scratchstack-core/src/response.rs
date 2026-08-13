@@ -54,6 +54,26 @@ struct ErrorResponse<'a, E> {
     error: &'a E,
 }
 
+/// The `<ResponseMetadata>` element carried by successful AWS query-protocol responses.
+///
+/// Note the asymmetry with errors, which carry `<RequestId>` as a direct child of
+/// `<ErrorResponse>` rather than wrapping it. This mirrors what AWS actually returns.
+#[derive(Serialize)]
+pub struct ResponseMetadata<'a> {
+    /// The request id associated with the request.
+    #[serde(rename = "RequestId")]
+    request_id: &'a str,
+}
+
+impl<'a> ResponseMetadata<'a> {
+    /// Create a `ResponseMetadata` carrying the given request id.
+    pub fn new(request_id: &'a str) -> Self {
+        Self {
+            request_id,
+        }
+    }
+}
+
 /// Serializes a struct into an Axum XML response.
 ///
 /// If serialization fails, this returns an `InternalFailure` response instead.

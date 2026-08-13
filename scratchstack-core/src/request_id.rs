@@ -171,6 +171,18 @@ impl FromStr for RequestId {
     }
 }
 
+impl From<&RequestId> for String {
+    fn from(request_id: &RequestId) -> Self {
+        request_id.to_string()
+    }
+}
+
+impl From<RequestId> for String {
+    fn from(request_id: RequestId) -> Self {
+        request_id.to_string()
+    }
+}
+
 impl Serialize for RequestId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

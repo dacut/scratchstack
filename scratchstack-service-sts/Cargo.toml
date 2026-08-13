@@ -43,6 +43,7 @@ scratchstack-core = { path = "../scratchstack-core", features = [
 ] }
 scratchstack-hakari = { path = "../scratchstack-hakari" }
 scratchstack-iam-database.path = "../scratchstack-iam-database"
+scratchstack-shapes-sts.path = "../scratchstack-shapes-sts"
 serde = { workspace = true, features = ["derive"] }
 sqlx = { workspace = true, features = [
     "all-databases",
@@ -57,5 +58,6 @@ toml.workspace = true
 tower.workspace = true
 
 [dev-dependencies]
+http-body-util.workspace = true
 pretty_assertions.workspace = true
 test-log.workspace = true
