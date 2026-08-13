@@ -1,19 +1,24 @@
 use {
     crate::{
         GetSigningKeyRequest, GetSigningKeyResponse, SignatureError, SignatureOptions, SignedHeaderRequirements,
-        canonical::get_content_type_and_charset, sigv4_validate_request,
+        canonical::get_content_type_and_charset,
+        constants::{ERR_CODE_INTERNAL_FAILURE, MSG_INTERNAL_SERVICE_ERROR},
+        sigv4_validate_request,
     },
     axum::{
         body::Body,
         extract::Request,
-        http::{HeaderValue, StatusCode, method::Method},
+        http::{StatusCode, method::Method},
         response::Response,
     },
     bon::Builder,
     chrono::Utc,
-    log::{info, trace},
-    scratchstack_core::{RequestId, ServiceError},
-    serde::Serialize,
+    log::{error, info, trace},
+    scratchstack_core::{
+        ProvideRequestId, RequestId,
+        error::{ErrorType, GenericError, ProvideErrorMetadata},
+        response::{ErrorResponseEnvelope, Responder as _},
+    },
     std::{
         any::type_name,
         convert::Infallible,
@@ -398,149 +403,83 @@ impl XmlErrorMapper {
     }
 }
 
-/// Outer structure for serializing an error response into XML.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename = "ErrorResponse")]
-pub struct XmlErrorResponse {
-    /// The XML namespace for the response root element.
-    #[serde(rename = "@xmlns")]
-    pub xmlns: String,
-
-    /// The error details.
-    #[serde(rename = "Error")]
-    pub error: XmlError,
-
-    /// The request ID for this request, if available.
-    #[serde(rename = "RequestId", skip_serializing_if = "Option::is_none")]
-    pub request_id: Option<RequestId>,
+/// Adapts a [`SignatureError`] to the error metadata traits used by the shared response envelope.
+///
+/// [`SignatureError`] builds its message through [`Display`] rather than storing one, and knows
+/// nothing about request ids -- those are attached by this layer. This carries both alongside the
+/// error so the envelope can render them.
+struct SignatureErrorResponse {
+    error_type: ErrorType,
+    code: &'static str,
+    message: Option<String>,
+    http_status: StatusCode,
+    request_id: Option<String>,
 }
 
-/// Structure for serializing an error response into XML.
-#[derive(Debug, Clone, Serialize)]
-pub struct XmlError {
-    /// The type of error, either [`Receiver`][XmlErrorType::Receiver] or
-    /// [`Sender`][XmlErrorType::Sender].
-    #[serde(rename = "Type")]
-    pub r#type: XmlErrorTypeWrapper,
+impl SignatureErrorResponse {
+    fn new(error: &SignatureError, request_id: Option<RequestId>) -> Self {
+        let message = error.to_string();
 
-    /// The error code. In some languages, this is mapped to a class or struct.
-    #[serde(rename = "Code")]
-    pub code: String,
-
-    /// Optional human-readable message describing the error.
-    #[serde(rename = "Message", skip_serializing_if = "Option::is_none")]
-    pub message: Option<String>,
-}
-
-impl From<&SignatureError> for XmlError {
-    fn from(error: &SignatureError) -> Self {
-        XmlError {
-            r#type: XmlErrorTypeWrapper {
-                error_type: if error.http_status().as_u16() >= 500 {
-                    XmlErrorType::Receiver
-                } else {
-                    XmlErrorType::Sender
-                },
+        Self {
+            error_type: error.error_type(),
+            code: error.error_code(),
+            // `SignatureDoesNotMatch` is allowed to carry no message at all; don't emit an empty one.
+            message: if message.is_empty() {
+                None
+            } else {
+                Some(message)
             },
-            code: error.error_code().to_string(),
-            message: {
-                let message = error.to_string();
-                if message.is_empty() {
-                    None
-                } else {
-                    Some(message)
-                }
-            },
+            http_status: SignatureError::http_status(error),
+            request_id: request_id.map(|id| id.to_string()),
         }
+    }
+}
+
+impl ProvideErrorMetadata for SignatureErrorResponse {
+    fn error_type(&self) -> ErrorType {
+        self.error_type
+    }
+
+    fn code(&self) -> &str {
+        self.code
+    }
+
+    fn message(&self) -> Option<&str> {
+        self.message.as_deref()
+    }
+
+    fn http_status(&self) -> Option<StatusCode> {
+        Some(self.http_status)
+    }
+}
+
+impl ProvideRequestId for SignatureErrorResponse {
+    fn request_id(&self) -> Option<&str> {
+        self.request_id.as_deref()
     }
 }
 
 impl ErrorMapper for XmlErrorMapper {
     async fn map_error(self, e: BoxError, request_id: Option<RequestId>) -> Response<Body> {
-        let (http_status, xml_response) = match e.downcast::<SignatureError>() {
+        match e.downcast::<SignatureError>() {
             Ok(e) => {
                 trace!("XmlErrorMapper: mapping SignatureError {:?} to XML, http status: {}", e, e.http_status());
-                (
-                    e.http_status(),
-                    XmlErrorResponse {
-                        xmlns: self.namespace,
-                        error: XmlError::from(e.as_ref()),
-                        request_id,
-                    },
-                )
+                let response = SignatureErrorResponse::new(&e, request_id);
+                ErrorResponseEnvelope::new_with_xmlns(&response, &self.namespace).respond()
             }
             Err(any) => {
-                log::error!("Error is not a SignatureError: {any}");
-                let e = XmlError {
-                    r#type: XmlErrorTypeWrapper::new(XmlErrorType::Receiver),
-                    code: "InternalServerError".to_string(),
-                    message: Some("Internal server error".to_string()),
-                };
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    XmlErrorResponse {
-                        xmlns: self.namespace,
-                        error: e,
-                        request_id,
-                    },
-                )
+                error!("Error is not a SignatureError: {any}");
+                let response = GenericError::builder()
+                    .code(ERR_CODE_INTERNAL_FAILURE)
+                    .http_status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .message(MSG_INTERNAL_SERVICE_ERROR)
+                    .maybe_request_id(request_id.map(|id| id.to_string()))
+                    .build();
+                ErrorResponseEnvelope::new_with_xmlns(&response, &self.namespace).respond()
             }
-        };
-
-        log::error!("Authentication error: {http_status} - {xml_response:?}");
-        let body = Body::from(quick_xml::se::to_string(&xml_response).unwrap());
-        Response::builder()
-            .status(http_status)
-            .header("Content-Type", "text/xml; charset=utf-8")
-            .body(body)
-            .unwrap_or_else(|e| {
-                log::error!("Failed to build error response: {e}");
-                let mut response = Response::new(Body::from("Internal server error"));
-                let status = response.status_mut();
-                *status = StatusCode::INTERNAL_SERVER_ERROR;
-                let headers = response.headers_mut();
-                headers.insert("content-type", HeaderValue::from_static("text/plain; charset=utf-8"));
-                response
-            })
-    }
-}
-
-/// Container for the type of an XML error structure, either `Receiver` or `Sender`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-pub struct XmlErrorTypeWrapper {
-    /// The type of the error, either `Receiver` or `Sender`.
-    #[serde(rename = "$value")]
-    pub error_type: XmlErrorType,
-}
-
-impl XmlErrorTypeWrapper {
-    /// Create a new `XmlErrorTypeWrapper` with the specified error type.
-    pub fn new(error_type: XmlErrorType) -> Self {
-        Self {
-            error_type,
         }
     }
 }
-
-/// The type of an XML error structure, either `Receiver` or `Sender`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-pub enum XmlErrorType {
-    /// Error was caused by the service (receiver)
-    Receiver,
-
-    /// Error was caused by the client (sender)
-    Sender,
-}
-
-impl Display for XmlErrorType {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        match self {
-            XmlErrorType::Receiver => write!(f, "Receiver"),
-            XmlErrorType::Sender => write!(f, "Sender"),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use {
@@ -598,7 +537,7 @@ mod tests {
         let (_parts, body) = response.into_parts();
         let body = body.collect().await.expect("Failed to convert response body to bytes").to_bytes();
         let body_str = str::from_utf8(&body).expect("Failed to convert response body to string");
-        assert!(body_str.contains("<Error><Type><Sender/></Type><Code>MissingAuthenticationToken</Code><Message>Request is missing Authentication Token</Message></Error>"));
+        assert!(body_str.contains("<Error><Type>Sender</Type><Code>MissingAuthenticationToken</Code><Message>Request is missing Authentication Token</Message></Error>"));
     }
 
     /// Test a good response. This uses the get-vanilla AWS SigV4 test case.
@@ -654,7 +593,7 @@ mod tests {
         let (_parts, body) = response.into_parts();
         let body = body.collect().await.expect("Failed to convert response body to bytes").to_bytes();
         let body_str = str::from_utf8(&body).expect("Failed to convert response body to string");
-        assert!(body_str.contains("<Error><Type><Sender/></Type><Code>SignatureDoesNotMatch</Code><Message>The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.</Message></Error>"), "{body_str}");
+        assert!(body_str.contains("<Error><Type>Sender</Type><Code>SignatureDoesNotMatch</Code><Message>The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.</Message></Error>"), "{body_str}");
     }
 
     // async fn test_fn_wrapper_client(port: u16) {

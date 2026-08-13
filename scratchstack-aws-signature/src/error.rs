@@ -1,7 +1,10 @@
 use {
     crate::constants::*,
     http::status::StatusCode,
-    scratchstack_core::ServiceError,
+    scratchstack_core::{
+        ProvideRequestId,
+        error::{ErrorType, ProvideErrorMetadata},
+    },
     std::{
         error::Error,
         fmt::{Display, Formatter, Result as FmtResult},
@@ -79,7 +82,8 @@ pub enum SignatureError {
 }
 
 impl SignatureError {
-    fn error_code(&self) -> &'static str {
+    /// The AWS error code for this error.
+    pub fn error_code(&self) -> &'static str {
         match self {
             Self::DuplicateHeaderAndQueryParameter(_) => ERR_CODE_DUPLICATE_HEADER_AND_QUERY_PARAMETER,
             Self::ExpiredToken(_) => ERR_CODE_EXPIRED_TOKEN,
@@ -99,7 +103,8 @@ impl SignatureError {
         }
     }
 
-    fn http_status(&self) -> StatusCode {
+    /// The HTTP status code for this error.
+    pub fn http_status(&self) -> StatusCode {
         match self {
             Self::DuplicateHeaderAndQueryParameter(_)
             | Self::IncompleteSignature(_)
@@ -116,13 +121,35 @@ impl SignatureError {
     }
 }
 
-impl ServiceError for SignatureError {
-    fn error_code(&self) -> &'static str {
+impl ProvideErrorMetadata for SignatureError {
+    fn error_type(&self) -> ErrorType {
+        if SignatureError::http_status(self).is_client_error() {
+            ErrorType::Sender
+        } else {
+            ErrorType::Receiver
+        }
+    }
+
+    fn code(&self) -> &str {
         SignatureError::error_code(self)
     }
 
-    fn http_status(&self) -> StatusCode {
-        SignatureError::http_status(self)
+    fn message(&self) -> Option<&str> {
+        // The message is assembled by `Display`, which varies per variant; the envelope calls
+        // `to_string()` on us via `Display` rather than reading a stored field.
+        None
+    }
+
+    fn http_status(&self) -> Option<StatusCode> {
+        Some(SignatureError::http_status(self))
+    }
+}
+
+impl ProvideRequestId for SignatureError {
+    fn request_id(&self) -> Option<&str> {
+        // Signature validation happens before any per-request id is attached to the error itself;
+        // the request id is supplied by the layer that renders the response.
+        None
     }
 }
 

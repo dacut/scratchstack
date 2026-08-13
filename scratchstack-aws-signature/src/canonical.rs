@@ -1315,7 +1315,6 @@ mod tests {
             request::Request,
             uri::{PathAndQuery, Uri},
         },
-        scratchstack_core::ServiceError,
         std::collections::HashMap,
     };
 
