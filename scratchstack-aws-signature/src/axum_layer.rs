@@ -1,5 +1,8 @@
 use {
-    crate::RequestId,
+    crate::{
+        GetSigningKeyRequest, GetSigningKeyResponse, SignatureError, SignatureOptions, SignedHeaderRequirements,
+        canonical::get_content_type_and_charset, sigv4_validate_request,
+    },
     axum::{
         body::Body,
         extract::Request,
@@ -9,11 +12,7 @@ use {
     bon::Builder,
     chrono::Utc,
     log::{info, trace},
-    scratchstack_aws_signature::{
-        GetSigningKeyRequest, GetSigningKeyResponse, SignatureError, SignatureOptions, SignedHeaderRequirements,
-        canonical::get_content_type_and_charset, sigv4_validate_request,
-    },
-    scratchstack_core::ServiceError,
+    scratchstack_core::{RequestId, ServiceError},
     serde::Serialize,
     std::{
         any::type_name,
@@ -545,7 +544,10 @@ impl Display for XmlErrorType {
 #[cfg(test)]
 mod tests {
     use {
-        crate::{AwsSigV4VerifierLayer, XmlErrorMapper},
+        crate::{
+            AwsSigV4VerifierLayer, GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, NoSignedHeaderRequirements,
+            SignatureError, SignatureOptions, XmlErrorMapper,
+        },
         axum::{
             Router,
             body::Body,
@@ -558,10 +560,6 @@ mod tests {
         http_body_util::BodyExt,
         pretty_assertions::assert_eq,
         scratchstack_aws_principal::{Principal, User},
-        scratchstack_aws_signature::{
-            GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, NoSignedHeaderRequirements, SignatureError,
-            SignatureOptions,
-        },
         std::{
             future::Future,
             pin::Pin,

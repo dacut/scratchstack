@@ -6,7 +6,7 @@ use {
         response::Response,
     },
     derive_builder::Builder,
-    scratchstack_http_framework::RequestId,
+    scratchstack_core::RequestId,
     serde::{Deserialize, Serialize},
     tower::BoxError,
 };

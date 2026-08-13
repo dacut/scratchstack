@@ -9,7 +9,6 @@ members = [
     "scratchstack-config",
     "scratchstack-core",
     "scratchstack-hakari",
-    "scratchstack-http-framework",
     "scratchstack-iam-database",
     "scratchstack-pagination",
     "scratchstack-service-iam",
