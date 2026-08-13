@@ -140,7 +140,7 @@ where
                 FROM iam.user_credentials
                 INNER JOIN iam.users
                 ON iam.user_credentials.user_id = iam.users.user_id
-                WHERE access_key_id = $1
+                WHERE access_key_id = $1 AND iam.user_credentials.enabled
                 "})
             .bind(access_suffix)
             .fetch_one(e)
