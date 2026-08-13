@@ -463,7 +463,7 @@ pub async fn test_list_account_aliases_with_alias(pool: &sqlx::PgPool) {
     // 100000000002 was created with alias "example-corp" in test_create_account_with_email_and_alias.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAccountAliasesInternalRequest::builder()
-        .account_id("100000000002".to_string())
+        .account_id("100000000002")
         .build()
         .expect("Failed to build ListAccountAliasesInternalRequest")
         .execute(&mut tx)
@@ -481,7 +481,7 @@ pub async fn test_list_account_aliases_without_alias(pool: &sqlx::PgPool) {
     // 100000000001 was created without an alias in test_create_account_specific_id.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAccountAliasesInternalRequest::builder()
-        .account_id("100000000001".to_string())
+        .account_id("100000000001")
         .build()
         .expect("Failed to build ListAccountAliasesInternalRequest")
         .execute(&mut tx)
@@ -498,7 +498,7 @@ pub async fn test_list_account_aliases_without_alias(pool: &sqlx::PgPool) {
 pub async fn test_list_account_aliases_nonexistent_account(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = ListAccountAliasesInternalRequest::builder()
-        .account_id("999999999999".to_string())
+        .account_id("999999999999")
         .build()
         .expect("Failed to build ListAccountAliasesInternalRequest")
         .execute(&mut tx)
@@ -511,7 +511,7 @@ pub async fn test_list_account_aliases_nonexistent_account(pool: &sqlx::PgPool) 
 /// Building a ListAccountAliases request with an invalid account id must fail before touching
 /// the database. The Smithy builder rejects anything that isn't 12 digits.
 pub fn test_list_account_aliases_invalid_account_id() {
-    let result = ListAccountAliasesInternalRequest::builder().account_id("not-a-number".to_string()).build();
+    let result = ListAccountAliasesInternalRequest::builder().account_id("not-a-number").build();
     assert!(result.is_err(), "Building a request with an invalid account id must fail");
 }
 
@@ -521,8 +521,8 @@ pub async fn test_create_account_alias_simple(pool: &sqlx::PgPool) {
     // 100000000001 currently has no alias.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateAccountAliasInternalRequest::builder()
-        .account_id("100000000001".to_string())
-        .account_alias("my-new-alias".to_string())
+        .account_id("100000000001")
+        .account_alias("my-new-alias")
         .build()
         .expect("Failed to build CreateAccountAliasInternalRequest")
         .execute(&mut tx)
@@ -532,7 +532,7 @@ pub async fn test_create_account_alias_simple(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAccountAliasesInternalRequest::builder()
-        .account_id("100000000001".to_string())
+        .account_id("100000000001")
         .build()
         .expect("Failed to build ListAccountAliasesInternalRequest")
         .execute(&mut tx)
@@ -548,8 +548,8 @@ pub async fn test_create_account_alias_replaces(pool: &sqlx::PgPool) {
     // 100000000002 currently has alias "example-corp".
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateAccountAliasInternalRequest::builder()
-        .account_id("100000000002".to_string())
-        .account_alias("replacement-alias".to_string())
+        .account_id("100000000002")
+        .account_alias("replacement-alias")
         .build()
         .expect("Failed to build CreateAccountAliasInternalRequest")
         .execute(&mut tx)
@@ -559,7 +559,7 @@ pub async fn test_create_account_alias_replaces(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAccountAliasesInternalRequest::builder()
-        .account_id("100000000002".to_string())
+        .account_id("100000000002")
         .build()
         .expect("Failed to build ListAccountAliasesInternalRequest")
         .execute(&mut tx)
@@ -573,8 +573,8 @@ pub async fn test_create_account_alias_replaces(pool: &sqlx::PgPool) {
 pub async fn test_create_account_alias_nonexistent_account(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = CreateAccountAliasInternalRequest::builder()
-        .account_id("999999999999".to_string())
-        .account_alias("orphan-alias".to_string())
+        .account_id("999999999999")
+        .account_alias("orphan-alias")
         .build()
         .expect("Failed to build CreateAccountAliasInternalRequest")
         .execute(&mut tx)
@@ -587,19 +587,14 @@ pub async fn test_create_account_alias_nonexistent_account(pool: &sqlx::PgPool) 
 /// CreateAccountAlias with an alias that violates the format rules must fail with
 /// ValidationError. The Smithy regex rejects uppercase, so this is caught by the builder.
 pub fn test_create_account_alias_invalid_alias() {
-    let result = CreateAccountAliasInternalRequest::builder()
-        .account_id("100000000001".to_string())
-        .account_alias("BadAlias".to_string())
-        .build();
+    let result =
+        CreateAccountAliasInternalRequest::builder().account_id("100000000001").account_alias("BadAlias").build();
     assert!(result.is_err(), "Building a request with an invalid alias must fail");
 }
 
 /// Building a CreateAccountAlias request with an invalid account id must fail before touching
 /// the database.
 pub fn test_create_account_alias_invalid_account_id() {
-    let result = CreateAccountAliasInternalRequest::builder()
-        .account_id("12345".to_string())
-        .account_alias("valid-alias".to_string())
-        .build();
+    let result = CreateAccountAliasInternalRequest::builder().account_id("12345").account_alias("valid-alias").build();
     assert!(result.is_err(), "Building a request with an invalid account id must fail");
 }

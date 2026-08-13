@@ -125,9 +125,9 @@ pub async fn list_role_policies(
     }
 
     let mut builder = ListRolePoliciesResponse::builder();
-    builder = builder.policy_names(results);
+    builder = builder.set_policy_names(results);
     if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
+        builder = builder.is_truncated(true).marker(next_marker);
     }
 
     builder.build().map_err(|e| {

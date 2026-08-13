@@ -51,7 +51,7 @@ pub async fn update_access_key(
         StatusType::Inactive => false,
         _ => {
             return Err(ValidationError::builder()
-                .message("Status must be Active or Inactive for UpdateAccessKey.".to_string())
+                .message("Status must be Active or Inactive for UpdateAccessKey.")
                 .build()
                 .into());
         }

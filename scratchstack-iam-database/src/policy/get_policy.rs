@@ -85,18 +85,18 @@ pub async fn get_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Result<
     };
 
     let policy = Policy::builder()
-        .arn(Some(arn.to_string()))
-        .attachment_count(attachment_count)
-        .create_date(Some(policy_row.created_at))
-        .default_version_id(Some(format!("v{}", policy_row.default_version)))
-        .description(policy_row.description)
-        .is_attachable(Some(!policy_row.deprecated))
-        .path(Some(policy_row.path))
-        .permissions_boundary_usage_count(permissions_boundary_usage_count)
-        .policy_id(Some(format!("{}{}", IamResourceType::ManagedPolicy.as_str(), policy_row.managed_policy_id)))
-        .policy_name(Some(policy_row.managed_policy_name_cased))
-        .update_date(Some(policy_row.update_date))
-        .tags(tags)
+        .arn(arn.to_string())
+        .set_attachment_count(attachment_count)
+        .create_date(policy_row.created_at)
+        .default_version_id(format!("v{}", policy_row.default_version))
+        .set_description(policy_row.description)
+        .is_attachable(!policy_row.deprecated)
+        .path(policy_row.path)
+        .set_permissions_boundary_usage_count(permissions_boundary_usage_count)
+        .policy_id(format!("{}{}", IamResourceType::ManagedPolicy.as_str(), policy_row.managed_policy_id))
+        .policy_name(policy_row.managed_policy_name_cased)
+        .update_date(policy_row.update_date)
+        .set_tags(tags)
         .build()?;
     Ok(GetPolicyResponse {
         policy: Some(policy),

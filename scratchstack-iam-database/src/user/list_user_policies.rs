@@ -125,9 +125,9 @@ pub async fn list_user_policies(
     }
 
     let mut builder = ListUserPoliciesResponse::builder();
-    builder = builder.policy_names(results);
+    builder = builder.set_policy_names(results);
     if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
+        builder = builder.is_truncated(true).marker(next_marker);
     }
 
     builder.build().map_err(|e| {

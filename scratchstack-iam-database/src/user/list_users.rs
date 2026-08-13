@@ -134,8 +134,8 @@ pub async fn list_users(
             let arn = format!("arn:{partition}:{SERVICE_KEY_IAM}::{account_id}:{ARN_RESOURCE_TYPE_POLICY}/{pb_id}");
             Some(
                 AttachedPermissionsBoundary::builder()
-                    .permissions_boundary_arn(Some(arn))
-                    .permissions_boundary_type(Some(PermissionsBoundaryAttachmentType::Policy))
+                    .permissions_boundary_arn(arn)
+                    .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                     .build()
                     .map_err(|e| {
                         log::error!("Failed to construct permissions boundary for user: {e}");
@@ -153,7 +153,7 @@ pub async fn list_users(
                 .path(row.path)
                 .user_id(format!("{}{}", IamResourceType::User.as_str(), row.user_id))
                 .user_name(row.user_name_cased)
-                .permissions_boundary(permissions_boundary)
+                .set_permissions_boundary(permissions_boundary)
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct user object: {e}");
@@ -163,9 +163,9 @@ pub async fn list_users(
     }
 
     let mut builder = ListUsersResponse::builder();
-    builder = builder.users(results);
+    builder = builder.set_users(results);
     if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
+        builder = builder.is_truncated(true).marker(next_marker);
     }
 
     builder.build().map_err(|e| {

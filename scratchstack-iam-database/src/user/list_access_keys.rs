@@ -64,7 +64,7 @@ pub async fn list_access_keys(
         Some(name) => name,
         None => {
             return Err(ValidationError::builder()
-                .message("UserName is required for ListAccessKeys in this implementation.".to_string())
+                .message("UserName is required for ListAccessKeys in this implementation.")
                 .build()
                 .into());
         }
@@ -140,14 +140,14 @@ pub async fn list_access_keys(
         }
 
         let metadata = AccessKeyMetadata::builder()
-            .access_key_id(Some(format!("AKIA{}", row.access_key_id)))
-            .create_date(Some(row.created_at))
-            .status(Some(if row.enabled {
+            .access_key_id(format!("AKIA{}", row.access_key_id))
+            .create_date(row.created_at)
+            .status(if row.enabled {
                 StatusType::Active
             } else {
                 StatusType::Inactive
-            }))
-            .user_name(Some(user_name.to_string()))
+            })
+            .user_name(user_name.to_string())
             .build()
             .map_err(|e| {
                 log::error!("Failed to construct AccessKeyMetadata: {e}");
@@ -157,9 +157,9 @@ pub async fn list_access_keys(
     }
 
     let mut builder = ListAccessKeysResponse::builder();
-    builder = builder.access_key_metadata(results);
+    builder = builder.set_access_key_metadata(results);
     if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
+        builder = builder.is_truncated(true).marker(next_marker);
     }
 
     builder.build().map_err(|e| {

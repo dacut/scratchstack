@@ -137,7 +137,7 @@ impl Runnable for ListSessionTokenEncryptionKeysCommand {
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
         let filters = list_session_token_encryption_keys_filters_from_shorthand(&self.filters)?;
-        let mut request = ListSessionTokenEncryptionKeysRequest::builder().filters(filters);
+        let mut request = ListSessionTokenEncryptionKeysRequest::builder().set_filters(filters);
         if let Some(max_items) = self.max_items {
             request = request.max_items(max_items);
         }

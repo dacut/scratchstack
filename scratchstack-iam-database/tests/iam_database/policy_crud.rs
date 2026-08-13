@@ -20,9 +20,9 @@ use {
 pub async fn test_create_policy_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreatePolicyInternalRequest::builder()
-        .policy_name("TestPolicy".to_string())
+        .policy_name("TestPolicy")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -55,10 +55,10 @@ pub async fn test_create_policy_simple(pool: &sqlx::PgPool) {
 pub async fn test_create_policy_with_path(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreatePolicyInternalRequest::builder()
-        .policy_name("PathPolicy".to_string())
+        .policy_name("PathPolicy")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .path(Some("/engineering/".to_string()))
-        .account_id("123456789012".to_string())
+        .path("/engineering/")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -79,10 +79,10 @@ pub async fn test_create_policy_with_path(pool: &sqlx::PgPool) {
 pub async fn test_create_policy_with_description(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreatePolicyInternalRequest::builder()
-        .policy_name("DescribedPolicy".to_string())
+        .policy_name("DescribedPolicy")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .description(Some("Grants read access to S3 objects".to_string()))
-        .account_id("123456789012".to_string())
+        .description("Grants read access to S3 objects")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -98,17 +98,13 @@ pub async fn test_create_policy_with_description(pool: &sqlx::PgPool) {
 pub async fn test_create_policy_with_tags(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreatePolicyInternalRequest::builder()
-        .policy_name("TaggedPolicy".to_string())
+        .policy_name("TaggedPolicy")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .tags(vec![
-            Tag::builder()
-                .key("Environment".to_string())
-                .value("Production".to_string())
-                .build()
-                .expect("Failed to build tag"),
-            Tag::builder().key("Team".to_string()).value("Platform".to_string()).build().expect("Failed to build tag"),
+        .set_tags(vec![
+            Tag::builder().key("Environment").value("Production").build().expect("Failed to build tag"),
+            Tag::builder().key("Team").value("Platform").build().expect("Failed to build tag"),
         ])
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -125,9 +121,9 @@ pub async fn test_create_policy_duplicate_name(pool: &sqlx::PgPool) {
     // "TestPolicy" was committed by test_create_policy_simple; re-inserting must fail.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = CreatePolicyInternalRequest::builder()
-        .policy_name("TestPolicy".to_string())
+        .policy_name("TestPolicy")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -140,9 +136,9 @@ pub async fn test_create_policy_duplicate_name(pool: &sqlx::PgPool) {
 pub async fn test_create_policy_invalid_document(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = CreatePolicyInternalRequest::builder()
-        .policy_name("BadDocPolicy".to_string())
-        .policy_document("not valid json".to_string())
-        .account_id("123456789012".to_string())
+        .policy_name("BadDocPolicy")
+        .policy_document("not valid json")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -155,9 +151,9 @@ pub async fn test_create_policy_invalid_document(pool: &sqlx::PgPool) {
 pub async fn test_create_policy_valid_json_invalid_aspen(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = CreatePolicyInternalRequest::builder()
-        .policy_name("ValidJsonBadAspen".to_string())
+        .policy_name("ValidJsonBadAspen")
         .policy_document(r#"{"foo": "bar"}"#.to_string())
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -167,11 +163,11 @@ pub async fn test_create_policy_valid_json_invalid_aspen(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = CreatePolicyInternalRequest::builder()
-        .policy_name("ValidJsonBadAspen".to_string())
+        .policy_name("ValidJsonBadAspen")
         .policy_document(
             r#"{"Version":"2012-10-17","Statement":[{"Action":"s3:GetObject","Resource":"*"}]}"#.to_string(),
         )
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -184,9 +180,9 @@ pub async fn test_create_policy_valid_json_invalid_aspen(pool: &sqlx::PgPool) {
 pub async fn test_create_policy_nonexistent_account(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = CreatePolicyInternalRequest::builder()
-        .policy_name("OrphanPolicy".to_string())
+        .policy_name("OrphanPolicy")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .account_id("999999999999".to_string())
+        .account_id("999999999999")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -202,9 +198,9 @@ pub async fn test_create_policy_version_simple(pool: &sqlx::PgPool) {
     // First, create a policy to add versions to.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreatePolicyInternalRequest::builder()
-        .policy_name("VersionedPolicy".to_string())
+        .policy_name("VersionedPolicy")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -217,9 +213,9 @@ pub async fn test_create_policy_version_simple(pool: &sqlx::PgPool) {
     let new_document =
         r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:PutObject","Resource":"*"}]}"#;
     let resp = CreatePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy")
         .policy_document(new_document.to_string())
-        .set_as_default(Some(true))
+        .set_as_default(true)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
         .execute(&mut tx)
@@ -240,9 +236,9 @@ pub async fn test_create_policy_version_set_as_default(pool: &sqlx::PgPool) {
     let new_document =
         r#"{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":"s3:DeleteObject","Resource":"*"}]}"#;
     let resp = CreatePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy")
         .policy_document(new_document.to_string())
-        .set_as_default(Some(true))
+        .set_as_default(true)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
         .execute(&mut tx)
@@ -261,9 +257,9 @@ pub async fn test_create_policy_version_not_default(pool: &sqlx::PgPool) {
     let new_document =
         r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"ec2:DescribeInstances","Resource":"*"}]}"#;
     let resp = CreatePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy")
         .policy_document(new_document.to_string())
-        .set_as_default(Some(false))
+        .set_as_default(false)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
         .execute(&mut tx)
@@ -283,9 +279,9 @@ pub async fn test_create_policy_version_limit_exceeded(pool: &sqlx::PgPool) {
     let doc_v5 =
         r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"ec2:RunInstances","Resource":"*"}]}"#;
     CreatePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy")
         .policy_document(doc_v5.to_string())
-        .set_as_default(Some(false))
+        .set_as_default(false)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
         .execute(&mut tx)
@@ -298,9 +294,9 @@ pub async fn test_create_policy_version_limit_exceeded(pool: &sqlx::PgPool) {
     let doc_v6 =
         r#"{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":"ec2:TerminateInstances","Resource":"*"}]}"#;
     let result = CreatePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy")
         .policy_document(doc_v6.to_string())
-        .set_as_default(Some(false))
+        .set_as_default(false)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
         .execute(&mut tx)
@@ -313,7 +309,7 @@ pub async fn test_create_policy_version_limit_exceeded(pool: &sqlx::PgPool) {
 pub async fn test_create_policy_version_nonexistent_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = CreatePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchPolicy".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchPolicy")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
@@ -327,10 +323,10 @@ pub async fn test_create_policy_version_nonexistent_policy(pool: &sqlx::PgPool) 
 pub async fn test_create_policy_version_mismatched_path(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreatePolicyInternalRequest::builder()
-        .policy_name("PathSensitivePolicy".to_string())
+        .policy_name("PathSensitivePolicy")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .path(Some("/engineering/".to_string()))
-        .account_id("123456789012".to_string())
+        .path("/engineering/")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -340,7 +336,7 @@ pub async fn test_create_policy_version_mismatched_path(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = CreatePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/wrong/PathSensitivePolicy".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/wrong/PathSensitivePolicy")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
@@ -354,8 +350,8 @@ pub async fn test_create_policy_version_mismatched_path(pool: &sqlx::PgPool) {
 pub async fn test_create_policy_version_invalid_document(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = CreatePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
-        .policy_document("not valid json".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy")
+        .policy_document("not valid json")
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
         .execute(&mut tx)
@@ -402,8 +398,8 @@ pub async fn test_create_policy_version_invalid_arn(pool: &sqlx::PgPool) {
 pub async fn test_delete_policy_version_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeletePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
-        .version_id("v1".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy")
+        .version_id("v1")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
         .execute(&mut tx)
@@ -414,8 +410,8 @@ pub async fn test_delete_policy_version_simple(pool: &sqlx::PgPool) {
     // Re-deleting the same version should fail with NoSuchEntity since the row is gone.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeletePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
-        .version_id("v1".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy")
+        .version_id("v1")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
         .execute(&mut tx)
@@ -430,8 +426,8 @@ pub async fn test_delete_policy_version_default_fails(pool: &sqlx::PgPool) {
     // v3 is the default version of VersionedPolicy.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeletePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
-        .version_id("v3".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy")
+        .version_id("v3")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
         .execute(&mut tx)
@@ -443,8 +439,8 @@ pub async fn test_delete_policy_version_default_fails(pool: &sqlx::PgPool) {
     // Confirm v3 is still present by trying to delete it again (still must fail with DeleteConflict).
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeletePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
-        .version_id("v3".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy")
+        .version_id("v3")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
         .execute(&mut tx)
@@ -458,10 +454,10 @@ pub async fn test_delete_policy_version_default_fails(pool: &sqlx::PgPool) {
 pub async fn test_delete_policy_version_with_path(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreatePolicyInternalRequest::builder()
-        .policy_name("PathDelVersion".to_string())
+        .policy_name("PathDelVersion")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .path(Some("/engineering/".to_string()))
-        .account_id("123456789012".to_string())
+        .path("/engineering/")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -469,9 +465,9 @@ pub async fn test_delete_policy_version_with_path(pool: &sqlx::PgPool) {
         .expect("Failed to create policy at /engineering/PathDelVersion");
     let doc_v2 = r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:PutObject","Resource":"*"}]}"#;
     CreatePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/engineering/PathDelVersion".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/engineering/PathDelVersion")
         .policy_document(doc_v2.to_string())
-        .set_as_default(Some(true))
+        .set_as_default(true)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
         .execute(&mut tx)
@@ -482,8 +478,8 @@ pub async fn test_delete_policy_version_with_path(pool: &sqlx::PgPool) {
     // v1 is no longer the default; delete it.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeletePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/engineering/PathDelVersion".to_string())
-        .version_id("v1".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/engineering/PathDelVersion")
+        .version_id("v1")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
         .execute(&mut tx)
@@ -497,8 +493,8 @@ pub async fn test_delete_policy_version_mismatched_path(pool: &sqlx::PgPool) {
     // PathDelVersion lives at /engineering/, not at /.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeletePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/PathDelVersion".to_string())
-        .version_id("v2".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/PathDelVersion")
+        .version_id("v2")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
         .execute(&mut tx)
@@ -512,8 +508,8 @@ pub async fn test_delete_policy_version_mismatched_path(pool: &sqlx::PgPool) {
 pub async fn test_delete_policy_version_nonexistent_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeletePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchPolicyEver".to_string())
-        .version_id("v1".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchPolicyEver")
+        .version_id("v1")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
         .execute(&mut tx)
@@ -527,8 +523,8 @@ pub async fn test_delete_policy_version_nonexistent_policy(pool: &sqlx::PgPool) 
 pub async fn test_delete_policy_version_nonexistent_version(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeletePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
-        .version_id("v99".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy")
+        .version_id("v99")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
         .execute(&mut tx)
@@ -556,7 +552,7 @@ pub async fn test_delete_policy_version_invalid_arn(pool: &sqlx::PgPool) {
         let mut tx = pool.begin().await.expect("Failed to begin transaction");
         let result = DeletePolicyVersionRequest::builder()
             .policy_arn(arn.to_string())
-            .version_id("v1".to_string())
+            .version_id("v1")
             .build()
             .expect("Failed to build DeletePolicyVersionRequest")
             .execute(&mut tx)
@@ -580,9 +576,9 @@ pub async fn test_delete_policy_version_aws_account(pool: &sqlx::PgPool) {
     // by addressing it with the literal "000000000000" account that bootstrap inserts.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreatePolicyInternalRequest::builder()
-        .policy_name("AwsOwnedDelVersion".to_string())
+        .policy_name("AwsOwnedDelVersion")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .account_id("000000000000".to_string())
+        .account_id("000000000000")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -591,9 +587,9 @@ pub async fn test_delete_policy_version_aws_account(pool: &sqlx::PgPool) {
     let doc_v2 =
         r#"{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":"s3:DeleteBucket","Resource":"*"}]}"#;
     CreatePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::000000000000:policy/AwsOwnedDelVersion".to_string())
+        .policy_arn("arn:test-partition:iam::000000000000:policy/AwsOwnedDelVersion")
         .policy_document(doc_v2.to_string())
-        .set_as_default(Some(false))
+        .set_as_default(false)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
         .execute(&mut tx)
@@ -604,8 +600,8 @@ pub async fn test_delete_policy_version_aws_account(pool: &sqlx::PgPool) {
     // Delete v2 using "aws" in the ARN.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeletePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::aws:policy/AwsOwnedDelVersion".to_string())
-        .version_id("v2".to_string())
+        .policy_arn("arn:test-partition:iam::aws:policy/AwsOwnedDelVersion")
+        .version_id("v2")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
         .execute(&mut tx)
@@ -617,8 +613,8 @@ pub async fn test_delete_policy_version_aws_account(pool: &sqlx::PgPool) {
     // from the "000000000000" account row).
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeletePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::aws:policy/AwsOwnedDelVersion".to_string())
-        .version_id("v2".to_string())
+        .policy_arn("arn:test-partition:iam::aws:policy/AwsOwnedDelVersion")
+        .version_id("v2")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
         .execute(&mut tx)
@@ -630,8 +626,8 @@ pub async fn test_delete_policy_version_aws_account(pool: &sqlx::PgPool) {
     // Also verify that the same ARN using "000000000000" addresses the same policy.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeletePolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::000000000000:policy/AwsOwnedDelVersion".to_string())
-        .version_id("v1".to_string())
+        .policy_arn("arn:test-partition:iam::000000000000:policy/AwsOwnedDelVersion")
+        .version_id("v1")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
         .execute(&mut tx)
@@ -650,7 +646,7 @@ pub async fn test_set_default_policy_version_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     SetDefaultPolicyVersionRequest::builder()
         .policy_arn(arn.to_string())
-        .version_id("v4".to_string())
+        .version_id("v4")
         .build()
         .expect("Failed to build SetDefaultPolicyVersionRequest")
         .execute(&mut tx)
@@ -673,7 +669,7 @@ pub async fn test_set_default_policy_version_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     SetDefaultPolicyVersionRequest::builder()
         .policy_arn(arn.to_string())
-        .version_id("v3".to_string())
+        .version_id("v3")
         .build()
         .expect("Failed to build SetDefaultPolicyVersionRequest")
         .execute(&mut tx)
@@ -685,8 +681,8 @@ pub async fn test_set_default_policy_version_simple(pool: &sqlx::PgPool) {
 pub async fn test_set_default_policy_version_nonexistent_version(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = SetDefaultPolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy".to_string())
-        .version_id("v99".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy")
+        .version_id("v99")
         .build()
         .expect("Failed to build SetDefaultPolicyVersionRequest")
         .execute(&mut tx)
@@ -699,8 +695,8 @@ pub async fn test_set_default_policy_version_nonexistent_version(pool: &sqlx::Pg
 pub async fn test_set_default_policy_version_nonexistent_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = SetDefaultPolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchSetDefaultPolicy".to_string())
-        .version_id("v1".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchSetDefaultPolicy")
+        .version_id("v1")
         .build()
         .expect("Failed to build SetDefaultPolicyVersionRequest")
         .execute(&mut tx)
@@ -713,8 +709,8 @@ pub async fn test_set_default_policy_version_nonexistent_policy(pool: &sqlx::PgP
 pub async fn test_set_default_policy_version_mismatched_path(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = SetDefaultPolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/engineering/VersionedPolicy".to_string())
-        .version_id("v3".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/engineering/VersionedPolicy")
+        .version_id("v3")
         .build()
         .expect("Failed to build SetDefaultPolicyVersionRequest")
         .execute(&mut tx)
@@ -729,8 +725,8 @@ pub async fn test_set_default_policy_version_mismatched_path(pool: &sqlx::PgPool
 pub async fn test_set_default_policy_version_aws_account(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     SetDefaultPolicyVersionRequest::builder()
-        .policy_arn("arn:test-partition:iam::aws:policy/AwsOwnedDelVersion".to_string())
-        .version_id("v1".to_string())
+        .policy_arn("arn:test-partition:iam::aws:policy/AwsOwnedDelVersion")
+        .version_id("v1")
         .build()
         .expect("Failed to build SetDefaultPolicyVersionRequest")
         .execute(&mut tx)
@@ -746,9 +742,9 @@ pub async fn test_tag_policy_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     TagPolicyRequest::builder()
         .policy_arn(arn.to_string())
-        .tags(vec![
-            Tag::builder().key("Env".to_string()).value("Prod".to_string()).build().expect("Tag build failed"),
-            Tag::builder().key("Owner".to_string()).value("Platform".to_string()).build().expect("Tag build failed"),
+        .set_tags(vec![
+            Tag::builder().key("Env").value("Prod").build().expect("Tag build failed"),
+            Tag::builder().key("Owner").value("Platform").build().expect("Tag build failed"),
         ])
         .build()
         .expect("Failed to build TagPolicyRequest")
@@ -780,9 +776,7 @@ pub async fn test_tag_policy_upsert(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     TagPolicyRequest::builder()
         .policy_arn(arn.to_string())
-        .tags(vec![
-            Tag::builder().key("Env".to_string()).value("Staging".to_string()).build().expect("Tag build failed"),
-        ])
+        .set_tags(vec![Tag::builder().key("Env").value("Staging").build().expect("Tag build failed")])
         .build()
         .expect("Failed to build TagPolicyRequest")
         .execute(&mut tx)
@@ -814,8 +808,8 @@ pub async fn test_tag_policy_upsert(pool: &sqlx::PgPool) {
 pub async fn test_tag_policy_empty(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = TagPolicyRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/TestPolicy".to_string())
-        .tags(vec![])
+        .policy_arn("arn:test-partition:iam::123456789012:policy/TestPolicy")
+        .set_tags(vec![])
         .build()
         .expect("Failed to build TagPolicyRequest")
         .execute(&mut tx)
@@ -828,8 +822,8 @@ pub async fn test_tag_policy_empty(pool: &sqlx::PgPool) {
 pub async fn test_tag_policy_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = TagPolicyRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchTagPolicy".to_string())
-        .tags(vec![Tag::builder().key("X".to_string()).value("Y".to_string()).build().expect("Tag build failed")])
+        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchTagPolicy")
+        .set_tags(vec![Tag::builder().key("X").value("Y").build().expect("Tag build failed")])
         .build()
         .expect("Failed to build TagPolicyRequest")
         .execute(&mut tx)
@@ -845,7 +839,7 @@ pub async fn test_untag_policy_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     UntagPolicyRequest::builder()
         .policy_arn(arn.to_string())
-        .tag_keys(vec!["Owner".to_string()])
+        .set_tag_keys(vec!["Owner".to_string()])
         .build()
         .expect("Failed to build UntagPolicyRequest")
         .execute(&mut tx)
@@ -871,8 +865,8 @@ pub async fn test_untag_policy_simple(pool: &sqlx::PgPool) {
 pub async fn test_untag_policy_empty(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = UntagPolicyRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/TestPolicy".to_string())
-        .tag_keys(vec![])
+        .policy_arn("arn:test-partition:iam::123456789012:policy/TestPolicy")
+        .set_tag_keys(vec![])
         .build()
         .expect("Failed to build UntagPolicyRequest")
         .execute(&mut tx)
@@ -885,8 +879,8 @@ pub async fn test_untag_policy_empty(pool: &sqlx::PgPool) {
 pub async fn test_untag_policy_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = UntagPolicyRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchUntagPolicy".to_string())
-        .tag_keys(vec!["X".to_string()])
+        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchUntagPolicy")
+        .set_tag_keys(vec!["X".to_string()])
         .build()
         .expect("Failed to build UntagPolicyRequest")
         .execute(&mut tx)
@@ -907,9 +901,9 @@ pub async fn test_policy_update_date_lifecycle(pool: &sqlx::PgPool) {
     // Create the policy. Initially the only version is v1, so update_date == v1.create_date.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let create = CreatePolicyInternalRequest::builder()
-        .policy_name("UpdateDatePolicy".to_string())
+        .policy_name("UpdateDatePolicy")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -930,7 +924,7 @@ pub async fn test_policy_update_date_lifecycle(pool: &sqlx::PgPool) {
             r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:PutObject","Resource":"*"}]}"#
                 .to_string(),
         )
-        .set_as_default(Some(false))
+        .set_as_default(false)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
         .execute(&mut tx)
@@ -950,7 +944,7 @@ pub async fn test_policy_update_date_lifecycle(pool: &sqlx::PgPool) {
             r#"{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":"s3:DeleteObject","Resource":"*"}]}"#
                 .to_string(),
         )
-        .set_as_default(Some(false))
+        .set_as_default(false)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
         .execute(&mut tx)
@@ -964,7 +958,7 @@ pub async fn test_policy_update_date_lifecycle(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeletePolicyVersionRequest::builder()
         .policy_arn(arn.to_string())
-        .version_id("v2".to_string())
+        .version_id("v2")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
         .execute(&mut tx)
@@ -981,7 +975,7 @@ pub async fn test_policy_update_date_lifecycle(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeletePolicyVersionRequest::builder()
         .policy_arn(arn.to_string())
-        .version_id("v3".to_string())
+        .version_id("v3")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
         .execute(&mut tx)

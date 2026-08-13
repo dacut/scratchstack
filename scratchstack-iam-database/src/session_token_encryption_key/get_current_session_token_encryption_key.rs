@@ -58,7 +58,7 @@ pub async fn get_current_session_token_encryption_key(
 
     let row = row.ok_or_else(|| {
         NoSuchEntityException::builder()
-            .message("There is no session token encryption key that is current as of the specified time.".to_string())
+            .message("There is no session token encryption key that is current as of the specified time.")
             .build()
     })?;
     let session_token_encryption_key_id =

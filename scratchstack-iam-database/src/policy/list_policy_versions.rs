@@ -126,9 +126,9 @@ pub async fn list_policy_versions(
 
         versions.push(
             PolicyVersion::builder()
-                .create_date(Some(row.created_at))
-                .is_default_version(Some(row.managed_policy_version == policy_row.default_version))
-                .version_id(Some(format!("v{}", row.managed_policy_version)))
+                .create_date(row.created_at)
+                .is_default_version(row.managed_policy_version == policy_row.default_version)
+                .version_id(format!("v{}", row.managed_policy_version))
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct PolicyVersion object: {e}");

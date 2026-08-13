@@ -159,17 +159,17 @@ pub async fn create_policy(
     };
 
     let policy = Policy::builder()
-        .arn(Some(arn.to_string()))
-        .attachment_count(Some(0))
-        .create_date(Some(created_at))
-        .default_version_id(Some("v1".to_string()))
-        .description(description.map(|d| d.to_string()))
-        .is_attachable(Some(true))
-        .path(Some(path.to_string()))
-        .permissions_boundary_usage_count(Some(0))
-        .policy_id(Some(policy_id))
-        .policy_name(Some(policy_name.to_string()))
-        .tags(tags.to_vec())
+        .arn(arn.to_string())
+        .attachment_count(0)
+        .create_date(created_at)
+        .default_version_id("v1")
+        .set_description(description.map(|d| d.to_string()))
+        .is_attachable(true)
+        .path(path.to_string())
+        .permissions_boundary_usage_count(0)
+        .policy_id(policy_id)
+        .policy_name(policy_name.to_string())
+        .set_tags(tags.to_vec())
         .build()
         .map_err(|e| {
             log::error!("Failed to construct policy object for new managed policy: {e}");

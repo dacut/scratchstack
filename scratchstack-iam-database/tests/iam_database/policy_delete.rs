@@ -26,9 +26,9 @@ pub async fn test_delete_policy_simple(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreatePolicyInternalRequest::builder()
-        .policy_name("DeleteMeSimple".to_string())
+        .policy_name("DeleteMeSimple")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -80,16 +80,10 @@ pub async fn test_delete_policy_cascade_tags_and_default_version(pool: &sqlx::Pg
     let managed_policy_id = {
         let mut tx = pool.begin().await.expect("Failed to begin transaction");
         let resp = CreatePolicyInternalRequest::builder()
-            .policy_name("DeleteMeCascade".to_string())
+            .policy_name("DeleteMeCascade")
             .policy_document(VALID_POLICY_DOCUMENT.to_string())
-            .account_id("123456789012".to_string())
-            .tags(vec![
-                Tag::builder()
-                    .key("Environment".to_string())
-                    .value("Dev".to_string())
-                    .build()
-                    .expect("Failed to build tag"),
-            ])
+            .account_id("123456789012")
+            .set_tags(vec![Tag::builder().key("Environment").value("Dev").build().expect("Failed to build tag")])
             .build()
             .expect("Failed to build CreatePolicyInternalRequest")
             .execute(&mut tx)
@@ -146,9 +140,9 @@ pub async fn test_delete_policy_attached_to_user_fails(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreatePolicyInternalRequest::builder()
-        .policy_name("DeleteMeUserAttached".to_string())
+        .policy_name("DeleteMeUserAttached")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -179,9 +173,9 @@ pub async fn test_delete_policy_attached_to_group_fails(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreatePolicyInternalRequest::builder()
-        .policy_name("DeleteMeGroupAttached".to_string())
+        .policy_name("DeleteMeGroupAttached")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -212,9 +206,9 @@ pub async fn test_delete_policy_attached_to_role_fails(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreatePolicyInternalRequest::builder()
-        .policy_name("DeleteMeRoleAttached".to_string())
+        .policy_name("DeleteMeRoleAttached")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -245,9 +239,9 @@ pub async fn test_delete_policy_user_permissions_boundary_fails(pool: &sqlx::PgP
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreatePolicyInternalRequest::builder()
-        .policy_name("DeleteMeUserPB".to_string())
+        .policy_name("DeleteMeUserPB")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -278,9 +272,9 @@ pub async fn test_delete_policy_role_permissions_boundary_fails(pool: &sqlx::PgP
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreatePolicyInternalRequest::builder()
-        .policy_name("DeleteMeRolePB".to_string())
+        .policy_name("DeleteMeRolePB")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -311,9 +305,9 @@ pub async fn test_delete_policy_with_non_default_versions_fails(pool: &sqlx::PgP
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreatePolicyInternalRequest::builder()
-        .policy_name("DeleteMeMultiVersion".to_string())
+        .policy_name("DeleteMeMultiVersion")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -325,7 +319,7 @@ pub async fn test_delete_policy_with_non_default_versions_fails(pool: &sqlx::PgP
             r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:PutObject","Resource":"*"}]}"#
                 .to_string(),
         )
-        .set_as_default(Some(false))
+        .set_as_default(false)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
         .execute(&mut tx)
@@ -349,7 +343,7 @@ pub async fn test_delete_policy_with_non_default_versions_fails(pool: &sqlx::PgP
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeletePolicyVersionRequest::builder()
         .policy_arn(arn.to_string())
-        .version_id("v2".to_string())
+        .version_id("v2")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
         .execute(&mut tx)
@@ -369,7 +363,7 @@ pub async fn test_delete_policy_with_non_default_versions_fails(pool: &sqlx::PgP
 pub async fn test_delete_policy_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeletePolicyRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchDeletePolicy".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchDeletePolicy")
         .build()
         .expect("Failed to build DeletePolicyRequest")
         .execute(&mut tx)
@@ -383,10 +377,10 @@ pub async fn test_delete_policy_nonexistent(pool: &sqlx::PgPool) {
 pub async fn test_delete_policy_mismatched_path(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreatePolicyInternalRequest::builder()
-        .policy_name("MismatchedDeleteMe".to_string())
+        .policy_name("MismatchedDeleteMe")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .path(Some("/engineering/".to_string()))
-        .account_id("123456789012".to_string())
+        .path("/engineering/")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -397,7 +391,7 @@ pub async fn test_delete_policy_mismatched_path(pool: &sqlx::PgPool) {
     // ARN omits the /engineering/ path, so the policy must not be found.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeletePolicyRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/MismatchedDeleteMe".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/MismatchedDeleteMe")
         .build()
         .expect("Failed to build DeletePolicyRequest")
         .execute(&mut tx)
@@ -409,7 +403,7 @@ pub async fn test_delete_policy_mismatched_path(pool: &sqlx::PgPool) {
     // Clean up: delete it via the correct ARN.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeletePolicyRequest::builder()
-        .policy_arn("arn:test-partition:iam::123456789012:policy/engineering/MismatchedDeleteMe".to_string())
+        .policy_arn("arn:test-partition:iam::123456789012:policy/engineering/MismatchedDeleteMe")
         .build()
         .expect("Failed to build DeletePolicyRequest")
         .execute(&mut tx)
@@ -452,9 +446,9 @@ pub async fn test_delete_policy_invalid_arn(pool: &sqlx::PgPool) {
 pub async fn test_delete_policy_aws_account(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreatePolicyInternalRequest::builder()
-        .policy_name("AwsOwnedDeleteMe".to_string())
+        .policy_name("AwsOwnedDeleteMe")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
-        .account_id("000000000000".to_string())
+        .account_id("000000000000")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx)
@@ -465,7 +459,7 @@ pub async fn test_delete_policy_aws_account(pool: &sqlx::PgPool) {
     // Delete via the "aws" alias.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeletePolicyRequest::builder()
-        .policy_arn("arn:test-partition:iam::aws:policy/AwsOwnedDeleteMe".to_string())
+        .policy_arn("arn:test-partition:iam::aws:policy/AwsOwnedDeleteMe")
         .build()
         .expect("Failed to build DeletePolicyRequest")
         .execute(&mut tx)
@@ -477,7 +471,7 @@ pub async fn test_delete_policy_aws_account(pool: &sqlx::PgPool) {
     // row).
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeletePolicyRequest::builder()
-        .policy_arn("arn:test-partition:iam::000000000000:policy/AwsOwnedDeleteMe".to_string())
+        .policy_arn("arn:test-partition:iam::000000000000:policy/AwsOwnedDeleteMe")
         .build()
         .expect("Failed to build DeletePolicyRequest")
         .execute(&mut tx)

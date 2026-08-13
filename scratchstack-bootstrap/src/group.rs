@@ -225,7 +225,7 @@ impl Runnable for CreateGroupInternalCommand {
         let request = CreateGroupInternalRequest::builder()
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
-            .path(Some(self.path.clone()))
+            .path(self.path.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -308,9 +308,9 @@ impl Runnable for ListAttachedGroupPoliciesInternalCommand {
         let request = ListAttachedGroupPoliciesInternalRequest::builder()
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
-            .path_prefix(self.path_prefix.clone())
-            .max_items(self.max_items)
-            .marker(self.marker.clone())
+            .set_path_prefix(self.path_prefix.clone())
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -327,8 +327,8 @@ impl Runnable for ListGroupPoliciesInternalCommand {
         let request = ListGroupPoliciesInternalRequest::builder()
             .account_id(self.account_id.clone())
             .group_name(self.group_name.clone())
-            .max_items(self.max_items)
-            .marker(self.marker.clone())
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }

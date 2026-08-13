@@ -17,8 +17,8 @@ use {
 pub async fn test_create_group_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreateGroupInternalRequest::builder()
-        .group_name("Admins".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("Admins")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
         .execute(&mut tx)
@@ -36,9 +36,9 @@ pub async fn test_create_group_simple(pool: &sqlx::PgPool) {
 pub async fn test_create_group_with_path(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreateGroupInternalRequest::builder()
-        .group_name("Developers".to_string())
-        .path(Some("/engineering/".to_string()))
-        .account_id("123456789012".to_string())
+        .group_name("Developers")
+        .path("/engineering/")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
         .execute(&mut tx)
@@ -59,8 +59,8 @@ pub async fn test_create_group_with_path(pool: &sqlx::PgPool) {
 pub async fn test_create_group_duplicate_name(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = CreateGroupInternalRequest::builder()
-        .group_name("Admins".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("Admins")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
         .execute(&mut tx)
@@ -73,8 +73,8 @@ pub async fn test_create_group_duplicate_name(pool: &sqlx::PgPool) {
 pub async fn test_create_group_nonexistent_account(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = CreateGroupInternalRequest::builder()
-        .group_name("TestGroup".to_string())
-        .account_id("999999999999".to_string())
+        .group_name("TestGroup")
+        .account_id("999999999999")
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
         .execute(&mut tx)
@@ -90,7 +90,7 @@ pub async fn test_create_group_max_length_name(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreateGroupInternalRequest::builder()
         .group_name(long_name.clone())
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
         .execute(&mut tx)
@@ -106,7 +106,7 @@ pub async fn test_create_group_max_length_name(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetGroupInternalRequest::builder()
         .group_name(long_name.clone())
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetGroupInternalRequest")
         .execute(&mut tx)
@@ -121,8 +121,8 @@ pub async fn test_create_group_max_length_name(pool: &sqlx::PgPool) {
 pub async fn test_get_group_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetGroupInternalRequest::builder()
-        .group_name("Admins".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("Admins")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetGroupInternalRequest")
         .execute(&mut tx)
@@ -140,8 +140,8 @@ pub async fn test_get_group_simple(pool: &sqlx::PgPool) {
 pub async fn test_get_group_with_path(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetGroupInternalRequest::builder()
-        .group_name("Developers".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("Developers")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetGroupInternalRequest")
         .execute(&mut tx)
@@ -162,8 +162,8 @@ pub async fn test_get_group_with_path(pool: &sqlx::PgPool) {
 pub async fn test_get_group_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = GetGroupInternalRequest::builder()
-        .group_name("NonexistentGroup".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("NonexistentGroup")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetGroupInternalRequest")
         .execute(&mut tx)
@@ -176,7 +176,7 @@ pub async fn test_get_group_nonexistent(pool: &sqlx::PgPool) {
 pub async fn test_list_groups(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListGroupsInternalRequest::builder()
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListGroupsInternalRequest")
         .execute(&mut tx)
@@ -195,8 +195,8 @@ pub async fn test_list_groups(pool: &sqlx::PgPool) {
 pub async fn test_list_groups_with_path_prefix(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListGroupsInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .path_prefix(Some("/engineering/".to_string()))
+        .account_id("123456789012")
+        .path_prefix("/engineering/")
         .build()
         .expect("Failed to build ListGroupsInternalRequest")
         .execute(&mut tx)
@@ -212,9 +212,9 @@ pub async fn test_list_groups_with_path_prefix(pool: &sqlx::PgPool) {
 pub async fn test_update_group_rename(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     UpdateGroupInternalRequest::builder()
-        .group_name("Admins".to_string())
-        .new_group_name(Some("Administrators".to_string()))
-        .account_id("123456789012".to_string())
+        .group_name("Admins")
+        .new_group_name("Administrators")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateGroupInternalRequest")
         .execute(&mut tx)
@@ -225,8 +225,8 @@ pub async fn test_update_group_rename(pool: &sqlx::PgPool) {
     // Verify the rename took effect.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetGroupInternalRequest::builder()
-        .group_name("Administrators".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("Administrators")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetGroupInternalRequest")
         .execute(&mut tx)
@@ -241,9 +241,9 @@ pub async fn test_update_group_rename(pool: &sqlx::PgPool) {
 pub async fn test_update_group_change_path(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     UpdateGroupInternalRequest::builder()
-        .group_name("Administrators".to_string())
-        .new_path(Some("/admin/".to_string()))
-        .account_id("123456789012".to_string())
+        .group_name("Administrators")
+        .new_path("/admin/")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateGroupInternalRequest")
         .execute(&mut tx)
@@ -254,8 +254,8 @@ pub async fn test_update_group_change_path(pool: &sqlx::PgPool) {
     // Verify the path change took effect.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetGroupInternalRequest::builder()
-        .group_name("Administrators".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("Administrators")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetGroupInternalRequest")
         .execute(&mut tx)
@@ -270,9 +270,9 @@ pub async fn test_update_group_change_path(pool: &sqlx::PgPool) {
 pub async fn test_update_group_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = UpdateGroupInternalRequest::builder()
-        .group_name("NonexistentGroup".to_string())
-        .new_group_name(Some("NewName".to_string()))
-        .account_id("123456789012".to_string())
+        .group_name("NonexistentGroup")
+        .new_group_name("NewName")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateGroupInternalRequest")
         .execute(&mut tx)
@@ -287,7 +287,7 @@ pub async fn test_delete_group_max_length_name(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeleteGroupInternalRequest::builder()
         .group_name(long_name)
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteGroupInternalRequest")
         .execute(&mut tx)
@@ -300,8 +300,8 @@ pub async fn test_delete_group_max_length_name(pool: &sqlx::PgPool) {
 pub async fn test_delete_group(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeleteGroupInternalRequest::builder()
-        .group_name("Developers".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("Developers")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteGroupInternalRequest")
         .execute(&mut tx)
@@ -312,8 +312,8 @@ pub async fn test_delete_group(pool: &sqlx::PgPool) {
     // Verify the group is gone.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = GetGroupInternalRequest::builder()
-        .group_name("Developers".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("Developers")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetGroupInternalRequest")
         .execute(&mut tx)
@@ -326,8 +326,8 @@ pub async fn test_delete_group(pool: &sqlx::PgPool) {
 pub async fn test_delete_group_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = DeleteGroupInternalRequest::builder()
-        .group_name("NonexistentGroup".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("NonexistentGroup")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteGroupInternalRequest")
         .execute(&mut tx)
@@ -342,9 +342,9 @@ pub async fn test_delete_group_nonexistent(pool: &sqlx::PgPool) {
 pub async fn test_add_user_to_group(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     AddUserToGroupInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("Administrators".to_string())
-        .user_name("alice".to_string())
+        .account_id("123456789012")
+        .group_name("Administrators")
+        .user_name("alice")
         .build()
         .expect("Failed to build AddUserToGroupInternalRequest")
         .execute(&mut tx)
@@ -357,9 +357,9 @@ pub async fn test_add_user_to_group(pool: &sqlx::PgPool) {
 pub async fn test_add_user_to_group_idempotent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     AddUserToGroupInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("Administrators".to_string())
-        .user_name("alice".to_string())
+        .account_id("123456789012")
+        .group_name("Administrators")
+        .user_name("alice")
         .build()
         .expect("Failed to build AddUserToGroupInternalRequest")
         .execute(&mut tx)
@@ -372,9 +372,9 @@ pub async fn test_add_user_to_group_idempotent(pool: &sqlx::PgPool) {
 pub async fn test_add_user_to_group_nonexistent_group(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = AddUserToGroupInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("NonexistentGroup".to_string())
-        .user_name("alice".to_string())
+        .account_id("123456789012")
+        .group_name("NonexistentGroup")
+        .user_name("alice")
         .build()
         .expect("Failed to build AddUserToGroupInternalRequest")
         .execute(&mut tx)
@@ -387,9 +387,9 @@ pub async fn test_add_user_to_group_nonexistent_group(pool: &sqlx::PgPool) {
 pub async fn test_add_user_to_group_nonexistent_user(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = AddUserToGroupInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("Administrators".to_string())
-        .user_name("nonexistent".to_string())
+        .account_id("123456789012")
+        .group_name("Administrators")
+        .user_name("nonexistent")
         .build()
         .expect("Failed to build AddUserToGroupInternalRequest")
         .execute(&mut tx)
@@ -402,8 +402,8 @@ pub async fn test_add_user_to_group_nonexistent_user(pool: &sqlx::PgPool) {
 pub async fn test_list_groups_for_user(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListGroupsForUserInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .user_name("alice".to_string())
+        .account_id("123456789012")
+        .user_name("alice")
         .build()
         .expect("Failed to build ListGroupsForUserInternalRequest")
         .execute(&mut tx)
@@ -419,8 +419,8 @@ pub async fn test_list_groups_for_user(pool: &sqlx::PgPool) {
 pub async fn test_list_groups_for_user_nonexistent_user(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = ListGroupsForUserInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .user_name("nonexistent".to_string())
+        .account_id("123456789012")
+        .user_name("nonexistent")
         .build()
         .expect("Failed to build ListGroupsForUserInternalRequest")
         .execute(&mut tx)
@@ -433,9 +433,9 @@ pub async fn test_list_groups_for_user_nonexistent_user(pool: &sqlx::PgPool) {
 pub async fn test_remove_user_from_group(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     RemoveUserFromGroupInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("Administrators".to_string())
-        .user_name("alice".to_string())
+        .account_id("123456789012")
+        .group_name("Administrators")
+        .user_name("alice")
         .build()
         .expect("Failed to build RemoveUserFromGroupInternalRequest")
         .execute(&mut tx)
@@ -446,8 +446,8 @@ pub async fn test_remove_user_from_group(pool: &sqlx::PgPool) {
     // Verify alice is no longer in the group.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListGroupsForUserInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .user_name("alice".to_string())
+        .account_id("123456789012")
+        .user_name("alice")
         .build()
         .expect("Failed to build ListGroupsForUserInternalRequest")
         .execute(&mut tx)
@@ -462,9 +462,9 @@ pub async fn test_remove_user_from_group(pool: &sqlx::PgPool) {
 pub async fn test_remove_user_from_group_not_member(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = RemoveUserFromGroupInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("Administrators".to_string())
-        .user_name("alice".to_string())
+        .account_id("123456789012")
+        .group_name("Administrators")
+        .user_name("alice")
         .build()
         .expect("Failed to build RemoveUserFromGroupInternalRequest")
         .execute(&mut tx)
@@ -477,9 +477,9 @@ pub async fn test_remove_user_from_group_not_member(pool: &sqlx::PgPool) {
 pub async fn test_remove_user_from_group_nonexistent_group(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = RemoveUserFromGroupInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("NonexistentGroup".to_string())
-        .user_name("alice".to_string())
+        .account_id("123456789012")
+        .group_name("NonexistentGroup")
+        .user_name("alice")
         .build()
         .expect("Failed to build RemoveUserFromGroupInternalRequest")
         .execute(&mut tx)
@@ -507,9 +507,9 @@ pub async fn test_put_group_policy_simple(pool: &sqlx::PgPool) {
     // "Administrators" was renamed from "Admins" in test_update_group_rename and survives.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     PutGroupPolicyInternalRequest::builder()
-        .group_name("Administrators".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineRead".to_string())
+        .group_name("Administrators")
+        .account_id("123456789012")
+        .policy_name("InlineRead")
         .policy_document(INLINE_GROUP_POLICY_S3.to_string())
         .build()
         .expect("Failed to build PutGroupPolicyInternalRequest")
@@ -536,9 +536,9 @@ pub async fn test_put_group_policy_simple(pool: &sqlx::PgPool) {
 pub async fn test_put_group_policy_replaces(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     PutGroupPolicyInternalRequest::builder()
-        .group_name("Administrators".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineRead".to_string())
+        .group_name("Administrators")
+        .account_id("123456789012")
+        .policy_name("InlineRead")
         .policy_document(INLINE_GROUP_POLICY_EC2.to_string())
         .build()
         .expect("Failed to build PutGroupPolicyInternalRequest")
@@ -576,9 +576,9 @@ pub async fn test_put_group_policy_replaces(pool: &sqlx::PgPool) {
 pub async fn test_put_group_policy_invalid_principal_accepted(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     PutGroupPolicyInternalRequest::builder()
-        .group_name("Administrators".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineWithMissingPrincipal".to_string())
+        .group_name("Administrators")
+        .account_id("123456789012")
+        .policy_name("InlineWithMissingPrincipal")
         .policy_document(INLINE_GROUP_POLICY_UNKNOWN_PRINCIPAL.to_string())
         .build()
         .expect("Failed to build PutGroupPolicyInternalRequest")
@@ -592,10 +592,10 @@ pub async fn test_put_group_policy_invalid_principal_accepted(pool: &sqlx::PgPoo
 pub async fn test_put_group_policy_invalid_document(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = PutGroupPolicyInternalRequest::builder()
-        .group_name("Administrators".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineBroken".to_string())
-        .policy_document("{ not valid aspen json }".to_string())
+        .group_name("Administrators")
+        .account_id("123456789012")
+        .policy_name("InlineBroken")
+        .policy_document("{ not valid aspen json }")
         .build()
         .expect("Failed to build PutGroupPolicyInternalRequest")
         .execute(&mut tx)
@@ -612,9 +612,9 @@ pub async fn test_put_group_policy_invalid_document(pool: &sqlx::PgPool) {
 pub async fn test_put_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = PutGroupPolicyInternalRequest::builder()
-        .group_name("NoSuchPutPolicyGroup".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("AnyName".to_string())
+        .group_name("NoSuchPutPolicyGroup")
+        .account_id("123456789012")
+        .policy_name("AnyName")
         .policy_document(INLINE_GROUP_POLICY_S3.to_string())
         .build()
         .expect("Failed to build PutGroupPolicyInternalRequest")
@@ -629,9 +629,9 @@ pub async fn test_put_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
 /// database.
 pub fn test_put_group_policy_invalid_name() {
     let result = PutGroupPolicyInternalRequest::builder()
-        .group_name("bad name!".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("AnyName".to_string())
+        .group_name("bad name!")
+        .account_id("123456789012")
+        .policy_name("AnyName")
         .policy_document(INLINE_GROUP_POLICY_S3.to_string())
         .build();
     assert!(result.is_err(), "Building a request with an invalid group name must fail");
@@ -641,9 +641,9 @@ pub fn test_put_group_policy_invalid_name() {
 pub async fn test_get_group_policy_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetGroupPolicyInternalRequest::builder()
-        .group_name("Administrators".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineRead".to_string())
+        .group_name("Administrators")
+        .account_id("123456789012")
+        .policy_name("InlineRead")
         .build()
         .expect("Failed to build GetGroupPolicyInternalRequest")
         .execute(&mut tx)
@@ -661,9 +661,9 @@ pub async fn test_get_group_policy_simple(pool: &sqlx::PgPool) {
 pub async fn test_get_group_policy_case_insensitive_lookup(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetGroupPolicyInternalRequest::builder()
-        .group_name("administrators".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("inlineread".to_string())
+        .group_name("administrators")
+        .account_id("123456789012")
+        .policy_name("inlineread")
         .build()
         .expect("Failed to build GetGroupPolicyInternalRequest")
         .execute(&mut tx)
@@ -678,9 +678,9 @@ pub async fn test_get_group_policy_case_insensitive_lookup(pool: &sqlx::PgPool) 
 pub async fn test_get_group_policy_nonexistent_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = GetGroupPolicyInternalRequest::builder()
-        .group_name("Administrators".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("NotAttached".to_string())
+        .group_name("Administrators")
+        .account_id("123456789012")
+        .policy_name("NotAttached")
         .build()
         .expect("Failed to build GetGroupPolicyInternalRequest")
         .execute(&mut tx)
@@ -694,9 +694,9 @@ pub async fn test_get_group_policy_nonexistent_policy(pool: &sqlx::PgPool) {
 pub async fn test_get_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = GetGroupPolicyInternalRequest::builder()
-        .group_name("NoSuchGetPolicyGroup".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("AnyName".to_string())
+        .group_name("NoSuchGetPolicyGroup")
+        .account_id("123456789012")
+        .policy_name("AnyName")
         .build()
         .expect("Failed to build GetGroupPolicyInternalRequest")
         .execute(&mut tx)
@@ -710,9 +710,9 @@ pub async fn test_get_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
 /// database.
 pub fn test_get_group_policy_invalid_name() {
     let result = GetGroupPolicyInternalRequest::builder()
-        .group_name("bad name!".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("AnyName".to_string())
+        .group_name("bad name!")
+        .account_id("123456789012")
+        .policy_name("AnyName")
         .build();
     assert!(result.is_err(), "Building a request with an invalid group name must fail");
 }
@@ -722,8 +722,8 @@ pub fn test_get_group_policy_invalid_name() {
 pub async fn test_list_group_policies_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListGroupPoliciesInternalRequest::builder()
-        .group_name("Administrators".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("Administrators")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListGroupPoliciesInternalRequest")
         .execute(&mut tx)
@@ -740,16 +740,16 @@ pub async fn test_list_group_policies_simple(pool: &sqlx::PgPool) {
 pub async fn test_list_group_policies_empty(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateGroupInternalRequest::builder()
-        .group_name("ListPoliciesEmptyGroup".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("ListPoliciesEmptyGroup")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
         .execute(&mut tx)
         .await
         .expect("Failed to create ListPoliciesEmptyGroup");
     let resp = ListGroupPoliciesInternalRequest::builder()
-        .group_name("ListPoliciesEmptyGroup".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("ListPoliciesEmptyGroup")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListGroupPoliciesInternalRequest")
         .execute(&mut tx)
@@ -759,8 +759,8 @@ pub async fn test_list_group_policies_empty(pool: &sqlx::PgPool) {
     assert_eq!(resp.is_truncated, None);
 
     DeleteGroupInternalRequest::builder()
-        .group_name("ListPoliciesEmptyGroup".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("ListPoliciesEmptyGroup")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteGroupInternalRequest")
         .execute(&mut tx)
@@ -773,9 +773,9 @@ pub async fn test_list_group_policies_empty(pool: &sqlx::PgPool) {
 pub async fn test_list_group_policies_pagination(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let page1 = ListGroupPoliciesInternalRequest::builder()
-        .group_name("Administrators".to_string())
-        .account_id("123456789012".to_string())
-        .max_items(Some(1))
+        .group_name("Administrators")
+        .account_id("123456789012")
+        .max_items(1)
         .build()
         .expect("Failed to build ListGroupPoliciesInternalRequest")
         .execute(&mut tx)
@@ -786,10 +786,10 @@ pub async fn test_list_group_policies_pagination(pool: &sqlx::PgPool) {
     let marker = page1.marker.clone().expect("Expected a pagination marker");
 
     let page2 = ListGroupPoliciesInternalRequest::builder()
-        .group_name("Administrators".to_string())
-        .account_id("123456789012".to_string())
-        .max_items(Some(1))
-        .marker(Some(marker))
+        .group_name("Administrators")
+        .account_id("123456789012")
+        .max_items(1)
+        .marker(marker)
         .build()
         .expect("Failed to build ListGroupPoliciesInternalRequest")
         .execute(&mut tx)
@@ -806,8 +806,8 @@ pub async fn test_list_group_policies_pagination(pool: &sqlx::PgPool) {
 pub async fn test_list_group_policies_nonexistent_group(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = ListGroupPoliciesInternalRequest::builder()
-        .group_name("NoSuchListPoliciesGroup".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("NoSuchListPoliciesGroup")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListGroupPoliciesInternalRequest")
         .execute(&mut tx)
@@ -820,10 +820,7 @@ pub async fn test_list_group_policies_nonexistent_group(pool: &sqlx::PgPool) {
 /// Building a ListGroupPolicies request with an invalid group name must fail before touching the
 /// database.
 pub fn test_list_group_policies_invalid_name() {
-    let result = ListGroupPoliciesInternalRequest::builder()
-        .group_name("bad name!".to_string())
-        .account_id("123456789012".to_string())
-        .build();
+    let result = ListGroupPoliciesInternalRequest::builder().group_name("bad name!").account_id("123456789012").build();
     assert!(result.is_err(), "Building a request with an invalid group name must fail");
 }
 
@@ -832,9 +829,9 @@ pub async fn test_delete_group_policy_simple(pool: &sqlx::PgPool) {
     // The "InlineWithMissingPrincipal" inline policy was added in test_put_group_policy_invalid_principal_accepted.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeleteGroupPolicyInternalRequest::builder()
-        .group_name("Administrators".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineWithMissingPrincipal".to_string())
+        .group_name("Administrators")
+        .account_id("123456789012")
+        .policy_name("InlineWithMissingPrincipal")
         .build()
         .expect("Failed to build DeleteGroupPolicyInternalRequest")
         .execute(&mut tx)
@@ -872,9 +869,9 @@ pub async fn test_delete_group_policy_simple(pool: &sqlx::PgPool) {
 pub async fn test_delete_group_policy_nonexistent_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteGroupPolicyInternalRequest::builder()
-        .group_name("Administrators".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("NotAttached".to_string())
+        .group_name("Administrators")
+        .account_id("123456789012")
+        .policy_name("NotAttached")
         .build()
         .expect("Failed to build DeleteGroupPolicyInternalRequest")
         .execute(&mut tx)
@@ -888,9 +885,9 @@ pub async fn test_delete_group_policy_nonexistent_policy(pool: &sqlx::PgPool) {
 pub async fn test_delete_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteGroupPolicyInternalRequest::builder()
-        .group_name("NoSuchDeletePolicyGroup".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("AnyName".to_string())
+        .group_name("NoSuchDeletePolicyGroup")
+        .account_id("123456789012")
+        .policy_name("AnyName")
         .build()
         .expect("Failed to build DeleteGroupPolicyInternalRequest")
         .execute(&mut tx)
@@ -904,9 +901,9 @@ pub async fn test_delete_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
 /// database.
 pub fn test_delete_group_policy_invalid_name() {
     let result = DeleteGroupPolicyInternalRequest::builder()
-        .group_name("bad name!".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("AnyName".to_string())
+        .group_name("bad name!")
+        .account_id("123456789012")
+        .policy_name("AnyName")
         .build();
     assert!(result.is_err(), "Building a request with an invalid group name must fail");
 }
@@ -915,8 +912,8 @@ pub fn test_delete_group_policy_invalid_name() {
 pub async fn test_delete_group_attached_policy_fails(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateGroupInternalRequest::builder()
-        .group_name("DeleteMeAttachedGroup".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("DeleteMeAttachedGroup")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
         .execute(&mut tx)
@@ -940,8 +937,8 @@ pub async fn test_delete_group_attached_policy_fails(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteGroupInternalRequest::builder()
-        .group_name("DeleteMeAttachedGroup".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("DeleteMeAttachedGroup")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteGroupInternalRequest")
         .execute(&mut tx)
@@ -958,8 +955,8 @@ pub async fn test_delete_group_attached_policy_fails(pool: &sqlx::PgPool) {
         .await
         .expect("Failed to detach managed policy");
     DeleteGroupInternalRequest::builder()
-        .group_name("DeleteMeAttachedGroup".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("DeleteMeAttachedGroup")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteGroupInternalRequest")
         .execute(&mut tx)
@@ -972,8 +969,8 @@ pub async fn test_delete_group_attached_policy_fails(pool: &sqlx::PgPool) {
 pub async fn test_delete_group_inline_policy_fails(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateGroupInternalRequest::builder()
-        .group_name("DeleteMeInlineGroup".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("DeleteMeInlineGroup")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
         .execute(&mut tx)
@@ -1000,8 +997,8 @@ pub async fn test_delete_group_inline_policy_fails(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteGroupInternalRequest::builder()
-        .group_name("DeleteMeInlineGroup".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("DeleteMeInlineGroup")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteGroupInternalRequest")
         .execute(&mut tx)
@@ -1018,8 +1015,8 @@ pub async fn test_delete_group_inline_policy_fails(pool: &sqlx::PgPool) {
         .await
         .expect("Failed to remove inline policy");
     DeleteGroupInternalRequest::builder()
-        .group_name("DeleteMeInlineGroup".to_string())
-        .account_id("123456789012".to_string())
+        .group_name("DeleteMeInlineGroup")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteGroupInternalRequest")
         .execute(&mut tx)

@@ -64,7 +64,7 @@ pub async fn create_access_key(
         Some(name) => name,
         None => {
             return Err(ValidationError::builder()
-                .message("UserName is required for CreateAccessKey in this implementation.".to_string())
+                .message("UserName is required for CreateAccessKey in this implementation.")
                 .build()
                 .into());
         }
@@ -124,7 +124,7 @@ pub async fn create_access_key(
 
     let access_key = AccessKey::builder()
         .access_key_id(access_key_id_full)
-        .create_date(Some(created_at))
+        .create_date(created_at)
         .secret_access_key(secret_key)
         .status(StatusType::Active)
         .user_name(user_name.to_string())

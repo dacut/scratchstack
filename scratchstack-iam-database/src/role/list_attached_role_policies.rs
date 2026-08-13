@@ -155,8 +155,8 @@ pub async fn list_attached_role_policies(
         let arn = build_policy_arn(&partition, &row.account_id, &row.path, &row.managed_policy_name_cased)?;
         results.push(
             AttachedPolicy::builder()
-                .policy_arn(Some(arn.to_string()))
-                .policy_name(Some(row.managed_policy_name_cased))
+                .policy_arn(arn.to_string())
+                .policy_name(row.managed_policy_name_cased)
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct AttachedPolicy: {e}");
@@ -166,9 +166,9 @@ pub async fn list_attached_role_policies(
     }
 
     let mut builder = ListAttachedRolePoliciesResponse::builder();
-    builder = builder.attached_policies(results);
+    builder = builder.set_attached_policies(results);
     if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
+        builder = builder.is_truncated(true).marker(next_marker);
     }
 
     builder.build().map_err(|e| {
