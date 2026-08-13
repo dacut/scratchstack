@@ -115,8 +115,8 @@ pub async fn get_user(
 
         Some(
             AttachedPermissionsBoundary::builder()
-                .permissions_boundary_arn(Some(pb_arn.to_string()))
-                .permissions_boundary_type(Some(PermissionsBoundaryAttachmentType::Policy))
+                .permissions_boundary_arn(pb_arn.to_string())
+                .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct permissions boundary for user: {e}");
@@ -156,10 +156,10 @@ pub async fn get_user(
         .arn(arn.to_string())
         .create_date(created_at)
         .path(path)
-        .tags(tags)
+        .set_tags(tags)
         .user_id(format!("{}{}", IamResourceType::User.as_str(), user_id))
         .user_name(user_name_cased)
-        .permissions_boundary(permissions_boundary)
+        .set_permissions_boundary(permissions_boundary)
         .build()
         .map_err(|e| {
             log::error!("Failed to construct user object: {e}");

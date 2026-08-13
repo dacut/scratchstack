@@ -153,8 +153,8 @@ pub async fn list_roles(
 
             Some(
                 AttachedPermissionsBoundary::builder()
-                    .permissions_boundary_arn(Some(pb_arn.to_string()))
-                    .permissions_boundary_type(Some(PermissionsBoundaryAttachmentType::Policy))
+                    .permissions_boundary_arn(pb_arn.to_string())
+                    .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                     .build()
                     .map_err(|e| {
                         log::error!("Failed to construct permissions boundary for role: {e}");
@@ -168,15 +168,15 @@ pub async fn list_roles(
         results.push(
             Role::builder()
                 .arn(arn.to_string())
-                .assume_role_policy_document(Some(row.assume_role_policy_document))
+                .assume_role_policy_document(row.assume_role_policy_document)
                 .create_date(row.created_at)
-                .description(row.description)
-                .max_session_duration(row.max_session_duration)
+                .set_description(row.description)
+                .set_max_session_duration(row.max_session_duration)
                 .path(row.path)
-                .permissions_boundary(permissions_boundary)
+                .set_permissions_boundary(permissions_boundary)
                 .role_id(format!("{}{}", IamResourceType::Role.as_str(), row.role_id))
                 .role_name(row.role_name_cased)
-                .tags(Vec::<Tag>::new())
+                .set_tags(Vec::<Tag>::new())
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct role object: {e}");
@@ -186,9 +186,9 @@ pub async fn list_roles(
     }
 
     let mut builder = ListRolesResponse::builder();
-    builder = builder.roles(results);
+    builder = builder.set_roles(results);
     if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
+        builder = builder.is_truncated(true).marker(next_marker);
     }
 
     builder.build().map_err(|e| {

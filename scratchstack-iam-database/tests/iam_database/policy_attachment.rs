@@ -19,9 +19,9 @@ use {
 pub async fn test_attach_user_policy_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     AttachUserPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .user_name("alice".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .user_name("alice")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachUserPolicyInternalRequest")
         .execute(&mut tx)
@@ -33,9 +33,9 @@ pub async fn test_attach_user_policy_simple(pool: &sqlx::PgPool) {
 pub async fn test_attach_user_policy_idempotent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let req = AttachUserPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .user_name("alice".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .user_name("alice")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachUserPolicyInternalRequest");
     req.execute(&mut tx).await.expect("First attach must succeed");
@@ -46,9 +46,9 @@ pub async fn test_attach_user_policy_idempotent(pool: &sqlx::PgPool) {
 pub async fn test_attach_user_policy_nonexistent_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = AttachUserPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .user_name("alice".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy".to_string())
+        .account_id("123456789012")
+        .user_name("alice")
+        .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy")
         .build()
         .expect("Failed to build AttachUserPolicyInternalRequest")
         .execute(&mut tx)
@@ -60,9 +60,9 @@ pub async fn test_attach_user_policy_nonexistent_policy(pool: &sqlx::PgPool) {
 pub async fn test_attach_user_policy_nonexistent_user(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = AttachUserPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .user_name("nonexistent-user".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .user_name("nonexistent-user")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachUserPolicyInternalRequest")
         .execute(&mut tx)
@@ -76,9 +76,9 @@ pub async fn test_attach_user_policy_nonexistent_user(pool: &sqlx::PgPool) {
 pub async fn test_attach_group_policy_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     AttachGroupPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("Example-Group-1".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .group_name("Example-Group-1")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachGroupPolicyInternalRequest")
         .execute(&mut tx)
@@ -90,9 +90,9 @@ pub async fn test_attach_group_policy_simple(pool: &sqlx::PgPool) {
 pub async fn test_attach_group_policy_idempotent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let req = AttachGroupPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("Example-Group-1".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .group_name("Example-Group-1")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachGroupPolicyInternalRequest");
     req.execute(&mut tx).await.expect("First attach must succeed");
@@ -103,9 +103,9 @@ pub async fn test_attach_group_policy_idempotent(pool: &sqlx::PgPool) {
 pub async fn test_attach_group_policy_nonexistent_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = AttachGroupPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("Example-Group-1".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy".to_string())
+        .account_id("123456789012")
+        .group_name("Example-Group-1")
+        .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy")
         .build()
         .expect("Failed to build AttachGroupPolicyInternalRequest")
         .execute(&mut tx)
@@ -117,9 +117,9 @@ pub async fn test_attach_group_policy_nonexistent_policy(pool: &sqlx::PgPool) {
 pub async fn test_attach_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = AttachGroupPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("NonexistentGroup".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .group_name("NonexistentGroup")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachGroupPolicyInternalRequest")
         .execute(&mut tx)
@@ -133,9 +133,9 @@ pub async fn test_attach_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
 pub async fn test_attach_role_policy_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     AttachRolePolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .role_name("Example-Role-1".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .role_name("Example-Role-1")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -147,9 +147,9 @@ pub async fn test_attach_role_policy_simple(pool: &sqlx::PgPool) {
 pub async fn test_attach_role_policy_idempotent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let req = AttachRolePolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .role_name("Example-Role-1".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .role_name("Example-Role-1")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachRolePolicyInternalRequest");
     req.execute(&mut tx).await.expect("First attach must succeed");
@@ -160,9 +160,9 @@ pub async fn test_attach_role_policy_idempotent(pool: &sqlx::PgPool) {
 pub async fn test_attach_role_policy_nonexistent_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = AttachRolePolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .role_name("Example-Role-1".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy".to_string())
+        .account_id("123456789012")
+        .role_name("Example-Role-1")
+        .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy")
         .build()
         .expect("Failed to build AttachRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -174,9 +174,9 @@ pub async fn test_attach_role_policy_nonexistent_policy(pool: &sqlx::PgPool) {
 pub async fn test_attach_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = AttachRolePolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .role_name("nonexistent-role".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .role_name("nonexistent-role")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -190,18 +190,18 @@ pub async fn test_attach_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
 pub async fn test_detach_user_policy_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     AttachUserPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .user_name("alice".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .user_name("alice")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachUserPolicyInternalRequest")
         .execute(&mut tx)
         .await
         .expect("Failed to attach policy to user");
     DetachUserPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .user_name("alice".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .user_name("alice")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachUserPolicyInternalRequest")
         .execute(&mut tx)
@@ -213,9 +213,9 @@ pub async fn test_detach_user_policy_simple(pool: &sqlx::PgPool) {
 pub async fn test_detach_user_policy_not_attached(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DetachUserPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .user_name("alice".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .user_name("alice")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachUserPolicyInternalRequest")
         .execute(&mut tx)
@@ -228,9 +228,9 @@ pub async fn test_detach_user_policy_not_attached(pool: &sqlx::PgPool) {
 pub async fn test_detach_user_policy_nonexistent_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DetachUserPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .user_name("alice".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy".to_string())
+        .account_id("123456789012")
+        .user_name("alice")
+        .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy")
         .build()
         .expect("Failed to build DetachUserPolicyInternalRequest")
         .execute(&mut tx)
@@ -243,9 +243,9 @@ pub async fn test_detach_user_policy_nonexistent_policy(pool: &sqlx::PgPool) {
 pub async fn test_detach_user_policy_nonexistent_user(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DetachUserPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .user_name("nonexistent-user".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .user_name("nonexistent-user")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachUserPolicyInternalRequest")
         .execute(&mut tx)
@@ -260,18 +260,18 @@ pub async fn test_detach_user_policy_nonexistent_user(pool: &sqlx::PgPool) {
 pub async fn test_detach_group_policy_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     AttachGroupPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("Example-Group-1".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .group_name("Example-Group-1")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachGroupPolicyInternalRequest")
         .execute(&mut tx)
         .await
         .expect("Failed to attach policy to group");
     DetachGroupPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("Example-Group-1".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .group_name("Example-Group-1")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachGroupPolicyInternalRequest")
         .execute(&mut tx)
@@ -285,18 +285,18 @@ pub async fn test_detach_group_policy_not_attached(pool: &sqlx::PgPool) {
     // Seed data has Example-Managed-Policy-1 attached to Example-Group-1, so detach it first
     // to set up the "not attached" state, then verify a second detach fails.
     DetachGroupPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("Example-Group-1".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .group_name("Example-Group-1")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachGroupPolicyInternalRequest")
         .execute(&mut tx)
         .await
         .expect("Failed to detach seed attachment");
     let err = DetachGroupPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("Example-Group-1".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .group_name("Example-Group-1")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachGroupPolicyInternalRequest")
         .execute(&mut tx)
@@ -309,9 +309,9 @@ pub async fn test_detach_group_policy_not_attached(pool: &sqlx::PgPool) {
 pub async fn test_detach_group_policy_nonexistent_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DetachGroupPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("Example-Group-1".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy".to_string())
+        .account_id("123456789012")
+        .group_name("Example-Group-1")
+        .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy")
         .build()
         .expect("Failed to build DetachGroupPolicyInternalRequest")
         .execute(&mut tx)
@@ -324,9 +324,9 @@ pub async fn test_detach_group_policy_nonexistent_policy(pool: &sqlx::PgPool) {
 pub async fn test_detach_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DetachGroupPolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("NonexistentGroup".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .group_name("NonexistentGroup")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachGroupPolicyInternalRequest")
         .execute(&mut tx)
@@ -341,18 +341,18 @@ pub async fn test_detach_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
 pub async fn test_detach_role_policy_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     AttachRolePolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .role_name("Example-Role-1".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .role_name("Example-Role-1")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachRolePolicyInternalRequest")
         .execute(&mut tx)
         .await
         .expect("Failed to attach policy to role");
     DetachRolePolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .role_name("Example-Role-1".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .role_name("Example-Role-1")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -366,18 +366,18 @@ pub async fn test_detach_role_policy_not_attached(pool: &sqlx::PgPool) {
     // Seed data has Example-Managed-Policy-1 attached to Example-Role-1, so detach it first
     // to set up the "not attached" state, then verify a second detach fails.
     DetachRolePolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .role_name("Example-Role-1".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .role_name("Example-Role-1")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachRolePolicyInternalRequest")
         .execute(&mut tx)
         .await
         .expect("Failed to detach seed attachment");
     let err = DetachRolePolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .role_name("Example-Role-1".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .role_name("Example-Role-1")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -390,9 +390,9 @@ pub async fn test_detach_role_policy_not_attached(pool: &sqlx::PgPool) {
 pub async fn test_detach_role_policy_nonexistent_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DetachRolePolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .role_name("Example-Role-1".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy".to_string())
+        .account_id("123456789012")
+        .role_name("Example-Role-1")
+        .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy")
         .build()
         .expect("Failed to build DetachRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -405,9 +405,9 @@ pub async fn test_detach_role_policy_nonexistent_policy(pool: &sqlx::PgPool) {
 pub async fn test_detach_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DetachRolePolicyInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .role_name("nonexistent-role".to_string())
-        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .account_id("123456789012")
+        .role_name("nonexistent-role")
+        .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachRolePolicyInternalRequest")
         .execute(&mut tx)
@@ -423,8 +423,8 @@ pub async fn test_detach_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
 pub async fn test_list_attached_user_policies_seed(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAttachedUserPoliciesInternalRequest::builder()
-        .account_id("210987654321".to_string())
-        .user_name("Example-User-2".to_string())
+        .account_id("210987654321")
+        .user_name("Example-User-2")
         .build()
         .expect("Failed to build ListAttachedUserPoliciesInternalRequest")
         .execute(&mut tx)
@@ -445,8 +445,8 @@ pub async fn test_list_attached_user_policies_seed(pool: &sqlx::PgPool) {
 pub async fn test_list_attached_user_policies_empty(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAttachedUserPoliciesInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .user_name("alice".to_string())
+        .account_id("123456789012")
+        .user_name("alice")
         .build()
         .expect("Failed to build ListAttachedUserPoliciesInternalRequest")
         .execute(&mut tx)
@@ -459,8 +459,8 @@ pub async fn test_list_attached_user_policies_empty(pool: &sqlx::PgPool) {
 pub async fn test_list_attached_user_policies_nonexistent_user(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = ListAttachedUserPoliciesInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .user_name("no-such-user".to_string())
+        .account_id("123456789012")
+        .user_name("no-such-user")
         .build()
         .expect("Failed to build ListAttachedUserPoliciesInternalRequest")
         .execute(&mut tx)
@@ -474,9 +474,9 @@ pub async fn test_list_attached_user_policies_nonexistent_user(pool: &sqlx::PgPo
 pub async fn test_list_attached_user_policies_path_prefix(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAttachedUserPoliciesInternalRequest::builder()
-        .account_id("210987654321".to_string())
-        .user_name("Example-User-2".to_string())
-        .path_prefix(Some("/nomatch/".to_string()))
+        .account_id("210987654321")
+        .user_name("Example-User-2")
+        .path_prefix("/nomatch/")
         .build()
         .expect("Failed to build ListAttachedUserPoliciesInternalRequest")
         .execute(&mut tx)
@@ -492,8 +492,8 @@ pub async fn test_list_attached_user_policies_pagination(pool: &sqlx::PgPool) {
 
     // Create three customer-managed policies and attach all three to attach-test-user-2.
     CreateUserInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .user_name("attach-test-user-2".to_string())
+        .account_id("123456789012")
+        .user_name("attach-test-user-2")
         .build()
         .expect("Failed to build CreateUserInternalRequest")
         .execute(&mut tx)
@@ -502,7 +502,7 @@ pub async fn test_list_attached_user_policies_pagination(pool: &sqlx::PgPool) {
 
     for name in ["Pagination-Policy-A", "Pagination-Policy-B", "Pagination-Policy-C"] {
         CreatePolicyInternalRequest::builder()
-            .account_id("123456789012".to_string())
+            .account_id("123456789012")
             .policy_name(name.to_string())
             .policy_document(VALID_POLICY_DOCUMENT.to_string())
             .build()
@@ -511,8 +511,8 @@ pub async fn test_list_attached_user_policies_pagination(pool: &sqlx::PgPool) {
             .await
             .unwrap_or_else(|e| panic!("Failed to create policy {name}: {e:?}"));
         AttachUserPolicyInternalRequest::builder()
-            .account_id("123456789012".to_string())
-            .user_name("attach-test-user-2".to_string())
+            .account_id("123456789012")
+            .user_name("attach-test-user-2")
             .policy_arn(format!("arn:aws:iam::123456789012:policy/{name}"))
             .build()
             .expect("Failed to build AttachUserPolicyInternalRequest")
@@ -523,9 +523,9 @@ pub async fn test_list_attached_user_policies_pagination(pool: &sqlx::PgPool) {
 
     // First page (max_items=2) should return exactly 2 policies and a continuation marker.
     let page1 = ListAttachedUserPoliciesInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .user_name("attach-test-user-2".to_string())
-        .max_items(Some(2))
+        .account_id("123456789012")
+        .user_name("attach-test-user-2")
+        .max_items(2)
         .build()
         .expect("Failed to build ListAttachedUserPoliciesInternalRequest")
         .execute(&mut tx)
@@ -537,10 +537,10 @@ pub async fn test_list_attached_user_policies_pagination(pool: &sqlx::PgPool) {
 
     // Second page should return the remaining 1 policy and no marker.
     let page2 = ListAttachedUserPoliciesInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .user_name("attach-test-user-2".to_string())
-        .max_items(Some(2))
-        .marker(Some(marker))
+        .account_id("123456789012")
+        .user_name("attach-test-user-2")
+        .max_items(2)
+        .marker(marker)
         .build()
         .expect("Failed to build ListAttachedUserPoliciesInternalRequest")
         .execute(&mut tx)
@@ -567,8 +567,8 @@ pub async fn test_list_attached_user_policies_pagination(pool: &sqlx::PgPool) {
 pub async fn test_list_attached_group_policies_seed(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAttachedGroupPoliciesInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("Example-Group-1".to_string())
+        .account_id("123456789012")
+        .group_name("Example-Group-1")
         .build()
         .expect("Failed to build ListAttachedGroupPoliciesInternalRequest")
         .execute(&mut tx)
@@ -587,8 +587,8 @@ pub async fn test_list_attached_group_policies_seed(pool: &sqlx::PgPool) {
 pub async fn test_list_attached_group_policies_nonexistent_group(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = ListAttachedGroupPoliciesInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .group_name("NoSuchGroup".to_string())
+        .account_id("123456789012")
+        .group_name("NoSuchGroup")
         .build()
         .expect("Failed to build ListAttachedGroupPoliciesInternalRequest")
         .execute(&mut tx)
@@ -603,8 +603,8 @@ pub async fn test_list_attached_group_policies_nonexistent_group(pool: &sqlx::Pg
 pub async fn test_list_attached_role_policies_seed(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAttachedRolePoliciesInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .role_name("Example-Role-1".to_string())
+        .account_id("123456789012")
+        .role_name("Example-Role-1")
         .build()
         .expect("Failed to build ListAttachedRolePoliciesInternalRequest")
         .execute(&mut tx)
@@ -623,8 +623,8 @@ pub async fn test_list_attached_role_policies_seed(pool: &sqlx::PgPool) {
 pub async fn test_list_attached_role_policies_nonexistent_role(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = ListAttachedRolePoliciesInternalRequest::builder()
-        .account_id("123456789012".to_string())
-        .role_name("no-such-role".to_string())
+        .account_id("123456789012")
+        .role_name("no-such-role")
         .build()
         .expect("Failed to build ListAttachedRolePoliciesInternalRequest")
         .execute(&mut tx)

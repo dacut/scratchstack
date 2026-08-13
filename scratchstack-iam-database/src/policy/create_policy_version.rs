@@ -45,13 +45,13 @@ pub async fn create_policy_version(
         Ok(arn) => arn,
         Err(e) => {
             log::info!("Failed to parse policy ARN: {e}");
-            return Err(ValidationError::builder().message("Invalid policy ARN".to_string()).build().into());
+            return Err(ValidationError::builder().message("Invalid policy ARN").build().into());
         }
     };
 
     if arn.resource_type() != ARN_RESOURCE_TYPE_POLICY {
         return Err(ValidationError::builder()
-            .message("Policy ARN must have a resource that starts with \"policy/\"".to_string())
+            .message("Policy ARN must have a resource that starts with \"policy/\"")
             .build()
             .into());
     }
@@ -154,10 +154,10 @@ pub async fn create_policy_version(
 
     let version_id = format!("v{new_version}");
     let policy_version = PolicyVersion::builder()
-        .create_date(Some(created_at))
-        .document(Some(policy_document.to_string()))
-        .is_default_version(Some(set_as_default))
-        .version_id(Some(version_id))
+        .create_date(created_at)
+        .document(policy_document.to_string())
+        .is_default_version(set_as_default)
+        .version_id(version_id)
         .build()
         .map_err(|e| {
             log::error!("Failed to construct PolicyVersion object: {e}");

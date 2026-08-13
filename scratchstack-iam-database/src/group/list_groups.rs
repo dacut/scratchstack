@@ -139,9 +139,9 @@ pub async fn list_groups(
     }
 
     let mut builder = ListGroupsResponse::builder();
-    builder = builder.groups(results);
+    builder = builder.set_groups(results);
     if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
+        builder = builder.is_truncated(true).marker(next_marker);
     }
 
     builder.build().map_err(|e| {

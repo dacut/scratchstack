@@ -399,7 +399,7 @@ impl Runnable for CreateAccessKeyInternalCommand {
     {
         let request = CreateAccessKeyInternalRequest::builder()
             .account_id(self.account_id.clone())
-            .user_name(Some(self.user_name.clone()))
+            .user_name(self.user_name.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -417,9 +417,9 @@ impl Runnable for CreateUserInternalCommand {
             .account_id(self.account_id.clone())
             .path(self.path.clone())
             .user_name(self.user_name.clone())
-            .permissions_boundary(self.permissions_boundary.clone());
+            .set_permissions_boundary(self.permissions_boundary.clone());
         let tags = tags_from_shorthand(&self.tags)?;
-        builder = builder.tags(tags);
+        builder = builder.set_tags(tags);
 
         let request = builder.build()?;
         execute_in_transaction(cli, vars, &request).await
@@ -437,7 +437,7 @@ impl Runnable for DeleteAccessKeyInternalCommand {
         let request = DeleteAccessKeyInternalRequest::builder()
             .account_id(self.account_id.clone())
             .access_key_id(self.access_key_id.clone())
-            .user_name(self.user_name.clone())
+            .set_user_name(self.user_name.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -518,7 +518,7 @@ impl Runnable for GetUserInternalCommand {
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
         let request = GetUserInternalRequest::builder()
-            .user_name(Some(self.user_name.clone()))
+            .user_name(self.user_name.clone())
             .account_id(self.account_id.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
@@ -552,9 +552,9 @@ impl Runnable for ListAccessKeysInternalCommand {
     {
         let request = ListAccessKeysInternalRequest::builder()
             .account_id(self.account_id.clone())
-            .user_name(Some(self.user_name.clone()))
-            .max_items(self.max_items)
-            .marker(self.marker.clone())
+            .user_name(self.user_name.clone())
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -571,9 +571,9 @@ impl Runnable for ListAttachedUserPoliciesInternalCommand {
         let request = ListAttachedUserPoliciesInternalRequest::builder()
             .account_id(self.account_id.clone())
             .user_name(self.user_name.clone())
-            .path_prefix(self.path_prefix.clone())
-            .max_items(self.max_items)
-            .marker(self.marker.clone())
+            .set_path_prefix(self.path_prefix.clone())
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -590,8 +590,8 @@ impl Runnable for ListUserPoliciesInternalCommand {
         let request = ListUserPoliciesInternalRequest::builder()
             .account_id(self.account_id.clone())
             .user_name(self.user_name.clone())
-            .max_items(self.max_items)
-            .marker(self.marker.clone())
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -645,7 +645,7 @@ impl Runnable for TagUserInternalCommand {
         let request = TagUserInternalRequest::builder()
             .account_id(self.account_id.clone())
             .user_name(self.user_name.clone())
-            .tags(tags)
+            .set_tags(tags)
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -662,7 +662,7 @@ impl Runnable for UntagUserInternalCommand {
         let request = UntagUserInternalRequest::builder()
             .account_id(self.account_id.clone())
             .user_name(self.user_name.clone())
-            .tag_keys(self.tag_keys.clone())
+            .set_tag_keys(self.tag_keys.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -680,7 +680,7 @@ impl Runnable for UpdateAccessKeyInternalCommand {
             .account_id(self.account_id.clone())
             .access_key_id(self.access_key_id.clone())
             .status(self.status)
-            .user_name(self.user_name.clone())
+            .set_user_name(self.user_name.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }

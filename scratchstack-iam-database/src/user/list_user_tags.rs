@@ -133,9 +133,9 @@ pub async fn list_user_tags(
     }
 
     let mut builder = ListUserTagsResponse::builder();
-    builder = builder.tags(results);
+    builder = builder.set_tags(results);
     if let Some(next_marker) = next_marker {
-        builder = builder.is_truncated(Some(true)).marker(Some(next_marker));
+        builder = builder.is_truncated(true).marker(next_marker);
     }
 
     builder.build().map_err(|e| {

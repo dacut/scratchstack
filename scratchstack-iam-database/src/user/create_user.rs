@@ -144,8 +144,8 @@ pub async fn create_user(
     let permissions_boundary = if let Some(pb) = permissions_boundary {
         Some(
             AttachedPermissionsBoundary::builder()
-                .permissions_boundary_arn(Some(pb.to_string()))
-                .permissions_boundary_type(Some(PermissionsBoundaryAttachmentType::Policy))
+                .permissions_boundary_arn(pb.to_string())
+                .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct permissions boundary for new user: {e}");
@@ -160,15 +160,15 @@ pub async fn create_user(
         .arn(arn.to_string())
         .create_date(created_at)
         .path(path.to_string())
-        .tags(tags.to_vec())
+        .set_tags(tags.to_vec())
         .user_id(user_id)
         .user_name(user_name.to_string())
-        .permissions_boundary(permissions_boundary)
+        .set_permissions_boundary(permissions_boundary)
         .build()
         .map_err(|e| {
             log::error!("Failed to construct user object for new user: {e}");
             internal_failure()
         })?;
 
-    Ok(CreateUserResponse::builder().user(Some(user)).build().unwrap())
+    Ok(CreateUserResponse::builder().user(user).build().unwrap())
 }

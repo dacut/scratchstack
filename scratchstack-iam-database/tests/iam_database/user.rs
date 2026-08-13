@@ -20,8 +20,8 @@ use {
 pub async fn test_create_user_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreateUserInternalRequest::builder()
-        .user_name("alice".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("alice")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateUserRequestInternal")
         .execute(&mut tx)
@@ -42,9 +42,9 @@ pub async fn test_create_user_simple(pool: &sqlx::PgPool) {
 pub async fn test_create_user_with_path(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreateUserInternalRequest::builder()
-        .user_name("bob".to_string())
-        .path(Some("/engineering/".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("bob")
+        .path("/engineering/")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateUserRequestInternal")
         .execute(&mut tx)
@@ -62,19 +62,11 @@ pub async fn test_create_user_with_path(pool: &sqlx::PgPool) {
 pub async fn test_create_user_with_tags(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreateUserInternalRequest::builder()
-        .user_name("carol".to_string())
-        .account_id("210987654321".to_string())
-        .tags(vec![
-            Tag::builder()
-                .key("Environment".to_string())
-                .value("Production".to_string())
-                .build()
-                .expect("Failed to build Environment tag"),
-            Tag::builder()
-                .key("Team".to_string())
-                .value("Engineering".to_string())
-                .build()
-                .expect("Failed to build Team tag"),
+        .user_name("carol")
+        .account_id("210987654321")
+        .set_tags(vec![
+            Tag::builder().key("Environment").value("Production").build().expect("Failed to build Environment tag"),
+            Tag::builder().key("Team").value("Engineering").build().expect("Failed to build Team tag"),
         ])
         .build()
         .expect("Failed to build CreateUserRequestInternal")
@@ -99,9 +91,9 @@ pub async fn test_create_user_with_permissions_boundary(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreateUserInternalRequest::builder()
-        .user_name("dave".to_string())
-        .account_id("123456789012".to_string())
-        .permissions_boundary(Some("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string()))
+        .user_name("dave")
+        .account_id("123456789012")
+        .permissions_boundary("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build CreateUserRequestInternal")
         .execute(&mut tx)
@@ -121,8 +113,8 @@ pub async fn test_create_user_duplicate_name(pool: &sqlx::PgPool) {
     // "alice" was committed by test_create_user_simple; re-inserting it must fail.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = CreateUserInternalRequest::builder()
-        .user_name("alice".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("alice")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateUserRequestInternal")
         .execute(&mut tx)
@@ -134,10 +126,7 @@ pub async fn test_create_user_duplicate_name(pool: &sqlx::PgPool) {
 /// Building a request with an invalid user name must fail before touching the database.
 pub fn test_create_user_invalid_name() {
     // Spaces and `!` are not in the allowed character set.
-    let result = CreateUserInternalRequest::builder()
-        .user_name("bad name!".to_string())
-        .account_id("123456789012".to_string())
-        .build();
+    let result = CreateUserInternalRequest::builder().user_name("bad name!").account_id("123456789012").build();
     assert!(result.is_err(), "Building a request with an invalid user name must fail");
 }
 
@@ -145,8 +134,8 @@ pub fn test_create_user_invalid_name() {
 pub async fn test_create_user_nonexistent_account(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = CreateUserInternalRequest::builder()
-        .user_name("eve".to_string())
-        .account_id("999999999999".to_string())
+        .user_name("eve")
+        .account_id("999999999999")
         .build()
         .expect("Failed to build CreateUserRequestInternal")
         .execute(&mut tx)
@@ -159,9 +148,9 @@ pub async fn test_create_user_nonexistent_account(pool: &sqlx::PgPool) {
 pub async fn test_create_user_nonexistent_permissions_boundary(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = CreateUserInternalRequest::builder()
-        .user_name("frank".to_string())
-        .account_id("123456789012".to_string())
-        .permissions_boundary(Some("arn:aws:iam::123456789012:policy/NonExistentPolicy".to_string()))
+        .user_name("frank")
+        .account_id("123456789012")
+        .permissions_boundary("arn:aws:iam::123456789012:policy/NonExistentPolicy")
         .build()
         .expect("Failed to build CreateUserRequestInternal")
         .execute(&mut tx)
@@ -175,19 +164,11 @@ pub async fn test_tag_user(pool: &sqlx::PgPool) {
     // alice was created in account 123456789012 by test_create_user_simple.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     TagUserInternalRequest::builder()
-        .user_name("alice".to_string())
-        .account_id("123456789012".to_string())
-        .tags(vec![
-            Tag::builder()
-                .key("Dept".to_string())
-                .value("Engineering".to_string())
-                .build()
-                .expect("Failed to build tag"),
-            Tag::builder()
-                .key("CostCenter".to_string())
-                .value("1234".to_string())
-                .build()
-                .expect("Failed to build tag"),
+        .user_name("alice")
+        .account_id("123456789012")
+        .set_tags(vec![
+            Tag::builder().key("Dept").value("Engineering").build().expect("Failed to build tag"),
+            Tag::builder().key("CostCenter").value("1234").build().expect("Failed to build tag"),
         ])
         .build()
         .expect("Failed to build TagUserInternalRequest")
@@ -199,8 +180,8 @@ pub async fn test_tag_user(pool: &sqlx::PgPool) {
     // Verify tags via ListUserTags.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListUserTagsInternalRequest::builder()
-        .user_name("alice".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("alice")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListUserTagsInternalRequest")
         .execute(&mut tx)
@@ -220,11 +201,9 @@ pub async fn test_tag_user(pool: &sqlx::PgPool) {
 pub async fn test_tag_user_upsert(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     TagUserInternalRequest::builder()
-        .user_name("alice".to_string())
-        .account_id("123456789012".to_string())
-        .tags(vec![
-            Tag::builder().key("Dept".to_string()).value("Finance".to_string()).build().expect("Failed to build tag"),
-        ])
+        .user_name("alice")
+        .account_id("123456789012")
+        .set_tags(vec![Tag::builder().key("Dept").value("Finance").build().expect("Failed to build tag")])
         .build()
         .expect("Failed to build TagUserInternalRequest")
         .execute(&mut tx)
@@ -235,8 +214,8 @@ pub async fn test_tag_user_upsert(pool: &sqlx::PgPool) {
     // Verify the value was updated and the other tag is still present.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListUserTagsInternalRequest::builder()
-        .user_name("alice".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("alice")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListUserTagsInternalRequest")
         .execute(&mut tx)
@@ -255,11 +234,9 @@ pub async fn test_tag_user_upsert(pool: &sqlx::PgPool) {
 pub async fn test_tag_user_nonexistent_user(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = TagUserInternalRequest::builder()
-        .user_name("nonexistent".to_string())
-        .account_id("123456789012".to_string())
-        .tags(vec![
-            Tag::builder().key("Key".to_string()).value("Value".to_string()).build().expect("Failed to build tag"),
-        ])
+        .user_name("nonexistent")
+        .account_id("123456789012")
+        .set_tags(vec![Tag::builder().key("Key").value("Value").build().expect("Failed to build tag")])
         .build()
         .expect("Failed to build TagUserInternalRequest")
         .execute(&mut tx)
@@ -272,9 +249,9 @@ pub async fn test_tag_user_nonexistent_user(pool: &sqlx::PgPool) {
 pub async fn test_tag_user_empty_tags(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = TagUserInternalRequest::builder()
-        .user_name("alice".to_string())
-        .account_id("123456789012".to_string())
-        .tags(vec![])
+        .user_name("alice")
+        .account_id("123456789012")
+        .set_tags(vec![])
         .build()
         .expect("Failed to build TagUserInternalRequest")
         .execute(&mut tx)
@@ -288,9 +265,9 @@ pub async fn test_untag_user(pool: &sqlx::PgPool) {
     // alice currently has CostCenter and Dept tags from previous tests.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     UntagUserInternalRequest::builder()
-        .user_name("alice".to_string())
-        .account_id("123456789012".to_string())
-        .tag_keys(vec!["Dept".to_string()])
+        .user_name("alice")
+        .account_id("123456789012")
+        .set_tag_keys(vec!["Dept".to_string()])
         .build()
         .expect("Failed to build UntagUserInternalRequest")
         .execute(&mut tx)
@@ -301,8 +278,8 @@ pub async fn test_untag_user(pool: &sqlx::PgPool) {
     // Verify only CostCenter remains.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListUserTagsInternalRequest::builder()
-        .user_name("alice".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("alice")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListUserTagsInternalRequest")
         .execute(&mut tx)
@@ -319,9 +296,9 @@ pub async fn test_untag_user(pool: &sqlx::PgPool) {
 pub async fn test_untag_user_nonexistent_key(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     UntagUserInternalRequest::builder()
-        .user_name("alice".to_string())
-        .account_id("123456789012".to_string())
-        .tag_keys(vec!["NoSuchTag".to_string()])
+        .user_name("alice")
+        .account_id("123456789012")
+        .set_tag_keys(vec!["NoSuchTag".to_string()])
         .build()
         .expect("Failed to build UntagUserInternalRequest")
         .execute(&mut tx)
@@ -334,9 +311,9 @@ pub async fn test_untag_user_nonexistent_key(pool: &sqlx::PgPool) {
 pub async fn test_untag_user_empty_keys(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = UntagUserInternalRequest::builder()
-        .user_name("alice".to_string())
-        .account_id("123456789012".to_string())
-        .tag_keys(vec![])
+        .user_name("alice")
+        .account_id("123456789012")
+        .set_tag_keys(vec![])
         .build()
         .expect("Failed to build UntagUserInternalRequest")
         .execute(&mut tx)
@@ -349,9 +326,9 @@ pub async fn test_untag_user_empty_keys(pool: &sqlx::PgPool) {
 pub async fn test_untag_user_nonexistent_user(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = UntagUserInternalRequest::builder()
-        .user_name("nonexistent".to_string())
-        .account_id("123456789012".to_string())
-        .tag_keys(vec!["Key".to_string()])
+        .user_name("nonexistent")
+        .account_id("123456789012")
+        .set_tag_keys(vec!["Key".to_string()])
         .build()
         .expect("Failed to build UntagUserInternalRequest")
         .execute(&mut tx)
@@ -364,8 +341,8 @@ pub async fn test_untag_user_nonexistent_user(pool: &sqlx::PgPool) {
 pub async fn test_get_user_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetUserInternalRequest::builder()
-        .user_name(Some("bob".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetUserInternalRequest")
         .execute(&mut tx)
@@ -389,8 +366,8 @@ pub async fn test_get_user_simple(pool: &sqlx::PgPool) {
 pub async fn test_get_user_with_tags(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetUserInternalRequest::builder()
-        .user_name(Some("alice".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("alice")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetUserInternalRequest")
         .execute(&mut tx)
@@ -410,8 +387,8 @@ pub async fn test_get_user_with_tags(pool: &sqlx::PgPool) {
 pub async fn test_get_user_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = GetUserInternalRequest::builder()
-        .user_name(Some("nonexistent".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("nonexistent")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetUserInternalRequest")
         .execute(&mut tx)
@@ -424,7 +401,7 @@ pub async fn test_get_user_nonexistent(pool: &sqlx::PgPool) {
 pub async fn test_get_user_no_user_name(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = GetUserInternalRequest::builder()
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetUserInternalRequest")
         .execute(&mut tx)
@@ -440,8 +417,8 @@ pub async fn test_delete_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
     // verifies the PB exists by name, but we just need any seeded managed_policy_id here).
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateUserInternalRequest::builder()
-        .user_name("DeleteMePbUser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("DeleteMePbUser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateUserInternalRequest")
         .execute(&mut tx)
@@ -472,8 +449,8 @@ pub async fn test_delete_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeleteUserPermissionsBoundaryInternalRequest::builder()
-        .user_name("DeleteMePbUser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("DeleteMePbUser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserPermissionsBoundaryInternalRequest")
         .execute(&mut tx)
@@ -492,8 +469,8 @@ pub async fn test_delete_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
     // Clean up.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeleteUserInternalRequest::builder()
-        .user_name("DeleteMePbUser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("DeleteMePbUser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserInternalRequest")
         .execute(&mut tx)
@@ -507,8 +484,8 @@ pub async fn test_delete_user_permissions_boundary_no_boundary(pool: &sqlx::PgPo
     // bob was committed earlier in test_create_user_with_path with no PB.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeleteUserPermissionsBoundaryInternalRequest::builder()
-        .user_name("bob".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserPermissionsBoundaryInternalRequest")
         .execute(&mut tx)
@@ -521,8 +498,8 @@ pub async fn test_delete_user_permissions_boundary_no_boundary(pool: &sqlx::PgPo
 pub async fn test_delete_user_permissions_boundary_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteUserPermissionsBoundaryInternalRequest::builder()
-        .user_name("nosuchpbuser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("nosuchpbuser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserPermissionsBoundaryInternalRequest")
         .execute(&mut tx)
@@ -536,8 +513,8 @@ pub async fn test_delete_user_permissions_boundary_nonexistent(pool: &sqlx::PgPo
 /// touching the database.
 pub fn test_delete_user_permissions_boundary_invalid_name() {
     let result = DeleteUserPermissionsBoundaryInternalRequest::builder()
-        .user_name("bad name!".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("bad name!")
+        .account_id("123456789012")
         .build();
     assert!(result.is_err(), "Building a request with an invalid user name must fail");
 }
@@ -549,16 +526,16 @@ pub async fn test_put_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateUserInternalRequest::builder()
-        .user_name("PutMePbUser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("PutMePbUser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateUserInternalRequest")
         .execute(&mut tx)
         .await
         .expect("Failed to create PutMePbUser");
     PutUserPermissionsBoundaryInternalRequest::builder()
-        .user_name("PutMePbUser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("PutMePbUser")
+        .account_id("123456789012")
         .permissions_boundary(pb_arn.to_string())
         .build()
         .expect("Failed to build PutUserPermissionsBoundaryInternalRequest")
@@ -569,8 +546,8 @@ pub async fn test_put_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetUserInternalRequest::builder()
-        .user_name(Some("PutMePbUser".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("PutMePbUser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build GetUserInternalRequest")
         .execute(&mut tx)
@@ -583,8 +560,8 @@ pub async fn test_put_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
     // Calling Put again on a user that already has a PB must succeed.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     PutUserPermissionsBoundaryInternalRequest::builder()
-        .user_name("PutMePbUser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("PutMePbUser")
+        .account_id("123456789012")
         .permissions_boundary(pb_arn.to_string())
         .build()
         .expect("Failed to build PutUserPermissionsBoundaryInternalRequest")
@@ -596,16 +573,16 @@ pub async fn test_put_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
     // Clean up.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeleteUserPermissionsBoundaryInternalRequest::builder()
-        .user_name("PutMePbUser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("PutMePbUser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserPermissionsBoundaryInternalRequest")
         .execute(&mut tx)
         .await
         .expect("Failed to clear PutMePbUser PB");
     DeleteUserInternalRequest::builder()
-        .user_name("PutMePbUser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("PutMePbUser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserInternalRequest")
         .execute(&mut tx)
@@ -618,9 +595,9 @@ pub async fn test_put_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
 pub async fn test_put_user_permissions_boundary_nonexistent_user(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = PutUserPermissionsBoundaryInternalRequest::builder()
-        .user_name("nosuchputpbuser".to_string())
-        .account_id("123456789012".to_string())
-        .permissions_boundary("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .user_name("nosuchputpbuser")
+        .account_id("123456789012")
+        .permissions_boundary("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build PutUserPermissionsBoundaryInternalRequest")
         .execute(&mut tx)
@@ -635,9 +612,9 @@ pub async fn test_put_user_permissions_boundary_nonexistent_user(pool: &sqlx::Pg
 pub async fn test_put_user_permissions_boundary_nonexistent_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = PutUserPermissionsBoundaryInternalRequest::builder()
-        .user_name("bob".to_string())
-        .account_id("123456789012".to_string())
-        .permissions_boundary("arn:test-partition:iam::123456789012:policy/NoSuchPolicy".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
+        .permissions_boundary("arn:test-partition:iam::123456789012:policy/NoSuchPolicy")
         .build()
         .expect("Failed to build PutUserPermissionsBoundaryInternalRequest")
         .execute(&mut tx)
@@ -651,9 +628,9 @@ pub async fn test_put_user_permissions_boundary_nonexistent_policy(pool: &sqlx::
 pub async fn test_put_user_permissions_boundary_invalid_arn(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = PutUserPermissionsBoundaryInternalRequest::builder()
-        .user_name("bob".to_string())
-        .account_id("123456789012".to_string())
-        .permissions_boundary("not-an-arn-but-long-enough-to-pass".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
+        .permissions_boundary("not-an-arn-but-long-enough-to-pass")
         .build()
         .expect("Failed to build PutUserPermissionsBoundaryInternalRequest")
         .execute(&mut tx)
@@ -667,9 +644,9 @@ pub async fn test_put_user_permissions_boundary_invalid_arn(pool: &sqlx::PgPool)
 /// touching the database.
 pub fn test_put_user_permissions_boundary_invalid_name() {
     let result = PutUserPermissionsBoundaryInternalRequest::builder()
-        .user_name("bad name!".to_string())
-        .account_id("123456789012".to_string())
-        .permissions_boundary("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1".to_string())
+        .user_name("bad name!")
+        .account_id("123456789012")
+        .permissions_boundary("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1")
         .build();
     assert!(result.is_err(), "Building a request with an invalid user name must fail");
 }
@@ -693,9 +670,9 @@ pub async fn test_put_user_policy_simple(pool: &sqlx::PgPool) {
     // bob was committed earlier; reuse him.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     PutUserPolicyInternalRequest::builder()
-        .user_name("bob".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineRead".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
+        .policy_name("InlineRead")
         .policy_document(INLINE_POLICY_S3.to_string())
         .build()
         .expect("Failed to build PutUserPolicyInternalRequest")
@@ -723,9 +700,9 @@ pub async fn test_put_user_policy_simple(pool: &sqlx::PgPool) {
 pub async fn test_put_user_policy_replaces(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     PutUserPolicyInternalRequest::builder()
-        .user_name("bob".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineRead".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
+        .policy_name("InlineRead")
         .policy_document(INLINE_POLICY_EC2.to_string())
         .build()
         .expect("Failed to build PutUserPolicyInternalRequest")
@@ -764,9 +741,9 @@ pub async fn test_put_user_policy_replaces(pool: &sqlx::PgPool) {
 pub async fn test_put_user_policy_additional_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     PutUserPolicyInternalRequest::builder()
-        .user_name("bob".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineCompute".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
+        .policy_name("InlineCompute")
         .policy_document(INLINE_POLICY_S3.to_string())
         .build()
         .expect("Failed to build PutUserPolicyInternalRequest")
@@ -792,9 +769,9 @@ pub async fn test_put_user_policy_additional_policy(pool: &sqlx::PgPool) {
 pub async fn test_put_user_policy_invalid_principal_accepted(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     PutUserPolicyInternalRequest::builder()
-        .user_name("bob".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineWithMissingPrincipal".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
+        .policy_name("InlineWithMissingPrincipal")
         .policy_document(INLINE_POLICY_UNKNOWN_AWS_PRINCIPAL.to_string())
         .build()
         .expect("Failed to build PutUserPolicyInternalRequest")
@@ -808,10 +785,10 @@ pub async fn test_put_user_policy_invalid_principal_accepted(pool: &sqlx::PgPool
 pub async fn test_put_user_policy_invalid_document(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = PutUserPolicyInternalRequest::builder()
-        .user_name("bob".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineBroken".to_string())
-        .policy_document("{ not valid aspen json }".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
+        .policy_name("InlineBroken")
+        .policy_document("{ not valid aspen json }")
         .build()
         .expect("Failed to build PutUserPolicyInternalRequest")
         .execute(&mut tx)
@@ -828,9 +805,9 @@ pub async fn test_put_user_policy_invalid_document(pool: &sqlx::PgPool) {
 pub async fn test_put_user_policy_nonexistent_user(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = PutUserPolicyInternalRequest::builder()
-        .user_name("nosuchputpolicyuser".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("AnyName".to_string())
+        .user_name("nosuchputpolicyuser")
+        .account_id("123456789012")
+        .policy_name("AnyName")
         .policy_document(INLINE_POLICY_S3.to_string())
         .build()
         .expect("Failed to build PutUserPolicyInternalRequest")
@@ -845,9 +822,9 @@ pub async fn test_put_user_policy_nonexistent_user(pool: &sqlx::PgPool) {
 /// database.
 pub fn test_put_user_policy_invalid_name() {
     let result = PutUserPolicyInternalRequest::builder()
-        .user_name("bad name!".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("AnyName".to_string())
+        .user_name("bad name!")
+        .account_id("123456789012")
+        .policy_name("AnyName")
         .policy_document(INLINE_POLICY_S3.to_string())
         .build();
     assert!(result.is_err(), "Building a request with an invalid user name must fail");
@@ -857,9 +834,9 @@ pub fn test_put_user_policy_invalid_name() {
 pub async fn test_get_user_policy_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetUserPolicyInternalRequest::builder()
-        .user_name("bob".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineRead".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
+        .policy_name("InlineRead")
         .build()
         .expect("Failed to build GetUserPolicyInternalRequest")
         .execute(&mut tx)
@@ -877,9 +854,9 @@ pub async fn test_get_user_policy_simple(pool: &sqlx::PgPool) {
 pub async fn test_get_user_policy_case_insensitive_lookup(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = GetUserPolicyInternalRequest::builder()
-        .user_name("BOB".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("INLINEREAD".to_string())
+        .user_name("BOB")
+        .account_id("123456789012")
+        .policy_name("INLINEREAD")
         .build()
         .expect("Failed to build GetUserPolicyInternalRequest")
         .execute(&mut tx)
@@ -894,9 +871,9 @@ pub async fn test_get_user_policy_case_insensitive_lookup(pool: &sqlx::PgPool) {
 pub async fn test_get_user_policy_nonexistent_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = GetUserPolicyInternalRequest::builder()
-        .user_name("bob".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("NotAttached".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
+        .policy_name("NotAttached")
         .build()
         .expect("Failed to build GetUserPolicyInternalRequest")
         .execute(&mut tx)
@@ -910,9 +887,9 @@ pub async fn test_get_user_policy_nonexistent_policy(pool: &sqlx::PgPool) {
 pub async fn test_get_user_policy_nonexistent_user(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = GetUserPolicyInternalRequest::builder()
-        .user_name("nosuchgetpolicyuser".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("AnyName".to_string())
+        .user_name("nosuchgetpolicyuser")
+        .account_id("123456789012")
+        .policy_name("AnyName")
         .build()
         .expect("Failed to build GetUserPolicyInternalRequest")
         .execute(&mut tx)
@@ -926,9 +903,9 @@ pub async fn test_get_user_policy_nonexistent_user(pool: &sqlx::PgPool) {
 /// database.
 pub fn test_get_user_policy_invalid_name() {
     let result = GetUserPolicyInternalRequest::builder()
-        .user_name("bad name!".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("AnyName".to_string())
+        .user_name("bad name!")
+        .account_id("123456789012")
+        .policy_name("AnyName")
         .build();
     assert!(result.is_err(), "Building a request with an invalid user name must fail");
 }
@@ -938,8 +915,8 @@ pub fn test_get_user_policy_invalid_name() {
 pub async fn test_list_user_policies_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListUserPoliciesInternalRequest::builder()
-        .user_name("bob".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListUserPoliciesInternalRequest")
         .execute(&mut tx)
@@ -959,16 +936,16 @@ pub async fn test_list_user_policies_simple(pool: &sqlx::PgPool) {
 pub async fn test_list_user_policies_empty(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateUserInternalRequest::builder()
-        .user_name("ListPoliciesEmptyUser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("ListPoliciesEmptyUser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateUserInternalRequest")
         .execute(&mut tx)
         .await
         .expect("Failed to create ListPoliciesEmptyUser");
     let resp = ListUserPoliciesInternalRequest::builder()
-        .user_name("ListPoliciesEmptyUser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("ListPoliciesEmptyUser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListUserPoliciesInternalRequest")
         .execute(&mut tx)
@@ -978,8 +955,8 @@ pub async fn test_list_user_policies_empty(pool: &sqlx::PgPool) {
     assert_eq!(resp.is_truncated, None);
 
     DeleteUserInternalRequest::builder()
-        .user_name("ListPoliciesEmptyUser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("ListPoliciesEmptyUser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserInternalRequest")
         .execute(&mut tx)
@@ -992,9 +969,9 @@ pub async fn test_list_user_policies_empty(pool: &sqlx::PgPool) {
 pub async fn test_list_user_policies_pagination(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let page1 = ListUserPoliciesInternalRequest::builder()
-        .user_name("bob".to_string())
-        .account_id("123456789012".to_string())
-        .max_items(Some(2))
+        .user_name("bob")
+        .account_id("123456789012")
+        .max_items(2)
         .build()
         .expect("Failed to build ListUserPoliciesInternalRequest")
         .execute(&mut tx)
@@ -1005,10 +982,10 @@ pub async fn test_list_user_policies_pagination(pool: &sqlx::PgPool) {
     let marker = page1.marker.clone().expect("Expected a pagination marker");
 
     let page2 = ListUserPoliciesInternalRequest::builder()
-        .user_name("bob".to_string())
-        .account_id("123456789012".to_string())
-        .max_items(Some(2))
-        .marker(Some(marker))
+        .user_name("bob")
+        .account_id("123456789012")
+        .max_items(2)
+        .marker(marker)
         .build()
         .expect("Failed to build ListUserPoliciesInternalRequest")
         .execute(&mut tx)
@@ -1025,8 +1002,8 @@ pub async fn test_list_user_policies_pagination(pool: &sqlx::PgPool) {
 pub async fn test_list_user_policies_nonexistent_user(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = ListUserPoliciesInternalRequest::builder()
-        .user_name("nosuchlistpoliciesuser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("nosuchlistpoliciesuser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListUserPoliciesInternalRequest")
         .execute(&mut tx)
@@ -1039,10 +1016,7 @@ pub async fn test_list_user_policies_nonexistent_user(pool: &sqlx::PgPool) {
 /// Building a ListUserPolicies request with an invalid user name must fail before touching the
 /// database.
 pub fn test_list_user_policies_invalid_name() {
-    let result = ListUserPoliciesInternalRequest::builder()
-        .user_name("bad name!".to_string())
-        .account_id("123456789012".to_string())
-        .build();
+    let result = ListUserPoliciesInternalRequest::builder().user_name("bad name!").account_id("123456789012").build();
     assert!(result.is_err(), "Building a request with an invalid user name must fail");
 }
 
@@ -1051,9 +1025,9 @@ pub async fn test_delete_user_policy_simple(pool: &sqlx::PgPool) {
     // The "InlineWithMissingPrincipal" inline policy was added in test_put_user_policy_invalid_principal_accepted.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     DeleteUserPolicyInternalRequest::builder()
-        .user_name("bob".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("InlineWithMissingPrincipal".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
+        .policy_name("InlineWithMissingPrincipal")
         .build()
         .expect("Failed to build DeleteUserPolicyInternalRequest")
         .execute(&mut tx)
@@ -1091,9 +1065,9 @@ pub async fn test_delete_user_policy_simple(pool: &sqlx::PgPool) {
 pub async fn test_delete_user_policy_nonexistent_policy(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteUserPolicyInternalRequest::builder()
-        .user_name("bob".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("NotAttached".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
+        .policy_name("NotAttached")
         .build()
         .expect("Failed to build DeleteUserPolicyInternalRequest")
         .execute(&mut tx)
@@ -1107,9 +1081,9 @@ pub async fn test_delete_user_policy_nonexistent_policy(pool: &sqlx::PgPool) {
 pub async fn test_delete_user_policy_nonexistent_user(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteUserPolicyInternalRequest::builder()
-        .user_name("nosuchdeletepolicyuser".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("AnyName".to_string())
+        .user_name("nosuchdeletepolicyuser")
+        .account_id("123456789012")
+        .policy_name("AnyName")
         .build()
         .expect("Failed to build DeleteUserPolicyInternalRequest")
         .execute(&mut tx)
@@ -1123,9 +1097,9 @@ pub async fn test_delete_user_policy_nonexistent_user(pool: &sqlx::PgPool) {
 /// database.
 pub fn test_delete_user_policy_invalid_name() {
     let result = DeleteUserPolicyInternalRequest::builder()
-        .user_name("bad name!".to_string())
-        .account_id("123456789012".to_string())
-        .policy_name("AnyName".to_string())
+        .user_name("bad name!")
+        .account_id("123456789012")
+        .policy_name("AnyName")
         .build();
     assert!(result.is_err(), "Building a request with an invalid user name must fail");
 }
@@ -1134,8 +1108,8 @@ pub fn test_delete_user_policy_invalid_name() {
 pub async fn test_delete_user_attached_policy_fails(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateUserInternalRequest::builder()
-        .user_name("DeleteMeAttachedUser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("DeleteMeAttachedUser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateUserInternalRequest")
         .execute(&mut tx)
@@ -1159,8 +1133,8 @@ pub async fn test_delete_user_attached_policy_fails(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteUserInternalRequest::builder()
-        .user_name("DeleteMeAttachedUser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("DeleteMeAttachedUser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserInternalRequest")
         .execute(&mut tx)
@@ -1177,8 +1151,8 @@ pub async fn test_delete_user_attached_policy_fails(pool: &sqlx::PgPool) {
         .await
         .expect("Failed to detach managed policy");
     DeleteUserInternalRequest::builder()
-        .user_name("DeleteMeAttachedUser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("DeleteMeAttachedUser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserInternalRequest")
         .execute(&mut tx)
@@ -1191,8 +1165,8 @@ pub async fn test_delete_user_attached_policy_fails(pool: &sqlx::PgPool) {
 pub async fn test_delete_user_inline_policy_fails(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     CreateUserInternalRequest::builder()
-        .user_name("DeleteMeInlineUser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("DeleteMeInlineUser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateUserInternalRequest")
         .execute(&mut tx)
@@ -1219,8 +1193,8 @@ pub async fn test_delete_user_inline_policy_fails(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteUserInternalRequest::builder()
-        .user_name("DeleteMeInlineUser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("DeleteMeInlineUser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserInternalRequest")
         .execute(&mut tx)
@@ -1237,8 +1211,8 @@ pub async fn test_delete_user_inline_policy_fails(pool: &sqlx::PgPool) {
         .await
         .expect("Failed to remove inline policy");
     DeleteUserInternalRequest::builder()
-        .user_name("DeleteMeInlineUser".to_string())
-        .account_id("123456789012".to_string())
+        .user_name("DeleteMeInlineUser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserInternalRequest")
         .execute(&mut tx)
@@ -1254,8 +1228,8 @@ pub async fn test_delete_user_inline_policy_fails(pool: &sqlx::PgPool) {
 pub async fn test_create_access_key_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreateAccessKeyInternalRequest::builder()
-        .user_name(Some("bob".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateAccessKeyInternalRequest")
         .execute(&mut tx)
@@ -1281,8 +1255,8 @@ pub async fn test_create_access_key_simple(pool: &sqlx::PgPool) {
 pub async fn test_create_access_key_second(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = CreateAccessKeyInternalRequest::builder()
-        .user_name(Some("bob".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateAccessKeyInternalRequest")
         .execute(&mut tx)
@@ -1297,7 +1271,7 @@ pub async fn test_create_access_key_second(pool: &sqlx::PgPool) {
 pub async fn test_create_access_key_no_user_name(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = CreateAccessKeyInternalRequest::builder()
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateAccessKeyInternalRequest")
         .execute(&mut tx)
@@ -1311,8 +1285,8 @@ pub async fn test_create_access_key_no_user_name(pool: &sqlx::PgPool) {
 pub async fn test_create_access_key_nonexistent_user(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = CreateAccessKeyInternalRequest::builder()
-        .user_name(Some("nosuchaccesskeyuser".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("nosuchaccesskeyuser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build CreateAccessKeyInternalRequest")
         .execute(&mut tx)
@@ -1325,10 +1299,7 @@ pub async fn test_create_access_key_nonexistent_user(pool: &sqlx::PgPool) {
 /// Building a CreateAccessKey request with an invalid user name must fail before touching the
 /// database.
 pub fn test_create_access_key_invalid_user_name() {
-    let result = CreateAccessKeyInternalRequest::builder()
-        .user_name(Some("bad name!".to_string()))
-        .account_id("123456789012".to_string())
-        .build();
+    let result = CreateAccessKeyInternalRequest::builder().user_name("bad name!").account_id("123456789012").build();
     assert!(result.is_err(), "Building a request with an invalid user name must fail");
 }
 
@@ -1336,8 +1307,8 @@ pub fn test_create_access_key_invalid_user_name() {
 pub async fn test_list_access_keys_simple(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAccessKeysInternalRequest::builder()
-        .user_name(Some("bob".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
         .execute(&mut tx)
@@ -1359,8 +1330,8 @@ pub async fn test_list_access_keys_simple(pool: &sqlx::PgPool) {
 pub async fn test_list_access_keys_seeded(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAccessKeysInternalRequest::builder()
-        .user_name(Some("Example-User-1".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("Example-User-1")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
         .execute(&mut tx)
@@ -1379,8 +1350,8 @@ pub async fn test_list_access_keys_seeded(pool: &sqlx::PgPool) {
 pub async fn test_list_access_keys_empty(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAccessKeysInternalRequest::builder()
-        .user_name(Some("alice".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("alice")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
         .execute(&mut tx)
@@ -1394,9 +1365,9 @@ pub async fn test_list_access_keys_empty(pool: &sqlx::PgPool) {
 pub async fn test_list_access_keys_pagination(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let page1 = ListAccessKeysInternalRequest::builder()
-        .user_name(Some("bob".to_string()))
-        .account_id("123456789012".to_string())
-        .max_items(Some(1))
+        .user_name("bob")
+        .account_id("123456789012")
+        .max_items(1)
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
         .execute(&mut tx)
@@ -1407,10 +1378,10 @@ pub async fn test_list_access_keys_pagination(pool: &sqlx::PgPool) {
     let marker = page1.marker.clone().expect("Expected a pagination marker");
 
     let page2 = ListAccessKeysInternalRequest::builder()
-        .user_name(Some("bob".to_string()))
-        .account_id("123456789012".to_string())
-        .max_items(Some(1))
-        .marker(Some(marker))
+        .user_name("bob")
+        .account_id("123456789012")
+        .max_items(1)
+        .marker(marker)
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
         .execute(&mut tx)
@@ -1429,7 +1400,7 @@ pub async fn test_list_access_keys_pagination(pool: &sqlx::PgPool) {
 pub async fn test_list_access_keys_no_user_name(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = ListAccessKeysInternalRequest::builder()
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
         .execute(&mut tx)
@@ -1443,8 +1414,8 @@ pub async fn test_list_access_keys_no_user_name(pool: &sqlx::PgPool) {
 pub async fn test_list_access_keys_nonexistent_user(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = ListAccessKeysInternalRequest::builder()
-        .user_name(Some("nosuchlistaccesskeyuser".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("nosuchlistaccesskeyuser")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
         .execute(&mut tx)
@@ -1462,8 +1433,8 @@ pub async fn test_update_access_key_status_roundtrip(pool: &sqlx::PgPool) {
     UpdateAccessKeyInternalRequest::builder()
         .access_key_id(access_key_id.to_string())
         .status(StatusType::Inactive)
-        .user_name(Some("Example-User-1".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("Example-User-1")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateAccessKeyInternalRequest")
         .execute(&mut tx)
@@ -1473,8 +1444,8 @@ pub async fn test_update_access_key_status_roundtrip(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAccessKeysInternalRequest::builder()
-        .user_name(Some("Example-User-1".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("Example-User-1")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
         .execute(&mut tx)
@@ -1487,7 +1458,7 @@ pub async fn test_update_access_key_status_roundtrip(pool: &sqlx::PgPool) {
     UpdateAccessKeyInternalRequest::builder()
         .access_key_id(access_key_id.to_string())
         .status(StatusType::Active)
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateAccessKeyInternalRequest")
         .execute(&mut tx)
@@ -1497,8 +1468,8 @@ pub async fn test_update_access_key_status_roundtrip(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = ListAccessKeysInternalRequest::builder()
-        .user_name(Some("Example-User-1".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("Example-User-1")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
         .execute(&mut tx)
@@ -1512,9 +1483,9 @@ pub async fn test_update_access_key_status_roundtrip(pool: &sqlx::PgPool) {
 pub async fn test_update_access_key_expired_status_rejected(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = UpdateAccessKeyInternalRequest::builder()
-        .access_key_id("AKIAEXAMPLEACCESSKEYID123".to_string())
+        .access_key_id("AKIAEXAMPLEACCESSKEYID123")
         .status(StatusType::Expired)
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateAccessKeyInternalRequest")
         .execute(&mut tx)
@@ -1528,10 +1499,10 @@ pub async fn test_update_access_key_expired_status_rejected(pool: &sqlx::PgPool)
 pub async fn test_update_access_key_mismatched_user(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = UpdateAccessKeyInternalRequest::builder()
-        .access_key_id("AKIAEXAMPLEACCESSKEYID123".to_string())
+        .access_key_id("AKIAEXAMPLEACCESSKEYID123")
         .status(StatusType::Inactive)
-        .user_name(Some("alice".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("alice")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateAccessKeyInternalRequest")
         .execute(&mut tx)
@@ -1545,9 +1516,9 @@ pub async fn test_update_access_key_mismatched_user(pool: &sqlx::PgPool) {
 pub async fn test_update_access_key_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = UpdateAccessKeyInternalRequest::builder()
-        .access_key_id("AKIANOSUCHKEYIDXXXX1".to_string())
+        .access_key_id("AKIANOSUCHKEYIDXXXX1")
         .status(StatusType::Inactive)
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateAccessKeyInternalRequest")
         .execute(&mut tx)
@@ -1561,9 +1532,9 @@ pub async fn test_update_access_key_nonexistent(pool: &sqlx::PgPool) {
 pub async fn test_update_access_key_bad_prefix(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = UpdateAccessKeyInternalRequest::builder()
-        .access_key_id("ASIAEXAMPLEACCESSKEYID123".to_string())
+        .access_key_id("ASIAEXAMPLEACCESSKEYID123")
         .status(StatusType::Inactive)
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateAccessKeyInternalRequest")
         .execute(&mut tx)
@@ -1578,8 +1549,8 @@ pub async fn test_delete_access_key_simple(pool: &sqlx::PgPool) {
     // Find one of bob's keys to delete.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let list = ListAccessKeysInternalRequest::builder()
-        .user_name(Some("bob".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
         .execute(&mut tx)
@@ -1590,8 +1561,8 @@ pub async fn test_delete_access_key_simple(pool: &sqlx::PgPool) {
 
     DeleteAccessKeyInternalRequest::builder()
         .access_key_id(target_id.clone())
-        .user_name(Some("bob".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteAccessKeyInternalRequest")
         .execute(&mut tx)
@@ -1601,8 +1572,8 @@ pub async fn test_delete_access_key_simple(pool: &sqlx::PgPool) {
 
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let after = ListAccessKeysInternalRequest::builder()
-        .user_name(Some("bob".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
         .execute(&mut tx)
@@ -1621,8 +1592,8 @@ pub async fn test_delete_access_key_simple(pool: &sqlx::PgPool) {
 pub async fn test_delete_access_key_without_user_name(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let list = ListAccessKeysInternalRequest::builder()
-        .user_name(Some("bob".to_string()))
-        .account_id("123456789012".to_string())
+        .user_name("bob")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
         .execute(&mut tx)
@@ -1632,7 +1603,7 @@ pub async fn test_delete_access_key_without_user_name(pool: &sqlx::PgPool) {
 
     DeleteAccessKeyInternalRequest::builder()
         .access_key_id(target_id.clone())
-        .account_id("123456789012".to_string())
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteAccessKeyInternalRequest")
         .execute(&mut tx)
@@ -1645,9 +1616,9 @@ pub async fn test_delete_access_key_without_user_name(pool: &sqlx::PgPool) {
 pub async fn test_delete_access_key_mismatched_user(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteAccessKeyInternalRequest::builder()
-        .access_key_id("AKIAEXAMPLEACCESSKEYID123".to_string())
-        .user_name(Some("alice".to_string()))
-        .account_id("123456789012".to_string())
+        .access_key_id("AKIAEXAMPLEACCESSKEYID123")
+        .user_name("alice")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteAccessKeyInternalRequest")
         .execute(&mut tx)
@@ -1661,8 +1632,8 @@ pub async fn test_delete_access_key_mismatched_user(pool: &sqlx::PgPool) {
 pub async fn test_delete_access_key_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteAccessKeyInternalRequest::builder()
-        .access_key_id("AKIANOSUCHKEYIDXXXX2".to_string())
-        .account_id("123456789012".to_string())
+        .access_key_id("AKIANOSUCHKEYIDXXXX2")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteAccessKeyInternalRequest")
         .execute(&mut tx)
@@ -1676,8 +1647,8 @@ pub async fn test_delete_access_key_nonexistent(pool: &sqlx::PgPool) {
 pub async fn test_delete_access_key_bad_prefix(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = DeleteAccessKeyInternalRequest::builder()
-        .access_key_id("ASIAEXAMPLEACCESSKEYID123".to_string())
-        .account_id("123456789012".to_string())
+        .access_key_id("ASIAEXAMPLEACCESSKEYID123")
+        .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteAccessKeyInternalRequest")
         .execute(&mut tx)

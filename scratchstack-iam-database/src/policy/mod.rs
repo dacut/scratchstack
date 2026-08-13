@@ -191,16 +191,16 @@ async fn lookup_managed_policy_id(tx: &mut PgTransaction<'_>, policy_arn: &IamRe
 pub(crate) fn parse_policy_arn(policy_arn: &str) -> Result<IamResourceArn, IamError> {
     let arn = IamResourceArn::from_str(policy_arn).map_err(|e| {
         log::info!("Failed to parse policy ARN: {e}");
-        ValidationError::builder().message("Invalid policy ARN".to_string()).build()
+        ValidationError::builder().message("Invalid policy ARN").build()
     })?;
 
     if !arn.region().is_empty() {
-        return Err(ValidationError::builder().message("Policy ARN must not have a region".to_string()).build().into());
+        return Err(ValidationError::builder().message("Policy ARN must not have a region").build().into());
     }
 
     if arn.resource_type() != "policy" {
         return Err(ValidationError::builder()
-            .message("Policy ARN must have a resource that starts with \"policy/\"".to_string())
+            .message("Policy ARN must have a resource that starts with \"policy/\"")
             .build()
             .into());
     }

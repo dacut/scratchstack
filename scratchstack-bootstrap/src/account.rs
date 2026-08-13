@@ -112,7 +112,7 @@ impl Runnable for CreateAccountCommand {
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
         let mut builder =
-            CreateAccountRequest::builder().email(self.email.clone()).account_alias(self.account_alias.clone());
+            CreateAccountRequest::builder().set_email(self.email.clone()).set_account_alias(self.account_alias.clone());
         if let Some(organization_id) = &self.organization_id {
             builder = builder.organization_id(organization_id.clone());
         }
@@ -135,8 +135,8 @@ impl Runnable for ListAccountAliasesInternalCommand {
     {
         let request = ListAccountAliasesInternalRequest::builder()
             .account_id(self.account_id.clone())
-            .max_items(self.max_items)
-            .marker(self.marker.clone())
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -187,7 +187,7 @@ impl Runnable for ListAccountsCommand {
             }
         }
 
-        builder = builder.filters(filters);
+        builder = builder.set_filters(filters);
         if let Some(max_items) = self.max_items {
             builder = builder.max_items(max_items as i32);
         }

@@ -61,7 +61,7 @@ pub async fn update_role_description(
 
     let role = get_role(tx, account_id, role_name).await?.role;
 
-    UpdateRoleDescriptionResponse::builder().role(Some(role)).build().map_err(|e| {
+    UpdateRoleDescriptionResponse::builder().role(role).build().map_err(|e| {
         log::error!("Failed to build UpdateRoleDescriptionResponse: {e}");
         internal_failure().into()
     })

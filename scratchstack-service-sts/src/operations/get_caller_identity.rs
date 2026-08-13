@@ -45,7 +45,7 @@ pub(crate) fn get_caller_identity(
     let result = match GetCallerIdentityResponse::builder()
         .account(arn.account_id().to_string())
         .arn(arn.to_string())
-        .user_id(user_id)
+        .set_user_id(user_id)
         .build()
     {
         Ok(result) => result,

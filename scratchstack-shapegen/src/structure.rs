@@ -151,7 +151,7 @@ impl Structure {
             let is_optional = !member.traits.is_required();
             let is_list = member.is_list();
             let mut member_type = member.rust_typename();
-            let rust_member_name = member_name.to_snake_case();
+            let rust_member_name = member_name.to_rust_ident();
 
             if is_optional && !is_list {
                 member_type = format!("Option<{}>", member_type);
@@ -209,7 +209,7 @@ impl Structure {
         writeln!(w, "#[derive(::std::clone::Clone, ::std::fmt::Debug, ::std::default::Default)]")?;
         writeln!(w, "pub struct {rust_typename}Builder {{")?;
         for (member_name, member) in &self.members {
-            let rust_member_name = member_name.to_snake_case();
+            let rust_member_name = member_name.to_rust_ident();
             let field_type = self.builder_field_type(member);
             writeln!(w, "    {rust_member_name}: ::std::option::Option<{field_type}>,")?;
         }
@@ -218,26 +218,69 @@ impl Structure {
 
         writeln!(w, "impl {rust_typename}Builder {{")?;
 
-        // 2. Per-field setters, matching derive_builder's `setter(into)` semantics.
+        // 2. Per-field setters.
+        //
+        //    The plain setter always takes the member's own type, so a caller with a value in hand
+        //    writes `.path("/engineering/")` rather than `.path(Some("/engineering/".to_string()))`.
+        //    Optional and list members additionally get a `set_` form for callers that already
+        //    hold an `Option` or a `Vec` -- typically forwarding one straight through from a
+        //    request -- and for lists the plain setter appends a single item.
         for (member_name, member) in &self.members {
-            let rust_member_name = member_name.to_snake_case();
+            let rust_member_name = member_name.to_rust_ident();
+            let set_member_name = member_name.to_rust_ident_affixed("set_", "");
             let field_type = self.builder_field_type(member);
-            writeln!(w, "    /// Sets the `{member_name}` field.")?;
-            writeln!(
-                w,
-                "    pub fn {rust_member_name}(mut self, value: impl ::std::convert::Into<{field_type}>) -> Self {{"
-            )?;
-            writeln!(w, "        self.{rust_member_name} = ::std::option::Option::Some(value.into());")?;
+            let is_list = member.is_list();
+            // For a list the field is `Vec<T>`; the plain setter appends a single `T`.
+            let item_type = match member.as_list() {
+                Some(list) => list.member.rust_typename(),
+                None => member.rust_typename(),
+            };
+            let is_optional = !member.is_required() && !is_list;
+
+            if is_list {
+                writeln!(w, "    /// Appends a value to the `{member_name}` list.")?;
+                writeln!(
+                    w,
+                    "    pub fn {rust_member_name}(mut self, value: impl ::std::convert::Into<{item_type}>) -> Self {{"
+                )?;
+                writeln!(
+                    w,
+                    "        self.{rust_member_name}.get_or_insert_with(::std::vec::Vec::new).push(value.into());"
+                )?;
+            } else {
+                writeln!(w, "    /// Sets the `{member_name}` field.")?;
+                writeln!(
+                    w,
+                    "    pub fn {rust_member_name}(mut self, value: impl ::std::convert::Into<{item_type}>) -> Self {{"
+                )?;
+                if is_optional {
+                    writeln!(
+                        w,
+                        "        self.{rust_member_name} = ::std::option::Option::Some(::std::option::Option::Some(value.into()));"
+                    )?;
+                } else {
+                    writeln!(w, "        self.{rust_member_name} = ::std::option::Option::Some(value.into());")?;
+                }
+            }
             writeln!(w, "        self")?;
             writeln!(w, "    }}")?;
             writeln!(w)?;
+
+            if is_optional || is_list {
+                writeln!(w, "    /// Sets the `{member_name}` field from a value the caller already holds.")?;
+                writeln!(w, "    pub fn {set_member_name}(mut self, value: {field_type}) -> Self {{")?;
+                writeln!(w, "        self.{rust_member_name} = ::std::option::Option::Some(value);")?;
+                writeln!(w, "        self")?;
+                writeln!(w, "    }}")?;
+                writeln!(w)?;
+            }
         }
 
         // 3. The private validate() method (kept verbatim from the prior implementation).
         writeln!(w, "    #[allow(clippy::collapsible_if)]")?;
         writeln!(w, "    fn validate(&self) -> ::std::result::Result<(), ::std::string::String> {{")?;
         for (member_name, member) in &self.members {
-            let rust_member_name = member_name.to_snake_case();
+            let rust_member_name = member_name.to_rust_ident();
             let is_required = member.is_required();
             let is_list = member.is_list();
 
@@ -287,7 +330,7 @@ impl Structure {
         writeln!(w, "        }})?;")?;
         writeln!(w, "        ::std::result::Result::Ok({rust_typename} {{")?;
         for (member_name, member) in &self.members {
-            let rust_member_name = member_name.to_snake_case();
+            let rust_member_name = member_name.to_rust_ident();
             let is_required = member.is_required();
             let is_list = member.is_list();
             if is_required && !is_list {
@@ -572,20 +615,21 @@ impl Structure {
             writeln!(w, "            match key.as_str() {{")?;
             for (member_name, member) in &self.members {
                 let arg_name = member_name.to_pascal_case();
-                let rust_member_name = member_name.to_snake_case();
+                let rust_member_name = member_name.to_rust_ident();
+                let set_member_name = member_name.to_rust_ident_affixed("set_", "");
                 let rust_member_typename = member.rust_typename();
                 writeln!(w, "                 \"{arg_name}\" => {{")?;
                 writeln!(
                     w,
                     "                     let value: {rust_member_typename} = value.try_into().map_err(|e| format!(\"Failed to parse field '{member_name}' for {rust_typename} from '{{value:?}}': {{e}}\"))?;"
                 )?;
-                if member.is_required() || member.is_list() {
-                    writeln!(w, "                     builder = builder.{rust_member_name}(value);")?;
+                // The plain setter takes the member's own type in every case now: it sets the
+                // value for a required member, wraps it for an optional one, and for a list the
+                // parsed value is the whole list, so that goes through the `set_` form.
+                if member.is_list() {
+                    writeln!(w, "                     builder = builder.{set_member_name}(value);")?;
                 } else {
-                    writeln!(
-                        w,
-                        "                     builder = builder.{rust_member_name}(::std::option::Option::Some(value));"
-                    )?;
+                    writeln!(w, "                     builder = builder.{rust_member_name}(value);")?;
                 }
                 writeln!(w, "                 }}")?;
             }

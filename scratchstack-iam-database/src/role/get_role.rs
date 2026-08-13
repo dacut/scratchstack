@@ -112,8 +112,8 @@ pub async fn get_role(
 
         Some(
             AttachedPermissionsBoundary::builder()
-                .permissions_boundary_arn(Some(pb_arn.to_string()))
-                .permissions_boundary_type(Some(PermissionsBoundaryAttachmentType::Policy))
+                .permissions_boundary_arn(pb_arn.to_string())
+                .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct permissions boundary for role: {e}");
@@ -150,15 +150,15 @@ pub async fn get_role(
 
     let role = Role::builder()
         .arn(arn.to_string())
-        .assume_role_policy_document(Some(assume_role_policy_document))
+        .assume_role_policy_document(assume_role_policy_document)
         .create_date(created_at)
-        .description(description)
-        .max_session_duration(max_session_duration)
+        .set_description(description)
+        .set_max_session_duration(max_session_duration)
         .path(path)
-        .permissions_boundary(permissions_boundary)
+        .set_permissions_boundary(permissions_boundary)
         .role_id(format!("{}{}", IamResourceType::Role.as_str(), role_id))
         .role_name(role_name_cased)
-        .tags(tags)
+        .set_tags(tags)
         .build()
         .map_err(|e| {
             log::error!("Failed to construct role object: {e}");

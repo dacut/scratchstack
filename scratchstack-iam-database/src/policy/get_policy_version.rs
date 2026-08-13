@@ -76,10 +76,10 @@ pub async fn get_policy_version(
     })?;
 
     let policy_version = PolicyVersion::builder()
-        .create_date(Some(row.created_at))
-        .document(Some(row.policy_document))
-        .is_default_version(Some(version_number == row.default_version))
-        .version_id(Some(format!("v{version_number}")))
+        .create_date(row.created_at)
+        .document(row.policy_document)
+        .is_default_version(version_number == row.default_version)
+        .version_id(format!("v{version_number}"))
         .build()
         .map_err(|e| {
             log::error!("Failed to construct PolicyVersion object: {e}");

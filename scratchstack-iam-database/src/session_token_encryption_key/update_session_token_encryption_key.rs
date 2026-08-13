@@ -87,13 +87,13 @@ pub async fn update_session_token_encryption_key(
 
     if new_issue_expires_at < new_issue_valid_from {
         return Err(ValidationError::builder()
-            .message("issue_expires_at cannot be less than issue_valid_from.".to_string())
+            .message("issue_expires_at cannot be less than issue_valid_from.")
             .build()
             .into());
     }
     if new_accept_expires_at < new_issue_expires_at {
         return Err(ValidationError::builder()
-            .message("accept_expires_at cannot be less than issue_expires_at.".to_string())
+            .message("accept_expires_at cannot be less than issue_expires_at.")
             .build()
             .into());
     }

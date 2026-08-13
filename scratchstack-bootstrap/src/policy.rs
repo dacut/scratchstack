@@ -251,9 +251,9 @@ impl Runnable for CreatePolicyInternalCommand {
             .account_id(self.account_id.clone())
             .policy_name(self.policy_name.clone())
             .policy_document(self.policy_document.clone())
-            .description(self.description.clone())
-            .path(Some(self.path.clone()))
-            .tags(tags)
+            .set_description(self.description.clone())
+            .path(self.path.clone())
+            .set_tags(tags)
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -271,7 +271,7 @@ impl Runnable for CreatePolicyVersionCommand {
             .policy_arn(self.policy_arn.clone())
             .policy_document(self.policy_document.clone());
         if self.set_as_default {
-            request_builder = request_builder.set_as_default(Some(true));
+            request_builder = request_builder.set_as_default(true);
         }
         let request = request_builder.build()?;
         execute_in_transaction(cli, vars, &request).await
@@ -346,19 +346,19 @@ impl Runnable for ListEntitiesForPolicyCommand {
     {
         let mut builder = ListEntitiesForPolicyRequest::builder().policy_arn(self.policy_arn.clone());
         if let Some(filter) = self.entity_filter {
-            builder = builder.entity_filter(Some(filter));
+            builder = builder.entity_filter(filter);
         }
         if let Some(filter) = self.policy_usage_filter {
-            builder = builder.policy_usage_filter(Some(filter));
+            builder = builder.policy_usage_filter(filter);
         }
         if let Some(path_prefix) = &self.path_prefix {
-            builder = builder.path_prefix(Some(path_prefix.clone()));
+            builder = builder.path_prefix(path_prefix.clone());
         }
         if let Some(max_items) = self.max_items {
-            builder = builder.max_items(Some(max_items));
+            builder = builder.max_items(max_items);
         }
         if let Some(marker) = &self.marker {
-            builder = builder.marker(Some(marker.clone()));
+            builder = builder.marker(marker.clone());
         }
         let request = builder.build()?;
         execute_in_transaction(cli, vars, &request).await
@@ -375,22 +375,22 @@ impl Runnable for ListPoliciesInternalCommand {
     {
         let mut builder = ListPoliciesInternalRequest::builder().account_id(self.account_id.clone());
         if let Some(scope) = self.scope {
-            builder = builder.scope(Some(scope));
+            builder = builder.scope(scope);
         }
         if self.only_attached {
-            builder = builder.only_attached(Some(true));
+            builder = builder.only_attached(true);
         }
         if let Some(path_prefix) = &self.path_prefix {
-            builder = builder.path_prefix(Some(path_prefix.clone()));
+            builder = builder.path_prefix(path_prefix.clone());
         }
         if let Some(filter) = self.policy_usage_filter {
-            builder = builder.policy_usage_filter(Some(filter));
+            builder = builder.policy_usage_filter(filter);
         }
         if let Some(max_items) = self.max_items {
-            builder = builder.max_items(Some(max_items));
+            builder = builder.max_items(max_items);
         }
         if let Some(marker) = &self.marker {
-            builder = builder.marker(Some(marker.clone()));
+            builder = builder.marker(marker.clone());
         }
         let request = builder.build()?;
         execute_in_transaction(cli, vars, &request).await
@@ -407,10 +407,10 @@ impl Runnable for ListPolicyTagsCommand {
     {
         let mut builder = ListPolicyTagsRequest::builder().policy_arn(self.policy_arn.clone());
         if let Some(max_items) = self.max_items {
-            builder = builder.max_items(Some(max_items));
+            builder = builder.max_items(max_items);
         }
         if let Some(marker) = &self.marker {
-            builder = builder.marker(Some(marker.clone()));
+            builder = builder.marker(marker.clone());
         }
         let request = builder.build()?;
         execute_in_transaction(cli, vars, &request).await
@@ -427,10 +427,10 @@ impl Runnable for ListPolicyVersionsCommand {
     {
         let mut builder = ListPolicyVersionsRequest::builder().policy_arn(self.policy_arn.clone());
         if let Some(max_items) = self.max_items {
-            builder = builder.max_items(Some(max_items));
+            builder = builder.max_items(max_items);
         }
         if let Some(marker) = &self.marker {
-            builder = builder.marker(Some(marker.clone()));
+            builder = builder.marker(marker.clone());
         }
         let request = builder.build()?;
         execute_in_transaction(cli, vars, &request).await
@@ -462,7 +462,7 @@ impl Runnable for TagPolicyCommand {
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
         let tags = tags_from_shorthand(&self.tags)?;
-        let request = TagPolicyRequest::builder().policy_arn(self.policy_arn.clone()).tags(tags).build()?;
+        let request = TagPolicyRequest::builder().policy_arn(self.policy_arn.clone()).set_tags(tags).build()?;
         execute_in_transaction(cli, vars, &request).await
     }
 }
@@ -477,7 +477,7 @@ impl Runnable for UntagPolicyCommand {
     {
         let request = UntagPolicyRequest::builder()
             .policy_arn(self.policy_arn.clone())
-            .tag_keys(self.tag_keys.clone())
+            .set_tag_keys(self.tag_keys.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }

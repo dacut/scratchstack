@@ -192,14 +192,14 @@ pub async fn list_policies(
         let arn = build_policy_arn(&partition, &row.account_id, &row.path, &row.managed_policy_name_cased)?;
         let policy_id = format!("{}{}", IamResourceType::ManagedPolicy.as_str(), row.managed_policy_id);
         let policy = Policy::builder()
-            .arn(Some(arn.to_string()))
-            .create_date(Some(row.created_at))
-            .default_version_id(Some(format!("v{}", row.default_version)))
-            .is_attachable(Some(!row.deprecated))
-            .path(Some(row.path))
+            .arn(arn.to_string())
+            .create_date(row.created_at)
+            .default_version_id(format!("v{}", row.default_version))
+            .is_attachable(!row.deprecated)
+            .path(row.path)
             .policy_id(policy_id.clone())
-            .policy_name(Some(row.managed_policy_name_cased))
-            .update_date(Some(row.update_date))
+            .policy_name(row.managed_policy_name_cased)
+            .update_date(row.update_date)
             .build()
             .map_err(|e| {
                 log::error!("Failed to construct Policy object for ListPolicies result: {e}");

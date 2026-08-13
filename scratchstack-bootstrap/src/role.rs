@@ -290,14 +290,14 @@ impl Runnable for AssumeRoleCommand {
             .map(|arn| PolicyDescriptorType::builder().arn(arn.clone()).build())
             .collect::<Result<Vec<_>, _>>()?;
         let request = AssumeRoleRequest::builder()
-            .duration_seconds(self.duration_seconds)
-            .policy(self.policy.clone())
-            .policy_arns(policy_arns)
+            .set_duration_seconds(self.duration_seconds)
+            .set_policy(self.policy.clone())
+            .set_policy_arns(policy_arns)
             .role_arn(self.role_arn.clone())
             .role_session_name(self.role_session_name.clone())
-            .source_identity(self.source_identity.clone())
-            .tags(tags)
-            .transitive_tag_keys(self.transitive_tag_keys.clone())
+            .set_source_identity(self.source_identity.clone())
+            .set_tags(tags)
+            .set_transitive_tag_keys(self.transitive_tag_keys.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -332,12 +332,12 @@ impl Runnable for CreateRoleInternalCommand {
         let request = CreateRoleInternalRequest::builder()
             .account_id(self.account_id.clone())
             .assume_role_policy_document(self.assume_role_policy_document.clone())
-            .description(self.description.clone())
-            .max_session_duration(self.max_session_duration)
-            .path(Some(self.path.clone()))
-            .permissions_boundary(self.permissions_boundary.clone())
+            .set_description(self.description.clone())
+            .set_max_session_duration(self.max_session_duration)
+            .path(self.path.clone())
+            .set_permissions_boundary(self.permissions_boundary.clone())
             .role_name(self.role_name.clone())
-            .tags(tags)
+            .set_tags(tags)
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -453,9 +453,9 @@ impl Runnable for ListAttachedRolePoliciesInternalCommand {
         let request = ListAttachedRolePoliciesInternalRequest::builder()
             .account_id(self.account_id.clone())
             .role_name(self.role_name.clone())
-            .path_prefix(self.path_prefix.clone())
-            .max_items(self.max_items)
-            .marker(self.marker.clone())
+            .set_path_prefix(self.path_prefix.clone())
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -472,8 +472,8 @@ impl Runnable for ListRolePoliciesInternalCommand {
         let request = ListRolePoliciesInternalRequest::builder()
             .account_id(self.account_id.clone())
             .role_name(self.role_name.clone())
-            .max_items(self.max_items)
-            .marker(self.marker.clone())
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -512,9 +512,9 @@ impl Runnable for ListRolesInternalCommand {
     {
         let request = ListRolesInternalRequest::builder()
             .account_id(self.account_id.clone())
-            .path_prefix(self.path_prefix.clone())
-            .max_items(self.max_items)
-            .marker(self.marker.clone())
+            .set_path_prefix(self.path_prefix.clone())
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -553,8 +553,8 @@ impl Runnable for ListRoleTagsInternalCommand {
         let request = ListRoleTagsInternalRequest::builder()
             .account_id(self.account_id.clone())
             .role_name(self.role_name.clone())
-            .max_items(self.max_items)
-            .marker(self.marker.clone())
+            .set_max_items(self.max_items)
+            .set_marker(self.marker.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -610,7 +610,7 @@ impl Runnable for TagRoleInternalCommand {
         let request = TagRoleInternalRequest::builder()
             .account_id(self.account_id.clone())
             .role_name(self.role_name.clone())
-            .tags(tags)
+            .set_tags(tags)
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -627,7 +627,7 @@ impl Runnable for UntagRoleInternalCommand {
         let request = UntagRoleInternalRequest::builder()
             .account_id(self.account_id.clone())
             .role_name(self.role_name.clone())
-            .tag_keys(self.tag_keys.clone())
+            .set_tag_keys(self.tag_keys.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await
     }
@@ -681,8 +681,8 @@ impl Runnable for UpdateRoleInternalCommand {
     {
         let request = UpdateRoleInternalRequest::builder()
             .account_id(self.account_id.clone())
-            .description(self.description.clone())
-            .max_session_duration(self.max_session_duration)
+            .set_description(self.description.clone())
+            .set_max_session_duration(self.max_session_duration)
             .role_name(self.role_name.clone())
             .build()?;
         execute_in_transaction(cli, vars, &request).await

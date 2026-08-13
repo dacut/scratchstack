@@ -218,8 +218,8 @@ pub async fn list_entities_for_policy(
             match section {
                 EntitySection::Group => groups.push(
                     PolicyGroup::builder()
-                        .group_id(Some(format!("{}{}", IamResourceType::Group.as_str(), row.entity_id)))
-                        .group_name(Some(row.entity_name_cased))
+                        .group_id(format!("{}{}", IamResourceType::Group.as_str(), row.entity_id))
+                        .group_name(row.entity_name_cased)
                         .build()
                         .map_err(|e| {
                             log::error!("Failed to construct PolicyGroup: {e}");
@@ -228,8 +228,8 @@ pub async fn list_entities_for_policy(
                 ),
                 EntitySection::Role => roles.push(
                     PolicyRole::builder()
-                        .role_id(Some(format!("{}{}", IamResourceType::Role.as_str(), row.entity_id)))
-                        .role_name(Some(row.entity_name_cased))
+                        .role_id(format!("{}{}", IamResourceType::Role.as_str(), row.entity_id))
+                        .role_name(row.entity_name_cased)
                         .build()
                         .map_err(|e| {
                             log::error!("Failed to construct PolicyRole: {e}");
@@ -238,8 +238,8 @@ pub async fn list_entities_for_policy(
                 ),
                 EntitySection::User => users.push(
                     PolicyUser::builder()
-                        .user_id(Some(format!("{}{}", IamResourceType::User.as_str(), row.entity_id)))
-                        .user_name(Some(row.entity_name_cased))
+                        .user_id(format!("{}{}", IamResourceType::User.as_str(), row.entity_id))
+                        .user_name(row.entity_name_cased)
                         .build()
                         .map_err(|e| {
                             log::error!("Failed to construct PolicyUser: {e}");
