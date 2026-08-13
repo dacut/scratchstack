@@ -91,6 +91,17 @@ fn get_common_exception_shapes() -> JsonValue {
             "documentation": "The request can't be processed right now because of an internal server issue. Try again later. If the problem persists, contact AWS Support.",
             "httpResponseCode": 500
         },
+        // Neither of these appears in the published STS error list, but the service returns both:
+        // InvalidAction for an unrecognised Action/Version pair, and InvalidClientTokenId when the
+        // credential does not resolve to a usable principal.
+        "com.amazonaws.sts#InvalidAction": {
+            "documentation": "The action or version specified in the request is not valid for this service.",
+            "httpResponseCode": 400
+        },
+        "com.amazonaws.sts#InvalidClientTokenId": {
+            "documentation": "The security token included in the request is invalid.",
+            "httpResponseCode": 403
+        },
         "com.amazonaws.sts#InvalidParameterCombination": {
             "documentation": "Parameters that must not be used together were used together. Remove one of the conflicting parameters and try again.",
             "httpResponseCode": 400

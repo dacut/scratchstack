@@ -16,25 +16,31 @@
 pub(crate) mod config;
 pub(crate) mod constants;
 pub(crate) mod error;
-pub(crate) mod model;
 pub(crate) mod operations;
 pub(crate) mod service;
 
 use {
     crate::{
         config::{ResolvedStsServiceConfig, StsServiceConfig},
+        constants::{CT_APPLICATION_X_WWW_FORM_URLENCODED, SERVICE_STS, XML_NS_STS},
         error::ServiceError,
     },
     axum::{
         Router,
+        http::Method,
         routing::{get, post, put},
     },
     clap::Parser,
     log::{debug, error, info},
+    scratchstack_aws_signature::{AwsSigV4VerifierLayer, NoSignedHeaderRequirements, XmlErrorMapper},
     scratchstack_config::Resolvable as _,
     scratchstack_core::TlsListener,
     scratchstack_iam_database::GetSigningKeyFromDatabase,
-    std::{path::PathBuf, process::exit, sync::Arc},
+    std::{
+        path::PathBuf,
+        process::{ExitCode, exit},
+        sync::Arc,
+    },
     tokio::{net::TcpListener, runtime::Builder as RuntimeBuilder},
 };
 
@@ -49,7 +55,7 @@ struct CliOptions {
     config: Option<PathBuf>,
 }
 
-fn main() {
+fn main() -> ExitCode {
     env_logger::init();
     let cli = CliOptions::parse();
 
@@ -93,24 +99,39 @@ fn main() {
         }
     };
 
-    println!("{:#?}", runtime.block_on(run_server_from_config(config)));
+    match runtime.block_on(run_server_from_config(config)) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            error!("Server error: {e}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
-#[allow(unused_variables, clippy::useless_vec)]
 async fn run_server_from_config(config: ResolvedStsServiceConfig) -> Result<(), ServiceError> {
     use crate::service::serve_request;
 
     let common = config.common;
+    debug!("Connecting to database at {}", common.database.url);
     let pool = common.database.pool_options.connect(&common.database.url).await?;
     let pool = Arc::new(pool);
-    let region = common.scope.region.clone();
-    let allowed_content_types = vec!["application/x-www-form-urlencoded".to_string()];
-    let gsk = GetSigningKeyFromDatabase::new(pool, &common.scope.partition, &common.scope.region, "sts");
-    // let service_impl = StsService {};
-    // let error_mapper = XmlErrorMapper::new(STS_XML_NS);
+    let gsk = GetSigningKeyFromDatabase::new(pool, &common.scope.partition, &common.scope.region, SERVICE_STS);
 
-    let app =
-        Router::new().route("/", get(serve_request)).route("/", post(serve_request)).route("/", put(serve_request));
+    let verifier = AwsSigV4VerifierLayer::builder()
+        .region(common.scope.region.clone())
+        .service(SERVICE_STS)
+        .allowed_request_methods(vec![Method::GET, Method::POST, Method::PUT])
+        .allowed_content_types(vec![CT_APPLICATION_X_WWW_FORM_URLENCODED.to_string()])
+        .signed_header_requirements(NoSignedHeaderRequirements)
+        .get_signing_key(gsk)
+        .error_mapper(XmlErrorMapper::new(XML_NS_STS))
+        .build();
+
+    let app = Router::new()
+        .route("/", get(serve_request))
+        .route("/", post(serve_request))
+        .route("/", put(serve_request))
+        .layer(verifier);
     let listener = TcpListener::bind(&common.listener.socket_addr).await?;
 
     match common.listener.tls {

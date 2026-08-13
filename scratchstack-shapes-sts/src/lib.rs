@@ -58,7 +58,7 @@ mod tests {
         assert_eq!(
             xml,
             format!(
-                r#"<GetCallerIdentityResponse xmlns="{STS_XMLNS}"><GetCallerIdentityResult><Account>123456789012</Account><Arn>arn:aws:iam::123456789012:user/alice</Arn><UserId>AIDAQXZEAEXAMPLEUSER</UserId></GetCallerIdentityResult><RequestId>11111111-2222-3333-4444-555555555555</RequestId></GetCallerIdentityResponse>"#
+                r#"<GetCallerIdentityResponse xmlns="{STS_XMLNS}"><GetCallerIdentityResult><Account>123456789012</Account><Arn>arn:aws:iam::123456789012:user/alice</Arn><UserId>AIDAQXZEAEXAMPLEUSER</UserId></GetCallerIdentityResult><ResponseMetadata><RequestId>11111111-2222-3333-4444-555555555555</RequestId></ResponseMetadata></GetCallerIdentityResponse>"#
             )
         );
     }

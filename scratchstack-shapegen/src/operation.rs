@@ -139,12 +139,15 @@ impl ShapeInfo for Operation {
         if output_typename.is_some() {
             writeln!(w.operation, "        s.serialize_field(\"{rust_typename}Result\", &self.result)?;")?;
         }
+        // AWS wraps the request id of a *successful* query-protocol response in
+        // `<ResponseMetadata>`. Errors are different -- they carry `<RequestId>` directly -- so
+        // this deliberately does not match `ErrorResponseEnvelope`.
         writeln!(w.operation, "        match &self.request_id {{")?;
-        writeln!(
-            w.operation,
-            "            ::std::option::Option::Some(request_id) => s.serialize_field(\"RequestId\", request_id)?,"
-        )?;
-        writeln!(w.operation, "            ::std::option::Option::None => s.skip_field(\"RequestId\")?,")?;
+        writeln!(w.operation, "            ::std::option::Option::Some(request_id) => s.serialize_field(")?;
+        writeln!(w.operation, "                \"ResponseMetadata\",")?;
+        writeln!(w.operation, "                &::scratchstack_core::response::ResponseMetadata::new(request_id),")?;
+        writeln!(w.operation, "            )?,")?;
+        writeln!(w.operation, "            ::std::option::Option::None => s.skip_field(\"ResponseMetadata\")?,")?;
         writeln!(w.operation, "        }}")?;
         writeln!(w.operation, "        s.end()")?;
         writeln!(w.operation, "    }}")?;
