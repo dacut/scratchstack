@@ -12,14 +12,16 @@ version.workspace = true
 
 [features]
 default = ["axum"]
-axum = ["dep:axum"]
+axum = ["dep:axum", "dep:quick-xml"]
 tls = ["axum", "dep:tokio-rustls", "tokio/net"]
 
 [dependencies]
 axum = { workspace = true, optional = true }
+bon.workspace = true
 chrono = { workspace = true, features = ["clock", "std"] }
 http.workspace = true
 log.workspace = true
+quick-xml = { workspace = true, optional = true, features = ["serialize"] }
 rand = { workspace = true, features = ["std", "std_rng"] }
 scratchstack-hakari = { path = "../scratchstack-hakari" }
 serde = { workspace = true, features = ["derive"] }
@@ -28,4 +30,6 @@ tokio-rustls = { workspace = true, optional = true }
 uuid = { workspace = true, features = ["serde", "v7"] }
 
 [dev-dependencies]
+pretty_assertions.workspace = true
+serde_json.workspace = true
 test-log.workspace = true
