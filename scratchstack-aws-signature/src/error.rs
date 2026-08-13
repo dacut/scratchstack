@@ -1,7 +1,7 @@
 use {
     crate::constants::*,
     http::status::StatusCode,
-    scratchstack_errors::ServiceError,
+    scratchstack_core::ServiceError,
     std::{
         error::Error,
         fmt::{Display, Formatter, Result as FmtResult},

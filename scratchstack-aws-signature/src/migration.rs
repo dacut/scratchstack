@@ -95,7 +95,7 @@
 //!
 //! ### Type-dependencies from other crates exposed
 //! This crate now uses types two other crates in its APIs: [`scratchstack_aws_principal`] and
-//! [`scratchstack_errors`]. To reduce the possibility of accidentally using a different version
-//! of these crates, they are re-exported here under `principal` and `errors` modules, respectively.
+//! [`scratchstack_core`]. To reduce the possibility of accidentally using a different version
+//! of these crates, they are re-exported here under `principal` and `core` modules, respectively.
 
 use std::str::FromStr;

@@ -48,7 +48,7 @@ scratchstack-aspen.path = "../scratchstack-aspen"
 scratchstack-aws-principal = { path = "../scratchstack-aws-principal", features = [
     "serde",
 ] }
-scratchstack-errors.path = "../scratchstack-errors"
+scratchstack-core.path = "../scratchstack-core"
 scratchstack-hakari = { path = "../scratchstack-hakari" }
 serde = { workspace = true, features = ["derive"] }
 subtle.workspace = true

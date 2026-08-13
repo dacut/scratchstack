@@ -327,7 +327,7 @@ mod tests {
         },
         lazy_static::lazy_static,
         scratchstack_aws_principal::{Principal, User},
-        scratchstack_errors::ServiceError,
+        scratchstack_core::ServiceError,
         std::{borrow::Cow, future::Future, str::FromStr},
         tower::BoxError,
     };

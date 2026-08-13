@@ -10,43 +10,28 @@ edition.workspace = true
 version.workspace = true
 
 [features]
-default = ["axum", "gsk-direct"]
+default = ["axum"]
 axum = ["dep:axum"]
-gsk-direct = ["dep:scratchstack-arn"]
-tls = ["axum", "dep:tokio-rustls", "tokio/net"]
+tls = ["axum", "scratchstack-core/tls"]
 
 [dependencies]
 axum = { workspace = true, optional = true }
-base64.workspace = true
 bon.workspace = true
 bytes.workspace = true
 chrono = { workspace = true, features = ["clock", "std"] }
-derive_builder.workspace = true
 http.workspace = true
 http-body.workspace = true
 log.workspace = true
 quick-xml = { workspace = true, features = ["serialize"] }
-rand = { workspace = true, features = ["std", "std_rng"] }
-scratchstack-arn = { path = "../scratchstack-arn", optional = true }
 scratchstack-aws-principal.path = "../scratchstack-aws-principal"
 scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features = [
     "unstable",
 ] }
-scratchstack-errors.path = "../scratchstack-errors"
+scratchstack-core.path = "../scratchstack-core"
 scratchstack-hakari = { path = "../scratchstack-hakari" }
 serde = { workspace = true, features = ["derive"] }
-sqlx = { workspace = true, optional = true, features = [
-    "all-databases",
-    "chrono",
-    "macros",
-    "migrate",
-    "runtime-tokio",
-    "tls-rustls",
-] }
 tokio = { workspace = true, features = ["macros", "rt"] }
-tokio-rustls = { workspace = true, optional = true }
 tower.workspace = true
-uuid = { workspace = true, features = ["serde", "v7"] }
 
 [dev-dependencies]
 env_logger.workspace = true

@@ -16,16 +16,14 @@
 )]
 #![cfg_attr(doc, feature(doc_cfg))]
 
-pub(crate) mod constants;
-mod request_id;
-pub use request_id::*;
-
 #[cfg(feature = "axum")]
 mod sigv4;
 #[cfg(feature = "axum")]
 pub use sigv4::*;
 
+// `RequestId` and `TlsListener` now live in `scratchstack-core`; re-exported here so existing
+// consumers of this crate keep working.
+pub use scratchstack_core::RequestId;
+
 #[cfg(feature = "tls")]
-mod tls;
-#[cfg(feature = "tls")]
-pub use tls::*;
+pub use scratchstack_core::TlsListener;

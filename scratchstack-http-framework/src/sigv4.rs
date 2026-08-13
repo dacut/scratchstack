@@ -13,7 +13,7 @@ use {
         GetSigningKeyRequest, GetSigningKeyResponse, SignatureError, SignatureOptions, SignedHeaderRequirements,
         canonical::get_content_type_and_charset, sigv4_validate_request,
     },
-    scratchstack_errors::ServiceError,
+    scratchstack_core::ServiceError,
     serde::Serialize,
     std::{
         any::type_name,

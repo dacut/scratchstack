@@ -144,7 +144,7 @@ pub mod auth;
 pub mod canonical;
 
 pub use {
-    body::*, error::*, scratchstack_aws_principal as principal, scratchstack_errors as errors, session_token::*,
+    body::*, error::*, scratchstack_aws_principal as principal, scratchstack_core as core, session_token::*,
     signature::*, signing_key::*,
 };
 
