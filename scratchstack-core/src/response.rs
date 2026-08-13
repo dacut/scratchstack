@@ -26,9 +26,12 @@ pub trait Responder {
 /// Serializing this generates the outer `<ErrorResponse xmlns="...">` element.
 #[derive(Serialize)]
 #[serde(rename = "ErrorResponse")]
+// The derive would otherwise infer `E: Serialize`. The envelope never serializes `E` directly --
+// it builds `<Error>` from the metadata trait -- so errors need not implement `Serialize`.
+#[serde(bound(serialize = "E: ProvideErrorMetadata"))]
 pub struct ErrorResponseEnvelope<'a, E>
 where
-    E: Serialize + ProvideErrorMetadata,
+    E: ProvideErrorMetadata,
 {
     /// The XML namespace of the service.
     #[serde(rename = "@xmlns")]
@@ -94,7 +97,7 @@ where
 
 impl<'a, E> ErrorResponseEnvelope<'a, E>
 where
-    E: Serialize + ProvideErrorMetadata + ProvideRequestId + ProvideXmlNamespace,
+    E: ProvideErrorMetadata + ProvideRequestId + ProvideXmlNamespace,
 {
     /// Create a new error response envelope from the given error.
     pub fn new(error: &'a E) -> Self {
@@ -108,7 +111,7 @@ where
 
 impl<'a, E> ErrorResponseEnvelope<'a, E>
 where
-    E: Serialize + ProvideErrorMetadata + ProvideRequestId,
+    E: ProvideErrorMetadata + ProvideRequestId,
 {
     /// Create a new error response envelope from the given error and service XML namespace.
     pub fn new_with_xmlns(error: &'a E, xmlns: &'a str) -> Self {
@@ -122,7 +125,7 @@ where
 
 impl<E> ProvideRequestId for ErrorResponseEnvelope<'_, E>
 where
-    E: Serialize + ProvideErrorMetadata,
+    E: ProvideErrorMetadata,
 {
     fn request_id(&self) -> Option<&str> {
         self.request_id
@@ -131,7 +134,7 @@ where
 
 impl<E> ProvideXmlNamespace for ErrorResponseEnvelope<'_, E>
 where
-    E: Serialize + ProvideErrorMetadata,
+    E: ProvideErrorMetadata,
 {
     fn xml_namespace(&self) -> &str {
         self.xmlns
@@ -140,7 +143,7 @@ where
 
 impl<E> Responder for ErrorResponseEnvelope<'_, E>
 where
-    E: Serialize + ProvideErrorMetadata,
+    E: ProvideErrorMetadata,
 {
     fn respond(&self) -> Response<Body> {
         xml_response(self, self.error.error.http_status().unwrap_or(StatusCode::INTERNAL_SERVER_ERROR))
@@ -157,7 +160,7 @@ impl<'a, E> From<&'a E> for ErrorResponse<'a, E> {
 
 impl<E> Serialize for ErrorResponse<'_, E>
 where
-    E: Serialize + ProvideErrorMetadata,
+    E: ProvideErrorMetadata,
 {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut m = serializer.serialize_map(Some(3))?;
