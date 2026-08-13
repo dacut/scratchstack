@@ -424,7 +424,7 @@ mod tests {
         chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, NaiveTime, Utc},
         log::LevelFilter,
         scratchstack_aws_principal::{Principal, User},
-        scratchstack_errors::ServiceError,
+        scratchstack_core::ServiceError,
         std::{error::Error, fs::File, str::FromStr},
         tower::BoxError,
     };

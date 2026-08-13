@@ -28,6 +28,8 @@ crypto-common-c65f7effa3be6d31 = { package = "crypto-common", version = "0.1", d
 digest-93f6ce9d446188ac = { package = "digest", version = "0.10", features = ["std"] }
 digest-a6292c17cd707f01 = { package = "digest", version = "0.11", features = ["alloc", "mac", "oid"] }
 either = { version = "1", features = ["serde"] }
+env_filter = { version = "2", default-features = false, features = ["regex", "std"] }
+env_logger = { version = "0.11" }
 form_urlencoded = { version = "1" }
 futures-channel = { version = "0.3", features = ["sink"] }
 futures-core = { version = "0.3" }
@@ -89,6 +91,8 @@ crypto-common-c65f7effa3be6d31 = { package = "crypto-common", version = "0.1", d
 digest-93f6ce9d446188ac = { package = "digest", version = "0.10", features = ["std"] }
 digest-a6292c17cd707f01 = { package = "digest", version = "0.11", features = ["alloc", "mac", "oid"] }
 either = { version = "1", features = ["serde"] }
+env_filter = { version = "2", default-features = false, features = ["regex", "std"] }
+env_logger = { version = "0.11" }
 form_urlencoded = { version = "1" }
 futures-channel = { version = "0.3", features = ["sink"] }
 futures-core = { version = "0.3" }

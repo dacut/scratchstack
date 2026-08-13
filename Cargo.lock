@@ -2707,7 +2707,7 @@ dependencies = [
  "scratchstack-arn",
  "scratchstack-aspen",
  "scratchstack-aws-principal",
- "scratchstack-errors",
+ "scratchstack-core",
  "scratchstack-hakari",
  "serde",
  "sha2 0.11.0",
@@ -2778,11 +2778,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "scratchstack-errors"
+name = "scratchstack-core"
 version = "0.12.0"
 dependencies = [
+ "axum",
+ "chrono",
  "http 1.5.0",
+ "log",
+ "rand",
  "scratchstack-hakari",
+ "serde",
+ "test-log",
+ "tokio",
+ "tokio-rustls",
+ "uuid",
 ]
 
 [[package]]
@@ -2805,6 +2814,8 @@ dependencies = [
  "digest 0.10.7",
  "digest 0.11.3",
  "either",
+ "env_filter",
+ "env_logger",
  "form_urlencoded",
  "futures-channel",
  "futures-core",
@@ -2863,11 +2874,9 @@ name = "scratchstack-http-framework"
 version = "0.12.0"
 dependencies = [
  "axum",
- "base64 0.23.1",
  "bon",
  "bytes",
  "chrono",
- "derive_builder",
  "env_logger",
  "http 1.5.0",
  "http-body 1.1.0",
@@ -2875,20 +2884,15 @@ dependencies = [
  "log",
  "pretty_assertions",
  "quick-xml",
- "rand",
  "regex",
- "scratchstack-arn",
  "scratchstack-aws-principal",
  "scratchstack-aws-signature",
- "scratchstack-errors",
+ "scratchstack-core",
  "scratchstack-hakari",
  "serde",
- "sqlx",
  "test-log",
  "tokio",
- "tokio-rustls",
  "tower",
- "uuid",
 ]
 
 [[package]]
@@ -2918,7 +2922,7 @@ dependencies = [
  "scratchstack-aws-principal",
  "scratchstack-aws-signature",
  "scratchstack-cli-utils",
- "scratchstack-errors",
+ "scratchstack-core",
  "scratchstack-hakari",
  "scratchstack-pagination",
  "scratchstack-shapes-iam",
