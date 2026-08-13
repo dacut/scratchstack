@@ -135,6 +135,13 @@ where
     let access_suffix = access_key[4..].to_string();
     match access_prefix {
         "AKIA" => {
+            // Long-term credentials never carry a session token. If one was supplied, the caller is
+            // presenting a mismatched set of credentials; AWS rejects these instead of ignoring the
+            // token.
+            if req.session_token().is_some() {
+                return Err(SignatureError::InvalidClientTokenId(MSG_SECURITY_TOKEN_INVALID.into()).into());
+            }
+
             let result = query_as(indoc! {"
                 SELECT 'AIDA'||iam.user_credentials.user_id, account_id, path, user_name_cased, secret_key
                 FROM iam.user_credentials

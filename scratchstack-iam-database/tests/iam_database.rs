@@ -27,6 +27,8 @@ mod account;
 mod common;
 #[path = "iam_database/group.rs"]
 mod group;
+#[path = "iam_database/gsk.rs"]
+mod gsk;
 #[path = "iam_database/partition.rs"]
 mod partition;
 #[path = "iam_database/policy_attachment.rs"]
@@ -79,6 +81,7 @@ async fn test_database() {
     subtest_list_access_keys(&pool).await;
     subtest_update_access_key(&pool).await;
     subtest_delete_access_key(&pool).await;
+    subtest_get_signing_key(&pool).await;
     subtest_create_role(&pool).await;
     subtest_assume_role(&pool).await;
     subtest_create_group(&pool).await;
@@ -292,6 +295,15 @@ async fn subtest_delete_access_key(pool: &PgPool) {
     user::test_delete_access_key_mismatched_user(pool).await;
     user::test_delete_access_key_nonexistent(pool).await;
     user::test_delete_access_key_bad_prefix(pool).await;
+}
+
+/// GetSigningKeyRequest against the database
+async fn subtest_get_signing_key(pool: &PgPool) {
+    gsk::test_get_signing_key_long_term(pool).await;
+    gsk::test_get_signing_key_long_term_with_session_token(pool).await;
+    gsk::test_get_signing_key_short_access_key(pool).await;
+    gsk::test_get_signing_key_unknown_prefix(pool).await;
+    gsk::test_get_signing_key_nonexistent(pool).await;
 }
 
 /// CreateRoleInternalRequest
