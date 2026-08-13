@@ -353,6 +353,8 @@ fn create_exception_shape(model: &mut SmithyModel, exc_name: &str, exc_def: &Jso
             traits,
         },
         members,
+        // Filled in when the model resolves.
+        xmlns: None,
     };
 
     model.shapes.insert(exc_name.to_string(), Rc::new(RefCell::new(Shape::Structure(error_struct))));

@@ -19,6 +19,12 @@ pub struct Structure {
     /// The members of the structure. Each member name maps to exactly one member definition.
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub members: BTreeMap<String, Member>,
+
+    /// The XML namespace of the service this structure belongs to.
+    ///
+    /// This is copied from the model during a call to `resolve`.
+    #[serde(skip, default)]
+    pub xmlns: Option<String>,
 }
 
 impl ShapeInfo for Structure {
@@ -27,8 +33,12 @@ impl ShapeInfo for Structure {
     }
 
     fn rust_typename(&self) -> String {
+        // These have to agree with where `generate` writes each structure: errors to
+        // `types_error`, operation input/output to `operation`, and everything else to `types`.
         if self.base.traits.is_error() {
             format!("crate::error::{}", self.base.rust_typename())
+        } else if self.base.traits.is_input() || self.base.traits.is_output() {
+            format!("crate::operation::{}", self.base.rust_typename())
         } else {
             format!("crate::types::{}", self.base.rust_typename())
         }
@@ -39,6 +49,8 @@ impl ShapeInfo for Structure {
         for member in self.members.values_mut() {
             member.resolve(shape_name, model);
         }
+
+        self.xmlns.clone_from(&model.xmlns);
     }
 
     /// Generates code that implements the structure.
@@ -328,6 +340,7 @@ impl Structure {
     fn write_error_impl(&self, w: &mut dyn Write) -> IoResult<()> {
         let rust_typename = self.base.rust_typename();
         let code = self.error_code();
+        let xmlns = self.xmlns.as_deref().expect("XML namespace must be resolved before generating");
         let http_status = status_code_const(
             self.base
                 .traits
@@ -451,6 +464,26 @@ impl Structure {
         writeln!(w, "            m.serialize_entry(\"Message\", message)?;")?;
         writeln!(w, "        }}")?;
         writeln!(w, "        m.end()")?;
+        writeln!(w, "    }}")?;
+        writeln!(w, "}}")?;
+        writeln!(w)?;
+
+        // ProvideXmlNamespace impl
+        writeln!(w, "impl ::scratchstack_core::ProvideXmlNamespace for {rust_typename} {{")?;
+        writeln!(w, "    #[inline(always)]")?;
+        writeln!(w, "    fn xml_namespace(&self) -> &str {{")?;
+        writeln!(w, "        \"{xmlns}\"")?;
+        writeln!(w, "    }}")?;
+        writeln!(w, "}}")?;
+        writeln!(w)?;
+
+        // Responder impl
+        writeln!(w, "impl ::scratchstack_core::response::Responder for {rust_typename} {{")?;
+        writeln!(
+            w,
+            "    fn respond(&self) -> ::scratchstack_core::http::Response<::scratchstack_core::axum::body::Body> {{"
+        )?;
+        writeln!(w, "        ::scratchstack_core::response::ErrorResponseEnvelope::new(self).respond()")?;
         writeln!(w, "    }}")?;
         writeln!(w, "}}")?;
         writeln!(w)?;
