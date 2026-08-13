@@ -71,7 +71,7 @@ where
 
 fn internal_error<E: Error + Send + Sync + 'static>(e: E) -> BoxError {
     error!("Failed to query for secret key: {}", e);
-    SignatureError::InternalServiceError(e.into()).into()
+    SignatureError::internal_service_error(e).into()
 }
 
 impl<DB> Service<GetSigningKeyRequest> for GetSigningKeyFromDatabase<DB>
@@ -127,7 +127,7 @@ where
 
     // Access keys are 20 characters (at least) in length.
     if access_key.len() < 20 {
-        return Err(SignatureError::InvalidClientTokenId(MSG_ACCESS_KEY_PROVIDED_DOES_NOT_EXIST.to_string()).into());
+        return Err(SignatureError::InvalidClientTokenId(MSG_ACCESS_KEY_PROVIDED_DOES_NOT_EXIST.into()).into());
     }
 
     // The prefix tells us what kind of key it is.
@@ -151,7 +151,7 @@ where
                     Err(e) => {
                         return Err(match e {
                             SqlxError::RowNotFound => {
-                                SignatureError::InvalidClientTokenId(MSG_ACCESS_KEY_PROVIDED_DOES_NOT_EXIST.to_string())
+                                SignatureError::InvalidClientTokenId(MSG_ACCESS_KEY_PROVIDED_DOES_NOT_EXIST.into())
                                     .into()
                             }
                             _ => internal_error(e),
@@ -188,6 +188,6 @@ where
             Ok(response)
         }
 
-        _ => Err(SignatureError::InvalidClientTokenId(MSG_ACCESS_KEY_PROVIDED_DOES_NOT_EXIST.to_string()).into()),
+        _ => Err(SignatureError::InvalidClientTokenId(MSG_ACCESS_KEY_PROVIDED_DOES_NOT_EXIST.into()).into()),
     }
 }

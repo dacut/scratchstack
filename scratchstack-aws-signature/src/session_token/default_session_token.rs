@@ -136,30 +136,24 @@ where
                 key_info.session_token_encryption_key_id,
                 key_info.encryption_algorithm,
             );
-            Err(SignatureError::InternalServiceError(
-                format!(
-                    "Unsupported encryption algorithm for session token encryption key {}: {:?}",
-                    key_info.session_token_encryption_key_id, key_info.encryption_algorithm
-                )
-                .into(),
-            ))?;
+            Err(SignatureError::internal_service_error(format!(
+                "Unsupported encryption algorithm for session token encryption key {}: {:?}",
+                key_info.session_token_encryption_key_id, key_info.encryption_algorithm
+            )))?;
         }
 
         let nonce = Nonce::try_from(nonce.as_slice())
-            .map_err(|_| SignatureError::InvalidSessionToken(ERR_MSG_INVALID_SESSION_TOKEN.to_string()))?;
+            .map_err(|_| SignatureError::InvalidSessionToken(ERR_MSG_INVALID_SESSION_TOKEN.into()))?;
         let associated_data = format!("AccountId={account_id}");
         let cipher = Aes256Gcm::new_from_slice(key_info.encryption_key.as_slice()).map_err(|e| {
             log::error!(
                 "Failed to create cipher for session token decryption with key {}: {e}",
                 key_info.session_token_encryption_key_id,
             );
-            SignatureError::InternalServiceError(
-                format!(
-                    "Failed to create cipher for session token decryption with key {}: {e}",
-                    key_info.session_token_encryption_key_id
-                )
-                .into(),
-            )
+            SignatureError::internal_service_error(format!(
+                "Failed to create cipher for session token decryption with key {}: {e}",
+                key_info.session_token_encryption_key_id
+            ))
         })?;
 
         cipher
@@ -212,19 +206,16 @@ impl EncryptedSessionTokenData {
                 key_info.session_token_encryption_key_id,
                 key_info.encryption_algorithm,
             );
-            return Err(SignatureError::InternalServiceError(
-                format!(
-                    "Unsupported encryption algorithm for session token encryption key {}: {:?}",
-                    key_info.session_token_encryption_key_id, key_info.encryption_algorithm
-                )
-                .into(),
-            ));
+            return Err(SignatureError::internal_service_error(format!(
+                "Unsupported encryption algorithm for session token encryption key {}: {:?}",
+                key_info.session_token_encryption_key_id, key_info.encryption_algorithm
+            )));
         }
 
         if account_id.len() != ACCOUNT_ID_LENGTH || !account_id.bytes().all(|b| b.is_ascii_digit()) {
-            return Err(SignatureError::InternalServiceError(
-                format!("Invalid account ID for session token: {account_id}").into(),
-            ));
+            return Err(SignatureError::internal_service_error(format!(
+                "Invalid account ID for session token: {account_id}"
+            )));
         }
 
         let cipher = Aes256Gcm::new_from_slice(key_info.encryption_key.as_slice()).map_err(|e| {
@@ -232,13 +223,10 @@ impl EncryptedSessionTokenData {
                 "Failed to create cipher for session token encryption with key {}: {e}",
                 key_info.session_token_encryption_key_id,
             );
-            SignatureError::InternalServiceError(
-                format!(
-                    "Failed to create cipher for session token encryption with key {}: {e}",
-                    key_info.session_token_encryption_key_id
-                )
-                .into(),
-            )
+            SignatureError::internal_service_error(format!(
+                "Failed to create cipher for session token encryption with key {}: {e}",
+                key_info.session_token_encryption_key_id
+            ))
         })?;
 
         // Before encryption, this buffer holds the plaintext token data -- including the raw
@@ -246,7 +234,7 @@ impl EncryptedSessionTokenData {
         // overwritten in place by the ciphertext.
         let mut payload = Zeroizing::new(postcard::to_allocvec(session_token_data).map_err(|e| {
             log::error!("Failed to serialize session token data: {e}");
-            SignatureError::InternalServiceError(format!("Failed to serialize session token data: {e}").into())
+            SignatureError::internal_service_error(format!("Failed to serialize session token data: {e}"))
         })?);
 
         let nonce = Nonce::<NonceSize>::generate_from_rng(&mut rand::rng());
@@ -254,7 +242,7 @@ impl EncryptedSessionTokenData {
 
         cipher.encrypt_in_place(&nonce, associated_data.as_bytes(), &mut *payload).map_err(|e| {
             log::error!("Failed to encrypt session token data: {e}");
-            SignatureError::InternalServiceError(format!("Failed to encrypt session token data: {e}").into())
+            SignatureError::internal_service_error(format!("Failed to encrypt session token data: {e}"))
         })?;
 
         Ok(Self {
@@ -343,12 +331,13 @@ impl EncryptedSessionTokenData {
     /// Serialize this encrypted session token data into an opaque session token string.
     pub fn to_session_token(&self) -> Result<String, SignatureError> {
         let key_id_length = u8::try_from(self.key_id.len()).map_err(|_| {
-            SignatureError::InternalServiceError(
-                format!("Session token encryption key id is too long: {}", self.key_id).into(),
-            )
+            SignatureError::internal_service_error(format!(
+                "Session token encryption key id is too long: {}",
+                self.key_id
+            ))
         })?;
         let encrypted_payload_length = u32::try_from(self.encrypted_payload.len())
-            .map_err(|_| SignatureError::InternalServiceError("Encrypted session token payload is too long".into()))?;
+            .map_err(|_| SignatureError::internal_service_error("Encrypted session token payload is too long"))?;
 
         let mut body = Vec::with_capacity(
             1 + self.key_id.len() + ACCOUNT_ID_LENGTH + self.nonce.len() + 4 + self.encrypted_payload.len(),
@@ -362,7 +351,7 @@ impl EncryptedSessionTokenData {
 
         let session_token = format!("{}{}", CURRENT_TOKEN_VERSION as char, URL_SAFE_NO_PAD.encode(body));
         if session_token.len() > MAX_SESSION_TOKEN_SIZE {
-            return Err(SignatureError::InternalServiceError("Session token is too long".into()));
+            return Err(SignatureError::internal_service_error("Session token is too long"));
         }
 
         Ok(session_token)
@@ -403,7 +392,7 @@ impl Service<String> for StaticKeyService {
         let key = self.0.get(&key_id).cloned();
         Box::pin(async move {
             key.ok_or_else(|| {
-                SignatureError::InvalidSessionToken(format!("KeyId {key_id} not found in StaticKeyService"))
+                SignatureError::InvalidSessionToken(format!("KeyId {key_id} not found in StaticKeyService").into())
             })
         })
     }
@@ -411,7 +400,7 @@ impl Service<String> for StaticKeyService {
 
 /// Helper function to create a `SignatureError::InvalidSessionToken` error with a default message.
 fn invalid_session_token_error() -> SignatureError {
-    SignatureError::InvalidSessionToken("Invalid session token".to_string())
+    SignatureError::InvalidSessionToken("Invalid session token".into())
 }
 
 // Compile-time checks that `DefaultSessionTokenExtractor` satisfies the bounds the rest of the
@@ -464,7 +453,7 @@ mod tests {
     /// Asserts that `result` is an `InvalidSessionToken` error carrying `expected_message`.
     fn assert_invalid_session_token<T>(result: Result<T, SignatureError>, expected_message: &str) {
         match result {
-            Err(SignatureError::InvalidSessionToken(message)) => assert_eq!(message, expected_message),
+            Err(SignatureError::InvalidSessionToken(e)) => assert_eq!(e.message, expected_message),
             _ => panic!("expected Err(SignatureError::InvalidSessionToken), got Ok()"),
         }
     }

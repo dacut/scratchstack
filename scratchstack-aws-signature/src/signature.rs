@@ -302,7 +302,7 @@ impl StreamingSignatureState {
         if !is_equal {
             trace!("Chunk signature mismatch: expected '{}', got '{}'", expected_signature, chunk_signature);
             self.prev_signature = chunk_signature;
-            Err(SignatureError::SignatureDoesNotMatch(Some(MSG_REQUEST_SIGNATURE_MISMATCH.to_string())))
+            Err(SignatureError::SignatureDoesNotMatch(MSG_REQUEST_SIGNATURE_MISMATCH.into()))
         } else {
             self.prev_signature = chunk_signature;
             Ok(())
