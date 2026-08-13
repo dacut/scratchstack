@@ -9,7 +9,7 @@ use {
         response::Response,
     },
     bon::Builder,
-    scratchstack_http_framework::RequestId,
+    scratchstack_core::RequestId,
     serde::{Deserialize, Serialize},
     tower::BoxError,
 };

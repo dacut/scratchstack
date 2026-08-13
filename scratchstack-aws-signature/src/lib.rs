@@ -131,6 +131,8 @@
 )]
 #![cfg_attr(doc, feature(doc_cfg))]
 
+#[cfg(feature = "axum")]
+mod axum_layer;
 mod body;
 mod chronoutil;
 pub(crate) mod constants;
@@ -147,6 +149,9 @@ pub use {
     body::*, error::*, scratchstack_aws_principal as principal, scratchstack_core as core, session_token::*,
     signature::*, signing_key::*,
 };
+
+#[cfg(feature = "axum")]
+pub use axum_layer::*;
 
 #[doc(inline)]
 pub use canonical::{

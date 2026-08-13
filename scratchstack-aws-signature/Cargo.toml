@@ -17,7 +17,7 @@ name = "scratchstack_aws_signature"
 
 [features]
 default = ["axum", "default_session_token"]
-axum = ["dep:axum"]
+axum = ["dep:axum", "dep:bon", "dep:quick-xml", "scratchstack-core/axum"]
 default_session_token = ["dep:aes", "dep:aes-gcm", "dep:base64", "dep:postcard"]
 unstable = []
 
@@ -27,6 +27,7 @@ aes-gcm = { workspace = true, optional = true, features = ["zeroize"] }
 ascii-casing = { workspace = true, features = ["serde"] }
 axum = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
+bon = { workspace = true, optional = true }
 bytes.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 derive_builder.workspace = true
@@ -40,6 +41,7 @@ lazy_static.workspace = true
 log.workspace = true
 postcard = { workspace = true, optional = true, features = ["alloc"] }
 qualifier_attr.workspace = true
+quick-xml = { workspace = true, optional = true, features = ["serialize"] }
 rand.workspace = true
 regex.workspace = true
 sha2.workspace = true
@@ -48,7 +50,7 @@ scratchstack-aspen.path = "../scratchstack-aspen"
 scratchstack-aws-principal = { path = "../scratchstack-aws-principal", features = [
     "serde",
 ] }
-scratchstack-core.path = "../scratchstack-core"
+scratchstack-core = { path = "../scratchstack-core", default-features = false }
 scratchstack-hakari = { path = "../scratchstack-hakari" }
 serde = { workspace = true, features = ["derive"] }
 subtle.workspace = true
@@ -60,6 +62,7 @@ zeroize = { workspace = true, features = ["zeroize_derive"] }
 [dev-dependencies]
 axum.workspace = true
 env_logger.workspace = true
+pretty_assertions.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 tokio-test.workspace = true
 test-log.workspace = true

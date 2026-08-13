@@ -2688,6 +2688,7 @@ dependencies = [
  "ascii-casing",
  "axum",
  "base64 0.23.1",
+ "bon",
  "bytes",
  "chrono",
  "derive_builder",
@@ -2701,7 +2702,9 @@ dependencies = [
  "lazy_static",
  "log",
  "postcard",
+ "pretty_assertions",
  "qualifier_attr",
+ "quick-xml",
  "rand",
  "regex",
  "scratchstack-arn",
@@ -2870,32 +2873,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "scratchstack-http-framework"
-version = "0.12.0"
-dependencies = [
- "axum",
- "bon",
- "bytes",
- "chrono",
- "env_logger",
- "http 1.5.0",
- "http-body 1.1.0",
- "http-body-util",
- "log",
- "pretty_assertions",
- "quick-xml",
- "regex",
- "scratchstack-aws-principal",
- "scratchstack-aws-signature",
- "scratchstack-core",
- "scratchstack-hakari",
- "serde",
- "test-log",
- "tokio",
- "tower",
-]
-
-[[package]]
 name = "scratchstack-iam-database"
 version = "0.12.0"
 dependencies = [
@@ -2981,8 +2958,8 @@ dependencies = [
  "scratchstack-aws-principal",
  "scratchstack-aws-signature",
  "scratchstack-config",
+ "scratchstack-core",
  "scratchstack-hakari",
- "scratchstack-http-framework",
  "scratchstack-iam-database",
  "serde",
  "sqlx",
@@ -3013,8 +2990,8 @@ dependencies = [
  "scratchstack-aws-principal",
  "scratchstack-aws-signature",
  "scratchstack-config",
+ "scratchstack-core",
  "scratchstack-hakari",
- "scratchstack-http-framework",
  "scratchstack-iam-database",
  "serde",
  "sqlx",

@@ -32,7 +32,7 @@ use {
     clap::Parser,
     log::{debug, error, info},
     scratchstack_config::Resolvable as _,
-    scratchstack_http_framework::TlsListener,
+    scratchstack_core::TlsListener,
     scratchstack_iam_database::GetSigningKeyFromDatabase,
     std::{path::PathBuf, process::exit, sync::Arc},
     tokio::{net::TcpListener, runtime::Builder as RuntimeBuilder},

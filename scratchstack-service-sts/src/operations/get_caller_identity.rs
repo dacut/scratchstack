@@ -7,7 +7,7 @@ use {
     http::{StatusCode, request::Parts},
     scratchstack_arn::Arn,
     scratchstack_aws_principal::{Principal, SessionData, SessionValue},
-    scratchstack_http_framework::RequestId,
+    scratchstack_core::RequestId,
     std::collections::HashMap,
     tower::BoxError,
 };
