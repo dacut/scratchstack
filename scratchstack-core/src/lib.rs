@@ -19,17 +19,46 @@
 
 pub(crate) mod constants;
 
-/// Error traits.
+/// Error traits and types.
 pub mod error;
 
 /// Request id handling.
 pub mod request_id;
 
+/// Response types.
+#[cfg(feature = "axum")]
+pub mod response;
+
 /// Transport layer security (TLS).
 #[cfg(feature = "tls")]
 pub mod tls;
 
+/// The underlying `http` crate used by this crate.
+pub use http;
+
 pub use {error::*, request_id::*};
+
+/// The underlying `axum` crate used by this crate.
+#[cfg(feature = "axum")]
+pub use axum;
+
+/// The underlying `quick-xml` crate used by this crate.
+#[cfg(feature = "axum")]
+pub use quick_xml;
 
 #[cfg(feature = "tls")]
 pub use tls::*;
+
+/// Trait for types that can _potentially_ provide a request id.
+///
+/// This is applied to error and response types.
+pub trait ProvideRequestId {
+    /// Returns the request id if available.
+    fn request_id(&self) -> Option<&str>;
+}
+
+/// Trait for types that can provide the service's XML namespace.
+pub trait ProvideXmlNamespace {
+    /// Returns the XML namespace for the service.
+    fn xml_namespace(&self) -> &str;
+}
