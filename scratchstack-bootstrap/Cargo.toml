@@ -14,13 +14,13 @@ name = "ssbs"
 path = "src/ssbs.rs"
 
 [dependencies]
-aws-smithy-types.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 chrono.workspace = true
 env_logger.workspace = true
 log.workspace = true
 rpassword.workspace = true
 scratchstack-cli-utils = { path = "../scratchstack-cli-utils" }
+scratchstack-core.path = "../scratchstack-core"
 scratchstack-hakari = { path = "../scratchstack-hakari" }
 scratchstack-iam-database = { path = "../scratchstack-iam-database", features = [
     "utils",

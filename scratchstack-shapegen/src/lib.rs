@@ -101,6 +101,31 @@ pub trait ShapeInfo {
     }
 }
 
+/// Renders an HTTP status code as a `scratchstack_core::http::StatusCode` constant expression.
+///
+/// `StatusCode::from_u16` is not `const`, so generated code names the constant directly. Codes
+/// outside the set below panic here, at generation time, rather than producing code that fails to
+/// compile or -- worse -- parses the status at runtime on every call.
+pub(crate) fn status_code_const(code: u16) -> &'static str {
+    match code {
+        400 => "::scratchstack_core::http::StatusCode::BAD_REQUEST",
+        401 => "::scratchstack_core::http::StatusCode::UNAUTHORIZED",
+        403 => "::scratchstack_core::http::StatusCode::FORBIDDEN",
+        404 => "::scratchstack_core::http::StatusCode::NOT_FOUND",
+        405 => "::scratchstack_core::http::StatusCode::METHOD_NOT_ALLOWED",
+        409 => "::scratchstack_core::http::StatusCode::CONFLICT",
+        410 => "::scratchstack_core::http::StatusCode::GONE",
+        412 => "::scratchstack_core::http::StatusCode::PRECONDITION_FAILED",
+        413 => "::scratchstack_core::http::StatusCode::PAYLOAD_TOO_LARGE",
+        429 => "::scratchstack_core::http::StatusCode::TOO_MANY_REQUESTS",
+        500 => "::scratchstack_core::http::StatusCode::INTERNAL_SERVER_ERROR",
+        501 => "::scratchstack_core::http::StatusCode::NOT_IMPLEMENTED",
+        503 => "::scratchstack_core::http::StatusCode::SERVICE_UNAVAILABLE",
+        504 => "::scratchstack_core::http::StatusCode::GATEWAY_TIMEOUT",
+        _ => panic!("Unsupported HTTP status code in model: {code}; add it to status_code_const()"),
+    }
+}
+
 /// Macro that forwards the implementation of the `ShapeInfo` trait to a contained `ShapeBase` field.
 #[macro_export]
 macro_rules! forward_shape_info {

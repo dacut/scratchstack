@@ -23,13 +23,19 @@ impl From<::scratchstack_shapes_iam::error_meta::Error> for Error {
             IamError::ThrottlingException(inner) => Self::ThrottlingException(inner.into()),
             IamError::UnrecognizedClientException(inner) => Self::UnrecognizedClientException(inner.into()),
             IamError::ValidationError(inner) => Self::ValidationError(inner.into()),
-            #[allow(deprecated)]
             _ => {
-                let meta = ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&e).clone();
-                Self::Unhandled(Box::new(crate::types::error::sealed_unhandled::Unhandled {
-                    source: Box::new(e),
-                    meta,
-                }))
+                use ::scratchstack_core::error::ProvideErrorMetadata as _;
+                Self::Unhandled(
+                    ::scratchstack_core::error::GenericError::builder()
+                        .code(e.code())
+                        .maybe_message(e.message().map(::std::string::ToString::to_string))
+                        .maybe_http_status(e.http_status())
+                        .maybe_request_id(
+                            ::scratchstack_core::ProvideRequestId::request_id(&e)
+                                .map(::std::string::ToString::to_string),
+                        )
+                        .build(),
+                )
             }
         }
     }
@@ -59,12 +65,11 @@ impl From<Error> for ::scratchstack_shapes_iam::error_meta::Error {
             Error::ValidationError(inner) => Self::ValidationError(inner.into()),
             _ => {
                 ::log::error!("Converting unhandled STS error to IAM error: {:?}", e);
-                Self::InternalFailure(Box::new(::scratchstack_shapes_iam::types::error::InternalFailure {
-                    meta: ::aws_smithy_types::error::ErrorMetadata::builder()
-                        .code("InternalFailure")
+                Self::InternalFailure(Box::new(
+                    ::scratchstack_shapes_iam::types::error::InternalFailure::builder()
                         .message("An internal error has occurred")
                         .build(),
-                }))
+                ))
             }
         }
     }
@@ -75,7 +80,8 @@ macro_rules! from_iam {
         impl From<::scratchstack_shapes_iam::types::error::$ty> for Error {
             fn from(e: ::scratchstack_shapes_iam::types::error::$ty) -> Self {
                 Self::$ty(Box::new(crate::types::error::$ty {
-                    meta: e.meta,
+                    message: e.message,
+                    request_id: e.request_id,
                 }))
             }
         }

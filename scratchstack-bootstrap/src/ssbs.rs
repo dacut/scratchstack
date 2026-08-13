@@ -27,8 +27,8 @@ mod tests;
 
 use {
     crate::{account::*, group::*, partition::*, policy::*, role::*, session_token_encryption_key::*, user::*},
-    aws_smithy_types::error::metadata::ProvideErrorMetadata,
     clap::{Parser, Subcommand},
+    scratchstack_core::error::ProvideErrorMetadata,
     scratchstack_iam_database::RequestExecutor,
     scratchstack_shapes_iam::{error_meta::Error as IamError, types::error::InternalFailure},
     serde::Serialize as _,
@@ -524,7 +524,7 @@ impl Commands {
 
 /// Format a service error in the AWS CLI style.
 pub(crate) fn format_service_error<E: ProvideErrorMetadata>(error: &E, operation: &str) -> String {
-    let code = error.code().unwrap_or("Unknown");
+    let code = error.code();
     let message = error.message().unwrap_or_default();
     format!("An error occurred ({code}) when calling the {operation} operation: {message}")
 }

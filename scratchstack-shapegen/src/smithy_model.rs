@@ -95,8 +95,7 @@ impl SmithyModel {
         }
 
         writeln!(w.error_meta, "    /// An unexpected error occurred")?;
-        writeln!(w.error_meta, "    #[allow(deprecated)]")?;
-        writeln!(w.error_meta, "    Unhandled(::std::boxed::Box<crate::types::error::sealed_unhandled::Unhandled>)")?;
+        writeln!(w.error_meta, "    Unhandled(::scratchstack_core::error::GenericError)")?;
         writeln!(w.error_meta, "}}")?;
         writeln!(w.error_meta)?;
 
@@ -112,35 +111,80 @@ impl SmithyModel {
                 writeln!(w.error_meta, "            Self::{}(inner) => inner.fmt(f),", s.base.rust_typename())?;
             }
         }
-        writeln!(w.error_meta, "            Self::Unhandled(_) => {{")?;
-        writeln!(
-            w.error_meta,
-            "                if let ::std::option::Option::Some(code) = ::aws_smithy_types::error::metadata::ProvideErrorMetadata::code(self) {{"
-        )?;
-        writeln!(w.error_meta, "                    write!(f, \"unhandled error ({{code}})\")")?;
-        writeln!(w.error_meta, "                }} else {{")?;
-        writeln!(w.error_meta, "                    f.write_str(\"unhandled error\")")?;
-        writeln!(w.error_meta, "                }}")?;
-        writeln!(w.error_meta, "            }}")?;
+        writeln!(w.error_meta, "            Self::Unhandled(inner) => inner.fmt(f),")?;
         writeln!(w.error_meta, "        }}")?;
         writeln!(w.error_meta, "    }}")?;
         writeln!(w.error_meta, "}}")?;
         writeln!(w.error_meta)?;
 
-        // ProvideErrorMetadata implementation
-        writeln!(w.error_meta, "impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for Error {{")?;
-        writeln!(w.error_meta, "    fn meta(&self) -> &::aws_smithy_types::error::metadata::ErrorMetadata {{")?;
+        // ProvideErrorMetadata and ProvideRequestId implementations, both of which forward to
+        // whichever variant is present.
+        writeln!(w.error_meta, "impl Error {{")?;
+        writeln!(w.error_meta, "    /// Returns this error as a `ProvideErrorMetadata` reference.")?;
+        writeln!(
+            w.error_meta,
+            "    pub fn as_provide_error_metadata(&self) -> &dyn ::scratchstack_core::error::ProvideErrorMetadata {{"
+        )?;
         writeln!(w.error_meta, "        match self {{")?;
         for shape in self.shapes.values() {
             let shape = shape.borrow();
             if let Shape::Structure(s) = &*shape
                 && s.base.traits.is_error()
             {
-                writeln!(w.error_meta, "            Self::{}(inner) => inner.meta(),", s.base.rust_typename())?;
+                writeln!(w.error_meta, "            Self::{}(inner) => &**inner,", s.base.rust_typename())?;
             }
         }
-        writeln!(w.error_meta, "            #[allow(deprecated)]")?;
-        writeln!(w.error_meta, "            Self::Unhandled(inner) => &inner.meta,")?;
+        writeln!(w.error_meta, "            Self::Unhandled(inner) => inner,")?;
+        writeln!(w.error_meta, "        }}")?;
+        writeln!(w.error_meta, "    }}")?;
+        writeln!(w.error_meta, "}}")?;
+        writeln!(w.error_meta)?;
+
+        writeln!(w.error_meta, "impl ::scratchstack_core::error::ProvideErrorMetadata for Error {{")?;
+        writeln!(w.error_meta, "    #[inline(always)]")?;
+        writeln!(w.error_meta, "    fn error_type(&self) -> ::scratchstack_core::error::ErrorType {{")?;
+        writeln!(w.error_meta, "        self.as_provide_error_metadata().error_type()")?;
+        writeln!(w.error_meta, "    }}")?;
+        writeln!(w.error_meta)?;
+        writeln!(w.error_meta, "    #[inline(always)]")?;
+        writeln!(w.error_meta, "    fn code(&self) -> &str {{")?;
+        writeln!(w.error_meta, "        self.as_provide_error_metadata().code()")?;
+        writeln!(w.error_meta, "    }}")?;
+        writeln!(w.error_meta)?;
+        writeln!(w.error_meta, "    #[inline(always)]")?;
+        writeln!(w.error_meta, "    fn message(&self) -> ::std::option::Option<&str> {{")?;
+        writeln!(w.error_meta, "        self.as_provide_error_metadata().message()")?;
+        writeln!(w.error_meta, "    }}")?;
+        writeln!(w.error_meta)?;
+        writeln!(w.error_meta, "    #[inline(always)]")?;
+        writeln!(
+            w.error_meta,
+            "    fn http_status(&self) -> ::std::option::Option<::scratchstack_core::http::StatusCode> {{"
+        )?;
+        writeln!(w.error_meta, "        self.as_provide_error_metadata().http_status()")?;
+        writeln!(w.error_meta, "    }}")?;
+        writeln!(w.error_meta, "}}")?;
+        writeln!(w.error_meta)?;
+
+        writeln!(w.error_meta, "impl ::scratchstack_core::ProvideRequestId for Error {{")?;
+        writeln!(w.error_meta, "    fn request_id(&self) -> ::std::option::Option<&str> {{")?;
+        writeln!(w.error_meta, "        match self {{")?;
+        for shape in self.shapes.values() {
+            let shape = shape.borrow();
+            if let Shape::Structure(s) = &*shape
+                && s.base.traits.is_error()
+            {
+                writeln!(
+                    w.error_meta,
+                    "            Self::{}(inner) => ::scratchstack_core::ProvideRequestId::request_id(&**inner),",
+                    s.base.rust_typename()
+                )?;
+            }
+        }
+        writeln!(
+            w.error_meta,
+            "            Self::Unhandled(inner) => ::scratchstack_core::ProvideRequestId::request_id(inner),"
+        )?;
         writeln!(w.error_meta, "        }}")?;
         writeln!(w.error_meta, "    }}")?;
         writeln!(w.error_meta, "}}")?;
@@ -165,8 +209,7 @@ impl SmithyModel {
                 )?;
             }
         }
-        writeln!(w.error_meta, "            #[allow(deprecated)]")?;
-        writeln!(w.error_meta, "            Self::Unhandled(inner) => ::std::option::Option::Some(&*inner.source),")?;
+        writeln!(w.error_meta, "            Self::Unhandled(inner) => ::std::option::Option::Some(inner),")?;
         writeln!(w.error_meta, "        }}")?;
         writeln!(w.error_meta, "    }}")?;
         writeln!(w.error_meta, "}}")?;
