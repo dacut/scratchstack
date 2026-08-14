@@ -45,7 +45,6 @@ use {
 };
 
 const DEFAULT_CONFIG_FILENAME: &str = "scratchstack-sts.cfg.toml";
-// const CONTENT_LENGTH_LIMIT: u64 = 10 << 20;
 
 #[derive(Parser)]
 #[command(version, about)]
