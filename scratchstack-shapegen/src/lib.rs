@@ -1,6 +1,6 @@
 //! Rust code generation library for Smithy shape models.
 use {
-    derive_builder::Builder,
+    bon::Builder,
     std::io::{Result as IoResult, Write},
 };
 
@@ -36,18 +36,11 @@ pub use {
 
 /// Writers that will write generated code into the appropriate module.
 #[derive(Builder, Debug)]
-#[builder(pattern = "owned")]
 pub struct Writers<W: Write> {
     pub error_meta: W,
     pub operation: W,
     pub types: W,
     pub types_error: W,
-}
-
-impl<W: Write> Writers<W> {
-    pub fn builder() -> WritersBuilder<W> {
-        WritersBuilder::default()
-    }
 }
 
 /// Trait for all named shapes.
@@ -174,8 +167,7 @@ mod tests {
             .operation(NullWriter)
             .types(NullWriter)
             .types_error(NullWriter)
-            .build()
-            .unwrap();
+            .build();
         m.generate(&mut w).expect("Failed to generate Rust code for IAM service model");
     }
 }
