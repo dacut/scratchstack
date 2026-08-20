@@ -1,30 +1,39 @@
 use {
-    crate::service::{ServiceState, internal_failure, malformed_input},
+    crate::{
+        authz::check_authorization,
+        constants::SESSION_KEY_AWS_PRINCIPAL_ACCOUNT,
+        service::{ServiceState, internal_failure, malformed_input},
+    },
     axum::{body::Body, response::Response},
     scratchstack_aws_principal::{Principal, SessionData, SessionValue},
     scratchstack_core::{RequestId, response::Responder as _},
     scratchstack_iam_database::RequestExecutor,
-    scratchstack_shapes_iam::operation::{ListUsersInternalRequest, ListUsersRequest, ListUsersResponseEnvelope},
+    scratchstack_shapes_iam::{
+        action::Action,
+        operation::{ListUsersInternalRequest, ListUsersRequest, ListUsersResponseEnvelope},
+    },
 };
 
 /// Handle a `ListUsers` request.
 ///
-/// The caller has already been authenticated by the SigV4 layer. This lists users in the caller's
-/// account without currently performing authorization checks.
+/// The caller has already been authenticated by the SigV4 layer. The caller's identity-based
+/// policies (including group-inherited policies and any permissions boundary) must allow
+/// `iam:ListUsers`; the account root user is implicitly allowed. `iam:ListUsers` does not support
+/// resource-level permissions, so policies must grant it with `Resource: "*"`.
 pub(crate) async fn list_users(
     svc_state: ServiceState,
     request_id: RequestId,
-    _principal: Principal,
+    principal: Principal,
     session_data: SessionData,
     parameters: &str,
 ) -> Response<Body> {
-    let Some(account_id) = session_data.get("aws:PrincipalAccount") else {
-        log::error!("{request_id}: Missing aws:PrincipalAccount in session data");
+    let Some(account_id) = session_data.get(SESSION_KEY_AWS_PRINCIPAL_ACCOUNT) else {
+        log::error!("{request_id}: Missing {SESSION_KEY_AWS_PRINCIPAL_ACCOUNT} in session data");
         return internal_failure(request_id);
     };
 
     let SessionValue::String(account_id) = account_id else {
-        log::error!("{request_id}: aws:PrincipalAccount in session data is not a string");
+        log::error!("{request_id}: {SESSION_KEY_AWS_PRINCIPAL_ACCOUNT} in session data is not a string");
         return internal_failure(request_id);
     };
 
@@ -58,6 +67,21 @@ pub(crate) async fn list_users(
             return internal_failure(request_id);
         }
     };
+
+    if let Err(response) = check_authorization(
+        &mut tx,
+        request_id,
+        &principal,
+        &session_data,
+        svc_state.secure_transport,
+        Action::ListUsers,
+        &[],
+    )
+    .await
+    {
+        // Dropping the transaction rolls it back.
+        return *response;
+    }
 
     let response = match request.execute(&mut tx, request_id).await {
         Ok(response) => {

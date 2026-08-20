@@ -12,6 +12,7 @@
 )]
 #![cfg_attr(doc, feature(doc_cfg))]
 
+pub(crate) mod authz;
 pub(crate) mod config;
 pub(crate) mod constants;
 pub(crate) mod operations;
@@ -128,6 +129,7 @@ async fn run_server_from_config(config: ResolvedIamServiceConfig) -> Result<(), 
 
     let svc_state = ServiceState {
         db: pool,
+        secure_transport: common.listener.tls.is_some(),
     };
 
     let app = Router::new()

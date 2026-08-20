@@ -20,6 +20,9 @@ use {
 pub(crate) struct ServiceState {
     /// Connection to the IAM database.
     pub(crate) db: Arc<PgPool>,
+
+    /// Whether the listener terminates TLS; supplies the `aws:SecureTransport` condition key.
+    pub(crate) secure_transport: bool,
 }
 
 #[axum::debug_handler]
@@ -90,4 +93,132 @@ fn invalid_action(request_id: RequestId, action: &str, version: &str) -> Respons
 /// IAM does not report a message with this error, so neither do we.
 pub(crate) fn malformed_input(request_id: RequestId) -> Response<Body> {
     MalformedInput::builder().request_id(request_id).build().respond()
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::{ServiceState, serve_request},
+        axum::{
+            body::{Body, Bytes},
+            extract::{Extension, RawQuery, State},
+            http::StatusCode,
+            response::Response,
+        },
+        http_body_util::BodyExt as _,
+        pretty_assertions::assert_eq,
+        scratchstack_aws_principal::{Principal, RootUser, SessionData, SessionValue, User},
+        scratchstack_core::RequestId,
+        scratchstack_iam_database::{migrate::MIGRATOR, utils::TempDatabase},
+        sqlx::raw_sql,
+        std::sync::Arc,
+    };
+
+    const TEST_ACCOUNT_ID: &str = "123456789012";
+
+    /// Seed data for the authorization tests: one user whose inline policy allows
+    /// `iam:ListUsers` and one user with no policies at all.
+    const AUTHZ_TEST_DATA: &str = r#"
+        INSERT INTO iam.partition(partition) VALUES ('aws');
+
+        INSERT INTO iam.accounts(account_id, email, alias) VALUES
+        ('123456789012', 'authz-test@example.com', 'authz-test');
+
+        INSERT INTO iam.users(user_id, account_id, user_name_lower, user_name_cased, path) VALUES
+        ('SVCTESTALLOWUSER', '123456789012', 'allowed-user', 'Allowed-User', '/'),
+        ('SVCTESTDENYUSER1', '123456789012', 'denied-user', 'Denied-User', '/');
+
+        INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+        ('SVCTESTALLOWUSER', 'allow-list-users', 'Allow-List-Users',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*"}]}');
+    "#;
+
+    /// Build the principal and session data the SigV4 layer would produce for a seeded user.
+    fn user_identity(user_id: &str, user_name: &str) -> (Principal, SessionData) {
+        let principal =
+            Principal::from(User::new("aws", TEST_ACCOUNT_ID, "/", user_name).expect("failed to build user"));
+        let mut session_data = SessionData::new();
+        session_data.insert("aws:PrincipalAccount", SessionValue::String(TEST_ACCOUNT_ID.to_string()));
+        session_data.insert(
+            "aws:PrincipalArn",
+            SessionValue::String(format!("arn:aws:iam::{TEST_ACCOUNT_ID}:user/{user_name}")),
+        );
+        session_data.insert("aws:userid", SessionValue::String(format!("AIDA{user_id}")));
+        session_data.insert("aws:username", SessionValue::String(user_name.to_string()));
+        session_data.insert("aws:PrincipalType", SessionValue::String("User".to_string()));
+        (principal, session_data)
+    }
+
+    /// Invoke `serve_request` directly with the given identity and return the status and body.
+    async fn call(
+        svc_state: &ServiceState,
+        principal: Principal,
+        session_data: SessionData,
+        parameters: &str,
+    ) -> (StatusCode, String) {
+        let response: Response<Body> = serve_request(
+            State(svc_state.clone()),
+            RequestId::new(),
+            Extension(principal),
+            Extension(session_data),
+            RawQuery(None),
+            Bytes::from(parameters.as_bytes().to_vec()),
+        )
+        .await;
+
+        let status = response.status();
+        let body = response.into_body().collect().await.expect("failed to read body").to_bytes();
+        (status, String::from_utf8(body.to_vec()).expect("body is not UTF-8"))
+    }
+
+    /// End-to-end authorization checks through `serve_request` against an embedded PostgreSQL
+    /// database. A single test function is used because the database is stateful and expensive
+    /// to start.
+    #[test_log::test(tokio::test)]
+    async fn test_list_users_authorization() {
+        let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
+        database.bootstrap().await.expect("Failed to set up, start, and bootstrap PostgreSQL database");
+        let pool = database
+            .get_scratchstack_pool()
+            .await
+            .expect("Failed to get PostgreSQL connection pool for scratchstack user");
+
+        let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
+        MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
+        raw_sql(AUTHZ_TEST_DATA).execute(&mut *c).await.expect("Failed to load test data into database");
+        drop(c);
+
+        let svc_state = ServiceState {
+            db: Arc::new(pool),
+            secure_transport: true,
+        };
+        let parameters = "Action=ListUsers&Version=2010-05-08";
+
+        // A user whose inline policy allows iam:ListUsers gets a successful response.
+        let (principal, session_data) = user_identity("SVCTESTALLOWUSER", "Allowed-User");
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        // A user with no policies is denied with a 403 AccessDenied error.
+        let (principal, session_data) = user_identity("SVCTESTDENYUSER1", "Denied-User");
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+        assert!(
+            body.contains(&format!(
+                "User: arn:aws:iam::{TEST_ACCOUNT_ID}:user/Denied-User is not authorized to perform: \
+                 iam:ListUsers on resource: *"
+            )),
+            "unexpected body: {body}"
+        );
+
+        // The account root user is implicitly allowed.
+        let principal = Principal::from(RootUser::new("aws", TEST_ACCOUNT_ID).expect("failed to build root user"));
+        let mut session_data = SessionData::new();
+        session_data.insert("aws:PrincipalAccount", SessionValue::String(TEST_ACCOUNT_ID.to_string()));
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+    }
 }

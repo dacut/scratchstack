@@ -14,6 +14,7 @@
 #![cfg_attr(doc, feature(doc_cfg))]
 
 pub(crate) mod action;
+pub(crate) mod authz;
 pub(crate) mod condition;
 pub(crate) mod effect;
 pub(crate) mod error;
@@ -29,6 +30,7 @@ pub(crate) mod serutil;
 
 pub use {
     action::{Action, ActionList},
+    authz::{AuthorizationResult, authorize},
     condition::{Condition, ConditionMap, ConditionOp, Variant as ConditionVariant, op as condop},
     effect::Effect,
     error::AspenError,

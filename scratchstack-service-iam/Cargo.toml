@@ -33,6 +33,7 @@ log.workspace = true
 quick-xml = { workspace = true, features = ["serialize"] }
 rustls.workspace = true
 scratchstack-arn.path = "../scratchstack-arn"
+scratchstack-aspen.path = "../scratchstack-aspen"
 scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features = [
     "unstable",
 ] }
@@ -57,5 +58,10 @@ toml.workspace = true
 tower.workspace = true
 
 [dev-dependencies]
+http-body-util.workspace = true
 pretty_assertions.workspace = true
+scratchstack-iam-database = { path = "../scratchstack-iam-database", features = [
+    "utils",
+] }
 test-log.workspace = true
+tokio = { workspace = true, features = ["macros"] }

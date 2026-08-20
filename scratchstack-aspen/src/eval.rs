@@ -67,6 +67,19 @@ impl Context {
         &self.service
     }
 
+    /// Returns a copy of this context with the resources replaced by the given list.
+    ///
+    /// This is used to evaluate a multi-resource request one resource at a time.
+    pub fn with_resources(&self, resources: Vec<Arn>) -> Self {
+        Self {
+            api: self.api.clone(),
+            actor: self.actor.clone(),
+            resources,
+            session_data: self.session_data.clone(),
+            service: self.service.clone(),
+        }
+    }
+
     /// Creates a [Regex] from the given string pattern and policy version.
     ///
     /// If `case_insensitive` is `true`, the returned [Regex] will be case insensitive.
@@ -219,7 +232,7 @@ pub(crate) fn regex_from_glob(s: &str, case_insensitive: bool) -> Regex {
 }
 
 /// The outcome of a policy evaluation.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Decision {
     /// Allow the request if no other statements or policies deny it.
     Allow,

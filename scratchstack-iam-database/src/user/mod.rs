@@ -38,7 +38,7 @@ use {
 ///
 /// The path is expected to start and end with a slash, but this function will trim extra slashes
 /// if needed.
-fn user_arn_resource(path: &str, user_name: &str) -> String {
+pub(crate) fn user_arn_resource(path: &str, user_name: &str) -> String {
     let resource_path = path.trim_matches('/');
     if resource_path.is_empty() {
         format!("{ARN_RESOURCE_TYPE_USER}/{user_name}")

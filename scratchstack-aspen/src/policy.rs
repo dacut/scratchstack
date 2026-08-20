@@ -133,6 +133,9 @@ impl Policy {
     /// if the policy allows the request, or [`Decision::DefaultDeny`] if the policy does not
     /// explicitly allow or deny the request.
     ///
+    /// All statements are considered: an explicit deny overrides any allow, regardless of the
+    /// order in which the statements appear.
+    ///
     /// # Example
     /// ```
     /// # use scratchstack_aspen::{Action, Context, Decision, Effect, Policy, Resource, Statement, StatementList};
@@ -149,15 +152,22 @@ impl Policy {
     /// policy.evaluate(&context);
     /// ```
     pub fn evaluate(&self, context: &Context) -> Result<Decision, crate::AspenError> {
+        let mut allowed = false;
         for statement in self.statement.iter() {
-            match statement.evaluate(context, self.version()) {
-                Ok(Decision::Allow) => return Ok(Decision::Allow),
-                Ok(Decision::Deny) => return Ok(Decision::Deny),
-                Ok(Decision::DefaultDeny) => (),
-                Err(err) => return Err(err),
+            match statement.evaluate(context, self.version())? {
+                // An explicit deny always wins, regardless of statement order, so it is safe to
+                // short-circuit here.
+                Decision::Deny => return Ok(Decision::Deny),
+                Decision::Allow => allowed = true,
+                Decision::DefaultDeny => (),
             }
         }
-        Ok(Decision::DefaultDeny)
+
+        if allowed {
+            Ok(Decision::Allow)
+        } else {
+            Ok(Decision::DefaultDeny)
+        }
     }
 }
 
@@ -314,6 +324,65 @@ mod tests {
 
         let new_policy_str = policy.to_string();
         assert_eq!(new_policy_str, policy_str);
+    }
+
+    #[test_log::test]
+    fn test_deny_overrides_regardless_of_order() {
+        // An explicit Deny must win even when an earlier statement allows the request.
+        let allow_first = indoc! { r#"
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": "s3:*",
+                    "Resource": "*"
+                },
+                {
+                    "Effect": "Deny",
+                    "Action": "s3:ListBucket",
+                    "Resource": "*"
+                }
+            ]
+        }"# };
+        let deny_first = indoc! { r#"
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Deny",
+                    "Action": "s3:ListBucket",
+                    "Resource": "*"
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": "s3:*",
+                    "Resource": "*"
+                }
+            ]
+        }"# };
+
+        let actor = PrincipalActor::from(User::new("aws", "123456789012", "/", "MyUser").unwrap());
+        let denied_context = Context::builder()
+            .api("ListBucket")
+            .actor(actor.clone())
+            .session_data(SessionData::new())
+            .service("s3")
+            .build()
+            .unwrap();
+        let allowed_context = Context::builder()
+            .api("GetObject")
+            .actor(actor)
+            .session_data(SessionData::new())
+            .service("s3")
+            .build()
+            .unwrap();
+
+        for policy_str in [allow_first, deny_first] {
+            let policy = Policy::from_str(policy_str).unwrap();
+            assert_eq!(policy.evaluate(&denied_context).unwrap(), Decision::Deny);
+            assert_eq!(policy.evaluate(&allowed_context).unwrap(), Decision::Allow);
+        }
     }
 
     #[test_log::test]

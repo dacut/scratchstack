@@ -83,7 +83,7 @@ pub const BinaryEquals: ConditionOp = ConditionOp::Binary(Variant::None);
 /// The `BinaryEqualsIfExists` operator.
 pub const BinaryEqualsIfExists: ConditionOp = ConditionOp::Binary(Variant::IfExists);
 
-/// The `BinaryNotEquals` operator.
+/// The `Bool` operator.
 pub const Bool: ConditionOp = ConditionOp::Bool(Variant::None);
 
 /// The `BoolIfExists` operator.
