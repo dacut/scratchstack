@@ -218,12 +218,11 @@ impl SigV4Authenticator {
 
         let req = GetSigningKeyRequest::builder()
             .access_key(access_key)
-            .session_token(self.session_token().map(|x| x.to_string()))
+            .maybe_session_token(self.session_token())
             .request_date(self.request_timestamp().date_naive())
             .region(region)
             .service(service)
-            .build()
-            .expect("All fields set");
+            .build();
 
         match get_signing_key.oneshot(req).await {
             Ok(key) => {
@@ -483,8 +482,7 @@ mod tests {
                 let k_secret = KSecretKey::from_str("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY").unwrap();
                 let k_signing = k_secret.to_ksigning(request.request_date(), request.region(), request.service());
 
-                let response =
-                    GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build().unwrap();
+                let response = GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build();
                 Ok(response)
             }
             _ => Err(Box::new(SignatureError::InvalidClientTokenId(
