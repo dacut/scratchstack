@@ -1,7 +1,7 @@
 //! Scratchstack AWS account IAM database model
 use {
+    bon::Builder,
     chrono::{DateTime, Utc},
-    derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, postgres::PgConnection},
@@ -12,15 +12,19 @@ use {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Account {
     /// 12-digit AWS account id.
+    #[builder(into)]
     pub account_id: String,
 
     /// Email address associated with the account.
+    #[builder(into)]
     pub email: Option<String>,
 
     /// Unique alias for the account.
+    #[builder(into)]
     pub alias: Option<String>,
 
     /// Timestamp when the account was created.
+    #[builder(into)]
     pub created_at: Option<DateTime<Utc>>,
 }
 

@@ -1,7 +1,7 @@
 //! AWS IAM group membership database model
 use {
+    bon::Builder,
     chrono::{DateTime, Utc},
-    derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, postgres::PgConnection},
@@ -12,12 +12,15 @@ use {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct GroupMembership {
     /// Group identifier, without the `AGPA` prefix.
+    #[builder(into)]
     pub group_id: String,
 
     /// User identifier, without the `AIDA` prefix.
+    #[builder(into)]
     pub user_id: String,
 
     /// Timestamp when the user was added to the group.
+    #[builder(into)]
     pub created_at: Option<DateTime<Utc>>,
 }
 

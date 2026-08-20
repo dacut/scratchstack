@@ -1,7 +1,7 @@
 //! AWS IAM user password history database model
 use {
+    bon::Builder,
     chrono::{DateTime, Utc},
-    derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, postgres::PgConnection},
@@ -12,20 +12,25 @@ use {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct UserPasswordHistory {
     /// User identifier, without the `AIDA` prefix.
+    #[builder(into)]
     pub user_id: String,
 
     /// The password hash algorithm used.
+    #[builder(into)]
     pub password_hash_algorithm: String,
 
     /// The password hash; the format of this field depends on the value of
     /// `password_hash_algorithm`.
+    #[builder(into)]
     pub password_hash: String,
 
     /// Timestamp when the password was created.
+    #[builder(into)]
     pub password_created_at: DateTime<Utc>,
 
     /// Timestamp when the password was changed and this password was added to the user's password
     /// history.
+    #[builder(into)]
     pub password_changed_at: DateTime<Utc>,
 }
 

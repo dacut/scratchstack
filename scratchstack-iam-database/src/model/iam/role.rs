@@ -1,7 +1,7 @@
 //! AWS IAM role database model
 use {
+    bon::Builder,
     chrono::{DateTime, Utc},
-    derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, postgres::PgConnection},
@@ -12,33 +12,43 @@ use {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Role {
     /// Unique role identifier, without the `AROA` prefix.
+    #[builder(into)]
     pub role_id: String,
 
     /// 12-digit AWS account id.
+    #[builder(into)]
     pub account_id: String,
 
     /// Lower-cased role name; this must be unique in the account.
+    #[builder(into)]
     pub role_name_lower: String,
 
     /// Mixed-cased role name.
+    #[builder(into)]
     pub role_name_cased: String,
 
     /// IAM path.
+    #[builder(into)]
     pub path: String,
 
     /// Optional permissions boundary id.
+    #[builder(into)]
     pub permissions_boundary_managed_policy_id: Option<String>,
 
     /// Description of the role.
+    #[builder(into)]
     pub description: Option<String>,
 
     /// The trust policy document for the role, as a JSON string.
+    #[builder(into)]
     pub assume_role_policy_document: String,
 
     /// Maximum session duration (in seconds) when assuming the role.
+    #[builder(into)]
     pub max_session_duration: Option<i32>,
 
     /// Timestamp when the role was created.
+    #[builder(into)]
     pub created_at: Option<DateTime<Utc>>,
 }
 

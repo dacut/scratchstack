@@ -1,7 +1,7 @@
 //! AWS IAM managed policy
 use {
+    bon::Builder,
     chrono::{DateTime, Utc},
-    derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, postgres::PgConnection},
@@ -12,43 +12,54 @@ use {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct ManagedPolicy {
     /// Unique managed policy identifier, without the `ANPA` prefix.
+    #[builder(into)]
     pub managed_policy_id: String,
 
     /// 12-digit AWS account id.
     ///
     /// AWS-managed policies use an account id of `000000000000`.
+    #[builder(into)]
     pub account_id: String,
 
     /// Lower-cased policy name; this must be unique in the account.
+    #[builder(into)]
     pub policy_name_lower: String,
 
     /// Mixed-cased policy name.
+    #[builder(into)]
     pub policy_name_cased: String,
 
     /// IAM path.
+    #[builder(into)]
     pub path: String,
 
     /// The default version of the policy to use.
+    #[builder(into)]
     pub default_version: Option<i64>,
 
     /// Whether the policy is deprecated.
     ///
     /// Deprecated policies cannot be newly attached to users, groups, or roles, but existing attachments remain valid.
+    #[builder(into)]
     pub deprecated: bool,
 
     /// The type of the policy.
     ///
     /// TODO: Figure out what the purpose of this field was.
+    #[builder(into)]
     pub policy_type: Option<String>,
 
     /// The latest version of the policy available.
+    #[builder(into)]
     pub latest_version: Option<i64>,
 
     /// Timestamp when the policy was created.
+    #[builder(into)]
     pub created_at: Option<DateTime<Utc>>,
 
     /// Timestamp of the most recent policy version's creation. Maintained denormalized on the
     /// row so list/get queries don't need a per-row sub-query against `managed_policy_versions`.
+    #[builder(into)]
     pub update_date: Option<DateTime<Utc>>,
 }
 

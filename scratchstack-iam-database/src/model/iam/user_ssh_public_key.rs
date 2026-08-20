@@ -1,7 +1,7 @@
 //! AWS IAM user SSH public key database model
 use {
+    bon::Builder,
     chrono::{DateTime, Utc},
-    derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, postgres::PgConnection},
@@ -13,23 +13,29 @@ use {
 #[serde(rename = "UserSSHPublicKey")] // AWS violated their naming convention here.
 pub struct UserSshPublicKey {
     /// SSH public key identifier, without the `APKA` prefix.
+    #[builder(into)]
     #[serde(rename = "SSHPublicKeyId")]
     pub ssh_public_key_id: String,
 
     /// User identifier, without the `AIDA` prefix.
+    #[builder(into)]
     pub user_id: String,
 
     /// The fingerprint of the SSH public key.
+    #[builder(into)]
     pub fingerprint: String,
 
     /// The body of the public key.
+    #[builder(into)]
     #[serde(rename = "SSHPublicKeyBody")]
     pub ssh_public_key_body: String,
 
     /// Whether the credential is enabled.
+    #[builder(into)]
     pub enabled: bool,
 
     /// Timestamp when the credential was created.
+    #[builder(into)]
     pub created_at: Option<DateTime<Utc>>,
 }
 

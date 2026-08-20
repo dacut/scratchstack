@@ -1,6 +1,6 @@
 //! AWS IAM password hash algorithm database model
 use {
-    derive_builder::Builder,
+    bon::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, postgres::PgConnection},
@@ -11,12 +11,15 @@ use {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct PasswordHashAlgorithm {
     /// Password hash algorithm identifier.
+    #[builder(into)]
     pub password_hash_algorithm_id: String,
 
     /// Algorithm name.
+    #[builder(into)]
     pub algorithm_name: String,
 
     /// Algorithm parameters.
+    #[builder(into)]
     pub parameters: Option<String>,
 }
 

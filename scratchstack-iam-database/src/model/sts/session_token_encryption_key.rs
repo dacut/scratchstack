@@ -1,7 +1,7 @@
 //! AWS IAM role session token encryption key database model
 use {
+    bon::Builder,
     chrono::{DateTime, Utc},
-    derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, postgres::PgConnection},
@@ -12,28 +12,34 @@ use {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct RoleSessionTokenKey {
     /// The role session token key id.
+    #[builder(into)]
     pub role_session_token_key_id: String,
 
     /// The encryption algorithm used.
+    #[builder(into)]
     pub encryption_algorithm: String,
 
     /// The encryption key, base64 encoded.
+    #[builder(into)]
     pub encryption_key: String,
 
     /// The timestamp when the encryption key is first valid.
     ///
     /// This is often called NotBefore in AWS documentation.
+    #[builder(into)]
     pub valid_from: DateTime<Utc>,
 
     /// The timestamp when the encryption key expires and is no longer valid.
     ///
     /// This is often called NotOnOrAfter in AWS documentation.
+    #[builder(into)]
     pub expires_at: DateTime<Utc>,
 
     /// Timestamp when the role session token encryption key was created.
     ///
     /// This is always before `valid_from` to allow other systems to synchronize with the new key
     /// before it becomes active.
+    #[builder(into)]
     pub created_at: Option<DateTime<Utc>>,
 }
 
