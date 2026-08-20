@@ -928,19 +928,18 @@ where
     R: RequestExecutor + Sync,
     R::Error: From<IamError>,
 {
+    let request_id = RequestId::new();
     let conn = cli.connect(vars).await?;
     let mut tx = conn.begin().await.map_err(|e| {
         log::error!("Failed to begin transaction: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).request_id(request_id).build())
     })?;
-
-    let request_id = RequestId::new();
 
     match request.execute(&mut tx, request_id).await {
         Ok(response) => {
             tx.commit().await.map_err(|e| {
                 log::error!("Failed to commit transaction: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).request_id(request_id).build())
             })?;
             Ok(response)
         }
