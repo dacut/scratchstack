@@ -2515,7 +2515,6 @@ dependencies = [
  "bon",
  "bytes",
  "chrono",
- "derive_builder",
  "encoding_rs",
  "env_logger",
  "hex",

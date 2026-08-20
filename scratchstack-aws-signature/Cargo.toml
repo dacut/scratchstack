@@ -17,7 +17,7 @@ name = "scratchstack_aws_signature"
 
 [features]
 default = ["axum", "default_session_token"]
-axum = ["dep:axum", "dep:bon", "dep:quick-xml", "scratchstack-core/axum"]
+axum = ["dep:axum", "dep:quick-xml", "scratchstack-core/axum"]
 default_session_token = ["dep:aes", "dep:aes-gcm", "dep:base64", "dep:postcard"]
 unstable = []
 
@@ -27,10 +27,9 @@ aes-gcm = { workspace = true, optional = true, features = ["zeroize"] }
 ascii-casing = { workspace = true, features = ["serde"] }
 axum = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
-bon = { workspace = true, optional = true }
+bon.workspace = true
 bytes.workspace = true
 chrono = { workspace = true, features = ["serde"] }
-derive_builder.workspace = true
 encoding_rs.workspace = true
 hex.workspace = true
 hmac.workspace = true
