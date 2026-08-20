@@ -25,8 +25,8 @@ use {
     aes_gcm::{AeadCore, AeadInOut as _, Aes256Gcm, KeyInit as _, Nonce, aead::common::Generate as _},
     anyhow::anyhow,
     base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
+    bon::Builder,
     chrono::{DateTime, NaiveDateTime, TimeZone as _, Utc},
-    derive_builder::Builder,
     lru::LruCache,
     serde::{Deserialize, Serialize},
     std::{
@@ -71,29 +71,22 @@ pub struct Key {
     /// An identifier for the key, included in the pagination token to allow services to determine
     /// which key to use for decryption. This should be unique across all active and retired keys
     /// to prevent ambiguity during decryption.
-    #[builder(setter(into))]
+    #[builder(into)]
     key_id: Uuid,
 
     /// The earliest time at which the key can be used for encryption. This allows services to
     /// prepare for key rotation by distributing new keys before they become active.
-    #[builder(setter(into))]
+    #[builder(into)]
     valid_from: DateTime<Utc>,
 
     /// The time at which the key can no longer be used for encryption.
-    #[builder(setter(into))]
+    #[builder(into)]
     expires_at: Option<DateTime<Utc>>,
 
     /// The key material for AES-256 encryption and decryption. This itself is kept encrypted in
     /// memory.
-    #[builder(setter(into))]
+    #[builder(into)]
     encrypted_key: [u8; PAGINATION_KEY_SIZE],
-}
-
-impl Key {
-    /// Create a new [`KeyBuilder`] for programmatically constructing a `Key`.
-    pub fn builder() -> KeyBuilder {
-        KeyBuilder::default()
-    }
 }
 
 impl Debug for Key {
@@ -194,11 +187,14 @@ where
 /// relevant for pagination token encryption. This is compromised of the partition, region, and
 /// service name.
 #[derive(Builder, Clone, Debug, Deserialize, Serialize)]
-#[builder(setter(into))]
 pub struct ScratchstackServiceMetadata {
+    #[builder(into)]
     partition: String,
-    #[builder(setter(into), default)]
+
+    #[builder(into, default)]
     region: String,
+
+    #[builder(into)]
     service_name: String,
 }
 
@@ -212,12 +208,6 @@ impl ScratchstackServiceMetadata {
             region: region.into(),
             service_name: service_name.into(),
         }
-    }
-
-    /// Creates a [`ScratchstackServiceMetadataBuilder`] for constructing a `ScratchstackServiceMetadata`.
-    #[inline(always)]
-    pub fn builder() -> ScratchstackServiceMetadataBuilder {
-        ScratchstackServiceMetadataBuilder::default()
     }
 }
 
@@ -383,9 +373,11 @@ where
 /// is relevant for Scratchstack pagination token encryption. This is compromised of the API version
 /// and API operation name.
 #[derive(Builder, Clone, Debug, Deserialize, Serialize)]
-#[builder(setter(into))]
 pub struct ScratchstackOperationMetadata {
+    #[builder(into)]
     api_version: String,
+
+    #[builder(into)]
     operation: String,
 }
 
@@ -397,12 +389,6 @@ impl ScratchstackOperationMetadata {
             api_version: api_version.into(),
             operation: operation.into(),
         }
-    }
-
-    /// Creates a [`ScratchstackOperationMetadataBuilder`] for constructing a `ScratchstackOperationMetadata`.
-    #[inline(always)]
-    pub fn builder() -> ScratchstackOperationMetadataBuilder {
-        ScratchstackOperationMetadataBuilder::default()
     }
 }
 
@@ -889,19 +875,17 @@ mod tests {
         let encrypted_key = [77u8; PAGINATION_KEY_SIZE];
         let svc = FixedKeyService::new(key_id, encrypted_key);
 
-        let service_meta = ScratchstackServiceMetadataBuilder::default()
+        let service_meta = ScratchstackServiceMetadata::builder()
             .partition("aws".to_string())
             .region("us-east-1".to_string())
             .service_name("iam".to_string())
-            .build()
-            .unwrap();
+            .build();
         let service_paginator = ServicePaginator::new(&service_meta, svc.clone(), svc).unwrap();
 
-        let op_meta = ScratchstackOperationMetadataBuilder::default()
+        let op_meta = ScratchstackOperationMetadata::builder()
             .api_version("2010-05-08".to_string())
             .operation("ListUsers".to_string())
-            .build()
-            .unwrap();
+            .build();
         let op_paginator = service_paginator.operation_paginator(&op_meta).unwrap();
 
         let state = "alice";
@@ -916,24 +900,21 @@ mod tests {
         let encrypted_key = [77u8; PAGINATION_KEY_SIZE];
         let svc = FixedKeyService::new(key_id, encrypted_key);
 
-        let service_meta = ScratchstackServiceMetadataBuilder::default()
+        let service_meta = ScratchstackServiceMetadata::builder()
             .partition("aws".to_string())
             .region("us-east-1".to_string())
             .service_name("iam".to_string())
-            .build()
-            .unwrap();
+            .build();
         let service_paginator = ServicePaginator::new(&service_meta, svc.clone(), svc).unwrap();
 
-        let op_meta1 = ScratchstackOperationMetadataBuilder::default()
+        let op_meta1 = ScratchstackOperationMetadata::builder()
             .api_version("2010-05-08".to_string())
             .operation("ListUsers".to_string())
-            .build()
-            .unwrap();
-        let op_meta2 = ScratchstackOperationMetadataBuilder::default()
+            .build();
+        let op_meta2 = ScratchstackOperationMetadata::builder()
             .api_version("2010-05-08".to_string())
             .operation("ListGroups".to_string())
-            .build()
-            .unwrap();
+            .build();
 
         let op_paginator1 = service_paginator.operation_paginator(&op_meta1).unwrap();
         let op_paginator2 = service_paginator.operation_paginator(&op_meta2).unwrap();
