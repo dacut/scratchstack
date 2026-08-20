@@ -126,6 +126,7 @@ fn generate_iam_shapes() -> AnyResult<()> {
 
     let out_dir = var("OUT_DIR").expect("OUT_DIR environment variable not set");
     let mut writers = Writers::builder()
+        .action(File::create(Path::new(&out_dir).join("action.rs"))?)
         .error_meta(File::create(Path::new(&out_dir).join("error_meta.rs"))?)
         .operation(File::create(Path::new(&out_dir).join("operation.rs"))?)
         .types(File::create(Path::new(&out_dir).join("types.rs"))?)
@@ -222,6 +223,21 @@ fn get_internal_request_shapes(model: &SmithyModel) -> AnyResult<BTreeMap<String
 /// but are not included in the model for some reason.
 fn get_common_exception_shapes() -> JsonValue {
     json!({
+        // Common errors that aren't in the published IAM error list but are returned by the service.
+        "com.amazonaws.iam#InvalidAction": {
+            "documentation": "The action or version specified in the request is not valid for this service.",
+            "httpResponseCode": 400
+        },
+        "com.amazonaws.iam#InvalidClientTokenId": {
+            "documentation": "The security token included in the request is invalid.",
+            "httpResponseCode": 403
+        },
+        "com.amazonaws.iam#MalformedInput": {
+            "documentation": "The request was rejected because it was malformed or otherwise incorrect.",
+            "httpResponseCode": 400
+        },
+
+        // Published errors
         "com.amazonaws.iam#AccessDeniedException": {
             "documentation": "You don't have permission to perform this action. Verify that your IAM policy includes the required permissions.",
             "httpResponseCode": 403

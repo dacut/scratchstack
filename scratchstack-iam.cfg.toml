@@ -1,0 +1,19 @@
+[listener]
+port = 7401
+
+[scope]
+partition = "local"
+region = "local"
+
+[database]
+database = "scratchstack_iam"
+host = "localhost"
+port = 7154
+min_connections = 5
+max_connections = 10
+connection_timeout = "1s"
+max_lifetime = "1h"
+test_before_acquire = true
+
+[runtime]
+threads = 20

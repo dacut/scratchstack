@@ -15,15 +15,13 @@
 
 pub(crate) mod config;
 pub(crate) mod constants;
-pub(crate) mod error;
 pub(crate) mod operations;
 pub(crate) mod service;
 
 use {
     crate::{
         config::{ResolvedStsServiceConfig, StsServiceConfig},
-        constants::{CT_APPLICATION_X_WWW_FORM_URLENCODED, SERVICE_STS, XML_NS_STS},
-        error::ServiceError,
+        constants::*,
     },
     axum::{
         Router,
@@ -42,6 +40,7 @@ use {
         sync::Arc,
     },
     tokio::{net::TcpListener, runtime::Builder as RuntimeBuilder},
+    tower::BoxError,
 };
 
 const DEFAULT_CONFIG_FILENAME: &str = "scratchstack-sts.cfg.toml";
@@ -107,7 +106,7 @@ fn main() -> ExitCode {
     }
 }
 
-async fn run_server_from_config(config: ResolvedStsServiceConfig) -> Result<(), ServiceError> {
+async fn run_server_from_config(config: ResolvedStsServiceConfig) -> Result<(), BoxError> {
     use crate::service::serve_request;
 
     let common = config.common;

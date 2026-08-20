@@ -2,9 +2,6 @@
 //!
 //! Please keep this file organized alphabetically.
 
-/// Action: `GetCallerIdentity`
-pub(crate) const ACTION_GET_CALLER_IDENTITY: &str = "GetCallerIdentity";
-
 /// Content-Type string for HTML forms
 #[allow(dead_code)]
 pub(crate) const CT_APPLICATION_X_WWW_FORM_URLENCODED: &str = "application/x-www-form-urlencoded";
@@ -44,9 +41,6 @@ pub(crate) const SERVICE_STS: &str = "sts";
 
 /// Session key holding the caller's user id.
 pub(crate) const SESSION_KEY_AWS_USERID: &str = "aws:userid";
-
-/// Version 2011-06-15 of the STS API
-pub(crate) const STS_VERSION_20110615: &str = "2011-06-15";
 
 /// XML namespace for AWSFault errors.
 #[allow(dead_code)]

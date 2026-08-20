@@ -1,12 +1,9 @@
 use {
-    crate::constants::*,
+    crate::{constants::*, service::internal_failure},
     axum::{body::Body, response::Response},
     scratchstack_arn::Arn,
     scratchstack_aws_principal::{Principal, SessionData, SessionValue},
-    scratchstack_core::{
-        RequestId,
-        response::{ErrorResponseEnvelope, Responder as _},
-    },
+    scratchstack_core::{RequestId, response::Responder as _},
     scratchstack_shapes_sts::{
         operation::{GetCallerIdentityResponse, GetCallerIdentityResponseEnvelope},
         types::error::InvalidClientTokenId,
@@ -62,13 +59,4 @@ pub(crate) fn get_caller_identity(
 fn security_token_invalid(request_id: RequestId) -> Response<Body> {
     let error = InvalidClientTokenId::builder().message(MSG_SECURITY_TOKEN_INVALID).request_id(request_id).build();
     error.respond()
-}
-
-/// Generate an `InternalFailure` error response.
-fn internal_failure(request_id: RequestId) -> Response<Body> {
-    let error = scratchstack_shapes_sts::types::error::InternalFailure::builder()
-        .message(MSG_INTERNAL_FAILURE)
-        .request_id(request_id)
-        .build();
-    ErrorResponseEnvelope::new(&error).respond()
 }

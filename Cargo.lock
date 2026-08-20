@@ -2785,7 +2785,9 @@ dependencies = [
  "scratchstack-core",
  "scratchstack-hakari",
  "scratchstack-iam-database",
+ "scratchstack-shapes-iam",
  "serde",
+ "serde_urlencoded",
  "sqlx",
  "test-log",
  "tokio",
@@ -2799,6 +2801,7 @@ version = "0.12.0"
 dependencies = [
  "axum",
  "bon",
+ "bytes",
  "chrono",
  "clap",
  "env_logger",

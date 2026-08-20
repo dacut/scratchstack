@@ -38,9 +38,7 @@ scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features 
 ] }
 scratchstack-aws-principal.path = "../scratchstack-aws-principal"
 scratchstack-config.path = "../scratchstack-config"
-scratchstack-core = { path = "../scratchstack-core", features = [
-    "tls",
-] }
+scratchstack-core = { path = "../scratchstack-core", features = ["tls"] }
 scratchstack-hakari = { path = "../scratchstack-hakari" }
 scratchstack-iam-database.path = "../scratchstack-iam-database"
 scratchstack-shapes-sts.path = "../scratchstack-shapes-sts"
@@ -58,6 +56,8 @@ toml.workspace = true
 tower.workspace = true
 
 [dev-dependencies]
+bytes.workspace = true
+form_urlencoded.workspace = true
 http-body-util.workspace = true
 pretty_assertions.workspace = true
 test-log.workspace = true

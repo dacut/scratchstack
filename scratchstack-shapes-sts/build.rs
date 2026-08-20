@@ -60,6 +60,7 @@ fn generate_sts_shapes() {
 
     let out_dir = var("OUT_DIR").expect("OUT_DIR environment variable not set");
     let mut writers = Writers::builder()
+        .action(File::create(Path::new(&out_dir).join("action.rs")).expect("Failed to create action.rs"))
         .error_meta(File::create(Path::new(&out_dir).join("error_meta.rs")).expect("Failed to create error_meta.rs"))
         .operation(File::create(Path::new(&out_dir).join("operation.rs")).expect("Failed to create operation.rs"))
         .types(File::create(Path::new(&out_dir).join("types.rs")).expect("Failed to create types.rs"))
@@ -74,6 +75,21 @@ fn generate_sts_shapes() {
 /// but are not included in the model for some reason.
 fn get_common_exception_shapes() -> JsonValue {
     json!({
+        // Common errors that aren't in the published STS error list but are returned by the service.
+        "com.amazonaws.sts#InvalidAction": {
+            "documentation": "The action or version specified in the request is not valid for this service.",
+            "httpResponseCode": 400
+        },
+        "com.amazonaws.sts#InvalidClientTokenId": {
+            "documentation": "The security token included in the request is invalid.",
+            "httpResponseCode": 403
+        },
+        "com.amazonaws.sts#MalformedInput": {
+            "documentation": "The request was rejected because it was malformed or otherwise incorrect.",
+            "httpResponseCode": 400
+        },
+
+        // Published errors
         "com.amazonaws.sts#AccessDeniedException": {
             "documentation": "You don't have permission to perform this action. Verify that your IAM policy includes the required permissions.",
             "httpResponseCode": 403
@@ -89,17 +105,6 @@ fn get_common_exception_shapes() -> JsonValue {
         "com.amazonaws.sts#InternalFailure": {
             "documentation": "The request can't be processed right now because of an internal server issue. Try again later. If the problem persists, contact AWS Support.",
             "httpResponseCode": 500
-        },
-        // Neither of these appears in the published STS error list, but the service returns both:
-        // InvalidAction for an unrecognised Action/Version pair, and InvalidClientTokenId when the
-        // credential does not resolve to a usable principal.
-        "com.amazonaws.sts#InvalidAction": {
-            "documentation": "The action or version specified in the request is not valid for this service.",
-            "httpResponseCode": 400
-        },
-        "com.amazonaws.sts#InvalidClientTokenId": {
-            "documentation": "The security token included in the request is invalid.",
-            "httpResponseCode": 403
         },
         "com.amazonaws.sts#InvalidParameterCombination": {
             "documentation": "Parameters that must not be used together were used together. Remove one of the conflicting parameters and try again.",

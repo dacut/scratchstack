@@ -91,12 +91,113 @@ impl SmithyModel {
             shape.generate(w)?;
         }
 
+        self.generate_action(w)?;
         self.generate_error_meta(w)?;
+        Ok(())
+    }
+
+    /// Generates code that belongs in `crate::action` for this model's service.
+    ///
+    /// The wire actions are the operations bound to the service shape, not every operation shape
+    /// in the model: `build.rs` synthesizes `*InternalRequest` structures that are not callable
+    /// actions.
+    fn generate_action<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
+        let service_shape = self.get_service().expect("Model has no service shape");
+        let service = service_shape.as_service().expect("Service shape is not a service");
+
+        let mut actions: Vec<&str> = service
+            .operations
+            .iter()
+            .map(|op| op.target.rsplit_once('#').map_or(op.target.as_str(), |(_, name)| name))
+            .collect();
+        actions.sort_unstable();
+
+        // The API version, as sent in the Version request parameter.
+        writeln!(w.action, "/// The version of this API, as sent in the `Version` request parameter.")?;
+        writeln!(w.action, "pub const VERSION: &str = \"{}\";", service.version)?;
+        writeln!(w.action)?;
+
+        // Action enum definition. The operation's own documentation is not reused here: it is a
+        // block of HTML prose describing the operation, not the action name.
+        writeln!(w.action, "/// An action that can be invoked on this service.")?;
+        writeln!(w.action, "///")?;
+        writeln!(w.action, "/// This is the value of the `Action` request parameter in the AWS query protocol.")?;
+        writeln!(w.action, "#[derive(::std::clone::Clone, ::std::marker::Copy, ::std::fmt::Debug)]")?;
+        writeln!(
+            w.action,
+            "#[derive(::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd)]"
+        )?;
+        writeln!(w.action, "#[derive(::std::hash::Hash)]")?;
+        // Operation names such as AddClientIDToOpenIDConnectProvider are wire names; they cannot be
+        // renamed to satisfy the acronym lint.
+        writeln!(w.action, "#[allow(clippy::upper_case_acronyms)]")?;
+        writeln!(w.action, "#[non_exhaustive]")?;
+        writeln!(w.action, "pub enum Action {{")?;
+        for action in &actions {
+            writeln!(w.action, "    /// The `{action}` action.")?;
+            writeln!(w.action, "    {action},")?;
+        }
+        writeln!(w.action, "}}")?;
+        writeln!(w.action)?;
+
+        // Action::as_str.
+        writeln!(w.action, "impl Action {{")?;
+        writeln!(w.action, "    /// Returns the wire name of this action.")?;
+        writeln!(w.action, "    #[must_use]")?;
+        writeln!(w.action, "    pub const fn as_str(self) -> &'static str {{")?;
+        writeln!(w.action, "        match self {{")?;
+        for action in &actions {
+            writeln!(w.action, "            Self::{action} => \"{action}\",")?;
+        }
+        writeln!(w.action, "        }}")?;
+        writeln!(w.action, "    }}")?;
+        writeln!(w.action, "}}")?;
+        writeln!(w.action)?;
+
+        // Display implementation for Action.
+        writeln!(w.action, "impl ::std::fmt::Display for Action {{")?;
+        writeln!(w.action, "    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {{")?;
+        writeln!(w.action, "        f.write_str(self.as_str())")?;
+        writeln!(w.action, "    }}")?;
+        writeln!(w.action, "}}")?;
+        writeln!(w.action)?;
+
+        // FromStr implementation for Action.
+        writeln!(w.action, "impl ::std::str::FromStr for Action {{")?;
+        writeln!(w.action, "    type Err = UnknownAction;")?;
+        writeln!(w.action)?;
+        writeln!(w.action, "    fn from_str(s: &str) -> ::std::result::Result<Self, Self::Err> {{")?;
+        writeln!(w.action, "        match s {{")?;
+        for action in &actions {
+            writeln!(w.action, "            \"{action}\" => ::std::result::Result::Ok(Self::{action}),")?;
+        }
+        writeln!(w.action, "            _ => ::std::result::Result::Err(UnknownAction),")?;
+        writeln!(w.action, "        }}")?;
+        writeln!(w.action, "    }}")?;
+        writeln!(w.action, "}}")?;
+        writeln!(w.action)?;
+
+        // UnknownAction error type.
+        writeln!(w.action, "/// Error returned when a string does not name an action of this service.")?;
+        writeln!(w.action, "#[derive(::std::clone::Clone, ::std::marker::Copy, ::std::fmt::Debug)]")?;
+        writeln!(w.action, "#[derive(::std::cmp::Eq, ::std::cmp::PartialEq)]")?;
+        writeln!(w.action, "pub struct UnknownAction;")?;
+        writeln!(w.action)?;
+        writeln!(w.action, "impl ::std::fmt::Display for UnknownAction {{")?;
+        writeln!(w.action, "    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {{")?;
+        writeln!(w.action, "        f.write_str(\"Unknown action\")")?;
+        writeln!(w.action, "    }}")?;
+        writeln!(w.action, "}}")?;
+        writeln!(w.action)?;
+        writeln!(w.action, "impl ::std::error::Error for UnknownAction {{}}")?;
+
         Ok(())
     }
 
     /// Generates code that belongs in `crate::error_meta` for all shapes in the model.
     fn generate_error_meta<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
+        let xmlns = self.xmlns.as_deref().expect("Model has not been resolved; no xmlns available");
+
         // Error enum definition.
         writeln!(w.error_meta, "/// All possible error types for this service.")?;
         writeln!(w.error_meta, "#[derive(::std::fmt::Debug)]")?;
@@ -140,8 +241,7 @@ impl SmithyModel {
         writeln!(w.error_meta, "}}")?;
         writeln!(w.error_meta)?;
 
-        // ProvideErrorMetadata and ProvideRequestId implementations, both of which forward to
-        // whichever variant is present.
+        // ProvideErrorMetadata just forwards to the variant implementation.
         writeln!(w.error_meta, "impl Error {{")?;
         writeln!(w.error_meta, "    /// Returns this error as a `ProvideErrorMetadata` reference.")?;
         writeln!(
@@ -189,6 +289,7 @@ impl SmithyModel {
         writeln!(w.error_meta, "}}")?;
         writeln!(w.error_meta)?;
 
+        // ProvideRequestId just forwards to the variant implementation.
         writeln!(w.error_meta, "impl ::scratchstack_core::ProvideRequestId for Error {{")?;
         writeln!(w.error_meta, "    fn request_id(&self) -> ::std::option::Option<&str> {{")?;
         writeln!(w.error_meta, "        match self {{")?;
@@ -208,6 +309,36 @@ impl SmithyModel {
             w.error_meta,
             "            Self::Unhandled(inner) => ::scratchstack_core::ProvideRequestId::request_id(inner),"
         )?;
+        writeln!(w.error_meta, "        }}")?;
+        writeln!(w.error_meta, "    }}")?;
+        writeln!(w.error_meta, "}}")?;
+        writeln!(w.error_meta)?;
+
+        // Responder just forwards to the variant implementation.
+        writeln!(w.error_meta, "impl ::scratchstack_core::response::Responder for Error {{")?;
+        writeln!(
+            w.error_meta,
+            "    fn respond(&self) -> ::scratchstack_core::http::Response<::scratchstack_core::axum::body::Body> {{"
+        )?;
+        writeln!(w.error_meta, "        match self {{")?;
+        for shape in self.shapes.values() {
+            let shape = shape.borrow();
+            if let Shape::Structure(s) = &*shape
+                && s.base.traits.is_error()
+            {
+                writeln!(
+                    w.error_meta,
+                    "            Self::{}(inner) => ::scratchstack_core::response::Responder::respond(&**inner),",
+                    s.base.rust_typename()
+                )?;
+            }
+        }
+        writeln!(w.error_meta, "            Self::Unhandled(inner) => {{")?;
+        writeln!(
+            w.error_meta,
+            r#"                ::scratchstack_core::response::ErrorResponseEnvelope::new_with_xmlns(inner, "{xmlns}").respond()"#
+        )?;
+        writeln!(w.error_meta, "            }}")?;
         writeln!(w.error_meta, "        }}")?;
         writeln!(w.error_meta, "    }}")?;
         writeln!(w.error_meta, "}}")?;
