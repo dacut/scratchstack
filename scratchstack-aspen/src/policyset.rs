@@ -267,6 +267,11 @@ impl PolicySet {
     /// Evaluate all policies in the policy set. If one or more denials are found, return a Deny and the relevant
     /// sources. Otherwise, if one or more approvals are found, return Allow and the relevant sources. Otherwise,
     /// return a DefaultDeny with no sources.
+    ///
+    /// When the context contains multiple resources, statement matching is conservative: a single Allow statement
+    /// must cover every resource in the context, while a Deny statement applies if it matches any of them. For
+    /// exact AWS semantics — where each resource must be allowed individually, possibly by different statements —
+    /// use [crate::authorize], which evaluates one resource at a time.
     pub fn evaluate_all<'a>(&'a self, context: &'_ Context) -> Result<(Decision, Vec<&'a PolicySource>), AspenError> {
         self.evaluate_core(context, true)
     }

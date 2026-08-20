@@ -36,6 +36,24 @@ pub(crate) const NO_VERSION_SPECIFIED: &str = "NO_VERSION_SPECIFIED";
 /// The service name used in SigV4 credential scopes.
 pub(crate) const SERVICE_IAM: &str = "iam";
 
+/// Session key for the time the request is evaluated.
+pub(crate) const SESSION_KEY_AWS_CURRENT_TIME: &str = "aws:CurrentTime";
+
+/// Session key for the time the request is evaluated, in seconds since the Unix epoch.
+pub(crate) const SESSION_KEY_AWS_EPOCH_TIME: &str = "aws:EpochTime";
+
+/// Session key for the account id of the calling principal.
+pub(crate) const SESSION_KEY_AWS_PRINCIPAL_ACCOUNT: &str = "aws:PrincipalAccount";
+
+/// Session key for the ARN of the calling principal.
+pub(crate) const SESSION_KEY_AWS_PRINCIPAL_ARN: &str = "aws:PrincipalArn";
+
+/// Session key indicating whether the request arrived over TLS.
+pub(crate) const SESSION_KEY_AWS_SECURE_TRANSPORT: &str = "aws:SecureTransport";
+
+/// Session key for the unique id of the calling principal.
+pub(crate) const SESSION_KEY_AWS_USERID: &str = "aws:userid";
+
 /// XML namespace for AWSFault errors.
 #[allow(dead_code)]
 pub(crate) const XML_NS_AWSFAULT: &str = "http://webservices.amazon.com/AWSFault/2005-15-09";

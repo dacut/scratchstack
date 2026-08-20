@@ -23,6 +23,8 @@ use {
 
 #[path = "iam_database/account.rs"]
 mod account;
+#[path = "iam_database/authz.rs"]
+mod authz;
 #[path = "iam_database/common.rs"]
 mod common;
 #[path = "iam_database/group.rs"]
@@ -65,6 +67,7 @@ async fn test_database() {
     raw_sql(IAM_DATA).execute(&mut *c).await.expect("Failed to load IAM data into database");
 
     subtest_current_partition(&pool).await;
+    subtest_authz(&pool).await;
     subtest_create_account(&pool).await;
     subtest_account_aliases(&pool).await;
     subtest_create_user(&pool).await;
@@ -131,6 +134,20 @@ async fn subtest_current_partition(pool: &PgPool) {
     partition::test_invalid_set_current_partition(pool).await;
     partition::test_set_current_partition(pool).await;
     partition::test_get_current_partition(pool).await;
+}
+
+/// authz::get_policies_for_user + aspen authorize against seeded data. Runs directly after the
+/// partition is set so the seed data is still pristine; mutating cases roll back their
+/// transactions.
+async fn subtest_authz(pool: &PgPool) {
+    authz::test_get_policies_for_user_direct(pool).await;
+    authz::test_get_policies_for_user_via_group(pool).await;
+    authz::test_get_policies_for_user_nonexistent(pool).await;
+    authz::test_authorize_allow_via_group_attached(pool).await;
+    authz::test_authorize_boundary_deny(pool).await;
+    authz::test_authorize_default_deny_no_policy(pool).await;
+    authz::test_authorize_explicit_deny(pool).await;
+    authz::test_authorize_condition_keys(pool).await;
 }
 
 /// CreateAccountRequest

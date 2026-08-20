@@ -179,6 +179,13 @@ impl Statement {
         }
 
         // Does the resource match the context?
+        //
+        // With multiple resources in the context, the matching rules differ by effect so that
+        // multi-resource evaluations are conservative: an Allow statement must cover every
+        // candidate resource, while a Deny statement applies if it touches any candidate
+        // resource. Exact AWS per-resource semantics are provided by [crate::authorize], which
+        // evaluates one resource at a time.
+        let denying = *self.effect() == Effect::Deny;
         if let Some(resources) = self.resource() {
             let candidates = context.resources();
             if candidates.is_empty() {
@@ -186,7 +193,24 @@ impl Statement {
                 if !resources.iter().any(|r| r.is_any()) {
                     return Ok(Decision::DefaultDeny);
                 }
+            } else if denying {
+                // Deny: the statement applies if any candidate matches any resource entry.
+                let mut any_matched = false;
+                'candidates: for candidate in candidates {
+                    for resource in resources.iter() {
+                        if resource.matches(context, pv, candidate)? {
+                            any_matched = true;
+                            break 'candidates;
+                        }
+                    }
+                }
+
+                if !any_matched {
+                    return Ok(Decision::DefaultDeny);
+                }
             } else {
+                // Allow: the statement applies only if every candidate matches some resource
+                // entry.
                 for candidate in candidates {
                     let mut candidate_matched = false;
 
@@ -210,7 +234,31 @@ impl Statement {
                 if resources.iter().any(|r| r.is_any()) {
                     return Ok(Decision::DefaultDeny);
                 }
+            } else if denying {
+                // Deny: the statement applies if any candidate is outside the entire NotResource
+                // list.
+                let mut any_outside = false;
+                for candidate in candidates {
+                    let mut candidate_matched = false;
+                    for resource in resources {
+                        if resource.matches(context, pv, candidate)? {
+                            candidate_matched = true;
+                            break;
+                        }
+                    }
+
+                    if !candidate_matched {
+                        any_outside = true;
+                        break;
+                    }
+                }
+
+                if !any_outside {
+                    return Ok(Decision::DefaultDeny);
+                }
             } else {
+                // Allow: the statement applies only if no candidate matches any NotResource
+                // entry.
                 for candidate in candidates {
                     log::trace!("NotResource: candidate = {:?}", candidate);
                     for resource in resources {
@@ -224,7 +272,9 @@ impl Statement {
                 log::trace!("NotResource: no matches");
             }
         }
-        // We're allowed to not have a resource if this is a resource-based policy.
+        // StatementBuilder::validate requires exactly one of Resource or NotResource, so one of
+        // the branches above always runs; reaching this point means the resource clause did not
+        // rule the statement out.
 
         // Does the principal match the context?
         if let Some(principal) = self.principal()
@@ -430,6 +480,7 @@ mod tests {
         },
         indoc::indoc,
         pretty_assertions::assert_eq,
+        scratchstack_arn::Arn,
         scratchstack_aws_principal::{Principal as PrincipalActor, SessionData, User},
         std::str::FromStr,
     };
@@ -559,6 +610,93 @@ mod tests {
         sb.effect(Effect::Allow).action(Action::Any).not_resource(Resource::Any);
         let s = sb.build().unwrap();
         assert_eq!(s.evaluate(&context, PolicyVersion::None).unwrap(), Decision::DefaultDeny);
+    }
+
+    #[test_log::test]
+    fn test_multi_resource_context() {
+        let bucket_a = Arn::from_str("arn:aws:s3:::bucket-a").unwrap();
+        let bucket_b = Arn::from_str("arn:aws:s3:::bucket-b").unwrap();
+        let actor = PrincipalActor::from(User::new("aws", "123456789012", "/", "MyUser").unwrap());
+        let context = Context::builder()
+            .api("ListBucket")
+            .actor(actor)
+            .resources(vec![bucket_a, bucket_b])
+            .service("s3")
+            .session_data(SessionData::new())
+            .build()
+            .unwrap();
+
+        // A Deny statement matching only some of the context resources still applies.
+        let s = Statement::builder()
+            .effect(Effect::Deny)
+            .action(Action::Any)
+            .resource(Resource::from_str("arn:aws:s3:::bucket-a").unwrap())
+            .build()
+            .unwrap();
+        assert_eq!(s.evaluate(&context, PolicyVersion::V2012_10_17).unwrap(), Decision::Deny);
+
+        // A Deny statement matching none of the context resources does not apply.
+        let s = Statement::builder()
+            .effect(Effect::Deny)
+            .action(Action::Any)
+            .resource(Resource::from_str("arn:aws:s3:::bucket-c").unwrap())
+            .build()
+            .unwrap();
+        assert_eq!(s.evaluate(&context, PolicyVersion::V2012_10_17).unwrap(), Decision::DefaultDeny);
+
+        // An Allow statement must cover every context resource.
+        let s = Statement::builder()
+            .effect(Effect::Allow)
+            .action(Action::Any)
+            .resource(Resource::from_str("arn:aws:s3:::bucket-a").unwrap())
+            .build()
+            .unwrap();
+        assert_eq!(s.evaluate(&context, PolicyVersion::V2012_10_17).unwrap(), Decision::DefaultDeny);
+
+        let s = Statement::builder()
+            .effect(Effect::Allow)
+            .action(Action::Any)
+            .resource(Resource::from_str("arn:aws:s3:::bucket-*").unwrap())
+            .build()
+            .unwrap();
+        assert_eq!(s.evaluate(&context, PolicyVersion::V2012_10_17).unwrap(), Decision::Allow);
+
+        // A Deny statement with NotResource applies if any context resource falls outside the
+        // NotResource list.
+        let s = Statement::builder()
+            .effect(Effect::Deny)
+            .action(Action::Any)
+            .not_resource(Resource::from_str("arn:aws:s3:::bucket-a").unwrap())
+            .build()
+            .unwrap();
+        assert_eq!(s.evaluate(&context, PolicyVersion::V2012_10_17).unwrap(), Decision::Deny);
+
+        // ... but not if the NotResource list covers every context resource.
+        let s = Statement::builder()
+            .effect(Effect::Deny)
+            .action(Action::Any)
+            .not_resource(Resource::from_str("arn:aws:s3:::bucket-*").unwrap())
+            .build()
+            .unwrap();
+        assert_eq!(s.evaluate(&context, PolicyVersion::V2012_10_17).unwrap(), Decision::DefaultDeny);
+
+        // An Allow statement with NotResource applies only if no context resource matches the
+        // NotResource list.
+        let s = Statement::builder()
+            .effect(Effect::Allow)
+            .action(Action::Any)
+            .not_resource(Resource::from_str("arn:aws:s3:::bucket-a").unwrap())
+            .build()
+            .unwrap();
+        assert_eq!(s.evaluate(&context, PolicyVersion::V2012_10_17).unwrap(), Decision::DefaultDeny);
+
+        let s = Statement::builder()
+            .effect(Effect::Allow)
+            .action(Action::Any)
+            .not_resource(Resource::from_str("arn:aws:s3:::other-bucket").unwrap())
+            .build()
+            .unwrap();
+        assert_eq!(s.evaluate(&context, PolicyVersion::V2012_10_17).unwrap(), Decision::Allow);
     }
 
     #[test_log::test]

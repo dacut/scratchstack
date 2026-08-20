@@ -30,6 +30,9 @@ use {
 /// Account-related database operations.
 pub mod account;
 
+/// Authorization support: gathering the policies that apply to a principal.
+pub mod authz;
+
 /// Constants used across database operations.
 pub mod constants;
 
