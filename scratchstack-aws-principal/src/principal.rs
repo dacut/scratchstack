@@ -145,35 +145,35 @@ impl Principal {
     }
 }
 
-/// Wrap an [`AssumedRole`] in a [`Principal`].
+/// Wrap an [`AssumedRole`] in a `Principal`.
 impl From<AssumedRole> for Principal {
     fn from(assumed_role: AssumedRole) -> Self {
         Principal::AssumedRole(assumed_role)
     }
 }
 
-/// Wrap a [FederatedUser] in a [`Principal`].
+/// Wrap a [`FederatedUser`] in a `Principal`.
 impl From<FederatedUser> for Principal {
     fn from(federated_user: FederatedUser) -> Self {
         Principal::FederatedUser(federated_user)
     }
 }
 
-/// Wrap a [RootUser] in a [`Principal`].
+/// Wrap a [`RootUser`] in a `Principal`.
 impl From<RootUser> for Principal {
     fn from(root_user: RootUser) -> Self {
         Principal::RootUser(root_user)
     }
 }
 
-/// Wrap a [Service] in a [`Principal`].
+/// Wrap a [`Service`] in a `Principal`.
 impl From<Service> for Principal {
     fn from(service: Service) -> Self {
         Principal::Service(service)
     }
 }
 
-/// Wrap a [User] in a [`Principal`].
+/// Wrap a [`User`] in a `Principal`.
 impl From<User> for Principal {
     fn from(user: User) -> Self {
         Principal::User(user)
