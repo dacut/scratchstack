@@ -9,8 +9,8 @@ use {
 
 /// Handle a `ListUsers` request.
 ///
-/// The caller has already been authenticated by the SigV4 layer, so this just reports back who
-/// they turned out to be.
+/// The caller has already been authenticated by the SigV4 layer. This lists users in the caller's
+/// account without currently performing authorization checks.
 pub(crate) async fn list_users(
     svc_state: ServiceState,
     request_id: RequestId,
