@@ -117,7 +117,9 @@ mod tests {
     const TEST_ACCOUNT_ID: &str = "123456789012";
 
     /// Seed data for the authorization tests: one user whose inline policy allows
-    /// `iam:ListUsers` and one user with no policies at all.
+    /// `iam:ListUsers`, one user with no policies at all, and users whose grants are gated on
+    /// the request-time condition keys (`aws:SecureTransport`, `aws:CurrentTime`,
+    /// `aws:EpochTime`) that `check_authorization` injects.
     const AUTHZ_TEST_DATA: &str = r#"
         INSERT INTO iam.partition(partition) VALUES ('aws');
 
@@ -126,11 +128,27 @@ mod tests {
 
         INSERT INTO iam.users(user_id, account_id, user_name_lower, user_name_cased, path) VALUES
         ('SVCTESTALLOWUSER', '123456789012', 'allowed-user', 'Allowed-User', '/'),
-        ('SVCTESTDENYUSER1', '123456789012', 'denied-user', 'Denied-User', '/');
+        ('SVCTESTDENYUSER1', '123456789012', 'denied-user', 'Denied-User', '/'),
+        ('SVCTESTTLSUSER01', '123456789012', 'tls-user', 'Tls-User', '/'),
+        ('SVCTESTTIMEUSER1', '123456789012', 'time-user', 'Time-User', '/'),
+        ('SVCTESTPASTUSER1', '123456789012', 'past-user', 'Past-User', '/'),
+        ('SVCTESTEPOCHUSR1', '123456789012', 'epoch-user', 'Epoch-User', '/');
 
         INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
         ('SVCTESTALLOWUSER', 'allow-list-users', 'Allow-List-Users',
-         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*"}]}');
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*"}]}'),
+        ('SVCTESTTLSUSER01', 'allow-if-tls', 'Allow-If-Tls',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+           "Condition":{"Bool":{"aws:SecureTransport":"true"}}}]}'),
+        ('SVCTESTTIMEUSER1', 'allow-after-2020', 'Allow-After-2020',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+           "Condition":{"DateGreaterThan":{"aws:CurrentTime":"2020-01-01T00:00:00Z"}}}]}'),
+        ('SVCTESTPASTUSER1', 'allow-before-2020', 'Allow-Before-2020',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+           "Condition":{"DateLessThan":{"aws:CurrentTime":"2020-01-01T00:00:00Z"}}}]}'),
+        ('SVCTESTEPOCHUSR1', 'allow-after-2020-epoch', 'Allow-After-2020-Epoch',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+           "Condition":{"NumericGreaterThan":{"aws:EpochTime":"1577836800"}}}]}');
     "#;
 
     /// Build the principal and session data the SigV4 layer would produce for a seeded user.
@@ -217,6 +235,41 @@ mod tests {
         let principal = Principal::from(RootUser::new("aws", TEST_ACCOUNT_ID).expect("failed to build root user"));
         let mut session_data = SessionData::new();
         session_data.insert("aws:PrincipalAccount", SessionValue::String(TEST_ACCOUNT_ID.to_string()));
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        // aws:SecureTransport reflects the listener's TLS configuration: a grant conditioned on
+        // it succeeds on a TLS listener and fails on a plaintext one.
+        let (principal, session_data) = user_identity("SVCTESTTLSUSER01", "Tls-User");
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        let insecure_state = ServiceState {
+            db: svc_state.db.clone(),
+            secure_transport: false,
+        };
+        let (principal, session_data) = user_identity("SVCTESTTLSUSER01", "Tls-User");
+        let (status, body) = call(&insecure_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // aws:CurrentTime carries the evaluation time as a timestamp: a DateGreaterThan
+        // condition against a past instant passes, and a DateLessThan against it fails.
+        let (principal, session_data) = user_identity("SVCTESTTIMEUSER1", "Time-User");
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        let (principal, session_data) = user_identity("SVCTESTPASTUSER1", "Past-User");
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // aws:EpochTime carries the evaluation time in integer seconds, satisfying a
+        // NumericGreaterThan condition against a past epoch value.
+        let (principal, session_data) = user_identity("SVCTESTEPOCHUSR1", "Epoch-User");
         let (status, body) = call(&svc_state, principal, session_data, parameters).await;
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
         assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
