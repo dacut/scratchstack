@@ -247,8 +247,7 @@ where
     let auth_response = SigV4AuthenticatorResponse::builder()
         .principal(gsk_response.principal)
         .session_data(gsk_response.session_data)
-        .build()
-        .unwrap();
+        .build();
 
     let mut credential_parts = auth.credential.splitn(2, '/');
     let Some(_keyid) = credential_parts.next() else {

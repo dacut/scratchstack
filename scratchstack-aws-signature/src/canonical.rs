@@ -10,11 +10,12 @@
 use {
     crate::{
         SignatureError, SignatureOptions,
-        auth::{SigV4Authenticator, SigV4AuthenticatorBuilder},
+        auth::SigV4Authenticator,
         chronoutil::ParseISO8601,
         constants::*,
         crypto::{sha256, sha256_hex},
     },
+    bon::Builder,
     bytes::Bytes,
     chrono::{DateTime, Utc, offset::FixedOffset},
     encoding_rs::UTF_8,
@@ -50,16 +51,27 @@ lazy_static! {
 #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
 #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
 #[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
-#[derive(Debug)]
+#[derive(Builder, Debug)]
 struct AuthParams {
-    /// Builder for creating an authenticator.
-    pub builder: SigV4AuthenticatorBuilder,
+    /// The credential used to sign the request.
+    #[builder(into)]
+    pub credential: String,
+
+    /// The signature of the request.
+    #[builder(into)]
+    pub signature: String,
 
     /// The headers that are required to be signed in the request.
+    #[builder(into)]
     pub signed_headers: Vec<String>,
 
     /// The timestamp string for the request in YYYYMMDD'T'HHMMSS'Z' format.
+    #[builder(into)]
     pub timestamp_str: String,
+
+    /// The session token, if any, passed in with the request.
+    #[builder(into)]
+    pub session_token: Option<String>,
 }
 
 /// A canonicalized request for AWS SigV4.
@@ -366,15 +378,18 @@ impl CanonicalRequest {
                 ).into())
                 })?
                 .with_timezone(&Utc);
-        let mut builder = auth_params.builder;
-        builder.request_timestamp(timestamp);
-
         let signed_headers = auth_params.signed_headers;
 
         // Create the canonical request.
-        builder.canonical_request_sha256(self.canonical_request_sha256(&signed_headers));
+        let canonical_request = self.canonical_request_sha256(&signed_headers);
 
-        Ok(builder.build().expect("all fields should be set"))
+        Ok(SigV4Authenticator::builder()
+            .credential(auth_params.credential)
+            .maybe_session_token(auth_params.session_token)
+            .signature(auth_params.signature)
+            .request_timestamp(timestamp)
+            .canonical_request_sha256(canonical_request)
+            .build())
     }
 
     /// Create an [AuthParams] structure, either from the `Authorization` header or the query strings as appropriate.
@@ -472,7 +487,10 @@ impl CanonicalRequest {
         };
 
         // Split the parameters by commas; trim each one; then split into key=value pairs.
-        let mut parameter_map = HashMap::new();
+        let mut credential = None;
+        let mut signature = None;
+        let mut signed_headers = None;
+
         for parameter_untrimmed in parameters.split(|c| *c == b',') {
             let parameter = trim_ascii(parameter_untrimmed);
 
@@ -496,32 +514,30 @@ impl CanonicalRequest {
             }
 
             // Rule 6c: Use the last value for each key; overwriting is ok.
-            parameter_map.insert(parts[0], parts[1]);
+            match parts[0] {
+                CREDENTIAL => credential = Some(latin1_to_string(parts[1])),
+                SIGNATURE => signature = Some(latin1_to_string(parts[1])),
+                SIGNED_HEADERS => {
+                    signed_headers = Some(parts[1].split(|c| *c == b';').map(latin1_to_string).collect::<Vec<_>>())
+                }
+                _ => (),
+            }
         }
 
         // Rule 6d: ensure all authorization header parameters/headers are present.
         let mut missing_messages = Vec::new();
-        let mut builder = SigV4Authenticator::builder();
 
-        if let Some(credential) = parameter_map.get(CREDENTIAL) {
-            builder.credential(latin1_to_string(credential));
-        } else {
+        if credential.is_none() {
             missing_messages.push(MSG_AUTH_HEADER_REQ_CREDENTIAL);
         }
 
-        if let Some(signature) = parameter_map.get(SIGNATURE) {
-            builder.signature(latin1_to_string(signature));
-        } else {
+        if signature.is_none() {
             missing_messages.push(MSG_AUTH_HEADER_REQ_SIGNATURE);
         }
 
-        let mut signed_headers = if let Some(signed_headers) = parameter_map.get(SIGNED_HEADERS) {
-            signed_headers.split(|c| *c == b';').map(latin1_to_string).collect()
-        } else {
+        if signed_headers.is_none() {
             missing_messages.push(MSG_AUTH_HEADER_REQ_SIGNED_HEADERS);
-            Vec::new()
-        };
-        signed_headers.sort();
+        }
 
         let mut timestamp_str = None;
 
@@ -541,18 +557,20 @@ impl CanonicalRequest {
             ));
         }
 
-        // Get the session token if present.
-        if let Some(token) = self.headers.get(HDR_X_AMZ_SECURITY_TOKEN) {
-            builder.session_token(latin1_to_string(&token[0]));
-        }
+        let credential = credential.expect("credential is not set");
+        let signature = signature.expect("signature is not set");
+        let mut signed_headers = signed_headers.expect("signed_headers is not set");
+        signed_headers.sort();
+        let timestamp_str = timestamp_str.expect("timestamp_str is not set");
+        let session_token = self.headers.get(HDR_X_AMZ_SECURITY_TOKEN).map(|token| latin1_to_string(&token[0]));
 
-        // Return the builder and the date.
-        let timestamp_str = timestamp_str.expect("date_str should be set");
-        Ok(AuthParams {
-            builder,
-            signed_headers,
-            timestamp_str,
-        })
+        Ok(AuthParams::builder()
+            .credential(credential)
+            .signature(signature)
+            .signed_headers(signed_headers)
+            .timestamp_str(timestamp_str)
+            .maybe_session_token(session_token)
+            .build())
     }
 
     /// Create an [`AuthParams`] structure from the query parameters. This performs steps 7a-7d of the AWS Auth
@@ -567,31 +585,29 @@ impl CanonicalRequest {
         }
 
         let mut missing_messages = Vec::new();
-        let mut builder = SigV4Authenticator::builder();
 
         // Rule 7c: Use the first value for each key.
-        if let Some(credential) = self.query_parameters.get(QP_X_AMZ_CREDENTIAL) {
-            builder.credential(unescape_uri_encoding(&credential[0]));
-        } else {
+        let credential = self.query_parameters.get(QP_X_AMZ_CREDENTIAL).map(|c| unescape_uri_encoding(&c[0]));
+        if credential.is_none() {
             missing_messages.push(MSG_QUERY_STRING_MUST_INCLUDE_CREDENTIAL);
         }
 
-        if let Some(signature) = self.query_parameters.get(QP_X_AMZ_SIGNATURE) {
-            builder.signature(signature[0].clone());
-        } else {
+        let signature = self.query_parameters.get(QP_X_AMZ_SIGNATURE).map(|s| s[0].clone());
+        if signature.is_none() {
             missing_messages.push(MSG_QUERY_STRING_MUST_INCLUDE_SIGNATURE);
         }
 
-        let mut signed_headers = if let Some(signed_headers) = self.query_parameters.get(QP_X_AMZ_SIGNED_HEADERS) {
-            let unescaped_signed_headers = unescape_uri_encoding(&signed_headers[0]);
-            unescaped_signed_headers.split(';').map(|s| s.to_string()).collect::<Vec<String>>()
-        } else {
-            missing_messages.push(MSG_QUERY_STRING_MUST_INCLUDE_SIGNED_HEADERS);
-            Vec::new()
-        };
-        signed_headers.sort();
+        let signed_headers = self
+            .query_parameters
+            .get(QP_X_AMZ_SIGNED_HEADERS)
+            .map(|sh| unescape_uri_encoding(&sh[0]))
+            .map(|sh| sh.split(';').map(str::to_string).collect::<Vec<String>>());
 
-        let timestamp_str = self.query_parameters.get(QP_X_AMZ_DATE);
+        if signed_headers.is_none() {
+            missing_messages.push(MSG_QUERY_STRING_MUST_INCLUDE_SIGNED_HEADERS);
+        };
+
+        let timestamp_str = self.query_parameters.get(QP_X_AMZ_DATE).map(|t| &t[0]);
         if timestamp_str.is_none() {
             missing_messages.push(MSG_QUERY_STRING_MUST_INCLUDE_DATE);
         }
@@ -602,17 +618,21 @@ impl CanonicalRequest {
             ));
         }
 
-        // Get the session token if present.
-        if let Some(token) = self.query_parameters.get(QP_X_AMZ_SECURITY_TOKEN) {
-            builder.session_token(unescape_uri_encoding(&token[0]));
-        }
+        let session_token = self.query_parameters.get(QP_X_AMZ_SECURITY_TOKEN).map(|t| unescape_uri_encoding(&t[0]));
 
-        let timestamp_str = timestamp_str.expect("date_str should be set")[0].clone();
-        Ok(AuthParams {
-            builder,
-            signed_headers,
-            timestamp_str,
-        })
+        let credential = credential.expect("credential should be set");
+        let signature = signature.expect("signature should be set");
+        let mut signed_headers = signed_headers.expect("signed_headers should be set");
+        signed_headers.sort();
+        let timestamp_str = timestamp_str.expect("date_str should be set");
+
+        Ok(AuthParams::builder()
+            .credential(credential)
+            .signature(signature)
+            .signed_headers(signed_headers)
+            .timestamp_str(timestamp_str)
+            .maybe_session_token(session_token)
+            .build())
     }
 }
 
@@ -1935,11 +1955,11 @@ mod tests {
         let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let auth = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap();
         // Expect last component found
-        assert_eq!(auth.builder.get_credential(), Some("ABCD"));
-        assert_eq!(auth.builder.get_signature(), Some("DEFG"));
+        assert_eq!(auth.credential.as_str(), "ABCD");
+        assert_eq!(auth.signature.as_str(), "DEFG");
         assert_eq!(auth.signed_headers, vec!["bar", "foo", "host"]);
         // Expect first header found.
-        assert_eq!(auth.builder.get_session_token(), Some("Test1"));
+        assert_eq!(auth.session_token.as_ref().map(String::as_str), Some("Test1"));
         assert_eq!(auth.timestamp_str, "20150830T123600Z");
 
         let uri = Uri::builder().path_and_query(PathAndQuery::from_static("/?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Algorithm=AWS3&X-Amz-Credential=1234&X-Amz-SignedHeaders=date%3Bhost&X-Amz-Signature=5678&X-Amz-Security-Token=Test1&X-Amz-Date=20150830T123600Z&X-Amz-Credential=ABCD&X-Amz-SignedHeaders=foo%3Bbar%3Bhost&X-Amz-Signature=DEFG&X-Amz-SecurityToken=Test2&X-Amz-Date=20161231T235959Z")).build().unwrap();
@@ -1954,9 +1974,9 @@ mod tests {
         let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         let auth = cr.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).unwrap();
         // Expect first component found
-        assert_eq!(auth.builder.get_credential(), Some("1234"));
-        assert_eq!(auth.builder.get_signature(), Some("5678"));
-        assert_eq!(auth.builder.get_session_token(), Some("Test1"));
+        assert_eq!(auth.credential.as_str(), "1234");
+        assert_eq!(auth.signature.as_str(), "5678");
+        assert_eq!(auth.session_token.as_ref().map(String::as_str), Some("Test1"));
         assert_eq!(auth.timestamp_str, "20150830T123600Z");
         assert_eq!(auth.signed_headers, vec!["date", "host"]);
 
