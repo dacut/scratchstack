@@ -10,7 +10,7 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
-derive_builder.workspace = true
+bon.workspace = true
 indoc.workspace = true
 log.workspace = true
 scratchstack-hakari = { path = "../scratchstack-hakari" }

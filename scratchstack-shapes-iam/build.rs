@@ -130,7 +130,7 @@ fn generate_iam_shapes() -> AnyResult<()> {
         .operation(File::create(Path::new(&out_dir).join("operation.rs"))?)
         .types(File::create(Path::new(&out_dir).join("types.rs"))?)
         .types_error(File::create(Path::new(&out_dir).join("types_error.rs"))?)
-        .build()?;
+        .build();
 
     model.generate(&mut writers)?;
 

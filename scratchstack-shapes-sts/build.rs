@@ -64,8 +64,7 @@ fn generate_sts_shapes() {
         .operation(File::create(Path::new(&out_dir).join("operation.rs")).expect("Failed to create operation.rs"))
         .types(File::create(Path::new(&out_dir).join("types.rs")).expect("Failed to create types.rs"))
         .types_error(File::create(Path::new(&out_dir).join("types_error.rs")).expect("Failed to create types_error.rs"))
-        .build()
-        .expect("Failed to create writers");
+        .build();
 
     model.generate(&mut writers).expect("Failed to generate shapes");
 }
