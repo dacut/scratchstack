@@ -81,7 +81,7 @@
 //!     Ok(GetSigningKeyResponse::builder()
 //!            .principal(user)
 //!            .signing_key(signing_key)
-//!            .build()?)
+//!            .build())
 //! }
 //!
 //! // Wrap `get_signing_key` in a `tower::Service`.

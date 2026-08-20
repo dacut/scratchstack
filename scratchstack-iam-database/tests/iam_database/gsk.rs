@@ -21,12 +21,11 @@ async fn get_signing_key(
     let mut gsk = GetSigningKeyFromDatabase::new(Arc::new(pool.clone()), "aws", "us-east-1", "iam");
     let request = GetSigningKeyRequest::builder()
         .access_key(access_key_id)
-        .session_token(session_token.map(str::to_string))
+        .maybe_session_token(session_token.map(|x| x.to_string()))
         .request_date(NaiveDate::from_ymd_opt(2024, 1, 1).expect("Failed to build request date"))
         .region("us-east-1")
         .service("iam")
-        .build()
-        .expect("Failed to build GetSigningKeyRequest");
+        .build();
 
     gsk.ready().await.expect("GetSigningKeyFromDatabase should be ready").call(request).await
 }

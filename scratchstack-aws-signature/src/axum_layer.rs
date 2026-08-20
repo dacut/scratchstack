@@ -723,8 +723,7 @@ mod tests {
             let k_secret = KSecretKey::from_str(TEST_SECRET_KEY)?;
             let k_signing = k_secret.to_ksigning(request.request_date(), request.region(), request.service());
             let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
-            let response =
-                GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build().unwrap();
+            let response = GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build();
             Ok(response)
         } else {
             Err(Box::new(SignatureError::InvalidClientTokenId(
@@ -760,8 +759,7 @@ mod tests {
                 let k_secret = KSecretKey::from_str(TEST_SECRET_KEY)?;
                 let signing_key = k_secret.to_ksigning(req.request_date(), req.region(), req.service());
                 let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
-                let response =
-                    GetSigningKeyResponse::builder().principal(principal).signing_key(signing_key).build().unwrap();
+                let response = GetSigningKeyResponse::builder().principal(principal).signing_key(signing_key).build();
                 Ok(response)
             } else {
                 Err(SignatureError::InvalidClientTokenId(

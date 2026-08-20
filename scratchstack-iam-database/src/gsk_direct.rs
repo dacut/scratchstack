@@ -189,8 +189,7 @@ where
                 .principal(principal)
                 .session_data(session_data)
                 .signing_key(signing_key)
-                .build()
-                .unwrap();
+                .build();
 
             Ok(response)
         }

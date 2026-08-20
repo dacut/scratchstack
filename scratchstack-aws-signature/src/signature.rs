@@ -380,7 +380,7 @@ mod tests {
                 let k_signing = k_secret.to_ksigning(req.request_date(), req.region(), req.service());
 
                 let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
-                Ok(GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build().unwrap())
+                Ok(GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build())
             })
         }
     }
@@ -390,7 +390,7 @@ mod tests {
         let k_signing = k_secret.to_ksigning(req.request_date(), req.region(), req.service());
 
         let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
-        Ok(GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build().unwrap())
+        Ok(GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build())
     }
 
     async fn run_auth_test(auth_str: &str) -> Result<(Parts, Bytes, SigV4AuthenticatorResponse), BoxError> {

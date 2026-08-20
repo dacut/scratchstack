@@ -1,8 +1,8 @@
 use {
     crate::{KeyLengthError, constants::*, crypto::hmac_sha256},
     base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
+    bon::Builder,
     chrono::NaiveDate,
-    derive_builder::Builder,
     scratchstack_aws_principal::{Principal, SessionData},
     serde::{
         Deserialize, Serialize,
@@ -400,32 +400,26 @@ impl KServiceKey {
 #[non_exhaustive]
 pub struct GetSigningKeyRequest {
     /// The access key used in the request.
-    #[builder(setter(into))]
+    #[builder(into)]
     access_key: String,
 
     /// The session token provided in the request, if any.
-    #[builder(setter(into), default)]
+    #[builder(into)]
     session_token: Option<String>,
 
     /// The date of the request.
     request_date: NaiveDate,
 
     /// The region of the request.
-    #[builder(setter(into))]
+    #[builder(into)]
     region: String,
 
     /// The service of the request.
-    #[builder(setter(into))]
+    #[builder(into)]
     service: String,
 }
 
 impl GetSigningKeyRequest {
-    /// Create a [GetSigningKeyRequestBuilder] to construct a [GetSigningKeyRequest].
-    #[inline]
-    pub fn builder() -> GetSigningKeyRequestBuilder {
-        GetSigningKeyRequestBuilder::default()
-    }
-
     /// Retrieve the access key used in the request.
     #[inline]
     pub fn access_key(&self) -> &str {
@@ -478,11 +472,11 @@ impl Debug for GetSigningKeyRequest {
 #[derive(Builder, Clone, Debug)]
 pub struct GetSigningKeyResponse {
     /// The principal actors of the request.
-    #[builder(setter(into))]
+    #[builder(into)]
     pub(crate) principal: Principal,
 
     /// The session data associated with the principal.
-    #[builder(setter(into), default)]
+    #[builder(into, default)]
     pub(crate) session_data: SessionData,
 
     /// The signing key.
@@ -490,12 +484,6 @@ pub struct GetSigningKeyResponse {
 }
 
 impl GetSigningKeyResponse {
-    /// Create a [`GetSigningKeyResponseBuilder`] to construct a `GetSigningKeyResponse`.
-    #[inline]
-    pub fn builder() -> GetSigningKeyResponseBuilder {
-        GetSigningKeyResponseBuilder::default()
-    }
-
     /// Retrieve the principal actors of the request.
     #[inline]
     pub fn principal(&self) -> &Principal {
@@ -668,8 +656,7 @@ mod tests {
         );
         let principal = Principal::from(AssumedRole::new("aws", "123456789012", "role", "session").unwrap());
 
-        let gsk_resp1a =
-            GetSigningKeyResponse::builder().signing_key(signing_key).principal(principal).build().unwrap();
+        let gsk_resp1a = GetSigningKeyResponse::builder().signing_key(signing_key).principal(principal).build();
 
         // Make sure we can debug print the response.
         let _ = format!("{:?}", gsk_resp1a);
@@ -689,7 +676,7 @@ mod tests {
             "example",
         );
         let principal = Principal::from(AssumedRole::new("aws", "123456789012", "role", "session").unwrap());
-        let response = GetSigningKeyResponse::builder().principal(principal).signing_key(signing_key).build().unwrap();
+        let response = GetSigningKeyResponse::builder().principal(principal).signing_key(signing_key).build();
         assert!(response.principal().as_assumed_role().is_some());
         assert!(response.session_data().is_empty());
     }

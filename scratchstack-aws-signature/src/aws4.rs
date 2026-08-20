@@ -287,7 +287,7 @@ async fn get_signing_key(request: GetSigningKeyRequest) -> Result<GetSigningKeyR
     let k_secret = KSecretKey::from_str("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY").unwrap();
     let k_signing = k_secret.to_ksigning(request.request_date(), request.region(), request.service());
 
-    let response = GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build().unwrap();
+    let response = GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build();
     Ok(response)
 }
 
