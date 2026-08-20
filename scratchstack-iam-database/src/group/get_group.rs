@@ -12,6 +12,7 @@ use {
     indoc::indoc,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{GetGroupInternalRequest, GetGroupResponse},
@@ -24,8 +25,8 @@ impl RequestExecutor for GetGroupInternalRequest {
     type Response = GetGroupResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        get_group(tx, &self.account_id, &self.group_name).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        get_group(tx, &self.account_id, &self.group_name, request_id).await
     }
 }
 
@@ -34,16 +35,17 @@ pub async fn get_group(
     tx: &mut PgTransaction<'_>,
     account_id: &str,
     group_name: &str,
+    request_id: RequestId,
 ) -> Result<GetGroupResponse, IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    validate_group_name(group_name)?;
+    validate_group_name(group_name, request_id)?;
     let group_name_lower = group_name.to_lowercase();
 
-    let partition = get_current_partition_or_fail(tx).await?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
 
     let row = query(indoc! {"
             SELECT group_id, group_name_cased, path, created_at
@@ -56,11 +58,14 @@ pub async fn get_group(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch group from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let row = row.ok_or_else(|| {
-        NoSuchEntityException::builder().message(format!("The group with name {group_name} cannot be found.")).build()
+        NoSuchEntityException::builder()
+            .message(format!("The group with name {group_name} cannot be found."))
+            .request_id(request_id)
+            .build()
     })?;
 
     let group_id: String = row.get(0);
@@ -76,7 +81,7 @@ pub async fn get_group(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct ARN for group: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
 
     let group = Group::builder()
@@ -88,7 +93,7 @@ pub async fn get_group(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct group object: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
 
     Ok(GetGroupResponse::builder().group(group).build().unwrap())

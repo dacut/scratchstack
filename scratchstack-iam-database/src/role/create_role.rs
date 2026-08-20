@@ -15,6 +15,7 @@ use {
     indoc::indoc,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{CreateRoleInternalRequest, CreateRoleResponse},
@@ -27,7 +28,7 @@ impl RequestExecutor for CreateRoleInternalRequest {
     type Response = CreateRoleResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
         create_role(
             tx,
             &self.account_id,
@@ -38,6 +39,7 @@ impl RequestExecutor for CreateRoleInternalRequest {
             self.path.as_deref(),
             self.permissions_boundary.as_deref(),
             &self.tags,
+            request_id,
         )
         .await
     }
@@ -55,34 +57,35 @@ pub async fn create_role(
     path: Option<&str>,
     permissions_boundary: Option<&str>,
     tags: &[Tag],
+    request_id: RequestId,
 ) -> Result<CreateRoleResponse, IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
     let path = path.unwrap_or("/");
-    validate_path(path)?;
-    validate_role_name(role_name)?;
+    validate_path(path, request_id)?;
+    validate_role_name(role_name, request_id)?;
     if let Some(max_session_duration) = max_session_duration
         && (max_session_duration < 3600 || max_session_duration > 43200)
     {
         let message = "Maximum session duration must be between 3600 and 43200 seconds.".to_string();
-        return Err(ValidationError::builder().message(message).build().into());
+        return Err(ValidationError::builder().message(message).request_id(request_id).build().into());
     }
 
     for tag in tags {
-        validate_tag_key(&tag.key)?;
-        validate_tag_value(&tag.value)?;
+        validate_tag_key(&tag.key, request_id)?;
+        validate_tag_value(&tag.value, request_id)?;
     }
 
     // Generate a new role id for this role.
     let role_id = IamId::new(IamResourceType::Role, account_id.parse().unwrap()).to_string();
-    let partition = get_current_partition_or_fail(tx).await?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
 
     // If a permissions boundary was specified, look it up and verify that it exists.
     let permissions_boundary_id = if let Some(permissions_boundary) = permissions_boundary {
-        Some(get_permissions_boundary_id(tx, account_id, permissions_boundary).await?)
+        Some(get_permissions_boundary_id(tx, account_id, permissions_boundary, request_id).await?)
     } else {
         None
     };
@@ -110,14 +113,14 @@ pub async fn create_role(
         Ok(result) => result,
         Err(e) => {
             log::error!("Failed to insert role into database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
     let created_at: chrono::DateTime<chrono::Utc> = match result.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
             log::error!("Failed to get created_at from database row: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
@@ -138,7 +141,7 @@ pub async fn create_role(
         .await
         {
             log::error!("Failed to insert role tag into database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     }
 
@@ -152,7 +155,7 @@ pub async fn create_role(
         Ok(arn) => arn,
         Err(e) => {
             log::error!("Failed to construct ARN for new role: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
@@ -164,7 +167,7 @@ pub async fn create_role(
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct permissions boundary for new role: {e}");
-                    internal_failure()
+                    internal_failure(request_id)
                 })?,
         )
     } else {
@@ -185,7 +188,7 @@ pub async fn create_role(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct role object for new role: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
 
     Ok(CreateRoleResponse::builder().role(role).build().unwrap())

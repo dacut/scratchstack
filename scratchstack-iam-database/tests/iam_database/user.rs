@@ -1,6 +1,7 @@
 //! User test suite.
 use {
     pretty_assertions::assert_eq,
+    scratchstack_core::{ProvideRequestId as _, RequestId},
     scratchstack_iam_database::RequestExecutor,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -24,7 +25,7 @@ pub async fn test_create_user_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateUserRequestInternal")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create user");
     tx.commit().await.expect("Failed to commit transaction");
@@ -47,7 +48,7 @@ pub async fn test_create_user_with_path(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateUserRequestInternal")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create user with path");
     tx.commit().await.expect("Failed to commit transaction");
@@ -70,7 +71,7 @@ pub async fn test_create_user_with_tags(pool: &sqlx::PgPool) {
         ])
         .build()
         .expect("Failed to build CreateUserRequestInternal")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create user with tags");
     tx.commit().await.expect("Failed to commit transaction");
@@ -96,7 +97,7 @@ pub async fn test_create_user_with_permissions_boundary(pool: &sqlx::PgPool) {
         .permissions_boundary("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build CreateUserRequestInternal")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create user with permissions boundary");
     tx.commit().await.expect("Failed to commit transaction");
@@ -117,7 +118,7 @@ pub async fn test_create_user_duplicate_name(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateUserRequestInternal")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a duplicate user name must fail");
@@ -138,7 +139,7 @@ pub async fn test_create_user_nonexistent_account(pool: &sqlx::PgPool) {
         .account_id("999999999999")
         .build()
         .expect("Failed to build CreateUserRequestInternal")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a user in a nonexistent account must fail");
@@ -153,7 +154,7 @@ pub async fn test_create_user_nonexistent_permissions_boundary(pool: &sqlx::PgPo
         .permissions_boundary("arn:aws:iam::123456789012:policy/NonExistentPolicy")
         .build()
         .expect("Failed to build CreateUserRequestInternal")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a user with a nonexistent permissions boundary must fail");
@@ -172,7 +173,7 @@ pub async fn test_tag_user(pool: &sqlx::PgPool) {
         ])
         .build()
         .expect("Failed to build TagUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to tag user");
     tx.commit().await.expect("Failed to commit transaction");
@@ -184,7 +185,7 @@ pub async fn test_tag_user(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListUserTagsInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list user tags");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -206,7 +207,7 @@ pub async fn test_tag_user_upsert(pool: &sqlx::PgPool) {
         .set_tags(vec![Tag::builder().key("Dept").value("Finance").build().expect("Failed to build tag")])
         .build()
         .expect("Failed to build TagUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to upsert tag on user");
     tx.commit().await.expect("Failed to commit transaction");
@@ -218,7 +219,7 @@ pub async fn test_tag_user_upsert(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListUserTagsInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list user tags after upsert");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -239,7 +240,7 @@ pub async fn test_tag_user_nonexistent_user(pool: &sqlx::PgPool) {
         .set_tags(vec![Tag::builder().key("Key").value("Value").build().expect("Failed to build tag")])
         .build()
         .expect("Failed to build TagUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Tagging a nonexistent user must fail");
@@ -254,7 +255,7 @@ pub async fn test_tag_user_empty_tags(pool: &sqlx::PgPool) {
         .set_tags(vec![])
         .build()
         .expect("Failed to build TagUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Tagging with an empty tag list must fail");
@@ -270,7 +271,7 @@ pub async fn test_untag_user(pool: &sqlx::PgPool) {
         .set_tag_keys(vec!["Dept".to_string()])
         .build()
         .expect("Failed to build UntagUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to untag user");
     tx.commit().await.expect("Failed to commit transaction");
@@ -282,7 +283,7 @@ pub async fn test_untag_user(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListUserTagsInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list user tags after untag");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -301,7 +302,7 @@ pub async fn test_untag_user_nonexistent_key(pool: &sqlx::PgPool) {
         .set_tag_keys(vec!["NoSuchTag".to_string()])
         .build()
         .expect("Failed to build UntagUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Untagging a nonexistent key should succeed silently");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -316,7 +317,7 @@ pub async fn test_untag_user_empty_keys(pool: &sqlx::PgPool) {
         .set_tag_keys(vec![])
         .build()
         .expect("Failed to build UntagUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Untagging with an empty tag key list must fail");
@@ -331,7 +332,7 @@ pub async fn test_untag_user_nonexistent_user(pool: &sqlx::PgPool) {
         .set_tag_keys(vec!["Key".to_string()])
         .build()
         .expect("Failed to build UntagUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Untagging a nonexistent user must fail");
@@ -345,7 +346,7 @@ pub async fn test_get_user_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get user");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -370,7 +371,7 @@ pub async fn test_get_user_with_tags(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get user");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -391,7 +392,7 @@ pub async fn test_get_user_nonexistent(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Getting a nonexistent user must fail");
@@ -404,7 +405,7 @@ pub async fn test_get_user_no_user_name(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Getting a user without a user name must fail");
@@ -421,7 +422,7 @@ pub async fn test_delete_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create DeleteMePbUser");
     let user_id: String =
@@ -453,7 +454,7 @@ pub async fn test_delete_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserPermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete DeleteMePbUser permissions boundary");
     tx.commit().await.expect("Failed to commit transaction");
@@ -473,7 +474,7 @@ pub async fn test_delete_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete DeleteMePbUser");
     tx.commit().await.expect("Failed to commit transaction");
@@ -488,7 +489,7 @@ pub async fn test_delete_user_permissions_boundary_no_boundary(pool: &sqlx::PgPo
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserPermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("DeleteUserPermissionsBoundary on a user with no PB must succeed");
     tx.commit().await.expect("Failed to commit transaction");
@@ -497,16 +498,20 @@ pub async fn test_delete_user_permissions_boundary_no_boundary(pool: &sqlx::PgPo
 /// Calling DeleteUserPermissionsBoundary on a nonexistent user must fail with NoSuchEntity.
 pub async fn test_delete_user_permissions_boundary_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let request_id = RequestId::new();
     let err = DeleteUserPermissionsBoundaryInternalRequest::builder()
         .user_name("nosuchpbuser")
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserPermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, request_id)
         .await
         .expect_err("Clearing PB on a nonexistent user must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+    // Errors raised from deep in the query path carry the request id too, not just the ones the
+    // top-level validation raises.
+    assert_eq!(err.request_id(), Some(request_id.to_string().as_str()));
 }
 
 /// Building a DeleteUserPermissionsBoundary request with an invalid user name must fail before
@@ -530,7 +535,7 @@ pub async fn test_put_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create PutMePbUser");
     PutUserPermissionsBoundaryInternalRequest::builder()
@@ -539,7 +544,7 @@ pub async fn test_put_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
         .permissions_boundary(pb_arn.to_string())
         .build()
         .expect("Failed to build PutUserPermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to set PutMePbUser permissions boundary");
     tx.commit().await.expect("Failed to commit transaction");
@@ -550,7 +555,7 @@ pub async fn test_put_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get PutMePbUser");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -565,7 +570,7 @@ pub async fn test_put_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
         .permissions_boundary(pb_arn.to_string())
         .build()
         .expect("Failed to build PutUserPermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Re-putting the same permissions boundary on PutMePbUser must succeed");
     tx.commit().await.expect("Failed to commit transaction");
@@ -577,7 +582,7 @@ pub async fn test_put_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserPermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to clear PutMePbUser PB");
     DeleteUserInternalRequest::builder()
@@ -585,7 +590,7 @@ pub async fn test_put_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete PutMePbUser");
     tx.commit().await.expect("Failed to commit transaction");
@@ -600,7 +605,7 @@ pub async fn test_put_user_permissions_boundary_nonexistent_user(pool: &sqlx::Pg
         .permissions_boundary("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build PutUserPermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("PutUserPermissionsBoundary on a nonexistent user must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -617,7 +622,7 @@ pub async fn test_put_user_permissions_boundary_nonexistent_policy(pool: &sqlx::
         .permissions_boundary("arn:test-partition:iam::123456789012:policy/NoSuchPolicy")
         .build()
         .expect("Failed to build PutUserPermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("PutUserPermissionsBoundary with a nonexistent PB policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -633,7 +638,7 @@ pub async fn test_put_user_permissions_boundary_invalid_arn(pool: &sqlx::PgPool)
         .permissions_boundary("not-an-arn-but-long-enough-to-pass")
         .build()
         .expect("Failed to build PutUserPermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("PutUserPermissionsBoundary with an invalid ARN must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -676,7 +681,7 @@ pub async fn test_put_user_policy_simple(pool: &sqlx::PgPool) {
         .policy_document(INLINE_POLICY_S3.to_string())
         .build()
         .expect("Failed to build PutUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to put inline policy on bob");
     tx.commit().await.expect("Failed to commit transaction");
@@ -706,7 +711,7 @@ pub async fn test_put_user_policy_replaces(pool: &sqlx::PgPool) {
         .policy_document(INLINE_POLICY_EC2.to_string())
         .build()
         .expect("Failed to build PutUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to replace inline policy on bob");
     tx.commit().await.expect("Failed to commit transaction");
@@ -747,7 +752,7 @@ pub async fn test_put_user_policy_additional_policy(pool: &sqlx::PgPool) {
         .policy_document(INLINE_POLICY_S3.to_string())
         .build()
         .expect("Failed to build PutUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to put second inline policy on bob");
     tx.commit().await.expect("Failed to commit transaction");
@@ -775,7 +780,7 @@ pub async fn test_put_user_policy_invalid_principal_accepted(pool: &sqlx::PgPool
         .policy_document(INLINE_POLICY_UNKNOWN_AWS_PRINCIPAL.to_string())
         .build()
         .expect("Failed to build PutUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Policies referring to non-existent principals must still be accepted");
     tx.commit().await.expect("Failed to commit transaction");
@@ -791,7 +796,7 @@ pub async fn test_put_user_policy_invalid_document(pool: &sqlx::PgPool) {
         .policy_document("{ not valid aspen json }")
         .build()
         .expect("Failed to build PutUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("PutUserPolicy with malformed JSON must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -811,7 +816,7 @@ pub async fn test_put_user_policy_nonexistent_user(pool: &sqlx::PgPool) {
         .policy_document(INLINE_POLICY_S3.to_string())
         .build()
         .expect("Failed to build PutUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("PutUserPolicy on a nonexistent user must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -839,7 +844,7 @@ pub async fn test_get_user_policy_simple(pool: &sqlx::PgPool) {
         .policy_name("InlineRead")
         .build()
         .expect("Failed to build GetUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get inline policy on bob");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -859,7 +864,7 @@ pub async fn test_get_user_policy_case_insensitive_lookup(pool: &sqlx::PgPool) {
         .policy_name("INLINEREAD")
         .build()
         .expect("Failed to build GetUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get inline policy via case-insensitive lookup");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -876,7 +881,7 @@ pub async fn test_get_user_policy_nonexistent_policy(pool: &sqlx::PgPool) {
         .policy_name("NotAttached")
         .build()
         .expect("Failed to build GetUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("GetUserPolicy with no matching policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -892,7 +897,7 @@ pub async fn test_get_user_policy_nonexistent_user(pool: &sqlx::PgPool) {
         .policy_name("AnyName")
         .build()
         .expect("Failed to build GetUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("GetUserPolicy on a nonexistent user must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -919,7 +924,7 @@ pub async fn test_list_user_policies_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListUserPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list inline policies on bob");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -940,7 +945,7 @@ pub async fn test_list_user_policies_empty(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create ListPoliciesEmptyUser");
     let resp = ListUserPoliciesInternalRequest::builder()
@@ -948,7 +953,7 @@ pub async fn test_list_user_policies_empty(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListUserPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list inline policies on empty user");
     assert!(resp.policy_names.is_empty(), "Expected no inline policies, got: {:?}", resp.policy_names);
@@ -959,7 +964,7 @@ pub async fn test_list_user_policies_empty(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete ListPoliciesEmptyUser");
     tx.commit().await.expect("Failed to commit transaction");
@@ -974,7 +979,7 @@ pub async fn test_list_user_policies_pagination(pool: &sqlx::PgPool) {
         .max_items(2)
         .build()
         .expect("Failed to build ListUserPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list inline policies on bob (page 1)");
     assert_eq!(page1.policy_names, vec!["InlineCompute".to_string(), "InlineRead".to_string()]);
@@ -988,7 +993,7 @@ pub async fn test_list_user_policies_pagination(pool: &sqlx::PgPool) {
         .marker(marker)
         .build()
         .expect("Failed to build ListUserPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list inline policies on bob (page 2)");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1006,7 +1011,7 @@ pub async fn test_list_user_policies_nonexistent_user(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListUserPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("ListUserPolicies on a nonexistent user must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1030,7 +1035,7 @@ pub async fn test_delete_user_policy_simple(pool: &sqlx::PgPool) {
         .policy_name("InlineWithMissingPrincipal")
         .build()
         .expect("Failed to build DeleteUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete inline policy on bob");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1070,7 +1075,7 @@ pub async fn test_delete_user_policy_nonexistent_policy(pool: &sqlx::PgPool) {
         .policy_name("NotAttached")
         .build()
         .expect("Failed to build DeleteUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("DeleteUserPolicy with no matching policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1086,7 +1091,7 @@ pub async fn test_delete_user_policy_nonexistent_user(pool: &sqlx::PgPool) {
         .policy_name("AnyName")
         .build()
         .expect("Failed to build DeleteUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("DeleteUserPolicy on a nonexistent user must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1112,7 +1117,7 @@ pub async fn test_delete_user_attached_policy_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create DeleteMeAttachedUser");
     let user_id: String =
@@ -1137,7 +1142,7 @@ pub async fn test_delete_user_attached_policy_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting a user with an attached managed policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1155,7 +1160,7 @@ pub async fn test_delete_user_attached_policy_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete DeleteMeAttachedUser after detaching policy");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1169,7 +1174,7 @@ pub async fn test_delete_user_inline_policy_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create DeleteMeInlineUser");
     let user_id: String =
@@ -1197,7 +1202,7 @@ pub async fn test_delete_user_inline_policy_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting a user with an inline policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1215,7 +1220,7 @@ pub async fn test_delete_user_inline_policy_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete DeleteMeInlineUser after removing inline policy");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1232,7 +1237,7 @@ pub async fn test_create_access_key_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateAccessKeyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create access key for bob");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1259,7 +1264,7 @@ pub async fn test_create_access_key_second(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateAccessKeyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create second access key for bob");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1274,7 +1279,7 @@ pub async fn test_create_access_key_no_user_name(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateAccessKeyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("CreateAccessKey without UserName must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1289,7 +1294,7 @@ pub async fn test_create_access_key_nonexistent_user(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateAccessKeyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("CreateAccessKey on a nonexistent user must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1311,7 +1316,7 @@ pub async fn test_list_access_keys_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list access keys for bob");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1334,7 +1339,7 @@ pub async fn test_list_access_keys_seeded(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list access keys for Example-User-1");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1354,7 +1359,7 @@ pub async fn test_list_access_keys_empty(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list access keys for alice");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1370,7 +1375,7 @@ pub async fn test_list_access_keys_pagination(pool: &sqlx::PgPool) {
         .max_items(1)
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list access keys for bob (page 1)");
     assert_eq!(page1.access_key_metadata.len(), 1);
@@ -1384,7 +1389,7 @@ pub async fn test_list_access_keys_pagination(pool: &sqlx::PgPool) {
         .marker(marker)
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list access keys for bob (page 2)");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1403,7 +1408,7 @@ pub async fn test_list_access_keys_no_user_name(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("ListAccessKeys without UserName must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1418,7 +1423,7 @@ pub async fn test_list_access_keys_nonexistent_user(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("ListAccessKeys on a nonexistent user must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1437,7 +1442,7 @@ pub async fn test_update_access_key_status_roundtrip(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateAccessKeyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to deactivate seeded access key");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1448,7 +1453,7 @@ pub async fn test_update_access_key_status_roundtrip(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list access keys for Example-User-1");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1461,7 +1466,7 @@ pub async fn test_update_access_key_status_roundtrip(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateAccessKeyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to reactivate seeded access key without user name");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1472,7 +1477,7 @@ pub async fn test_update_access_key_status_roundtrip(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list access keys for Example-User-1");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1488,7 +1493,7 @@ pub async fn test_update_access_key_expired_status_rejected(pool: &sqlx::PgPool)
         .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateAccessKeyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("UpdateAccessKey with Expired status must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1505,7 +1510,7 @@ pub async fn test_update_access_key_mismatched_user(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateAccessKeyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("UpdateAccessKey with a user that doesn't own the key must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1521,7 +1526,7 @@ pub async fn test_update_access_key_nonexistent(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateAccessKeyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("UpdateAccessKey on a nonexistent key must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1537,7 +1542,7 @@ pub async fn test_update_access_key_bad_prefix(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateAccessKeyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("UpdateAccessKey for a non-AKIA prefix must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1553,7 +1558,7 @@ pub async fn test_delete_access_key_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list bob's access keys");
     let target_id = list.access_key_metadata[0].access_key_id.clone().expect("Expected an access key id");
@@ -1565,7 +1570,7 @@ pub async fn test_delete_access_key_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteAccessKeyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete bob's access key");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1576,7 +1581,7 @@ pub async fn test_delete_access_key_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to re-list bob's access keys");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1596,7 +1601,7 @@ pub async fn test_delete_access_key_without_user_name(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListAccessKeysInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list bob's access keys");
     let target_id = list.access_key_metadata[0].access_key_id.clone().expect("Expected an access key id");
@@ -1606,7 +1611,7 @@ pub async fn test_delete_access_key_without_user_name(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteAccessKeyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete bob's access key without user name");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1621,7 +1626,7 @@ pub async fn test_delete_access_key_mismatched_user(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteAccessKeyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("DeleteAccessKey with a mismatched user must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1636,7 +1641,7 @@ pub async fn test_delete_access_key_nonexistent(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteAccessKeyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("DeleteAccessKey on a nonexistent key must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1651,7 +1656,7 @@ pub async fn test_delete_access_key_bad_prefix(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteAccessKeyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("DeleteAccessKey for a non-AKIA prefix must fail");
     tx.rollback().await.expect("Failed to rollback transaction");

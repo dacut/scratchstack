@@ -8,6 +8,7 @@ use {
     chrono::{DateTime, Utc},
     indoc::indoc,
     scratchstack_aws_principal::IamResourceType,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListPoliciesInternalRequest, ListPoliciesResponse},
@@ -22,7 +23,7 @@ impl RequestExecutor for ListPoliciesInternalRequest {
     type Response = ListPoliciesResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
         list_policies(
             tx,
             &self.account_id,
@@ -32,6 +33,7 @@ impl RequestExecutor for ListPoliciesInternalRequest {
             self.path_prefix.as_deref(),
             self.policy_usage_filter.as_ref(),
             self.scope.as_ref(),
+            request_id,
         )
         .await
     }
@@ -48,6 +50,7 @@ pub async fn list_policies(
     path_prefix: Option<&str>,
     policy_usage_filter: Option<&PolicyUsageType>,
     scope: Option<&PolicyScopeType>,
+    request_id: RequestId,
 ) -> Result<ListPoliciesResponse, IamError> {
     /// The marker innards for a ListPolicies operation.
     #[derive(Deserialize, Serialize)]
@@ -76,18 +79,18 @@ pub async fn list_policies(
         attachment_count: i64,
     }
 
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
     if let Some(path_prefix) = path_prefix {
-        validate_path_prefix(path_prefix)?;
+        validate_path_prefix(path_prefix, request_id)?;
     }
-    let max_items = constrain_max_items(max_items)?;
-    let partition = get_current_partition_or_fail(tx).await?;
+    let max_items = constrain_max_items(max_items, request_id)?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
 
-    let paginator = make_iam_paginator(&partition, OP_LIST_POLICIES)?;
+    let paginator = make_iam_paginator(&partition, OP_LIST_POLICIES, request_id)?;
 
     let mut sql = QueryBuilder::new(
         r#"
@@ -116,7 +119,11 @@ pub async fn list_policies(
             sql.push(")");
         }
         other => {
-            return Err(ValidationError::builder().message(format!("Unsupported Scope value: {other}")).build().into());
+            return Err(ValidationError::builder()
+                .message(format!("Unsupported Scope value: {other}"))
+                .request_id(request_id)
+                .build()
+                .into());
         }
     }
 
@@ -143,6 +150,7 @@ pub async fn list_policies(
             other => {
                 return Err(ValidationError::builder()
                     .message(format!("Unsupported PolicyUsageFilter value: {other}"))
+                    .request_id(request_id)
                     .build()
                     .into());
             }
@@ -152,7 +160,7 @@ pub async fn list_policies(
     if let Some(marker) = marker {
         let info: ListPoliciesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListPolicies: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
         sql.push(" AND (account_id, managed_policy_id) >= (");
         sql.push_bind(info.next_account_id);
@@ -166,7 +174,7 @@ pub async fn list_policies(
 
     let rows = sql.build_query_as::<ListPoliciesRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch managed policies from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let mut results: HashMap<String, Policy> = HashMap::with_capacity(rows.len().min(max_items));
@@ -183,13 +191,13 @@ pub async fn list_policies(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListPolicies: {e}");
-                        internal_failure()
+                        internal_failure(request_id)
                     })?,
             );
             break;
         }
 
-        let arn = build_policy_arn(&partition, &row.account_id, &row.path, &row.managed_policy_name_cased)?;
+        let arn = build_policy_arn(&partition, &row.account_id, &row.path, &row.managed_policy_name_cased, request_id)?;
         let policy_id = format!("{}{}", IamResourceType::ManagedPolicy.as_str(), row.managed_policy_id);
         let policy = Policy::builder()
             .arn(arn.to_string())
@@ -203,7 +211,7 @@ pub async fn list_policies(
             .build()
             .map_err(|e| {
                 log::error!("Failed to construct Policy object for ListPolicies result: {e}");
-                internal_failure()
+                internal_failure(request_id)
             })?;
         results.insert(row.managed_policy_id, policy);
     }
@@ -227,7 +235,7 @@ pub async fn list_policies(
         .await
         .map_err(|e| {
             log::error!("Failed to fetch policy attachment counts from database: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
         for row in attachment_rows.into_iter() {
             let attachment_count = min(row.attachment_count, i32::MAX as i64) as i32;
@@ -254,7 +262,7 @@ pub async fn list_policies(
         .await
         .map_err(|e| {
             log::error!("Failed to fetch policy permissions boundary usage counts from database: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
         for row in permissions_boundary_usage_rows.into_iter() {
             let usage_count = min(row.attachment_count, i32::MAX as i64) as i32;

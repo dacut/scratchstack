@@ -5,6 +5,7 @@ use {
         internal_failure, make_iam_paginator, partition::get_current_partition_or_fail,
     },
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListGroupPoliciesInternalRequest, ListGroupPoliciesResponse},
@@ -18,8 +19,9 @@ impl RequestExecutor for ListGroupPoliciesInternalRequest {
     type Response = ListGroupPoliciesResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        list_group_policies(tx, &self.account_id, &self.group_name, self.marker.as_deref(), self.max_items).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        list_group_policies(tx, &self.account_id, &self.group_name, self.marker.as_deref(), self.max_items, request_id)
+            .await
     }
 }
 
@@ -44,15 +46,16 @@ pub async fn list_group_policies(
     group_name: &str,
     marker: Option<&str>,
     max_items: Option<i32>,
+    request_id: RequestId,
 ) -> Result<ListGroupPoliciesResponse, IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    validate_group_name(group_name)?;
-    let max_items = constrain_max_items(max_items)?;
-    let partition = get_current_partition_or_fail(tx).await?;
+    validate_group_name(group_name, request_id)?;
+    let max_items = constrain_max_items(max_items, request_id)?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
 
     let group_id: String = match query(indoc! {"
             SELECT group_id
@@ -68,16 +71,17 @@ pub async fn list_group_policies(
         Ok(None) => {
             return Err(NoSuchEntityException::builder()
                 .message(format!("The group with name {group_name} cannot be found."))
+                .request_id(request_id)
                 .build()
                 .into());
         }
         Err(e) => {
             log::error!("Failed to look up group in database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
-    let paginator = make_iam_paginator(&partition, OP_LIST_GROUP_POLICIES)?;
+    let paginator = make_iam_paginator(&partition, OP_LIST_GROUP_POLICIES, request_id)?;
 
     let mut sql = QueryBuilder::new(indoc! {"
         SELECT policy_name_lower, policy_name_cased
@@ -88,7 +92,7 @@ pub async fn list_group_policies(
     if let Some(marker) = marker {
         let m: ListGroupPoliciesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListGroupPolicies: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
         sql.push("\nAND policy_name_lower >= ");
         sql.push_bind(m.next_policy_name_lower);
@@ -99,7 +103,7 @@ pub async fn list_group_policies(
 
     let rows = sql.build_query_as::<ListGroupPoliciesRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch group inline policies from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let mut results: Vec<String> = Vec::with_capacity(rows.len().min(max_items));
@@ -115,7 +119,7 @@ pub async fn list_group_policies(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListGroupPolicies: {e}");
-                        internal_failure()
+                        internal_failure(request_id)
                     })?,
             );
             break;
@@ -132,6 +136,6 @@ pub async fn list_group_policies(
 
     builder.build().map_err(|e| {
         log::error!("Failed to build ListGroupPoliciesResponse: {e}");
-        internal_failure().into()
+        internal_failure(request_id).into()
     })
 }

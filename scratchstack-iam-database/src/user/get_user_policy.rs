@@ -5,6 +5,7 @@ use {
         user::validate_user_name,
     },
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{GetUserPolicyInternalRequest, GetUserPolicyResponse},
@@ -17,8 +18,8 @@ impl RequestExecutor for GetUserPolicyInternalRequest {
     type Response = GetUserPolicyResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        get_user_policy(tx, &self.account_id, &self.user_name, &self.policy_name).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        get_user_policy(tx, &self.account_id, &self.user_name, &self.policy_name, request_id).await
     }
 }
 
@@ -29,14 +30,15 @@ pub async fn get_user_policy(
     account_id: &str,
     user_name: &str,
     policy_name: &str,
+    request_id: RequestId,
 ) -> Result<GetUserPolicyResponse, IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    validate_user_name(user_name)?;
-    validate_policy_name(policy_name)?;
+    validate_user_name(user_name, request_id)?;
+    validate_policy_name(policy_name, request_id)?;
 
     let user_row = query(indoc! {"
             SELECT user_id, user_name_cased
@@ -49,7 +51,7 @@ pub async fn get_user_policy(
     .await
     .map_err(|e| {
         log::error!("Failed to look up user in database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let (user_id, user_name_cased): (String, String) = match user_row {
@@ -57,6 +59,7 @@ pub async fn get_user_policy(
         None => {
             return Err(NoSuchEntityException::builder()
                 .message(format!("The user with name {user_name} cannot be found."))
+                .request_id(request_id)
                 .build()
                 .into());
         }
@@ -73,7 +76,7 @@ pub async fn get_user_policy(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch user inline policy from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let (policy_name_cased, policy_document): (String, String) = match policy_row {
@@ -81,6 +84,7 @@ pub async fn get_user_policy(
         None => {
             return Err(NoSuchEntityException::builder()
                 .message(format!("The inline policy {policy_name} was not found on user {user_name}."))
+                .request_id(request_id)
                 .build()
                 .into());
         }
@@ -93,6 +97,6 @@ pub async fn get_user_policy(
         .build()
         .map_err(|e| {
             log::error!("Failed to build GetUserPolicyResponse: {e}");
-            internal_failure().into()
+            internal_failure(request_id).into()
         })
 }

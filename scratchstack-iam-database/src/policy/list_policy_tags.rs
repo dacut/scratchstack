@@ -8,6 +8,7 @@ use {
         policy::{lookup_managed_policy_id, parse_policy_arn},
     },
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListPolicyTagsRequest, ListPolicyTagsResponse},
@@ -21,8 +22,8 @@ impl RequestExecutor for ListPolicyTagsRequest {
     type Response = ListPolicyTagsResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        list_policy_tags(tx, &self.policy_arn, self.marker.as_deref(), self.max_items).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        list_policy_tags(tx, &self.policy_arn, self.marker.as_deref(), self.max_items, request_id).await
     }
 }
 
@@ -47,14 +48,15 @@ pub async fn list_policy_tags(
     policy_arn: &str,
     marker: Option<&str>,
     max_items: Option<i32>,
+    request_id: RequestId,
 ) -> Result<ListPolicyTagsResponse, IamError> {
-    let max_items = constrain_max_items(max_items)?;
-    let partition = get_current_partition_or_fail(tx).await?;
+    let max_items = constrain_max_items(max_items, request_id)?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
 
-    let parts = parse_policy_arn(policy_arn)?;
-    let managed_policy_id = lookup_managed_policy_id(tx, &parts).await?;
+    let parts = parse_policy_arn(policy_arn, request_id)?;
+    let managed_policy_id = lookup_managed_policy_id(tx, &parts, request_id).await?;
 
-    let paginator = make_iam_paginator(&partition, OP_LIST_POLICY_TAGS)?;
+    let paginator = make_iam_paginator(&partition, OP_LIST_POLICY_TAGS, request_id)?;
 
     let mut sql = QueryBuilder::new(indoc! {"
         SELECT key_lower, key_cased, value
@@ -65,7 +67,7 @@ pub async fn list_policy_tags(
     if let Some(marker) = marker {
         let m: ListPolicyTagsMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListPolicyTags: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
         sql.push("\nAND key_lower >= ");
         sql.push_bind(m.next_key_lower);
@@ -77,7 +79,7 @@ pub async fn list_policy_tags(
 
     let rows = sql.build_query_as::<ListPolicyTagsRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch managed policy tags from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
     let mut results = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -92,7 +94,7 @@ pub async fn list_policy_tags(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListPolicyTags: {e}");
-                        internal_failure()
+                        internal_failure(request_id)
                     })?,
             );
             break;
@@ -100,7 +102,7 @@ pub async fn list_policy_tags(
 
         results.push(Tag::builder().key(row.key_cased).value(row.value).build().map_err(|e| {
             log::error!("Failed to construct tag object: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?);
     }
 
@@ -112,6 +114,6 @@ pub async fn list_policy_tags(
 
     builder.build().map_err(|e| {
         log::error!("Failed to build ListPolicyTagsResponse: {e}");
-        internal_failure().into()
+        internal_failure(request_id).into()
     })
 }

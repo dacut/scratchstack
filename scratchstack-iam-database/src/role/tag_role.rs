@@ -9,6 +9,7 @@ use {
         tag::{validate_tag_key, validate_tag_value},
     },
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::TagRoleInternalRequest,
@@ -24,8 +25,8 @@ impl RequestExecutor for TagRoleInternalRequest {
     type Response = ();
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        tag_role(tx, &self.account_id, &self.role_name, &self.tags).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        tag_role(tx, &self.account_id, &self.role_name, &self.tags, request_id).await
     }
 }
 
@@ -35,21 +36,26 @@ pub async fn tag_role(
     account_id: &str,
     role_name: &str,
     tags: &[Tag],
+    request_id: RequestId,
 ) -> Result<(), IamError> {
     if tags.is_empty() {
-        return Err(ValidationError::builder().message("At least one tag must be provided.").build().into());
+        return Err(ValidationError::builder()
+            .message("At least one tag must be provided.")
+            .request_id(request_id)
+            .build()
+            .into());
     }
 
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    validate_role_name(role_name)?;
+    validate_role_name(role_name, request_id)?;
 
     for tag in tags {
-        validate_tag_key(&tag.key)?;
-        validate_tag_value(&tag.value)?;
+        validate_tag_key(&tag.key, request_id)?;
+        validate_tag_value(&tag.value, request_id)?;
     }
 
     // Verify the role exists and get the role_id.
@@ -67,12 +73,13 @@ pub async fn tag_role(
         Ok(None) => {
             return Err(NoSuchEntityException::builder()
                 .message(format!("The role with name {role_name} cannot be found."))
+                .request_id(request_id)
                 .build()
                 .into());
         }
         Err(e) => {
             log::error!("Failed to look up role in database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
@@ -98,7 +105,7 @@ pub async fn tag_role(
         .await
         {
             log::error!("Failed to insert/update role tag in database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     }
 

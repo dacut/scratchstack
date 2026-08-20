@@ -5,6 +5,7 @@ use {
     chrono::{DateTime, Duration, Utc},
     indoc::indoc,
     scratchstack_aws_principal::IamResourceType,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{CreateSessionTokenEncryptionKeyRequest, CreateSessionTokenEncryptionKeyResponse},
@@ -20,13 +21,14 @@ impl RequestExecutor for CreateSessionTokenEncryptionKeyRequest {
     type Response = CreateSessionTokenEncryptionKeyResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
         create_session_token_encryption_key(
             tx,
             self.encryption_algorithm,
             self.issue_valid_from,
             self.issue_expires_at,
             self.accept_expires_at,
+            request_id,
         )
         .await
     }
@@ -39,6 +41,7 @@ pub async fn create_session_token_encryption_key(
     issue_valid_from: DateTime<Utc>,
     issue_expires_at: Option<DateTime<Utc>>,
     accept_expires_at: Option<DateTime<Utc>>,
+    request_id: RequestId,
 ) -> Result<CreateSessionTokenEncryptionKeyResponse, IamError> {
     let encryption_algorithm = encryption_algorithm.unwrap_or(SessionTokenEncryptionAlgorithm::Aes256Gcm);
 
@@ -46,7 +49,7 @@ pub async fn create_session_token_encryption_key(
         None => issue_valid_from + Duration::seconds(DEFAULT_SESSION_ENCRYPTION_TOKEN_LIFETIME_SECS),
         Some(expires_at) if expires_at < issue_valid_from => {
             let message = "issue_expires_at cannot be less than issue_valid_from.".to_string();
-            return Err(ValidationError::builder().message(message).build().into());
+            return Err(ValidationError::builder().message(message).request_id(request_id).build().into());
         }
         Some(expires_at) => expires_at,
     };
@@ -58,7 +61,7 @@ pub async fn create_session_token_encryption_key(
         }
         Some(expires_at) if expires_at < issue_expires_at => {
             let message = "accept_expires_at cannot be less than issue_expires_at.".to_string();
-            return Err(ValidationError::builder().message(message).build().into());
+            return Err(ValidationError::builder().message(message).request_id(request_id).build().into());
         }
         Some(expires_at) => expires_at,
     };
@@ -91,14 +94,22 @@ pub async fn create_session_token_encryption_key(
         Ok(result) => result,
         Err(e) => {
             log::error!("Failed to create session token encryption key: {}", e);
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE.to_string()).build().into());
+            return Err(InternalFailure::builder()
+                .message(MSG_INTERNAL_FAILURE.to_string())
+                .request_id(request_id)
+                .build()
+                .into());
         }
     };
     let created_at: DateTime<Utc> = match result.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
             log::error!("Failed to get created_at from database row: {}", e);
-            return Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE.to_string()).build().into());
+            return Err(InternalFailure::builder()
+                .message(MSG_INTERNAL_FAILURE.to_string())
+                .request_id(request_id)
+                .build()
+                .into());
         }
     };
 

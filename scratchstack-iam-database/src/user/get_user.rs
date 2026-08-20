@@ -13,6 +13,7 @@ use {
     indoc::indoc,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{GetUserInternalRequest, GetUserResponse},
@@ -28,8 +29,8 @@ impl RequestExecutor for GetUserInternalRequest {
     type Response = GetUserResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        get_user(tx, &self.account_id, self.user_name.as_deref()).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        get_user(tx, &self.account_id, self.user_name.as_deref(), request_id).await
     }
 }
 
@@ -38,8 +39,9 @@ pub async fn get_user(
     tx: &mut PgTransaction<'_>,
     account_id: &str,
     user_name: Option<&str>,
+    request_id: RequestId,
 ) -> Result<GetUserResponse, IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
@@ -48,12 +50,12 @@ pub async fn get_user(
     let user_name = user_name.ok_or_else(|| {
         // If no user name is provided, this would normally default to the calling user,
         // but at the database level we require it.
-        ValidationError::builder().message("UserName is required").build()
+        ValidationError::builder().message("UserName is required").request_id(request_id).build()
     })?;
-    validate_user_name(user_name)?;
+    validate_user_name(user_name, request_id)?;
     let user_name_lower = user_name.to_lowercase();
 
-    let partition = get_current_partition_or_fail(tx).await?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
 
     let row = query(indoc! {"
             SELECT user_id, user_name_cased, path, permissions_boundary_managed_policy_id, created_at
@@ -66,11 +68,14 @@ pub async fn get_user(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch user from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let row = row.ok_or_else(|| {
-        NoSuchEntityException::builder().message(format!("The user with name {user_name} cannot be found.")).build()
+        NoSuchEntityException::builder()
+            .message(format!("The user with name {user_name} cannot be found."))
+            .request_id(request_id)
+            .build()
     })?;
 
     let user_id: String = row.get(0);
@@ -87,7 +92,7 @@ pub async fn get_user(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct ARN for user: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
 
     let permissions_boundary = if let Some(pb_id) = permissions_boundary_id {
@@ -101,17 +106,17 @@ pub async fn get_user(
         .await
         .map_err(|e| {
             log::error!("Failed to fetch permissions boundary managed policy from database: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
 
         let pb_row = pb_row.ok_or_else(|| {
             log::error!("User references missing permissions boundary managed policy ID: {pb_id}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
 
         let pb_path: String = pb_row.get(0);
         let pb_name_cased: String = pb_row.get(1);
-        let pb_arn = build_policy_arn(&partition, account_id, &pb_path, &pb_name_cased)?;
+        let pb_arn = build_policy_arn(&partition, account_id, &pb_path, &pb_name_cased, request_id)?;
 
         Some(
             AttachedPermissionsBoundary::builder()
@@ -120,7 +125,7 @@ pub async fn get_user(
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct permissions boundary for user: {e}");
-                    internal_failure()
+                    internal_failure(request_id)
                 })?,
         )
     } else {
@@ -139,7 +144,7 @@ pub async fn get_user(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch user tags from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let mut tags = Vec::with_capacity(tag_rows.len());
@@ -148,7 +153,7 @@ pub async fn get_user(
         let value: String = tag_row.get(1);
         tags.push(Tag::builder().key(key).value(value).build().map_err(|e| {
             log::error!("Failed to construct tag object: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?);
     }
 
@@ -163,7 +168,7 @@ pub async fn get_user(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct user object: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
 
     Ok(GetUserResponse::builder().user(user).build().unwrap())

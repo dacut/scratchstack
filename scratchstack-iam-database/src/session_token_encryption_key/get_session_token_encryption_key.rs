@@ -5,6 +5,7 @@ use {
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{GetSessionTokenEncryptionKeyRequest, GetSessionTokenEncryptionKeyResponse},
@@ -18,8 +19,8 @@ impl RequestExecutor for GetSessionTokenEncryptionKeyRequest {
     type Response = GetSessionTokenEncryptionKeyResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        get_session_token_encryption_key(tx, &self.session_token_encryption_key_id).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        get_session_token_encryption_key(tx, &self.session_token_encryption_key_id, request_id).await
     }
 }
 
@@ -37,8 +38,9 @@ struct SessionTokenEncryptionKeyRow {
 pub async fn get_session_token_encryption_key(
     tx: &mut PgTransaction<'_>,
     stek_id: &str,
+    request_id: RequestId,
 ) -> Result<GetSessionTokenEncryptionKeyResponse, IamError> {
-    validate_session_token_encryption_key_id(stek_id)?;
+    validate_session_token_encryption_key_id(stek_id, request_id)?;
     let stek_id_stored = &stek_id[4..];
 
     let row = query_as::<_, SessionTokenEncryptionKeyRow>(indoc! {"
@@ -51,18 +53,19 @@ pub async fn get_session_token_encryption_key(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch session token encryption key from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let row = row.ok_or_else(|| {
         NoSuchEntityException::builder()
             .message(format!("The session token encryption key with id {stek_id} cannot be found."))
+            .request_id(request_id)
             .build()
     })?;
 
     let encryption_algorithm = SessionTokenEncryptionAlgorithm::from_str(&row.encryption_algorithm).map_err(|e| {
         log::error!("Failed to parse encryption algorithm from database value: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let session_token_encryption_key = SessionTokenEncryptionKey {

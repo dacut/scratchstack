@@ -5,6 +5,7 @@ use {
         make_iam_paginator, partition::get_current_partition_or_fail, user::validate_user_name,
     },
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListAccessKeysInternalRequest, ListAccessKeysResponse},
@@ -21,8 +22,16 @@ impl RequestExecutor for ListAccessKeysInternalRequest {
     type Response = ListAccessKeysResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        list_access_keys(tx, &self.account_id, self.user_name.as_deref(), self.marker.as_deref(), self.max_items).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        list_access_keys(
+            tx,
+            &self.account_id,
+            self.user_name.as_deref(),
+            self.marker.as_deref(),
+            self.max_items,
+            request_id,
+        )
+        .await
     }
 }
 
@@ -54,8 +63,9 @@ pub async fn list_access_keys(
     user_name: Option<&str>,
     marker: Option<&str>,
     max_items: Option<i32>,
+    request_id: RequestId,
 ) -> Result<ListAccessKeysResponse, IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
@@ -65,13 +75,14 @@ pub async fn list_access_keys(
         None => {
             return Err(ValidationError::builder()
                 .message("UserName is required for ListAccessKeys in this implementation.")
+                .request_id(request_id)
                 .build()
                 .into());
         }
     };
-    validate_user_name(user_name)?;
-    let max_items = constrain_max_items(max_items)?;
-    let partition = get_current_partition_or_fail(tx).await?;
+    validate_user_name(user_name, request_id)?;
+    let max_items = constrain_max_items(max_items, request_id)?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
 
     let user_info: Option<UserRow> = query_as(indoc! {"
             SELECT user_id, user_name_cased
@@ -84,18 +95,19 @@ pub async fn list_access_keys(
     .await
     .map_err(|e| {
         log::error!("Failed to query user from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let Some(user_info) = user_info else {
         return Err(NoSuchEntityException::builder()
             .message(format!("The user with name {user_name} cannot be found."))
+            .request_id(request_id)
             .build()
             .into());
     };
     let user_id = user_info.user_id;
     let user_name = user_info.user_name_cased;
-    let paginator = make_iam_paginator(&partition, OP_LIST_ACCESS_KEYS)?;
+    let paginator = make_iam_paginator(&partition, OP_LIST_ACCESS_KEYS, request_id)?;
 
     let mut sql = QueryBuilder::new(indoc! {"
         SELECT access_key_id, enabled, created_at
@@ -106,7 +118,7 @@ pub async fn list_access_keys(
     if let Some(marker) = marker {
         let m: ListAccessKeysMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListAccessKeys: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
         sql.push("\nAND access_key_id >= ");
         sql.push_bind(m.next_access_key_id);
@@ -117,7 +129,7 @@ pub async fn list_access_keys(
 
     let rows = sql.build_query_as::<ListAccessKeysRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch user access keys from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let mut results: Vec<AccessKeyMetadata> = Vec::with_capacity(rows.len().min(max_items));
@@ -133,7 +145,7 @@ pub async fn list_access_keys(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListAccessKeys: {e}");
-                        internal_failure()
+                        internal_failure(request_id)
                     })?,
             );
             break;
@@ -151,7 +163,7 @@ pub async fn list_access_keys(
             .build()
             .map_err(|e| {
                 log::error!("Failed to construct AccessKeyMetadata: {e}");
-                internal_failure()
+                internal_failure(request_id)
             })?;
         results.push(metadata);
     }
@@ -164,6 +176,6 @@ pub async fn list_access_keys(
 
     builder.build().map_err(|e| {
         log::error!("Failed to build ListAccessKeysResponse: {e}");
-        internal_failure().into()
+        internal_failure(request_id).into()
     })
 }

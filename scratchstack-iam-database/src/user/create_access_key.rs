@@ -7,6 +7,7 @@ use {
     indoc::indoc,
     rand::RngExt,
     scratchstack_aws_principal::IamResourceType,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{CreateAccessKeyInternalRequest, CreateAccessKeyResponse},
@@ -37,8 +38,8 @@ impl RequestExecutor for CreateAccessKeyInternalRequest {
     type Response = CreateAccessKeyResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        create_access_key(tx, &self.account_id, self.user_name.as_deref()).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        create_access_key(tx, &self.account_id, self.user_name.as_deref(), request_id).await
     }
 }
 
@@ -54,8 +55,9 @@ pub async fn create_access_key(
     tx: &mut PgTransaction<'_>,
     account_id: &str,
     user_name: Option<&str>,
+    request_id: RequestId,
 ) -> Result<CreateAccessKeyResponse, IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
@@ -65,11 +67,12 @@ pub async fn create_access_key(
         None => {
             return Err(ValidationError::builder()
                 .message("UserName is required for CreateAccessKey in this implementation.")
+                .request_id(request_id)
                 .build()
                 .into());
         }
     };
-    validate_user_name(user_name)?;
+    validate_user_name(user_name, request_id)?;
 
     let user_info: Option<UserRow> = query_as(indoc! {"
             SELECT user_id, user_name_cased
@@ -82,12 +85,13 @@ pub async fn create_access_key(
     .await
     .map_err(|e| {
         log::error!("Failed to query user from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let Some(user_info) = user_info else {
         return Err(NoSuchEntityException::builder()
             .message(format!("The user with name {user_name} cannot be found."))
+            .request_id(request_id)
             .build()
             .into());
     };
@@ -111,14 +115,14 @@ pub async fn create_access_key(
         Ok(row) => row,
         Err(e) => {
             log::error!("Failed to insert access key into database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
     let created_at: chrono::DateTime<chrono::Utc> = match row.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
             log::error!("Failed to get created_at from database row: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
@@ -131,11 +135,11 @@ pub async fn create_access_key(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct AccessKey response: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
 
     CreateAccessKeyResponse::builder().access_key(access_key).build().map_err(|e| {
         log::error!("Failed to construct CreateAccessKeyResponse: {e}");
-        internal_failure().into()
+        internal_failure(request_id).into()
     })
 }

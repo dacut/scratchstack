@@ -12,6 +12,7 @@ pub use {
 use {
     indoc::indoc,
     scratchstack_aws_signature::{AES256_KEY_LENGTH, SignatureError},
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::types::error::ValidationError,
     sqlx::{postgres::PgPool, query},
     std::{
@@ -25,15 +26,20 @@ use {
 /// prefix and be 16..=128 characters of `[A-Za-z0-9_]`. The shape-level validation on
 /// `GetSessionTokenEncryptionKeyRequest` already enforces the regex and length window; this adds
 /// the prefix requirement so we can derive the stored body.
-pub(crate) fn validate_session_token_encryption_key_id(stek_id: &str) -> Result<(), ValidationError> {
+pub(crate) fn validate_session_token_encryption_key_id(
+    stek_id: &str,
+    request_id: RequestId,
+) -> Result<(), ValidationError> {
     if stek_id.len() < 16 || stek_id.len() > 128 || !stek_id.starts_with("STEK") {
         return Err(ValidationError::builder()
             .message(format!("Session token encryption key id {stek_id} is not valid."))
+            .request_id(request_id)
             .build());
     }
     if !stek_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         return Err(ValidationError::builder()
             .message(format!("Session token encryption key id {stek_id} is not valid."))
+            .request_id(request_id)
             .build());
     }
     Ok(())

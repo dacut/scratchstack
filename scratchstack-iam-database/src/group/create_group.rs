@@ -13,6 +13,7 @@ use {
     indoc::indoc,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{CreateGroupInternalRequest, CreateGroupResponse},
@@ -25,8 +26,8 @@ impl RequestExecutor for CreateGroupInternalRequest {
     type Response = CreateGroupResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        create_group(tx, &self.account_id, &self.group_name, self.path.as_deref()).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        create_group(tx, &self.account_id, &self.group_name, self.path.as_deref(), request_id).await
     }
 }
 
@@ -36,19 +37,20 @@ pub async fn create_group(
     account_id: &str,
     group_name: &str,
     path: Option<&str>,
+    request_id: RequestId,
 ) -> Result<CreateGroupResponse, IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
     let path = path.unwrap_or("/");
-    validate_path(path)?;
-    validate_group_name(group_name)?;
+    validate_path(path, request_id)?;
+    validate_group_name(group_name, request_id)?;
 
     // Generate a new group id for this group.
     let group_id = IamId::new(IamResourceType::Group, account_id.parse().unwrap()).to_string();
-    let partition = get_current_partition_or_fail(tx).await?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
 
     let result = match query(indoc! {"
             INSERT INTO iam.groups(
@@ -67,14 +69,14 @@ pub async fn create_group(
         Ok(result) => result,
         Err(e) => {
             log::error!("Failed to insert group into database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
     let created_at: chrono::DateTime<chrono::Utc> = match result.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
             log::error!("Failed to get created_at from database row: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
@@ -88,7 +90,7 @@ pub async fn create_group(
         Ok(arn) => arn,
         Err(e) => {
             log::error!("Failed to construct ARN for new group: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
@@ -101,7 +103,7 @@ pub async fn create_group(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct group object for new group: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
 
     Ok(CreateGroupResponse::builder().group(group).build().unwrap())

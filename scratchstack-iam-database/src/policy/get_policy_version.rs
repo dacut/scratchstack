@@ -8,6 +8,7 @@ use {
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{GetPolicyVersionRequest, GetPolicyVersionResponse},
@@ -23,8 +24,8 @@ impl RequestExecutor for GetPolicyVersionRequest {
     type Response = GetPolicyVersionResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        get_policy_version(tx, &self.policy_arn, &self.version_id).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        get_policy_version(tx, &self.policy_arn, &self.version_id, request_id).await
     }
 }
 
@@ -33,6 +34,7 @@ pub async fn get_policy_version(
     tx: &mut PgTransaction<'_>,
     policy_arn: &str,
     version_id: &str,
+    request_id: RequestId,
 ) -> Result<GetPolicyVersionResponse, IamError> {
     /// The row returned by the query to the iam.policies and iam.policy_versions tables to get details for the
     /// requested policy ARN and version id.
@@ -43,13 +45,16 @@ pub async fn get_policy_version(
         created_at: DateTime<Utc>,
     }
 
-    let parts = parse_policy_arn(policy_arn)?;
+    let parts = parse_policy_arn(policy_arn, request_id)?;
     let policy_account_id = match parts.account_id() {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
     let version_number = parse_policy_version_id(version_id).ok_or_else(|| {
-        ValidationError::builder().message(format!("Invalid policy version id: {version_id}")).build()
+        ValidationError::builder()
+            .message(format!("Invalid policy version id: {version_id}"))
+            .request_id(request_id)
+            .build()
     })?;
 
     let row: PolicyVersionRow = query_as(indoc! {"
@@ -67,11 +72,12 @@ pub async fn get_policy_version(
     .await
     .map_err(|e| {
         log::error!("Failed to query managed policy version from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?
     .ok_or_else(|| {
         NoSuchEntityException::builder()
             .message(format!("Policy {policy_arn} version {version_id} was not found."))
+            .request_id(request_id)
             .build()
     })?;
 
@@ -83,7 +89,7 @@ pub async fn get_policy_version(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct PolicyVersion object: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
 
     Ok(GetPolicyVersionResponse {

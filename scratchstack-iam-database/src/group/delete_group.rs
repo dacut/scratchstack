@@ -4,6 +4,7 @@ use {
         RequestExecutor, account::validate_account_id, constants::*, group::validate_group_name, internal_failure,
     },
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::DeleteGroupInternalRequest,
@@ -16,21 +17,26 @@ impl RequestExecutor for DeleteGroupInternalRequest {
     type Response = ();
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        delete_group(tx, &self.account_id, &self.group_name).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        delete_group(tx, &self.account_id, &self.group_name, request_id).await
     }
 }
 
 /// Delete a group from the database. The group must have no remaining dependent resources
 /// (attached managed policies, inline policies, etc.); a FK violation from the underlying DELETE
 /// is surfaced as `DeleteConflictException`. Group memberships are removed via FK cascade.
-pub async fn delete_group(tx: &mut PgTransaction<'_>, account_id: &str, group_name: &str) -> Result<(), IamError> {
-    validate_account_id(account_id)?;
+pub async fn delete_group(
+    tx: &mut PgTransaction<'_>,
+    account_id: &str,
+    group_name: &str,
+    request_id: RequestId,
+) -> Result<(), IamError> {
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    validate_group_name(group_name)?;
+    validate_group_name(group_name, request_id)?;
 
     let result = match query(indoc! {"
             DELETE FROM iam.groups
@@ -49,16 +55,17 @@ pub async fn delete_group(tx: &mut PgTransaction<'_>, account_id: &str, group_na
                 let message = format!(
                     "Cannot delete group {group_name} because it has attached managed policies, inline policies, or other dependent resources. You must remove them before deleting the group."
                 );
-                return Err(DeleteConflictException::builder().message(message).build().into());
+                return Err(DeleteConflictException::builder().message(message).request_id(request_id).build().into());
             }
             log::error!("Failed to delete group from database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
     if result.rows_affected() == 0 {
         Err(NoSuchEntityException::builder()
             .message(format!("The group with name {group_name} cannot be found."))
+            .request_id(request_id)
             .build()
             .into())
     } else {

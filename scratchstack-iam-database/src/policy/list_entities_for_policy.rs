@@ -6,6 +6,7 @@ use {
     },
     indoc::{formatdoc, indoc},
     scratchstack_aws_principal::IamResourceType,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListEntitiesForPolicyRequest, ListEntitiesForPolicyResponse},
@@ -23,7 +24,7 @@ impl RequestExecutor for ListEntitiesForPolicyRequest {
     type Response = ListEntitiesForPolicyResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
         list_entities_for_policy(
             tx,
             &self.policy_arn,
@@ -32,6 +33,7 @@ impl RequestExecutor for ListEntitiesForPolicyRequest {
             self.max_items,
             self.path_prefix.as_deref(),
             self.policy_usage_filter.as_ref(),
+            request_id,
         )
         .await
     }
@@ -84,13 +86,14 @@ pub async fn list_entities_for_policy(
     max_items: Option<i32>,
     path_prefix: Option<&str>,
     policy_usage_filter: Option<&PolicyUsageType>,
+    request_id: RequestId,
 ) -> Result<ListEntitiesForPolicyResponse, IamError> {
     if let Some(path_prefix) = path_prefix {
-        validate_path_prefix(path_prefix)?;
+        validate_path_prefix(path_prefix, request_id)?;
     }
-    let max_items = constrain_max_items(max_items)?;
-    let partition = get_current_partition_or_fail(tx).await?;
-    let parts = parse_policy_arn(policy_arn)?;
+    let max_items = constrain_max_items(max_items, request_id)?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
+    let parts = parse_policy_arn(policy_arn, request_id)?;
     let policy_account_id = match parts.account_id() {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
@@ -105,6 +108,7 @@ pub async fn list_entities_for_policy(
         Some(other) => {
             return Err(ValidationError::builder()
                 .message(format!("Unsupported EntityFilter value for ListEntitiesForPolicy: {other}"))
+                .request_id(request_id)
                 .build()
                 .into());
         }
@@ -118,12 +122,13 @@ pub async fn list_entities_for_policy(
         Some(other) => {
             return Err(ValidationError::builder()
                 .message(format!("Unsupported PolicyUsageFilter value: {other}"))
+                .request_id(request_id)
                 .build()
                 .into());
         }
     };
 
-    let paginator = make_iam_paginator(&partition, OP_LIST_ENTITIES_FOR_POLICY)?;
+    let paginator = make_iam_paginator(&partition, OP_LIST_ENTITIES_FOR_POLICY, request_id)?;
 
     // Look up the managed_policy_id.
     let managed_policy_id: String = match query(indoc! {"
@@ -141,19 +146,20 @@ pub async fn list_entities_for_policy(
         Ok(None) => {
             return Err(NoSuchEntityException::builder()
                 .message(format!("Policy {policy_arn} was not found."))
+                .request_id(request_id)
                 .build()
                 .into());
         }
         Err(e) => {
             log::error!("Failed to look up managed policy in database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
     let resume: Option<ListEntitiesForPolicyMarker> = if let Some(marker) = marker {
         Some(paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListEntitiesForPolicy: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?)
     } else {
         None
@@ -194,9 +200,17 @@ pub async fn list_entities_for_policy(
         // Request one more than we need so we can detect overflow → marker.
         let limit = (max_items - already_collected) as i32 + 1;
 
-        let rows =
-            fetch_section_rows(tx, section, &managed_policy_id, is_pb_filter, path_prefix, resume_entity_id, limit)
-                .await?;
+        let rows = fetch_section_rows(
+            tx,
+            section,
+            &managed_policy_id,
+            is_pb_filter,
+            path_prefix,
+            resume_entity_id,
+            limit,
+            request_id,
+        )
+        .await?;
 
         for row in rows {
             let collected = groups.len() + roles.len() + users.len();
@@ -210,7 +224,7 @@ pub async fn list_entities_for_policy(
                         .await
                         .map_err(|e| {
                             log::error!("Failed to encrypt pagination token for ListEntitiesForPolicy: {e}");
-                            internal_failure()
+                            internal_failure(request_id)
                         })?,
                 );
                 break;
@@ -223,7 +237,7 @@ pub async fn list_entities_for_policy(
                         .build()
                         .map_err(|e| {
                             log::error!("Failed to construct PolicyGroup: {e}");
-                            internal_failure()
+                            internal_failure(request_id)
                         })?,
                 ),
                 EntitySection::Role => roles.push(
@@ -233,7 +247,7 @@ pub async fn list_entities_for_policy(
                         .build()
                         .map_err(|e| {
                             log::error!("Failed to construct PolicyRole: {e}");
-                            internal_failure()
+                            internal_failure(request_id)
                         })?,
                 ),
                 EntitySection::User => users.push(
@@ -243,7 +257,7 @@ pub async fn list_entities_for_policy(
                         .build()
                         .map_err(|e| {
                             log::error!("Failed to construct PolicyUser: {e}");
-                            internal_failure()
+                            internal_failure(request_id)
                         })?,
                 ),
             }
@@ -270,6 +284,7 @@ async fn fetch_section_rows(
     path_prefix: Option<&str>,
     resume_entity_id: Option<&str>,
     limit: i32,
+    request_id: RequestId,
 ) -> Result<Vec<EntityRow>, IamError> {
     let mut sql = QueryBuilder::new("");
 
@@ -318,6 +333,6 @@ async fn fetch_section_rows(
 
     sql.build_query_as::<EntityRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch attached entities for ListEntitiesForPolicy ({section}): {e}");
-        internal_failure().into()
+        internal_failure(request_id).into()
     })
 }

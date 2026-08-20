@@ -6,6 +6,7 @@ use {
     },
     indoc::indoc,
     scratchstack_aspen::Policy as AspenPolicy,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::PutUserPolicyInternalRequest,
@@ -19,8 +20,9 @@ impl RequestExecutor for PutUserPolicyInternalRequest {
     type Response = ();
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        put_user_policy(tx, &self.account_id, &self.user_name, &self.policy_name, &self.policy_document).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        put_user_policy(tx, &self.account_id, &self.user_name, &self.policy_name, &self.policy_document, request_id)
+            .await
     }
 }
 
@@ -32,18 +34,19 @@ pub async fn put_user_policy(
     user_name: &str,
     policy_name: &str,
     policy_document: &str,
+    request_id: RequestId,
 ) -> Result<(), IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    validate_user_name(user_name)?;
-    validate_policy_name(policy_name)?;
+    validate_user_name(user_name, request_id)?;
+    validate_policy_name(policy_name, request_id)?;
 
     if let Err(e) = AspenPolicy::from_str(policy_document) {
         let message = format!("Invalid policy document: {e}");
-        return Err(MalformedPolicyDocumentException::builder().message(message).build().into());
+        return Err(MalformedPolicyDocumentException::builder().message(message).request_id(request_id).build().into());
     }
 
     let user_id: String = match query(indoc! {"
@@ -60,12 +63,13 @@ pub async fn put_user_policy(
         Ok(None) => {
             return Err(NoSuchEntityException::builder()
                 .message(format!("The user with name {user_name} cannot be found."))
+                .request_id(request_id)
                 .build()
                 .into());
         }
         Err(e) => {
             log::error!("Failed to look up user in database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
@@ -84,7 +88,7 @@ pub async fn put_user_policy(
     .await
     {
         log::error!("Failed to insert/update user inline policy in database: {e}");
-        return Err(internal_failure().into());
+        return Err(internal_failure(request_id).into());
     }
 
     Ok(())

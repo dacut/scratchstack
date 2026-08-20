@@ -4,6 +4,7 @@ use {
     chrono::{DateTime, Utc},
     indoc::indoc,
     scratchstack_aws_principal::IamResourceType,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{GetCurrentSessionTokenEncryptionKeyRequest, GetCurrentSessionTokenEncryptionKeyResponse},
@@ -17,8 +18,8 @@ impl RequestExecutor for GetCurrentSessionTokenEncryptionKeyRequest {
     type Response = GetCurrentSessionTokenEncryptionKeyResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        get_current_session_token_encryption_key(tx, self.as_of).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        get_current_session_token_encryption_key(tx, self.as_of, request_id).await
     }
 }
 
@@ -37,6 +38,7 @@ struct SessionTokenEncryptionKeyRow {
 pub async fn get_current_session_token_encryption_key(
     tx: &mut PgTransaction<'_>,
     as_of: Option<DateTime<Utc>>,
+    request_id: RequestId,
 ) -> Result<GetCurrentSessionTokenEncryptionKeyResponse, IamError> {
     let as_of = as_of.unwrap_or_else(Utc::now);
 
@@ -53,12 +55,13 @@ pub async fn get_current_session_token_encryption_key(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch current session token encryption key from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let row = row.ok_or_else(|| {
         NoSuchEntityException::builder()
             .message("There is no session token encryption key that is current as of the specified time.")
+            .request_id(request_id)
             .build()
     })?;
     let session_token_encryption_key_id =
@@ -68,7 +71,7 @@ pub async fn get_current_session_token_encryption_key(
         log::error!(
             "Invalid encryption algorithm stored in database for session token encryption key {session_token_encryption_key_id}: {e}",
         );
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     Ok(GetCurrentSessionTokenEncryptionKeyResponse {

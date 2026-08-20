@@ -8,6 +8,7 @@ use {
     chrono::{DateTime, Utc},
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListRolesInternalRequest, ListRolesResponse},
@@ -21,8 +22,16 @@ impl RequestExecutor for ListRolesInternalRequest {
     type Response = ListRolesResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        list_roles(tx, &self.account_id, self.marker.as_deref(), self.max_items, self.path_prefix.as_deref()).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        list_roles(
+            tx,
+            &self.account_id,
+            self.marker.as_deref(),
+            self.max_items,
+            self.path_prefix.as_deref(),
+            request_id,
+        )
+        .await
     }
 }
 
@@ -58,19 +67,20 @@ pub async fn list_roles(
     marker: Option<&str>,
     max_items: Option<i32>,
     path_prefix: Option<&str>,
+    request_id: RequestId,
 ) -> Result<ListRolesResponse, IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
     if let Some(path_prefix) = path_prefix {
-        validate_path_prefix(path_prefix)?;
+        validate_path_prefix(path_prefix, request_id)?;
     }
-    let max_items = constrain_max_items(max_items)?;
-    let partition = get_current_partition_or_fail(tx).await?;
+    let max_items = constrain_max_items(max_items, request_id)?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
 
-    let paginator = make_iam_paginator(&partition, OP_LIST_ROLES)?;
+    let paginator = make_iam_paginator(&partition, OP_LIST_ROLES, request_id)?;
 
     let mut sql = QueryBuilder::new(
         r#"
@@ -94,7 +104,7 @@ pub async fn list_roles(
     if let Some(marker) = marker {
         let info: ListRolesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListRoles: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
         sql.push(" AND r.role_name_lower >= ");
         sql.push_bind(info.next_role_name_lower);
@@ -106,7 +116,7 @@ pub async fn list_roles(
 
     let rows = sql.build_query_as::<ListRolesRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch roles from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let mut results: Vec<Role> = Vec::with_capacity(rows.len().min(max_items));
@@ -122,7 +132,7 @@ pub async fn list_roles(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListRoles: {e}");
-                        internal_failure()
+                        internal_failure(request_id)
                     })?,
             );
             break;
@@ -136,7 +146,7 @@ pub async fn list_roles(
             .build()
             .map_err(|e| {
                 log::error!("Failed to construct ARN for role: {e}");
-                internal_failure()
+                internal_failure(request_id)
             })?;
 
         let permissions_boundary = if let Some(pb_id) = row.permissions_boundary_managed_policy_id.as_deref() {
@@ -146,10 +156,10 @@ pub async fn list_roles(
                 (Some(pb_path), Some(pb_name_cased)) => (pb_path, pb_name_cased),
                 _ => {
                     log::error!("Role references missing permissions boundary managed policy ID: {pb_id}");
-                    return Err(internal_failure().into());
+                    return Err(internal_failure(request_id).into());
                 }
             };
-            let pb_arn = build_policy_arn(&partition, account_id, pb_path, pb_name_cased)?;
+            let pb_arn = build_policy_arn(&partition, account_id, pb_path, pb_name_cased, request_id)?;
 
             Some(
                 AttachedPermissionsBoundary::builder()
@@ -158,7 +168,7 @@ pub async fn list_roles(
                     .build()
                     .map_err(|e| {
                         log::error!("Failed to construct permissions boundary for role: {e}");
-                        internal_failure()
+                        internal_failure(request_id)
                     })?,
             )
         } else {
@@ -180,7 +190,7 @@ pub async fn list_roles(
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct role object: {e}");
-                    internal_failure()
+                    internal_failure(request_id)
                 })?,
         );
     }
@@ -193,6 +203,6 @@ pub async fn list_roles(
 
     builder.build().map_err(|e| {
         log::error!("Failed to build ListRolesResponse: {e}");
-        internal_failure().into()
+        internal_failure(request_id).into()
     })
 }

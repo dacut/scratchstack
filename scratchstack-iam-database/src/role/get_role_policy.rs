@@ -5,6 +5,7 @@ use {
         role::validate_role_name,
     },
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{GetRolePolicyInternalRequest, GetRolePolicyResponse},
@@ -17,8 +18,8 @@ impl RequestExecutor for GetRolePolicyInternalRequest {
     type Response = GetRolePolicyResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        get_role_policy(tx, &self.account_id, &self.role_name, &self.policy_name).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        get_role_policy(tx, &self.account_id, &self.role_name, &self.policy_name, request_id).await
     }
 }
 
@@ -29,14 +30,15 @@ pub async fn get_role_policy(
     account_id: &str,
     role_name: &str,
     policy_name: &str,
+    request_id: RequestId,
 ) -> Result<GetRolePolicyResponse, IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    validate_role_name(role_name)?;
-    validate_policy_name(policy_name)?;
+    validate_role_name(role_name, request_id)?;
+    validate_policy_name(policy_name, request_id)?;
 
     let role_row = query(indoc! {"
             SELECT role_id, role_name_cased
@@ -49,7 +51,7 @@ pub async fn get_role_policy(
     .await
     .map_err(|e| {
         log::error!("Failed to look up role in database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let (role_id, role_name_cased): (String, String) = match role_row {
@@ -57,6 +59,7 @@ pub async fn get_role_policy(
         None => {
             return Err(NoSuchEntityException::builder()
                 .message(format!("The role with name {role_name} cannot be found."))
+                .request_id(request_id)
                 .build()
                 .into());
         }
@@ -73,7 +76,7 @@ pub async fn get_role_policy(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch role inline policy from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let (policy_name_cased, policy_document): (String, String) = match policy_row {
@@ -81,6 +84,7 @@ pub async fn get_role_policy(
         None => {
             return Err(NoSuchEntityException::builder()
                 .message(format!("The inline policy {policy_name} was not found on role {role_name}."))
+                .request_id(request_id)
                 .build()
                 .into());
         }
@@ -93,6 +97,6 @@ pub async fn get_role_policy(
         .build()
         .map_err(|e| {
             log::error!("Failed to build GetRolePolicyResponse: {e}");
-            internal_failure().into()
+            internal_failure(request_id).into()
         })
 }

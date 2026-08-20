@@ -5,6 +5,7 @@ use {
         policy::validate_policy_name,
     },
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError, operation::DeleteGroupPolicyInternalRequest, types::error::NoSuchEntityException,
     },
@@ -15,8 +16,8 @@ impl RequestExecutor for DeleteGroupPolicyInternalRequest {
     type Response = ();
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        delete_group_policy(tx, &self.account_id, &self.group_name, &self.policy_name).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        delete_group_policy(tx, &self.account_id, &self.group_name, &self.policy_name, request_id).await
     }
 }
 
@@ -27,14 +28,15 @@ pub async fn delete_group_policy(
     account_id: &str,
     group_name: &str,
     policy_name: &str,
+    request_id: RequestId,
 ) -> Result<(), IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    validate_group_name(group_name)?;
-    validate_policy_name(policy_name)?;
+    validate_group_name(group_name, request_id)?;
+    validate_policy_name(policy_name, request_id)?;
 
     let group_id: String = match query(indoc! {"
             SELECT group_id
@@ -50,12 +52,13 @@ pub async fn delete_group_policy(
         Ok(None) => {
             return Err(NoSuchEntityException::builder()
                 .message(format!("The group with name {group_name} cannot be found."))
+                .request_id(request_id)
                 .build()
                 .into());
         }
         Err(e) => {
             log::error!("Failed to look up group in database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
@@ -71,13 +74,14 @@ pub async fn delete_group_policy(
         Ok(result) => result,
         Err(e) => {
             log::error!("Failed to delete group inline policy from database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
     if result.rows_affected() == 0 {
         return Err(NoSuchEntityException::builder()
             .message(format!("The inline policy {policy_name} was not found on group {group_name}."))
+            .request_id(request_id)
             .build()
             .into());
     }

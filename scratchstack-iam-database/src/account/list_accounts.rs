@@ -4,6 +4,7 @@ use {
         RequestExecutor, constants::*, constrain_max_items, internal_failure, make_iam_paginator,
         partition::get_current_partition_or_fail,
     },
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListAccountsRequest, ListAccountsResponse},
@@ -17,8 +18,8 @@ impl RequestExecutor for ListAccountsRequest {
     type Response = ListAccountsResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        list_accounts(tx, &self.filters, self.marker.as_deref(), self.max_items).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        list_accounts(tx, &self.filters, self.marker.as_deref(), self.max_items, request_id).await
     }
 }
 
@@ -43,10 +44,11 @@ pub async fn list_accounts(
     filters: &[ListAccountsFilter],
     marker: Option<&str>,
     max_items: Option<i32>,
+    request_id: RequestId,
 ) -> Result<ListAccountsResponse, IamError> {
-    let max_items = constrain_max_items(max_items)?;
-    let partition = get_current_partition_or_fail(tx).await?;
-    let paginator = make_iam_paginator(&partition, OP_LIST_ACCOUNTS)?;
+    let max_items = constrain_max_items(max_items, request_id)?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
+    let paginator = make_iam_paginator(&partition, OP_LIST_ACCOUNTS, request_id)?;
 
     let mut sql = QueryBuilder::new("SELECT account_id, email, alias, created_at FROM iam.accounts WHERE TRUE");
 
@@ -68,7 +70,7 @@ pub async fn list_accounts(
     if let Some(marker) = marker {
         let info: ListAccountsMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListAccounts: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
         sql.push(" AND account_id > ");
         sql.push_bind(info.next_account_id);
@@ -80,7 +82,7 @@ pub async fn list_accounts(
 
     let rows = sql.build_query_as::<ListAccountsRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch accounts from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let mut accounts = Vec::with_capacity(rows.len().min(max_items));
@@ -102,7 +104,7 @@ pub async fn list_accounts(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListAccounts: {e}");
-                        internal_failure()
+                        internal_failure(request_id)
                     })?,
             );
             break;

@@ -7,6 +7,7 @@ use {
     },
     indoc::indoc,
     rand::random_range,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{CreateAccountRequest, CreateAccountResponse},
@@ -22,13 +23,14 @@ impl RequestExecutor for CreateAccountRequest {
     type Response = CreateAccountResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
         create_account(
             tx,
             self.organization_id.clone(),
             self.account_id.clone(),
             self.email.clone(),
             self.account_alias.clone(),
+            request_id,
         )
         .await
     }
@@ -45,18 +47,20 @@ pub async fn create_account(
     account_id: Option<String>,
     email: Option<String>,
     account_alias: Option<String>,
+    request_id: RequestId,
 ) -> Result<CreateAccountResponse, IamError> {
     if organization_id.is_some() {
         return Err(ValidationError::builder()
             .message("Creating accounts in an organization is currently unsupported")
+            .request_id(request_id)
             .build()
             .into());
     }
 
     if let Some(account_id) = account_id {
-        create_account_with_id(tx, account_id, email, account_alias).await
+        create_account_with_id(tx, account_id, email, account_alias, request_id).await
     } else {
-        create_account_with_random_account_id(tx, email, account_alias).await
+        create_account_with_random_account_id(tx, email, account_alias, request_id).await
     }
 }
 
@@ -66,10 +70,11 @@ async fn create_account_with_id(
     account_id: String,
     email: Option<String>,
     account_alias: Option<String>,
+    request_id: RequestId,
 ) -> Result<CreateAccountResponse, IamError> {
-    validate_account_id(&account_id)?;
+    validate_account_id(&account_id, request_id)?;
     if let Some(account_alias) = account_alias.as_ref() {
-        validate_account_alias(account_alias)?;
+        validate_account_alias(account_alias, request_id)?;
     }
 
     if let Err(e) = query(indoc! {"
@@ -86,11 +91,12 @@ async fn create_account_with_id(
             let alias = account_alias.unwrap_or_default();
             return Err(EntityAlreadyExistsException::builder()
                 .message(format!("Account alias {alias} is already in use."))
+                .request_id(request_id)
                 .build()
                 .into());
         }
         log::error!("Failed to insert account into database: {e}");
-        return Err(internal_failure().into());
+        return Err(internal_failure(request_id).into());
     }
 
     let mut acct_builder = Account::builder().account_id(account_id);
@@ -102,7 +108,7 @@ async fn create_account_with_id(
     }
     let account = acct_builder.build().map_err(|e| {
         log::error!("Failed to build Account: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
     Ok(CreateAccountResponse {
         account,
@@ -114,6 +120,7 @@ async fn create_account_with_random_account_id(
     tx: &mut PgTransaction<'_>,
     email: Option<String>,
     account_alias: Option<String>,
+    request_id: RequestId,
 ) -> Result<CreateAccountResponse, IamError> {
     loop {
         let account_id = format!("{:012}", random_range(1u64..=999_999_999_999));
@@ -122,15 +129,16 @@ async fn create_account_with_random_account_id(
             Ok(sp) => sp,
             Err(e) => {
                 log::error!("Failed to create savepoint: {e}");
-                return Err(internal_failure().into());
+                return Err(internal_failure(request_id).into());
             }
         };
 
-        match create_account_with_id(&mut savepoint, account_id, email.clone(), account_alias.clone()).await {
+        match create_account_with_id(&mut savepoint, account_id, email.clone(), account_alias.clone(), request_id).await
+        {
             Ok(response) => {
                 if let Err(e) = savepoint.commit().await {
                     log::error!("Failed to commit savepoint: {e}");
-                    return Err(internal_failure().into());
+                    return Err(internal_failure(request_id).into());
                 }
                 return Ok(response);
             }
@@ -142,7 +150,7 @@ async fn create_account_with_random_account_id(
                 // extremely unlikely to repeat.
                 if let Err(e) = savepoint.rollback().await {
                     log::error!("Failed to rollback savepoint: {e}");
-                    return Err(internal_failure().into());
+                    return Err(internal_failure(request_id).into());
                 }
                 continue;
             }
@@ -150,7 +158,7 @@ async fn create_account_with_random_account_id(
                 // Validation error or something else — don't retry.
                 if let Err(e) = savepoint.rollback().await {
                     log::error!("Failed to rollback savepoint: {e}");
-                    return Err(internal_failure().into());
+                    return Err(internal_failure(request_id).into());
                 }
                 return Err(other);
             }

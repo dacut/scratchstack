@@ -23,7 +23,7 @@ pub use {
     list_groups::*, list_groups_for_user::*, put_group_policy::*, remove_user_from_group::*, update_group::*,
 };
 
-use scratchstack_arn::validate_iam_resource_name;
+use {scratchstack_arn::validate_iam_resource_name, scratchstack_core::RequestId};
 
 /// Return an ARN resource string for a group with the given path and name.
 ///
@@ -39,12 +39,12 @@ pub(crate) fn group_arn_resource(path: &str, group_name: &str) -> String {
 }
 
 /// Validate that the group name is valid according to AWS IAM rules.
-pub fn validate_group_name(group_name: impl AsRef<str>) -> Result<(), ValidationError> {
+pub fn validate_group_name(group_name: impl AsRef<str>, request_id: RequestId) -> Result<(), ValidationError> {
     const MESSAGE: &str = "Group name must contain only alphanumeric characters or the following symbols: =,.@- and must be between 1 and 128 characters long.";
 
     let group_name = group_name.as_ref();
     if group_name.len() > 128 || validate_iam_resource_name(group_name).is_err() {
-        Err(ValidationError::builder().message(MESSAGE).build())
+        Err(ValidationError::builder().message(MESSAGE).request_id(request_id).build())
     } else {
         Ok(())
     }

@@ -2,6 +2,7 @@
 use {
     crate::{RequestExecutor, constants::*, internal_failure, policy::parse_policy_arn},
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::DeletePolicyRequest,
@@ -14,8 +15,8 @@ impl RequestExecutor for DeletePolicyRequest {
     type Response = ();
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        delete_policy(tx, &self.policy_arn).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        delete_policy(tx, &self.policy_arn, request_id).await
     }
 }
 
@@ -24,7 +25,11 @@ impl RequestExecutor for DeletePolicyRequest {
 /// other versions must have been deleted via
 /// [`delete_policy_version`][crate::policy::delete_policy_version] first). On success the
 /// remaining default version and all tags are removed along with the policy via FK cascade.
-pub async fn delete_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Result<(), IamError> {
+pub async fn delete_policy(
+    tx: &mut PgTransaction<'_>,
+    policy_arn: &str,
+    request_id: RequestId,
+) -> Result<(), IamError> {
     /// The row returned by the lookup query against iam.managed_policies.
     #[derive(FromRow)]
     struct PolicyRow {
@@ -43,7 +48,7 @@ pub async fn delete_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Resu
         non_default_versions: i64,
     }
 
-    let parts = parse_policy_arn(policy_arn)?;
+    let parts = parse_policy_arn(policy_arn, request_id)?;
     let account_id = match parts.account_id() {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
@@ -67,11 +72,11 @@ pub async fn delete_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Resu
         Ok(None) => {
             let message = format!("Policy {policy_arn} was not found.");
             log::info!("{}", message);
-            return Err(NoSuchEntityException::builder().message(message).build().into());
+            return Err(NoSuchEntityException::builder().message(message).request_id(request_id).build().into());
         }
         Err(e) => {
             log::error!("Failed to query managed policy from database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
@@ -103,7 +108,7 @@ pub async fn delete_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Resu
         Ok(row) => row,
         Err(e) => {
             log::error!("Failed to query DeletePolicy conflict counts from database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
@@ -112,7 +117,7 @@ pub async fn delete_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Resu
         let message = format!(
             "Cannot delete a policy attached to entities. The policy {policy_arn} is attached to {attachment_total} entities (users, groups, or roles)."
         );
-        return Err(DeleteConflictException::builder().message(message).build().into());
+        return Err(DeleteConflictException::builder().message(message).request_id(request_id).build().into());
     }
 
     let permissions_boundary_total = counts.user_permissions_boundaries + counts.role_permissions_boundaries;
@@ -120,7 +125,7 @@ pub async fn delete_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Resu
         let message = format!(
             "Cannot delete a policy used as a permissions boundary. The policy {policy_arn} is the permissions boundary for {permissions_boundary_total} entities (users or roles)."
         );
-        return Err(DeleteConflictException::builder().message(message).build().into());
+        return Err(DeleteConflictException::builder().message(message).request_id(request_id).build().into());
     }
 
     if counts.non_default_versions > 0 {
@@ -128,7 +133,7 @@ pub async fn delete_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Resu
             "Cannot delete a policy with non-default versions. The policy {policy_arn} has {} non-default versions remaining. You must delete those versions before deleting the policy.",
             counts.non_default_versions
         );
-        return Err(DeleteConflictException::builder().message(message).build().into());
+        return Err(DeleteConflictException::builder().message(message).request_id(request_id).build().into());
     }
 
     // FK cascade handles managed_policy_versions (the default version) and managed_policy_tags.
@@ -149,11 +154,11 @@ pub async fn delete_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Resu
             let message = format!(
                 "Cannot delete policy {policy_arn} because it is attached to an entity or is set as a permissions boundary."
             );
-            return Err(DeleteConflictException::builder().message(message).build().into());
+            return Err(DeleteConflictException::builder().message(message).request_id(request_id).build().into());
         }
 
         log::error!("Failed to delete managed policy from database: {e}");
-        return Err(internal_failure().into());
+        return Err(internal_failure(request_id).into());
     }
 
     Ok(())

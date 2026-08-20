@@ -5,6 +5,7 @@ use {
         make_iam_paginator, partition::get_current_partition_or_fail, user::validate_user_name,
     },
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListUserTagsInternalRequest, ListUserTagsResponse},
@@ -18,8 +19,8 @@ impl RequestExecutor for ListUserTagsInternalRequest {
     type Response = ListUserTagsResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        list_user_tags(tx, &self.account_id, &self.user_name, self.marker.as_deref(), self.max_items).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        list_user_tags(tx, &self.account_id, &self.user_name, self.marker.as_deref(), self.max_items, request_id).await
     }
 }
 
@@ -43,16 +44,17 @@ pub async fn list_user_tags(
     user_name: &str,
     marker: Option<&str>,
     max_items: Option<i32>,
+    request_id: RequestId,
 ) -> Result<ListUserTagsResponse, IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    validate_user_name(user_name)?;
+    validate_user_name(user_name, request_id)?;
     let user_name_lower = user_name.to_lowercase();
-    let max_items = constrain_max_items(max_items)?;
-    let partition = get_current_partition_or_fail(tx).await?;
+    let max_items = constrain_max_items(max_items, request_id)?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
 
     let user_exists = query(indoc! {"
         SELECT 1
@@ -66,16 +68,17 @@ pub async fn list_user_tags(
     .await
     .map_err(|e| {
         log::error!("Failed to check if user exists in database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
     if user_exists.is_none() {
         return Err(NoSuchEntityException::builder()
             .message(format!("The user with name {user_name} cannot be found."))
+            .request_id(request_id)
             .build()
             .into());
     }
 
-    let paginator = make_iam_paginator(&partition, OP_LIST_USER_TAGS)?;
+    let paginator = make_iam_paginator(&partition, OP_LIST_USER_TAGS, request_id)?;
 
     let mut sql = QueryBuilder::new(
         r#"
@@ -93,7 +96,7 @@ pub async fn list_user_tags(
     if let Some(marker) = marker {
         let m: ListUserTagsMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListUserTags: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
         sql.push(" AND t.key_lower >= ");
         sql.push_bind(m.next_key_lower);
@@ -105,7 +108,7 @@ pub async fn list_user_tags(
 
     let rows = sql.build_query_as::<ListUserTagsRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch user tags from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
     let mut results = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -120,7 +123,7 @@ pub async fn list_user_tags(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListUserTags: {e}");
-                        internal_failure()
+                        internal_failure(request_id)
                     })?,
             );
             break;
@@ -128,7 +131,7 @@ pub async fn list_user_tags(
 
         results.push(Tag::builder().key(row.key_cased).value(row.value).build().map_err(|e| {
             log::error!("Failed to construct tag object: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?);
     }
 
@@ -140,6 +143,6 @@ pub async fn list_user_tags(
 
     builder.build().map_err(|e| {
         log::error!("Failed to build ListUserTagsResponse: {e}");
-        internal_failure().into()
+        internal_failure(request_id).into()
     })
 }

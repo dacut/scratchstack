@@ -7,6 +7,7 @@ use {
         DefaultSessionTokenExtractor, SessionTokenEncryptionAlgorithm as SigSessionTokenEncryptionAlgorithm,
         SessionTokenEncryptionKeyInfo, StaticKeyService,
     },
+    scratchstack_core::RequestId,
     scratchstack_iam_database::RequestExecutor,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -37,7 +38,7 @@ pub async fn test_create_role_simple(pool: &sqlx::PgPool) {
         .assume_role_policy_document(TRUST_POLICY.to_string())
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create role");
     tx.commit().await.expect("Failed to commit transaction");
@@ -64,7 +65,7 @@ pub async fn test_create_role_with_path(pool: &sqlx::PgPool) {
         .assume_role_policy_document(TRUST_POLICY.to_string())
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create role with path");
     tx.commit().await.expect("Failed to commit transaction");
@@ -90,7 +91,7 @@ pub async fn test_create_role_with_description_and_duration(pool: &sqlx::PgPool)
         .max_session_duration(14400)
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create role with description and duration");
     tx.commit().await.expect("Failed to commit transaction");
@@ -114,7 +115,7 @@ pub async fn test_create_role_with_tags(pool: &sqlx::PgPool) {
         ])
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create role with tags");
     tx.commit().await.expect("Failed to commit transaction");
@@ -142,7 +143,7 @@ pub async fn test_create_role_with_permissions_boundary(pool: &sqlx::PgPool) {
         .permissions_boundary("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create role with permissions boundary");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -164,7 +165,7 @@ pub async fn test_create_role_duplicate_name(pool: &sqlx::PgPool) {
         .assume_role_policy_document(TRUST_POLICY.to_string())
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a duplicate role name must fail");
@@ -211,7 +212,7 @@ pub async fn test_create_role_nonexistent_account(pool: &sqlx::PgPool) {
         .assume_role_policy_document(TRUST_POLICY.to_string())
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a role in a nonexistent account must fail");
@@ -227,7 +228,7 @@ pub async fn test_create_role_nonexistent_permissions_boundary(pool: &sqlx::PgPo
         .permissions_boundary("arn:aws:iam::123456789012:policy/NonExistentPolicy")
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a role with a nonexistent permissions boundary must fail");
@@ -243,7 +244,7 @@ pub async fn test_delete_role_simple(pool: &sqlx::PgPool) {
         .assume_role_policy_document(TRUST_POLICY.to_string())
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create DeleteMeRole");
     tx.commit().await.expect("Failed to commit transaction");
@@ -254,7 +255,7 @@ pub async fn test_delete_role_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete DeleteMeRole");
     tx.commit().await.expect("Failed to commit transaction");
@@ -266,7 +267,7 @@ pub async fn test_delete_role_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Re-deleting DeleteMeRole must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -286,7 +287,7 @@ pub async fn test_delete_role_cascades_tags(pool: &sqlx::PgPool) {
         ])
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create DeleteMeTaggedRole");
     tx.commit().await.expect("Failed to commit transaction");
@@ -313,7 +314,7 @@ pub async fn test_delete_role_cascades_tags(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete DeleteMeTaggedRole");
     tx.commit().await.expect("Failed to commit transaction");
@@ -337,7 +338,7 @@ pub async fn test_delete_role_attached_policy_fails(pool: &sqlx::PgPool) {
         .assume_role_policy_document(TRUST_POLICY.to_string())
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create DeleteMeAttachedRole");
     let role_id: String =
@@ -362,7 +363,7 @@ pub async fn test_delete_role_attached_policy_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting a role with an attached managed policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -382,7 +383,7 @@ pub async fn test_delete_role_attached_policy_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete DeleteMeAttachedRole after detaching policy");
     tx.commit().await.expect("Failed to commit transaction");
@@ -398,7 +399,7 @@ pub async fn test_delete_role_inline_policy_fails(pool: &sqlx::PgPool) {
         .assume_role_policy_document(TRUST_POLICY.to_string())
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create DeleteMeInlineRole");
     let role_id: String =
@@ -426,7 +427,7 @@ pub async fn test_delete_role_inline_policy_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting a role with an inline policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -444,7 +445,7 @@ pub async fn test_delete_role_inline_policy_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete DeleteMeInlineRole after removing inline policy");
     tx.commit().await.expect("Failed to commit transaction");
@@ -458,7 +459,7 @@ pub async fn test_delete_role_nonexistent(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting a nonexistent role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -483,7 +484,7 @@ pub async fn test_delete_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
         .assume_role_policy_document(TRUST_POLICY.to_string())
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create DeleteMePbRole");
     let role_id: String =
@@ -515,7 +516,7 @@ pub async fn test_delete_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRolePermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete DeleteMePbRole permissions boundary");
     tx.commit().await.expect("Failed to commit transaction");
@@ -535,7 +536,7 @@ pub async fn test_delete_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete DeleteMePbRole");
     tx.commit().await.expect("Failed to commit transaction");
@@ -550,7 +551,7 @@ pub async fn test_delete_role_permissions_boundary_no_boundary(pool: &sqlx::PgPo
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRolePermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("DeleteRolePermissionsBoundary on a role with no PB must succeed");
     tx.commit().await.expect("Failed to commit transaction");
@@ -564,7 +565,7 @@ pub async fn test_delete_role_permissions_boundary_nonexistent(pool: &sqlx::PgPo
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRolePermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Clearing PB on a nonexistent role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -590,7 +591,7 @@ pub async fn test_get_role_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get LambdaExecutor");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -615,7 +616,7 @@ pub async fn test_get_role_with_path(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get DeployRole");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -634,7 +635,7 @@ pub async fn test_get_role_with_tags(pool: &sqlx::PgPool) {
         .account_id("210987654321")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get TaggedRole");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -666,7 +667,7 @@ pub async fn test_get_role_with_permissions_boundary(pool: &sqlx::PgPool) {
         .permissions_boundary(pb_arn.to_string())
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create GetMePbRole with permissions boundary");
     tx.commit().await.expect("Failed to commit transaction");
@@ -677,7 +678,7 @@ pub async fn test_get_role_with_permissions_boundary(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get GetMePbRole");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -693,7 +694,7 @@ pub async fn test_get_role_with_permissions_boundary(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRolePermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to clear GetMePbRole PB");
     DeleteRoleInternalRequest::builder()
@@ -701,7 +702,7 @@ pub async fn test_get_role_with_permissions_boundary(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete GetMePbRole");
     tx.commit().await.expect("Failed to commit transaction");
@@ -715,7 +716,7 @@ pub async fn test_get_role_nonexistent(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Getting a nonexistent role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -737,7 +738,7 @@ pub async fn test_list_roles(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListRolesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list roles");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -777,7 +778,7 @@ pub async fn test_list_roles_with_path_prefix(pool: &sqlx::PgPool) {
         .path_prefix("/service-roles/")
         .build()
         .expect("Failed to build ListRolesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list roles with path prefix");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -796,7 +797,7 @@ pub async fn test_list_roles_path_prefix_no_match(pool: &sqlx::PgPool) {
         .path_prefix("/no-such-prefix/")
         .build()
         .expect("Failed to build ListRolesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list roles with no-match path prefix");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -812,7 +813,7 @@ pub async fn test_list_roles_empty_account(pool: &sqlx::PgPool) {
         .account_id("876543210000")
         .build()
         .expect("Failed to build ListRolesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list roles in empty account");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -832,7 +833,7 @@ pub async fn test_list_roles_pagination(pool: &sqlx::PgPool) {
             .assume_role_policy_document(TRUST_POLICY.to_string())
             .build()
             .expect("Failed to build CreateRoleInternalRequest")
-            .execute(&mut tx)
+            .execute(&mut tx, RequestId::new())
             .await
             .unwrap_or_else(|e| panic!("Failed to create PaginationRole{i}: {e:?}"));
     }
@@ -848,7 +849,7 @@ pub async fn test_list_roles_pagination(pool: &sqlx::PgPool) {
         builder
             .build()
             .expect("Failed to build ListRolesInternalRequest")
-            .execute(tx)
+            .execute(tx, RequestId::new())
             .await
             .expect("Failed to list roles page")
     };
@@ -897,7 +898,7 @@ pub async fn test_list_role_tags(pool: &sqlx::PgPool) {
         .account_id("210987654321")
         .build()
         .expect("Failed to build ListRoleTagsInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list tags for TaggedRole");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -919,7 +920,7 @@ pub async fn test_list_role_tags_empty(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListRoleTagsInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list tags for LambdaExecutor");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -945,7 +946,7 @@ pub async fn test_list_role_tags_pagination(pool: &sqlx::PgPool) {
         .set_tags(tags)
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create PaginationTagsRole");
 
@@ -962,7 +963,7 @@ pub async fn test_list_role_tags_pagination(pool: &sqlx::PgPool) {
         builder
             .build()
             .expect("Failed to build ListRoleTagsInternalRequest")
-            .execute(tx)
+            .execute(tx, RequestId::new())
             .await
             .expect("Failed to list role tags page")
     };
@@ -1002,7 +1003,7 @@ pub async fn test_list_role_tags_nonexistent(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListRoleTagsInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Listing tags for a nonexistent role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1029,7 +1030,7 @@ pub async fn test_tag_role(pool: &sqlx::PgPool) {
         ])
         .build()
         .expect("Failed to build TagRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to tag role");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1041,7 +1042,7 @@ pub async fn test_tag_role(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListRoleTagsInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list role tags");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1063,7 +1064,7 @@ pub async fn test_tag_role_upsert(pool: &sqlx::PgPool) {
         .set_tags(vec![Tag::builder().key("Dept").value("Finance").build().expect("Failed to build tag")])
         .build()
         .expect("Failed to build TagRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to upsert tag on role");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1075,7 +1076,7 @@ pub async fn test_tag_role_upsert(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListRoleTagsInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list role tags after upsert");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1096,7 +1097,7 @@ pub async fn test_tag_role_nonexistent_role(pool: &sqlx::PgPool) {
         .set_tags(vec![Tag::builder().key("Key").value("Value").build().expect("Failed to build tag")])
         .build()
         .expect("Failed to build TagRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Tagging a nonexistent role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1112,7 +1113,7 @@ pub async fn test_tag_role_empty_tags(pool: &sqlx::PgPool) {
         .set_tags(vec![])
         .build()
         .expect("Failed to build TagRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Tagging with an empty tag list must fail");
@@ -1128,7 +1129,7 @@ pub async fn test_untag_role(pool: &sqlx::PgPool) {
         .set_tag_keys(vec!["Dept".to_string()])
         .build()
         .expect("Failed to build UntagRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to untag role");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1140,7 +1141,7 @@ pub async fn test_untag_role(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListRoleTagsInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list role tags after untag");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1159,7 +1160,7 @@ pub async fn test_untag_role_nonexistent_key(pool: &sqlx::PgPool) {
         .set_tag_keys(vec!["NoSuchTag".to_string()])
         .build()
         .expect("Failed to build UntagRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Untagging a nonexistent key should succeed silently");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1174,7 +1175,7 @@ pub async fn test_untag_role_empty_keys(pool: &sqlx::PgPool) {
         .set_tag_keys(vec![])
         .build()
         .expect("Failed to build UntagRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Untagging with an empty tag key list must fail");
@@ -1189,7 +1190,7 @@ pub async fn test_untag_role_nonexistent_role(pool: &sqlx::PgPool) {
         .set_tag_keys(vec!["Key".to_string()])
         .build()
         .expect("Failed to build UntagRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Untagging a nonexistent role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1206,7 +1207,7 @@ pub async fn test_update_role_description_only(pool: &sqlx::PgPool) {
         .description("Description set via UpdateRole.")
         .build()
         .expect("Failed to build UpdateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to update LambdaExecutor description");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1217,7 +1218,7 @@ pub async fn test_update_role_description_only(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get LambdaExecutor after UpdateRole");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1234,7 +1235,7 @@ pub async fn test_update_role_max_session_duration_only(pool: &sqlx::PgPool) {
         .max_session_duration(7200)
         .build()
         .expect("Failed to build UpdateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to update LambdaExecutor max_session_duration");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1245,7 +1246,7 @@ pub async fn test_update_role_max_session_duration_only(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get LambdaExecutor after UpdateRole");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1264,7 +1265,7 @@ pub async fn test_update_role_both_fields(pool: &sqlx::PgPool) {
         .max_session_duration(10800)
         .build()
         .expect("Failed to build UpdateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to update both fields on LambdaExecutor");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1275,7 +1276,7 @@ pub async fn test_update_role_both_fields(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get LambdaExecutor after UpdateRole");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1291,7 +1292,7 @@ pub async fn test_update_role_no_fields(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("UpdateRole with no fields on an existing role must succeed");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1303,7 +1304,7 @@ pub async fn test_update_role_no_fields(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get LambdaExecutor after no-op UpdateRole");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1320,7 +1321,7 @@ pub async fn test_update_role_nonexistent(pool: &sqlx::PgPool) {
         .description("Will not be applied.")
         .build()
         .expect("Failed to build UpdateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("UpdateRole on a nonexistent role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1360,7 +1361,7 @@ pub async fn test_update_role_description_simple(pool: &sqlx::PgPool) {
         .description("Description set via UpdateRoleDescription.")
         .build()
         .expect("Failed to build UpdateRoleDescriptionInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to update LambdaExecutor description");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1378,7 +1379,7 @@ pub async fn test_update_role_description_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get LambdaExecutor after UpdateRoleDescription");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1394,7 +1395,7 @@ pub async fn test_update_role_description_empty(pool: &sqlx::PgPool) {
         .description(String::new())
         .build()
         .expect("Failed to build UpdateRoleDescriptionInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to update LambdaExecutor description to empty");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1412,7 +1413,7 @@ pub async fn test_update_role_description_nonexistent(pool: &sqlx::PgPool) {
         .description("anything")
         .build()
         .expect("Failed to build UpdateRoleDescriptionInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("UpdateRoleDescription on a nonexistent role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1442,7 +1443,7 @@ pub async fn test_put_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
         .assume_role_policy_document(TRUST_POLICY.to_string())
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create PutMePbRole");
     PutRolePermissionsBoundaryInternalRequest::builder()
@@ -1451,7 +1452,7 @@ pub async fn test_put_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
         .permissions_boundary(pb_arn.to_string())
         .build()
         .expect("Failed to build PutRolePermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to set PutMePbRole permissions boundary");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1462,7 +1463,7 @@ pub async fn test_put_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get PutMePbRole");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1478,7 +1479,7 @@ pub async fn test_put_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
         .permissions_boundary(pb_arn.to_string())
         .build()
         .expect("Failed to build PutRolePermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Re-putting the same permissions boundary on PutMePbRole must succeed");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1490,7 +1491,7 @@ pub async fn test_put_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRolePermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to clear PutMePbRole PB");
     DeleteRoleInternalRequest::builder()
@@ -1498,7 +1499,7 @@ pub async fn test_put_role_permissions_boundary_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete PutMePbRole");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1513,7 +1514,7 @@ pub async fn test_put_role_permissions_boundary_nonexistent_role(pool: &sqlx::Pg
         .permissions_boundary("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build PutRolePermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("PutRolePermissionsBoundary on a nonexistent role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1530,7 +1531,7 @@ pub async fn test_put_role_permissions_boundary_nonexistent_policy(pool: &sqlx::
         .permissions_boundary("arn:test-partition:iam::123456789012:policy/NoSuchPolicy")
         .build()
         .expect("Failed to build PutRolePermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("PutRolePermissionsBoundary with a nonexistent PB policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1547,7 +1548,7 @@ pub async fn test_put_role_permissions_boundary_invalid_arn(pool: &sqlx::PgPool)
         .permissions_boundary("not-an-arn-but-long-enough-to-pass")
         .build()
         .expect("Failed to build PutRolePermissionsBoundaryInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("PutRolePermissionsBoundary with an invalid ARN must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1589,7 +1590,7 @@ pub async fn test_put_role_policy_simple(pool: &sqlx::PgPool) {
         .policy_document(INLINE_ROLE_POLICY_S3.to_string())
         .build()
         .expect("Failed to build PutRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to put inline policy on LambdaExecutor");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1618,7 +1619,7 @@ pub async fn test_put_role_policy_replaces(pool: &sqlx::PgPool) {
         .policy_document(INLINE_ROLE_POLICY_EC2.to_string())
         .build()
         .expect("Failed to build PutRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to replace inline policy on LambdaExecutor");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1658,7 +1659,7 @@ pub async fn test_put_role_policy_invalid_principal_accepted(pool: &sqlx::PgPool
         .policy_document(INLINE_ROLE_POLICY_UNKNOWN_PRINCIPAL.to_string())
         .build()
         .expect("Failed to build PutRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Policies referring to non-existent principals must still be accepted");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1674,7 +1675,7 @@ pub async fn test_put_role_policy_invalid_document(pool: &sqlx::PgPool) {
         .policy_document("{ not valid aspen json }")
         .build()
         .expect("Failed to build PutRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("PutRolePolicy with malformed JSON must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1694,7 +1695,7 @@ pub async fn test_put_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
         .policy_document(INLINE_ROLE_POLICY_S3.to_string())
         .build()
         .expect("Failed to build PutRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("PutRolePolicy on a nonexistent role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1722,7 +1723,7 @@ pub async fn test_get_role_policy_simple(pool: &sqlx::PgPool) {
         .policy_name("InlineRead")
         .build()
         .expect("Failed to build GetRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get inline policy on LambdaExecutor");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1742,7 +1743,7 @@ pub async fn test_get_role_policy_case_insensitive_lookup(pool: &sqlx::PgPool) {
         .policy_name("inlineread")
         .build()
         .expect("Failed to build GetRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get inline policy via case-insensitive lookup");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1759,7 +1760,7 @@ pub async fn test_get_role_policy_nonexistent_policy(pool: &sqlx::PgPool) {
         .policy_name("NotAttached")
         .build()
         .expect("Failed to build GetRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("GetRolePolicy with no matching policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1775,7 +1776,7 @@ pub async fn test_get_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
         .policy_name("AnyName")
         .build()
         .expect("Failed to build GetRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("GetRolePolicy on a nonexistent role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1802,7 +1803,7 @@ pub async fn test_list_role_policies_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListRolePoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list inline policies on LambdaExecutor");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1821,7 +1822,7 @@ pub async fn test_list_role_policies_empty(pool: &sqlx::PgPool) {
         .assume_role_policy_document(TRUST_POLICY.to_string())
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create ListPoliciesEmptyRole");
     let resp = ListRolePoliciesInternalRequest::builder()
@@ -1829,7 +1830,7 @@ pub async fn test_list_role_policies_empty(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListRolePoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list inline policies on empty role");
     assert!(resp.policy_names.is_empty(), "Expected no inline policies, got: {:?}", resp.policy_names);
@@ -1840,7 +1841,7 @@ pub async fn test_list_role_policies_empty(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteRoleInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete ListPoliciesEmptyRole");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1855,7 +1856,7 @@ pub async fn test_list_role_policies_pagination(pool: &sqlx::PgPool) {
         .max_items(1)
         .build()
         .expect("Failed to build ListRolePoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list inline policies on LambdaExecutor (page 1)");
     assert_eq!(page1.policy_names, vec!["InlineRead".to_string()]);
@@ -1869,7 +1870,7 @@ pub async fn test_list_role_policies_pagination(pool: &sqlx::PgPool) {
         .marker(marker)
         .build()
         .expect("Failed to build ListRolePoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list inline policies on LambdaExecutor (page 2)");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1887,7 +1888,7 @@ pub async fn test_list_role_policies_nonexistent_role(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListRolePoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("ListRolePolicies on a nonexistent role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1911,7 +1912,7 @@ pub async fn test_delete_role_policy_simple(pool: &sqlx::PgPool) {
         .policy_name("InlineWithMissingPrincipal")
         .build()
         .expect("Failed to build DeleteRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete inline policy on LambdaExecutor");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1951,7 +1952,7 @@ pub async fn test_delete_role_policy_nonexistent_policy(pool: &sqlx::PgPool) {
         .policy_name("NotAttached")
         .build()
         .expect("Failed to build DeleteRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("DeleteRolePolicy with no matching policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1967,7 +1968,7 @@ pub async fn test_delete_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
         .policy_name("AnyName")
         .build()
         .expect("Failed to build DeleteRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("DeleteRolePolicy on a nonexistent role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1994,7 +1995,7 @@ pub async fn test_assume_role(pool: &sqlx::PgPool) {
         .issue_valid_from(Utc::now())
         .build()
         .expect("Failed to build CreateSessionTokenEncryptionKeyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create session token encryption key")
         .session_token_encryption_key;
@@ -2007,7 +2008,7 @@ pub async fn test_assume_role(pool: &sqlx::PgPool) {
         .source_identity("test-identity")
         .build()
         .expect("Failed to build AssumeRoleRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to assume role");
     tx.commit().await.expect("Failed to commit transaction");
@@ -2061,7 +2062,7 @@ pub async fn test_assume_role_nonexistent_role(pool: &sqlx::PgPool) {
         .role_session_name("test-session")
         .build()
         .expect("Failed to build AssumeRoleRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("AssumeRole on a nonexistent role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -2076,7 +2077,7 @@ pub async fn test_assume_role_invalid_arn(pool: &sqlx::PgPool) {
         .role_session_name("test-session")
         .build()
         .expect("Failed to build AssumeRoleRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("AssumeRole with a non-role ARN must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -2092,7 +2093,7 @@ pub async fn test_assume_role_malformed_policy(pool: &sqlx::PgPool) {
         .policy("not a policy document")
         .build()
         .expect("Failed to build AssumeRoleRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("AssumeRole with a malformed policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
