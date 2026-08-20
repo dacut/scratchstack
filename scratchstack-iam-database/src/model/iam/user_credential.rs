@@ -1,7 +1,7 @@
 //! AWS IAM user credential database model
 use {
+    bon::Builder,
     chrono::{DateTime, Utc},
-    derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, postgres::PgConnection},
@@ -12,18 +12,23 @@ use {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct UserCredential {
     /// Access key identifier, without the `AKIA` prefix.
+    #[builder(into)]
     pub access_key_id: String,
 
     /// User identifier, without the `AIDA` prefix.
+    #[builder(into)]
     pub user_id: String,
 
     /// Secret access key.
+    #[builder(into)]
     pub secret_key: String,
 
     /// Whether the credential is enabled.
+    #[builder(into)]
     pub enabled: bool,
 
     /// Timestamp when the credential was created.
+    #[builder(into)]
     pub created_at: Option<DateTime<Utc>>,
 }
 

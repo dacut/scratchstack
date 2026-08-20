@@ -1,7 +1,7 @@
 //! AWS IAM user service-specific credential database model
 use {
+    bon::Builder,
     chrono::{DateTime, Utc},
-    derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, postgres::PgConnection},
@@ -12,27 +12,35 @@ use {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct UserServiceSpecificCredential {
     /// Service-specific credential identifier, without the `ASSC` prefix.
+    #[builder(into)]
     pub service_specific_credential_id: String,
 
     /// User identifier, without the `AIDA` prefix.
+    #[builder(into)]
     pub user_id: String,
 
     /// The name of the service that the credential is for.
+    #[builder(into)]
     pub service_name: String,
 
     /// The service-specific user name.
+    #[builder(into)]
     pub service_user_name: String,
 
     /// Service-specific password.
+    #[builder(into)]
     pub service_password: String,
 
     /// Timestamp when the service-specific credential expires.
+    #[builder(into)]
     pub expires_at: DateTime<Utc>,
 
     /// Whether the credential is enabled.
+    #[builder(into)]
     pub enabled: bool,
 
     /// Timestamp when the credential was created.
+    #[builder(into)]
     pub created_at: Option<DateTime<Utc>>,
 }
 

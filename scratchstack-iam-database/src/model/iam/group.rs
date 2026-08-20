@@ -1,7 +1,7 @@
 //! AWS IAM group database model
 use {
+    bon::Builder,
     chrono::{DateTime, Utc},
-    derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, postgres::PgConnection},
@@ -12,21 +12,27 @@ use {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Group {
     /// Unique group identifier, without the `AGPA` prefix.
+    #[builder(into)]
     pub group_id: String,
 
     /// 12-digit AWS account id.
+    #[builder(into)]
     pub account_id: String,
 
     /// Lower-cased group name; this must be unique in the account.
+    #[builder(into)]
     pub group_name_lower: String,
 
     /// Mixed-cased group name.
+    #[builder(into)]
     pub group_name_cased: String,
 
     /// IAM path.
+    #[builder(into)]
     pub path: String,
 
     /// Timestamp when the group was created.
+    #[builder(into)]
     pub created_at: Option<DateTime<Utc>>,
 }
 

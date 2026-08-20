@@ -1,7 +1,7 @@
 //! AWS IAM user database model
 use {
+    bon::Builder,
     chrono::{DateTime, Utc},
-    derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, postgres::PgConnection},
@@ -12,24 +12,31 @@ use {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct User {
     /// Unique user identifier, without the `AIDA` prefix.
+    #[builder(into)]
     pub user_id: String,
 
     /// 12-digit AWS account id.
+    #[builder(into)]
     pub account_id: String,
 
     /// Lower-cased username; this must be unique in the account.
+    #[builder(into)]
     pub user_name_lower: String,
 
     /// Mixed-cased username.
+    #[builder(into)]
     pub user_name_cased: String,
 
     /// IAM path.
+    #[builder(into)]
     pub path: String,
 
     /// Optional permissions boundary id.
+    #[builder(into)]
     pub permissions_boundary_managed_policy_id: Option<String>,
 
     /// Timestamp when the user was created.
+    #[builder(into)]
     pub created_at: Option<DateTime<Utc>>,
 }
 

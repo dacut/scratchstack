@@ -1,7 +1,7 @@
 //! AWS IAM user login profile database model
 use {
+    bon::Builder,
     chrono::{DateTime, Utc},
-    derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, postgres::PgConnection},
@@ -12,22 +12,28 @@ use {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct UserLoginProfile {
     /// User identifier, without the `AIDA` prefix.
+    #[builder(into)]
     pub user_id: String,
 
     /// The password hash algorithm used.
+    #[builder(into)]
     pub password_hash_algorithm_id: String,
 
     /// The password hash; the format of this field depends on the value of
     /// `password_hash_algorithm`.
+    #[builder(into)]
     pub password_hash: String,
 
     /// Whether a password reset is required on next login.
+    #[builder(into)]
     pub password_reset_required: bool,
 
     /// Timestamp when the password was last changed.
+    #[builder(into)]
     pub password_last_changed_at: DateTime<Utc>,
 
     /// Timestamp when the login profile was created.
+    #[builder(into)]
     pub created_at: Option<DateTime<Utc>>,
 }
 

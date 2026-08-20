@@ -1,7 +1,7 @@
 //! AWS IAM user inline policy database model
 use {
+    bon::Builder,
     chrono::{DateTime, Utc},
-    derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, postgres::PgConnection},
@@ -12,18 +12,23 @@ use {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct UserInlinePolicy {
     /// User identifier, without the `AIDA` prefix.
+    #[builder(into)]
     pub user_id: String,
 
     /// Lower-cased policy name; this must be unique for the user.
+    #[builder(into)]
     pub policy_name_lower: String,
 
     /// Mixed-cased policy name.
+    #[builder(into)]
     pub policy_name_cased: String,
 
     /// The policy document, as a JSON string.
+    #[builder(into)]
     pub policy_document: String,
 
     /// Timestamp when the inline policy was created.
+    #[builder(into)]
     pub created_at: Option<DateTime<Utc>>,
 }
 

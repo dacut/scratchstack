@@ -1,7 +1,7 @@
 //! AWS IAM role policy attachment database model
 use {
+    bon::Builder,
     chrono::{DateTime, Utc},
-    derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, postgres::PgConnection},
@@ -12,12 +12,15 @@ use {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct RoleAttachedPolicy {
     /// Role identifier, without the `AROA` prefix.
+    #[builder(into)]
     pub role_id: String,
 
     /// Managed policy identifier, without the `ANPA` prefix.
+    #[builder(into)]
     pub managed_policy_id: String,
 
     /// Timestamp when the role-policy attachment was created.
+    #[builder(into)]
     pub created_at: Option<DateTime<Utc>>,
 }
 

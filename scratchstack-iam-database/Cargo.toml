@@ -18,9 +18,9 @@ utils = ["dep:postgresql_commands", "dep:postgresql_embedded", "dep:tempfile"]
 ascii-casing = { workspace = true, features = ["serde"] }
 base32.workspace = true
 base64.workspace = true
+bon.workspace = true
 clap = { workspace = true, optional = true, features = ["derive"] }
 chrono = { workspace = true, features = ["clock", "serde", "std"] }
-derive_builder.workspace = true
 futures.workspace = true
 hex.workspace = true
 indoc.workspace = true

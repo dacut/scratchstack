@@ -1,6 +1,6 @@
 use {
+    bon::Builder,
     chrono::{DateTime, Utc},
-    derive_builder::Builder,
     indoc::indoc,
     serde::{Deserialize, Serialize},
     sqlx::{FromRow, postgres::PgConnection},
@@ -11,15 +11,19 @@ use {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct ManagedPolicyVersion {
     /// Managed policy identifier, without the `ANPA` prefix.
+    #[builder(into)]
     pub managed_policy_id: String,
 
     /// Version of the policy, starting at 1 and incrementing by 1 for each new version.
+    #[builder(into)]
     pub managed_policy_version: i64,
 
     /// The policy document, as a JSON string.
+    #[builder(into)]
     pub policy_document: String,
 
     /// Timestamp when the policy version was created.
+    #[builder(into)]
     pub created_at: Option<DateTime<Utc>>,
 }
 
