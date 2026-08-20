@@ -20,6 +20,7 @@ use {
         EncryptedSessionTokenData, KSecretKey, SessionTokenData,
         SessionTokenEncryptionAlgorithm as SigSessionTokenEncryptionAlgorithm, SessionTokenEncryptionKeyInfo,
     },
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{error_meta::Error as IamError, types::SessionTokenEncryptionAlgorithm},
     scratchstack_shapes_sts::{
         error_meta::Error as StsError,
@@ -42,8 +43,8 @@ impl RequestExecutor for AssumeRoleRequest {
     type Response = AssumeRoleResponse;
     type Error = StsError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        assume_role(tx, self).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        assume_role(tx, self, request_id).await
     }
 }
 
@@ -54,15 +55,17 @@ impl RequestExecutor for AssumeRoleRequest {
 pub async fn assume_role(
     tx: &mut PgTransaction<'_>,
     request: &AssumeRoleRequest,
+    request_id: RequestId,
 ) -> Result<AssumeRoleResponse, StsError> {
     let role_arn = IamResourceArn::from_str(&request.role_arn)
-        .map_err(|_| ValidationError::builder().message("Invalid role ARN").build())?;
+        .map_err(|_| ValidationError::builder().message("Invalid role ARN").request_id(request_id).build())?;
     if role_arn.resource_type() != ARN_RESOURCE_TYPE_ROLE {
-        return Err(ValidationError::builder().message("ARN must be for a role").build().into());
+        return Err(ValidationError::builder().message("ARN must be for a role").request_id(request_id).build().into());
     }
     let account_id = role_arn.account_id();
-    let account_id_numeric = u64::from_str(account_id)
-        .map_err(|_| ValidationError::builder().message("Invalid account ID in role ARN").build())?;
+    let account_id_numeric = u64::from_str(account_id).map_err(|_| {
+        ValidationError::builder().message("Invalid account ID in role ARN").request_id(request_id).build()
+    })?;
     let access_key_id = IamId::new(IamResourceType::TemporaryAccessKey, account_id_numeric);
     let secret_key = KSecretKey::new();
 
@@ -78,11 +81,14 @@ pub async fn assume_role(
             continue;
         };
 
-        let get_policy_response = match get_policy(tx, policy_arn).await {
+        let get_policy_response = match get_policy(tx, policy_arn, request_id).await {
             Ok(response) => response,
             Err(IamError::NoSuchEntityException(e)) => {
                 return Err(StsError::ValidationError(Box::new(
-                    ValidationError::builder().message(format!("Policy {} does not exist: {}", policy_arn, e)).build(),
+                    ValidationError::builder()
+                        .message(format!("Policy {} does not exist: {}", policy_arn, e))
+                        .request_id(request_id)
+                        .build(),
                 )));
             }
             Err(e) => return Err(e.into()),
@@ -90,6 +96,7 @@ pub async fn assume_role(
         let Some(policy) = get_policy_response.policy else {
             return Err(ValidationError::builder()
                 .message(format!("Policy {} does not exist", policy_arn))
+                .request_id(request_id)
                 .build()
                 .into());
         };
@@ -98,6 +105,7 @@ pub async fn assume_role(
         let Some(policy_id) = policy_id else {
             return Err(ValidationError::builder()
                 .message(format!("Policy {} does not have an ID", policy_arn))
+                .request_id(request_id)
                 .build()
                 .into());
         };
@@ -105,10 +113,11 @@ pub async fn assume_role(
     }
 
     validate_iam_resource_name(&request.role_session_name)
-        .map_err(|_| ValidationError::builder().message("Invalid role name").build())?;
+        .map_err(|_| ValidationError::builder().message("Invalid role name").request_id(request_id).build())?;
     if request.role_session_name.len() < 2 || request.role_session_name.len() > 64 {
         return Err(ValidationError::builder()
             .message("Role session name must be between 2 and 64 characters")
+            .request_id(request_id)
             .build()
             .into());
     }
@@ -118,7 +127,7 @@ pub async fn assume_role(
             .map_err(|e| {
                 // This should never happen.
                 log::error!("Internal error creating assumed role principal: {e}");
-                internal_failure()
+                internal_failure(request_id)
             })?;
 
     let mut tags = HashMap::with_capacity(request.tags.len());
@@ -126,17 +135,25 @@ pub async fn assume_role(
 
     for tag in &request.tags {
         let tag_key = AsciiString::<CaseInsensitive>::from_ascii(tag.key.as_bytes().into()).map_err(|_| {
-            ValidationError::builder().message(format!("Invalid tag key (non-ASCII): {}", tag.key)).build()
+            ValidationError::builder()
+                .message(format!("Invalid tag key (non-ASCII): {}", tag.key))
+                .request_id(request_id)
+                .build()
         })?;
-        validate_tag_key(tag_key.as_str())
-            .map_err(|_| ValidationError::builder().message(format!("Invalid tag key: {tag_key}")).build())?;
-        validate_tag_value(&tag.value).map_err(|_| {
-            ValidationError::builder().message(format!("Invalid tag value for key {tag_key}: {}", tag.value)).build()
+        validate_tag_key(tag_key.as_str(), request_id).map_err(|_| {
+            ValidationError::builder().message(format!("Invalid tag key: {tag_key}")).request_id(request_id).build()
+        })?;
+        validate_tag_value(&tag.value, request_id).map_err(|_| {
+            ValidationError::builder()
+                .message(format!("Invalid tag value for key {tag_key}: {}", tag.value))
+                .request_id(request_id)
+                .build()
         })?;
 
         if tags.insert(tag_key.clone(), tag.value.clone()).is_some() {
             return Err(ValidationError::builder()
                 .message(format!("Duplicate tag key (case-insensitive): {}", tag.key))
+                .request_id(request_id)
                 .build()
                 .into());
         }
@@ -144,10 +161,16 @@ pub async fn assume_role(
 
     for tag_key in &request.transitive_tag_keys {
         let tag_key = AsciiString::<CaseInsensitive>::from_ascii(tag_key.as_bytes().into()).map_err(|_| {
-            ValidationError::builder().message(format!("Invalid transitive tag key (non-ASCII): {tag_key}")).build()
+            ValidationError::builder()
+                .message(format!("Invalid transitive tag key (non-ASCII): {tag_key}"))
+                .request_id(request_id)
+                .build()
         })?;
-        validate_tag_key(tag_key.as_str()).map_err(|_| {
-            ValidationError::builder().message(format!("Invalid transitive tag key: {tag_key}")).build()
+        validate_tag_key(tag_key.as_str(), request_id).map_err(|_| {
+            ValidationError::builder()
+                .message(format!("Invalid transitive tag key: {tag_key}"))
+                .request_id(request_id)
+                .build()
         })?;
         transitive_tag_keys.insert(tag_key.clone());
     }
@@ -157,6 +180,7 @@ pub async fn assume_role(
     if session_duration < MIN_ROLE_SESSION_DURATION_SECS {
         return Err(ValidationError::builder()
             .message(format!("Session duration must be at least {} seconds", MIN_ROLE_SESSION_DURATION_SECS))
+            .request_id(request_id)
             .build()
             .into());
     }
@@ -164,6 +188,7 @@ pub async fn assume_role(
     if session_duration > MAX_ROLE_SESSION_DURATION_SECS {
         return Err(ValidationError::builder()
             .message(format!("Session duration must be at most {} seconds", MAX_ROLE_SESSION_DURATION_SECS))
+            .request_id(request_id)
             .build()
             .into());
     }
@@ -181,11 +206,12 @@ pub async fn assume_role(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch role {role_arn} from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?
     .ok_or_else(|| {
         AccessDeniedException::builder()
             .message(format!("User is not authorized to perform: sts:AssumeRole on resource: {}", role_arn))
+            .request_id(request_id)
             .build()
     })?;
     let role_id: String = row.get(0);
@@ -196,7 +222,10 @@ pub async fn assume_role(
     let inline_policy = match &request.policy {
         None => None,
         Some(policy) => Some(AspenPolicy::from_str(policy).map_err(|e| {
-            MalformedPolicyDocumentException::builder().message(format!("Invalid policy document: {e}")).build()
+            MalformedPolicyDocumentException::builder()
+                .message(format!("Invalid policy document: {e}"))
+                .request_id(request_id)
+                .build()
         })?),
     };
 
@@ -221,7 +250,7 @@ pub async fn assume_role(
     };
 
     // Get the latest encryption key to encrypt the session token.
-    let stek = get_current_session_token_encryption_key(tx, None).await?.session_token_encryption_key;
+    let stek = get_current_session_token_encryption_key(tx, None, request_id).await?.session_token_encryption_key;
     if stek.encryption_algorithm != SessionTokenEncryptionAlgorithm::Aes256Gcm {
         // This should never happen, as currently the only supported encryption algorithm is AES-256-GCM.
         log::error!(
@@ -229,7 +258,7 @@ pub async fn assume_role(
             stek.session_token_encryption_key_id,
             stek.encryption_algorithm,
         );
-        Err(internal_failure())?;
+        Err(internal_failure(request_id))?;
     }
 
     let raw_encryption_key = Zeroizing::new(URL_SAFE.decode(&stek.encryption_key).map_err(|e| {
@@ -237,7 +266,7 @@ pub async fn assume_role(
             "Failed to decode encryption key for session token encryption key {}: {e}",
             stek.session_token_encryption_key_id,
         );
-        internal_failure()
+        internal_failure(request_id)
     })?);
     let key_info = SessionTokenEncryptionKeyInfo {
         session_token_encryption_key_id: stek.session_token_encryption_key_id,
@@ -249,7 +278,7 @@ pub async fn assume_role(
         .and_then(|encrypted| encrypted.to_session_token())
         .map_err(|e| {
             log::error!("Failed to encrypt session token: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
 
     Ok(AssumeRoleResponse {

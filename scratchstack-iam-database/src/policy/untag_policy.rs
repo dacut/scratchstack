@@ -6,6 +6,7 @@ use {
         tag::validate_tag_key,
     },
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError, operation::UntagPolicyRequest, types::error::ValidationError,
     },
@@ -16,22 +17,31 @@ impl RequestExecutor for UntagPolicyRequest {
     type Response = ();
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        untag_policy(tx, &self.policy_arn, &self.tag_keys).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        untag_policy(tx, &self.policy_arn, &self.tag_keys, request_id).await
     }
 }
 
 /// Remove tags from a managed policy by ARN.
-pub async fn untag_policy(tx: &mut PgTransaction<'_>, policy_arn: &str, tag_keys: &[String]) -> Result<(), IamError> {
+pub async fn untag_policy(
+    tx: &mut PgTransaction<'_>,
+    policy_arn: &str,
+    tag_keys: &[String],
+    request_id: RequestId,
+) -> Result<(), IamError> {
     if tag_keys.is_empty() {
-        return Err(ValidationError::builder().message("At least one tag key must be provided.").build().into());
+        return Err(ValidationError::builder()
+            .message("At least one tag key must be provided.")
+            .request_id(request_id)
+            .build()
+            .into());
     }
     for key in tag_keys {
-        validate_tag_key(key)?;
+        validate_tag_key(key, request_id)?;
     }
 
-    let parts = parse_policy_arn(policy_arn)?;
-    let managed_policy_id = lookup_managed_policy_id(tx, &parts).await?;
+    let parts = parse_policy_arn(policy_arn, request_id)?;
+    let managed_policy_id = lookup_managed_policy_id(tx, &parts, request_id).await?;
 
     for key in tag_keys {
         if let Err(e) = query(indoc! {"
@@ -44,7 +54,7 @@ pub async fn untag_policy(tx: &mut PgTransaction<'_>, policy_arn: &str, tag_keys
         .await
         {
             log::error!("Failed to delete managed policy tag: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     }
 

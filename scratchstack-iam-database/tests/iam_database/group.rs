@@ -1,6 +1,7 @@
 //! Group test suite, including group membership tests.
 use {
     pretty_assertions::assert_eq,
+    scratchstack_core::RequestId,
     scratchstack_iam_database::RequestExecutor,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -21,7 +22,7 @@ pub async fn test_create_group_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create group");
     tx.commit().await.expect("Failed to commit transaction");
@@ -41,7 +42,7 @@ pub async fn test_create_group_with_path(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create group with path");
     tx.commit().await.expect("Failed to commit transaction");
@@ -63,7 +64,7 @@ pub async fn test_create_group_duplicate_name(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a duplicate group name must fail");
@@ -77,7 +78,7 @@ pub async fn test_create_group_nonexistent_account(pool: &sqlx::PgPool) {
         .account_id("999999999999")
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a group in a nonexistent account must fail");
@@ -93,7 +94,7 @@ pub async fn test_create_group_max_length_name(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create group with 128-character name");
     tx.commit().await.expect("Failed to commit transaction");
@@ -109,7 +110,7 @@ pub async fn test_create_group_max_length_name(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get group with 128-character name");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -125,7 +126,7 @@ pub async fn test_get_group_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get group");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -144,7 +145,7 @@ pub async fn test_get_group_with_path(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get group");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -166,7 +167,7 @@ pub async fn test_get_group_nonexistent(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Getting a nonexistent group must fail");
@@ -179,7 +180,7 @@ pub async fn test_list_groups(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListGroupsInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list groups");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -199,7 +200,7 @@ pub async fn test_list_groups_with_path_prefix(pool: &sqlx::PgPool) {
         .path_prefix("/engineering/")
         .build()
         .expect("Failed to build ListGroupsInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list groups with path prefix");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -217,7 +218,7 @@ pub async fn test_update_group_rename(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to rename group");
     tx.commit().await.expect("Failed to commit transaction");
@@ -229,7 +230,7 @@ pub async fn test_update_group_rename(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get renamed group");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -246,7 +247,7 @@ pub async fn test_update_group_change_path(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to update group path");
     tx.commit().await.expect("Failed to commit transaction");
@@ -258,7 +259,7 @@ pub async fn test_update_group_change_path(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get group after path change");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -275,7 +276,7 @@ pub async fn test_update_group_nonexistent(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build UpdateGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Updating a nonexistent group must fail");
@@ -290,7 +291,7 @@ pub async fn test_delete_group_max_length_name(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete group with 128-character name");
     tx.commit().await.expect("Failed to commit transaction");
@@ -304,7 +305,7 @@ pub async fn test_delete_group(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete group");
     tx.commit().await.expect("Failed to commit transaction");
@@ -316,7 +317,7 @@ pub async fn test_delete_group(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build GetGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Getting a deleted group must fail");
@@ -330,7 +331,7 @@ pub async fn test_delete_group_nonexistent(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Deleting a nonexistent group must fail");
@@ -347,7 +348,7 @@ pub async fn test_add_user_to_group(pool: &sqlx::PgPool) {
         .user_name("alice")
         .build()
         .expect("Failed to build AddUserToGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to add user to group");
     tx.commit().await.expect("Failed to commit transaction");
@@ -362,7 +363,7 @@ pub async fn test_add_user_to_group_idempotent(pool: &sqlx::PgPool) {
         .user_name("alice")
         .build()
         .expect("Failed to build AddUserToGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Adding user to group again should succeed (idempotent)");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -377,7 +378,7 @@ pub async fn test_add_user_to_group_nonexistent_group(pool: &sqlx::PgPool) {
         .user_name("alice")
         .build()
         .expect("Failed to build AddUserToGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Adding user to nonexistent group must fail");
@@ -392,7 +393,7 @@ pub async fn test_add_user_to_group_nonexistent_user(pool: &sqlx::PgPool) {
         .user_name("nonexistent")
         .build()
         .expect("Failed to build AddUserToGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Adding nonexistent user to group must fail");
@@ -406,7 +407,7 @@ pub async fn test_list_groups_for_user(pool: &sqlx::PgPool) {
         .user_name("alice")
         .build()
         .expect("Failed to build ListGroupsForUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list groups for user");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -423,7 +424,7 @@ pub async fn test_list_groups_for_user_nonexistent_user(pool: &sqlx::PgPool) {
         .user_name("nonexistent")
         .build()
         .expect("Failed to build ListGroupsForUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Listing groups for nonexistent user must fail");
@@ -438,7 +439,7 @@ pub async fn test_remove_user_from_group(pool: &sqlx::PgPool) {
         .user_name("alice")
         .build()
         .expect("Failed to build RemoveUserFromGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to remove user from group");
     tx.commit().await.expect("Failed to commit transaction");
@@ -450,7 +451,7 @@ pub async fn test_remove_user_from_group(pool: &sqlx::PgPool) {
         .user_name("alice")
         .build()
         .expect("Failed to build ListGroupsForUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list groups for user after removal");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -467,7 +468,7 @@ pub async fn test_remove_user_from_group_not_member(pool: &sqlx::PgPool) {
         .user_name("alice")
         .build()
         .expect("Failed to build RemoveUserFromGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Removing user who is not a group member must fail");
@@ -482,7 +483,7 @@ pub async fn test_remove_user_from_group_nonexistent_group(pool: &sqlx::PgPool) 
         .user_name("alice")
         .build()
         .expect("Failed to build RemoveUserFromGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Removing user from nonexistent group must fail");
@@ -513,7 +514,7 @@ pub async fn test_put_group_policy_simple(pool: &sqlx::PgPool) {
         .policy_document(INLINE_GROUP_POLICY_S3.to_string())
         .build()
         .expect("Failed to build PutGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to put inline policy on Administrators");
     tx.commit().await.expect("Failed to commit transaction");
@@ -542,7 +543,7 @@ pub async fn test_put_group_policy_replaces(pool: &sqlx::PgPool) {
         .policy_document(INLINE_GROUP_POLICY_EC2.to_string())
         .build()
         .expect("Failed to build PutGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to replace inline policy on Administrators");
     tx.commit().await.expect("Failed to commit transaction");
@@ -582,7 +583,7 @@ pub async fn test_put_group_policy_invalid_principal_accepted(pool: &sqlx::PgPoo
         .policy_document(INLINE_GROUP_POLICY_UNKNOWN_PRINCIPAL.to_string())
         .build()
         .expect("Failed to build PutGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Policies referring to non-existent principals must still be accepted");
     tx.commit().await.expect("Failed to commit transaction");
@@ -598,7 +599,7 @@ pub async fn test_put_group_policy_invalid_document(pool: &sqlx::PgPool) {
         .policy_document("{ not valid aspen json }")
         .build()
         .expect("Failed to build PutGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("PutGroupPolicy with malformed JSON must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -618,7 +619,7 @@ pub async fn test_put_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
         .policy_document(INLINE_GROUP_POLICY_S3.to_string())
         .build()
         .expect("Failed to build PutGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("PutGroupPolicy on a nonexistent group must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -646,7 +647,7 @@ pub async fn test_get_group_policy_simple(pool: &sqlx::PgPool) {
         .policy_name("InlineRead")
         .build()
         .expect("Failed to build GetGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get inline policy on Administrators");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -666,7 +667,7 @@ pub async fn test_get_group_policy_case_insensitive_lookup(pool: &sqlx::PgPool) 
         .policy_name("inlineread")
         .build()
         .expect("Failed to build GetGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get inline policy via case-insensitive lookup");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -683,7 +684,7 @@ pub async fn test_get_group_policy_nonexistent_policy(pool: &sqlx::PgPool) {
         .policy_name("NotAttached")
         .build()
         .expect("Failed to build GetGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("GetGroupPolicy with no matching policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -699,7 +700,7 @@ pub async fn test_get_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
         .policy_name("AnyName")
         .build()
         .expect("Failed to build GetGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("GetGroupPolicy on a nonexistent group must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -726,7 +727,7 @@ pub async fn test_list_group_policies_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListGroupPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list inline policies on Administrators");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -744,7 +745,7 @@ pub async fn test_list_group_policies_empty(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create ListPoliciesEmptyGroup");
     let resp = ListGroupPoliciesInternalRequest::builder()
@@ -752,7 +753,7 @@ pub async fn test_list_group_policies_empty(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListGroupPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list inline policies on empty group");
     assert!(resp.policy_names.is_empty(), "Expected no inline policies, got: {:?}", resp.policy_names);
@@ -763,7 +764,7 @@ pub async fn test_list_group_policies_empty(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete ListPoliciesEmptyGroup");
     tx.commit().await.expect("Failed to commit transaction");
@@ -778,7 +779,7 @@ pub async fn test_list_group_policies_pagination(pool: &sqlx::PgPool) {
         .max_items(1)
         .build()
         .expect("Failed to build ListGroupPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list inline policies on Administrators (page 1)");
     assert_eq!(page1.policy_names, vec!["InlineRead".to_string()]);
@@ -792,7 +793,7 @@ pub async fn test_list_group_policies_pagination(pool: &sqlx::PgPool) {
         .marker(marker)
         .build()
         .expect("Failed to build ListGroupPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list inline policies on Administrators (page 2)");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -810,7 +811,7 @@ pub async fn test_list_group_policies_nonexistent_group(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build ListGroupPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("ListGroupPolicies on a nonexistent group must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -834,7 +835,7 @@ pub async fn test_delete_group_policy_simple(pool: &sqlx::PgPool) {
         .policy_name("InlineWithMissingPrincipal")
         .build()
         .expect("Failed to build DeleteGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete inline policy on Administrators");
     tx.commit().await.expect("Failed to commit transaction");
@@ -874,7 +875,7 @@ pub async fn test_delete_group_policy_nonexistent_policy(pool: &sqlx::PgPool) {
         .policy_name("NotAttached")
         .build()
         .expect("Failed to build DeleteGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("DeleteGroupPolicy with no matching policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -890,7 +891,7 @@ pub async fn test_delete_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
         .policy_name("AnyName")
         .build()
         .expect("Failed to build DeleteGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("DeleteGroupPolicy on a nonexistent group must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -916,7 +917,7 @@ pub async fn test_delete_group_attached_policy_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create DeleteMeAttachedGroup");
     let group_id: String =
@@ -941,7 +942,7 @@ pub async fn test_delete_group_attached_policy_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting a group with an attached managed policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -959,7 +960,7 @@ pub async fn test_delete_group_attached_policy_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete DeleteMeAttachedGroup after detaching policy");
     tx.commit().await.expect("Failed to commit transaction");
@@ -973,7 +974,7 @@ pub async fn test_delete_group_inline_policy_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create DeleteMeInlineGroup");
     let group_id: String =
@@ -1001,7 +1002,7 @@ pub async fn test_delete_group_inline_policy_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting a group with an inline policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -1019,7 +1020,7 @@ pub async fn test_delete_group_inline_policy_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build DeleteGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete DeleteMeInlineGroup after removing inline policy");
     tx.commit().await.expect("Failed to commit transaction");

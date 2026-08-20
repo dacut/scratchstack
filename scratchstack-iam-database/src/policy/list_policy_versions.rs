@@ -6,6 +6,7 @@ use {
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListPolicyVersionsRequest, ListPolicyVersionsResponse},
@@ -19,8 +20,8 @@ impl RequestExecutor for ListPolicyVersionsRequest {
     type Response = ListPolicyVersionsResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        list_policy_versions(tx, &self.policy_arn, self.marker.as_deref(), self.max_items).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        list_policy_versions(tx, &self.policy_arn, self.marker.as_deref(), self.max_items, request_id).await
     }
 }
 
@@ -30,6 +31,7 @@ pub async fn list_policy_versions(
     policy_arn: &str,
     marker: Option<&str>,
     max_items: Option<i32>,
+    request_id: RequestId,
 ) -> Result<ListPolicyVersionsResponse, IamError> {
     /// The marker innards for a ListPolicyVersions operation.
     #[derive(Deserialize, Serialize)]
@@ -52,15 +54,15 @@ pub async fn list_policy_versions(
         created_at: DateTime<Utc>,
     }
 
-    let parts = parse_policy_arn(policy_arn)?;
+    let parts = parse_policy_arn(policy_arn, request_id)?;
     let policy_account_id = match parts.account_id() {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    let max_items = constrain_max_items(max_items)?;
-    let partition = get_current_partition_or_fail(tx).await?;
+    let max_items = constrain_max_items(max_items, request_id)?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
 
-    let paginator = make_iam_paginator(&partition, OP_LIST_POLICY_VERSIONS)?;
+    let paginator = make_iam_paginator(&partition, OP_LIST_POLICY_VERSIONS, request_id)?;
 
     // Look up the policy to get managed_policy_id and default_version.
     let policy_row: PolicyRow = query_as(indoc! {"
@@ -75,9 +77,14 @@ pub async fn list_policy_versions(
     .await
     .map_err(|e| {
         log::error!("Failed to query managed policy from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?
-    .ok_or_else(|| NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())?;
+    .ok_or_else(|| {
+        NoSuchEntityException::builder()
+            .message(format!("Policy {policy_arn} was not found."))
+            .request_id(request_id)
+            .build()
+    })?;
 
     let mut sql = QueryBuilder::new(
         r#"
@@ -91,7 +98,7 @@ pub async fn list_policy_versions(
     if let Some(marker) = marker {
         let info: ListPolicyVersionsMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListPolicyVersions: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
         sql.push(" AND managed_policy_version <= ");
         sql.push_bind(info.next_version);
@@ -102,7 +109,7 @@ pub async fn list_policy_versions(
 
     let rows = sql.build_query_as::<ListPolicyVersionsRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch managed policy versions from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let mut versions: Vec<PolicyVersion> = Vec::with_capacity(rows.len().min(max_items));
@@ -118,7 +125,7 @@ pub async fn list_policy_versions(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListPolicyVersions: {e}");
-                        internal_failure()
+                        internal_failure(request_id)
                     })?,
             );
             break;
@@ -132,7 +139,7 @@ pub async fn list_policy_versions(
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct PolicyVersion object: {e}");
-                    internal_failure()
+                    internal_failure(request_id)
                 })?,
         );
     }

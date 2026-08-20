@@ -4,6 +4,7 @@ use {
     indoc::indoc,
     scratchstack_arn::IamResourceArn,
     scratchstack_aspen::Policy as AspenPolicy,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{CreatePolicyVersionRequest, CreatePolicyVersionResponse},
@@ -20,8 +21,8 @@ impl RequestExecutor for CreatePolicyVersionRequest {
     type Response = CreatePolicyVersionResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        create_policy_version(tx, &self.policy_arn, &self.policy_document, self.set_as_default).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        create_policy_version(tx, &self.policy_arn, &self.policy_document, self.set_as_default, request_id).await
     }
 }
 
@@ -31,6 +32,7 @@ pub async fn create_policy_version(
     policy_arn: &str,
     policy_document: &str,
     set_as_default: Option<bool>,
+    request_id: RequestId,
 ) -> Result<CreatePolicyVersionResponse, IamError> {
     /// The row returned by the initial query to the iam.policies table to get the managed_policy_id
     /// and latest_version for the requested policy ARN.
@@ -45,13 +47,14 @@ pub async fn create_policy_version(
         Ok(arn) => arn,
         Err(e) => {
             log::info!("Failed to parse policy ARN: {e}");
-            return Err(ValidationError::builder().message("Invalid policy ARN").build().into());
+            return Err(ValidationError::builder().message("Invalid policy ARN").request_id(request_id).build().into());
         }
     };
 
     if arn.resource_type() != ARN_RESOURCE_TYPE_POLICY {
         return Err(ValidationError::builder()
             .message("Policy ARN must have a resource that starts with \"policy/\"")
+            .request_id(request_id)
             .build()
             .into());
     }
@@ -65,7 +68,7 @@ pub async fn create_policy_version(
     // Validate the policy document is valid Aspen JSON.
     if let Err(e) = AspenPolicy::from_str(policy_document) {
         let message = format!("Invalid policy document: {e}");
-        return Err(MalformedPolicyDocumentException::builder().message(message).build().into());
+        return Err(MalformedPolicyDocumentException::builder().message(message).request_id(request_id).build().into());
     }
 
     // Look up the policy and get its current latest_version.
@@ -83,11 +86,11 @@ pub async fn create_policy_version(
         Ok(Some(row)) => row,
         Ok(None) => {
             let message = format!("Policy {policy_arn} does not exist or is not attachable.");
-            return Err(NoSuchEntityException::builder().message(message).build().into());
+            return Err(NoSuchEntityException::builder().message(message).request_id(request_id).build().into());
         }
         Err(e) => {
             log::error!("Failed to query managed policy from database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
@@ -97,7 +100,7 @@ pub async fn create_policy_version(
         let message = format!(
             "A managed policy can have up to {MAX_POLICY_VERSIONS} versions. Before you create a new version, you must delete an existing version."
         );
-        return Err(LimitExceededException::builder().message(message).build().into());
+        return Err(LimitExceededException::builder().message(message).request_id(request_id).build().into());
     }
 
     let set_as_default = set_as_default.unwrap_or(false);
@@ -117,13 +120,13 @@ pub async fn create_policy_version(
         Ok(row) => row,
         Err(e) => {
             log::error!("Failed to insert managed policy version into database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
     let created_at: chrono::DateTime<chrono::Utc> = version_row.try_get(0).map_err(|e| {
         log::error!("Failed to get created_at from database row: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     // Update latest_version and update_date (and default_version if set_as_default).
@@ -149,7 +152,7 @@ pub async fn create_policy_version(
 
     if let Err(e) = update_query.execute(tx.as_mut()).await {
         log::error!("Failed to update managed policy latest_version: {e}");
-        return Err(internal_failure().into());
+        return Err(internal_failure(request_id).into());
     }
 
     let version_id = format!("v{new_version}");
@@ -161,7 +164,7 @@ pub async fn create_policy_version(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct PolicyVersion object: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
 
     Ok(CreatePolicyVersionResponse {

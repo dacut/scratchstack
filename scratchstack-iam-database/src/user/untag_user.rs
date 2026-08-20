@@ -5,6 +5,7 @@ use {
         user::validate_user_name,
     },
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::UntagUserInternalRequest,
@@ -17,8 +18,8 @@ impl RequestExecutor for UntagUserInternalRequest {
     type Response = ();
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        untag_user(tx, &self.account_id, &self.user_name, &self.tag_keys).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        untag_user(tx, &self.account_id, &self.user_name, &self.tag_keys, request_id).await
     }
 }
 
@@ -28,20 +29,25 @@ pub async fn untag_user(
     account_id: &str,
     user_name: &str,
     tag_keys: &[String],
+    request_id: RequestId,
 ) -> Result<(), IamError> {
     if tag_keys.is_empty() {
-        return Err(ValidationError::builder().message("At least one tag key must be provided.").build().into());
+        return Err(ValidationError::builder()
+            .message("At least one tag key must be provided.")
+            .request_id(request_id)
+            .build()
+            .into());
     }
 
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    validate_user_name(user_name)?;
+    validate_user_name(user_name, request_id)?;
 
     for key in tag_keys {
-        validate_tag_key(key)?;
+        validate_tag_key(key, request_id)?;
     }
 
     // Verify the user exists and get the user_id.
@@ -59,12 +65,13 @@ pub async fn untag_user(
         Ok(None) => {
             return Err(NoSuchEntityException::builder()
                 .message(format!("The user with name {user_name} cannot be found."))
+                .request_id(request_id)
                 .build()
                 .into());
         }
         Err(e) => {
             log::error!("Failed to look up user in database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
@@ -81,7 +88,7 @@ pub async fn untag_user(
         .await
         {
             log::error!("Failed to delete user tag from database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     }
 

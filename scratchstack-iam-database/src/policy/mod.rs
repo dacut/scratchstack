@@ -22,6 +22,7 @@ use {
     crate::{constants::*, internal_failure},
     indoc::indoc,
     scratchstack_arn::{Arn, IamResourceArn, validate_iam_resource_name},
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         types::{
@@ -39,6 +40,7 @@ pub(crate) fn build_policy_arn(
     account_id: &str,
     path: &str,
     policy_name: &str,
+    request_id: RequestId,
 ) -> Result<Arn, IamError> {
     Arn::builder()
         .partition(partition)
@@ -48,7 +50,7 @@ pub(crate) fn build_policy_arn(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct ARN for managed policy: {e}");
-            internal_failure().into()
+            internal_failure(request_id).into()
         })
 }
 
@@ -56,6 +58,7 @@ pub(crate) fn build_policy_arn(
 pub(crate) async fn fetch_policy_tags(
     tx: &mut PgTransaction<'_>,
     managed_policy_id: &str,
+    request_id: RequestId,
 ) -> Result<Vec<Tag>, IamError> {
     /// The rows returned by the query to fetch managed policy tags.
     #[derive(FromRow)]
@@ -75,7 +78,7 @@ pub(crate) async fn fetch_policy_tags(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch managed policy tags: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let mut tags = Vec::with_capacity(rows.len());
@@ -93,6 +96,7 @@ pub(crate) async fn fetch_policy_tags(
 pub(crate) async fn get_policy_attachment_count(
     tx: &mut PgTransaction<'_>,
     managed_policy_id: &str,
+    request_id: RequestId,
 ) -> Result<i32, IamError> {
     let row = query(indoc! {"
             SELECT
@@ -106,7 +110,7 @@ pub(crate) async fn get_policy_attachment_count(
     .await
     .map_err(|e| {
         log::error!("Failed to query attachment count for managed policy: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     row.try_get::<i64, _>(0)
@@ -119,7 +123,7 @@ pub(crate) async fn get_policy_attachment_count(
         })
         .map_err(|e| {
             log::error!("Failed to get attachment_count from database row: {e}");
-            internal_failure().into()
+            internal_failure(request_id).into()
         })
 }
 
@@ -128,6 +132,7 @@ pub(crate) async fn get_policy_attachment_count(
 async fn get_policy_permissions_boundary_usage_count(
     tx: &mut PgTransaction<'_>,
     managed_policy_id: &str,
+    request_id: RequestId,
 ) -> Result<i32, IamError> {
     let row = query(indoc! {"
             SELECT
@@ -140,7 +145,7 @@ async fn get_policy_permissions_boundary_usage_count(
     .await
     .map_err(|e| {
         log::error!("Failed to query permissions boundary usage count for managed policy: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     row.try_get::<i64, _>("usage_count")
@@ -153,12 +158,16 @@ async fn get_policy_permissions_boundary_usage_count(
         })
         .map_err(|e| {
             log::error!("Failed to get usage_count from database row: {e}");
-            internal_failure().into()
+            internal_failure(request_id).into()
         })
 }
 
 /// Look up the `managed_policy_id` for a policy named by ARN; returns NoSuchEntity if not found.
-async fn lookup_managed_policy_id(tx: &mut PgTransaction<'_>, policy_arn: &IamResourceArn) -> Result<String, IamError> {
+async fn lookup_managed_policy_id(
+    tx: &mut PgTransaction<'_>,
+    policy_arn: &IamResourceArn,
+    request_id: RequestId,
+) -> Result<String, IamError> {
     let policy_account_id = match policy_arn.account_id() {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
@@ -176,36 +185,46 @@ async fn lookup_managed_policy_id(tx: &mut PgTransaction<'_>, policy_arn: &IamRe
     .await
     .map_err(|e| {
         log::error!("Failed to query managed policy from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?
-    .ok_or_else(|| NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())?
+    .ok_or_else(|| {
+        NoSuchEntityException::builder()
+            .message(format!("Policy {policy_arn} was not found."))
+            .request_id(request_id)
+            .build()
+    })?
     .try_get(0)
     .map_err(|e| {
         log::error!("Failed to get managed_policy_id from database row: {e}");
-        internal_failure().into()
+        internal_failure(request_id).into()
     })
 }
 
 /// Parse a policy ARN and extract the account id, path, and lowercase policy name. Returns a
 /// `ValidationError` if the ARN is unparseable or does not point at a policy resource.
-pub(crate) fn parse_policy_arn(policy_arn: &str) -> Result<IamResourceArn, IamError> {
+pub(crate) fn parse_policy_arn(policy_arn: &str, request_id: RequestId) -> Result<IamResourceArn, IamError> {
     let arn = IamResourceArn::from_str(policy_arn).map_err(|e| {
         log::info!("Failed to parse policy ARN: {e}");
-        ValidationError::builder().message("Invalid policy ARN").build()
+        ValidationError::builder().message("Invalid policy ARN").request_id(request_id).build()
     })?;
 
     if !arn.region().is_empty() {
-        return Err(ValidationError::builder().message("Policy ARN must not have a region").build().into());
+        return Err(ValidationError::builder()
+            .message("Policy ARN must not have a region")
+            .request_id(request_id)
+            .build()
+            .into());
     }
 
     if arn.resource_type() != "policy" {
         return Err(ValidationError::builder()
             .message("Policy ARN must have a resource that starts with \"policy/\"")
+            .request_id(request_id)
             .build()
             .into());
     }
 
-    validate_policy_name(arn.resource_name())?;
+    validate_policy_name(arn.resource_name(), request_id)?;
 
     Ok(arn)
 }
@@ -237,6 +256,7 @@ pub(crate) async fn get_permissions_boundary_id(
     tx: &mut PgTransaction<'_>,
     account_id: &str,
     permissions_boundary: &str,
+    request_id: RequestId,
 ) -> Result<String, IamError> {
     let permissions_boundary = match IamResourceArn::from_str(permissions_boundary) {
         Ok(arn) => arn,
@@ -244,13 +264,13 @@ pub(crate) async fn get_permissions_boundary_id(
             log::info!("Failed to parse permissions boundary ARN: {e}");
             let message = "Invalid permissions boundary ARN".to_string();
 
-            return Err(ValidationError::builder().message(message).build().into());
+            return Err(ValidationError::builder().message(message).request_id(request_id).build().into());
         }
     };
 
     if permissions_boundary.resource_type() != ARN_RESOURCE_TYPE_POLICY {
         let message = "Permissions boundary ARN must have a resource that starts with \"policy/\"".to_string();
-        return Err(ValidationError::builder().message(message).build().into());
+        return Err(ValidationError::builder().message(message).request_id(request_id).build().into());
     }
 
     let pb_account_id = permissions_boundary.account_id();
@@ -261,7 +281,7 @@ pub(crate) async fn get_permissions_boundary_id(
     } else {
         let message = "Permissions boundary ARN must have an account ID that matches the request's account ID or 'aws'"
             .to_string();
-        return Err(ValidationError::builder().message(message).build().into());
+        return Err(ValidationError::builder().message(message).request_id(request_id).build().into());
     };
 
     let results = match query(indoc! {"
@@ -279,20 +299,20 @@ pub(crate) async fn get_permissions_boundary_id(
         Err(e) => {
             log::error!("Failed to query permissions boundary from database: {e}");
             let message = "Internal failure".to_string();
-            return Err(ValidationError::builder().message(message).build().into());
+            return Err(ValidationError::builder().message(message).request_id(request_id).build().into());
         }
     };
 
     if results.is_empty() {
         let message = format!("Scope ARN: {permissions_boundary} does not exist or is not attachable");
-        let err = NoSuchEntityException::builder().message(message).build();
+        let err = NoSuchEntityException::builder().message(message).request_id(request_id).build();
         return Err(err.into());
     }
 
     if results.len() > 1 {
         let message = "Multiple permissions boundary policies found with the same name and path; this is a database integrity error".to_string(
         );
-        return Err(InternalFailure::builder().message(message).build().into());
+        return Err(InternalFailure::builder().message(message).request_id(request_id).build().into());
     }
 
     let mp_id: &str = match results[0].try_get(0) {
@@ -300,19 +320,19 @@ pub(crate) async fn get_permissions_boundary_id(
         Err(e) => {
             log::error!("Failed to get permissions boundary ID from database row: {e}");
             let message = "Internal failure".to_string();
-            return Err(InternalFailure::builder().message(message).build().into());
+            return Err(InternalFailure::builder().message(message).request_id(request_id).build().into());
         }
     };
     Ok(mp_id.to_string())
 }
 
 /// Validate that the policy name is valid according to AWS IAM rules.
-pub fn validate_policy_name(policy_name: impl AsRef<str>) -> Result<(), ValidationError> {
+pub fn validate_policy_name(policy_name: impl AsRef<str>, request_id: RequestId) -> Result<(), ValidationError> {
     const MESSAGE: &str = "Policy name must contain only alphanumeric characters or the following symbols: =,.@- and must be between 1 and 128 characters long.";
 
     let policy_name = policy_name.as_ref();
     if policy_name.len() > 128 || validate_iam_resource_name(policy_name).is_err() {
-        Err(ValidationError::builder().message(MESSAGE).build())
+        Err(ValidationError::builder().message(MESSAGE).request_id(request_id).build())
     } else {
         Ok(())
     }

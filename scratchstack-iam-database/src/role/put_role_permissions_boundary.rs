@@ -5,6 +5,7 @@ use {
         policy::get_permissions_boundary_id, role::validate_role_name,
     },
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError, operation::PutRolePermissionsBoundaryInternalRequest,
         types::error::NoSuchEntityException,
@@ -16,8 +17,9 @@ impl RequestExecutor for PutRolePermissionsBoundaryInternalRequest {
     type Response = ();
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        put_role_permissions_boundary(tx, &self.account_id, &self.role_name, &self.permissions_boundary).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        put_role_permissions_boundary(tx, &self.account_id, &self.role_name, &self.permissions_boundary, request_id)
+            .await
     }
 }
 
@@ -29,15 +31,16 @@ pub async fn put_role_permissions_boundary(
     account_id: &str,
     role_name: &str,
     permissions_boundary: &str,
+    request_id: RequestId,
 ) -> Result<(), IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    validate_role_name(role_name)?;
+    validate_role_name(role_name, request_id)?;
 
-    let managed_policy_id = get_permissions_boundary_id(tx, account_id, permissions_boundary).await?;
+    let managed_policy_id = get_permissions_boundary_id(tx, account_id, permissions_boundary, request_id).await?;
 
     let result = match query(indoc! {"
             UPDATE iam.roles
@@ -53,13 +56,14 @@ pub async fn put_role_permissions_boundary(
         Ok(result) => result,
         Err(e) => {
             log::error!("Failed to set role permissions boundary in database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
     if result.rows_affected() == 0 {
         return Err(NoSuchEntityException::builder()
             .message(format!("The role with name {role_name} cannot be found."))
+            .request_id(request_id)
             .build()
             .into());
     }

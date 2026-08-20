@@ -6,6 +6,7 @@ use {
         policy::build_policy_arn,
     },
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListAttachedGroupPoliciesInternalRequest, ListAttachedGroupPoliciesResponse},
@@ -19,7 +20,7 @@ impl RequestExecutor for ListAttachedGroupPoliciesInternalRequest {
     type Response = ListAttachedGroupPoliciesResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
         list_attached_group_policies(
             tx,
             &self.account_id,
@@ -27,6 +28,7 @@ impl RequestExecutor for ListAttachedGroupPoliciesInternalRequest {
             self.marker.as_deref(),
             self.max_items,
             self.path_prefix.as_deref(),
+            request_id,
         )
         .await
     }
@@ -57,18 +59,19 @@ pub async fn list_attached_group_policies(
     marker: Option<&str>,
     max_items: Option<i32>,
     path_prefix: Option<&str>,
+    request_id: RequestId,
 ) -> Result<ListAttachedGroupPoliciesResponse, IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    validate_group_name(group_name)?;
+    validate_group_name(group_name, request_id)?;
     if let Some(path_prefix) = path_prefix {
-        validate_path_prefix(path_prefix)?;
+        validate_path_prefix(path_prefix, request_id)?;
     }
-    let max_items = constrain_max_items(max_items)?;
-    let partition = get_current_partition_or_fail(tx).await?;
+    let max_items = constrain_max_items(max_items, request_id)?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
 
     // Look up the group_id, returning NoSuchEntity if the group doesn't exist.
     let group_id: String = match query(indoc! {"
@@ -85,16 +88,17 @@ pub async fn list_attached_group_policies(
         Ok(None) => {
             return Err(NoSuchEntityException::builder()
                 .message(format!("The group with name {group_name} cannot be found."))
+                .request_id(request_id)
                 .build()
                 .into());
         }
         Err(e) => {
             log::error!("Failed to look up group in database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
-    let paginator = make_iam_paginator(&partition, OP_LIST_ATTACHED_GROUP_POLICIES)?;
+    let paginator = make_iam_paginator(&partition, OP_LIST_ATTACHED_GROUP_POLICIES, request_id)?;
 
     let mut sql = QueryBuilder::new(
         r#"
@@ -115,7 +119,7 @@ pub async fn list_attached_group_policies(
     if let Some(marker) = marker {
         let info: ListAttachedGroupPoliciesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListAttachedGroupPolicies: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
         sql.push(" AND (mp.managed_policy_name_lower, mp.managed_policy_id) >= (");
         sql.push_bind(info.next_policy_name_lower);
@@ -129,7 +133,7 @@ pub async fn list_attached_group_policies(
 
     let rows = sql.build_query_as::<ListAttachedGroupPolicyRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch attached group policies from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let mut results: Vec<AttachedPolicy> = Vec::with_capacity(rows.len().min(max_items));
@@ -146,13 +150,13 @@ pub async fn list_attached_group_policies(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListAttachedGroupPolicies: {e}");
-                        internal_failure()
+                        internal_failure(request_id)
                     })?,
             );
             break;
         }
 
-        let arn = build_policy_arn(&partition, &row.account_id, &row.path, &row.managed_policy_name_cased)?;
+        let arn = build_policy_arn(&partition, &row.account_id, &row.path, &row.managed_policy_name_cased, request_id)?;
         results.push(
             AttachedPolicy::builder()
                 .policy_arn(arn.to_string())
@@ -160,7 +164,7 @@ pub async fn list_attached_group_policies(
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct AttachedPolicy: {e}");
-                    internal_failure()
+                    internal_failure(request_id)
                 })?,
         );
     }
@@ -173,6 +177,6 @@ pub async fn list_attached_group_policies(
 
     builder.build().map_err(|e| {
         log::error!("Failed to build ListAttachedGroupPoliciesResponse: {e}");
-        internal_failure().into()
+        internal_failure(request_id).into()
     })
 }

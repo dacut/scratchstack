@@ -1,6 +1,7 @@
 //! ListAccountAliases database level operations.
 use {
     crate::{RequestExecutor, account::validate_account_id, internal_failure},
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListAccountAliasesInternalRequest, ListAccountAliasesResponse},
@@ -13,8 +14,8 @@ impl RequestExecutor for ListAccountAliasesInternalRequest {
     type Response = ListAccountAliasesResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        list_account_aliases(tx, self.account_id.clone()).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        list_account_aliases(tx, self.account_id.clone(), request_id).await
     }
 }
 
@@ -25,8 +26,9 @@ impl RequestExecutor for ListAccountAliasesInternalRequest {
 pub async fn list_account_aliases(
     tx: &mut PgTransaction<'_>,
     account_id: String,
+    request_id: RequestId,
 ) -> Result<ListAccountAliasesResponse, IamError> {
-    validate_account_id(&account_id)?;
+    validate_account_id(&account_id, request_id)?;
 
     let result = query("SELECT alias FROM iam.accounts WHERE account_id = $1")
         .bind(&account_id)
@@ -36,14 +38,14 @@ pub async fn list_account_aliases(
             log::error!(
                 "ListAccountAliases query failed for account {account_id} (query: SELECT alias FROM iam.accounts WHERE account_id = $1): {e}"
             );
-            internal_failure()
+            internal_failure(request_id)
         })?;
 
     match result {
         Some(row) => {
             let alias: Option<String> = row.try_get(0).map_err(|e| {
                 log::error!("Failed to get account alias for account {account_id}: {e}");
-                internal_failure()
+                internal_failure(request_id)
             })?;
             Ok(ListAccountAliasesResponse {
                 account_aliases: alias.into_iter().collect(),
@@ -53,7 +55,7 @@ pub async fn list_account_aliases(
         }
         None => {
             let message = format!("Account with ID {account_id} does not exist.");
-            Err(NoSuchEntityException::builder().message(message).build().into())
+            Err(NoSuchEntityException::builder().message(message).request_id(request_id).build().into())
         }
     }
 }

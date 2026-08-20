@@ -3,6 +3,7 @@
 use {
     super::common::VALID_POLICY_DOCUMENT,
     pretty_assertions::assert_eq,
+    scratchstack_core::RequestId,
     scratchstack_iam_database::RequestExecutor,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -25,7 +26,7 @@ pub async fn test_create_policy_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create policy");
     tx.commit().await.expect("Failed to commit transaction");
@@ -61,7 +62,7 @@ pub async fn test_create_policy_with_path(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create policy with path");
     tx.commit().await.expect("Failed to commit transaction");
@@ -85,7 +86,7 @@ pub async fn test_create_policy_with_description(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create policy with description");
     tx.commit().await.expect("Failed to commit transaction");
@@ -107,7 +108,7 @@ pub async fn test_create_policy_with_tags(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create policy with tags");
     tx.commit().await.expect("Failed to commit transaction");
@@ -126,7 +127,7 @@ pub async fn test_create_policy_duplicate_name(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a duplicate policy name must fail");
@@ -141,7 +142,7 @@ pub async fn test_create_policy_invalid_document(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a policy with an invalid document must fail");
@@ -156,7 +157,7 @@ pub async fn test_create_policy_valid_json_invalid_aspen(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a policy with valid JSON but invalid Aspen document must fail");
@@ -170,7 +171,7 @@ pub async fn test_create_policy_valid_json_invalid_aspen(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a policy with valid JSON but invalid Aspen document must fail");
@@ -185,7 +186,7 @@ pub async fn test_create_policy_nonexistent_account(pool: &sqlx::PgPool) {
         .account_id("999999999999")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a policy in a nonexistent account must fail");
@@ -203,7 +204,7 @@ pub async fn test_create_policy_version_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create policy");
     tx.commit().await.expect("Failed to commit transaction");
@@ -218,7 +219,7 @@ pub async fn test_create_policy_version_simple(pool: &sqlx::PgPool) {
         .set_as_default(true)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create policy version");
     tx.commit().await.expect("Failed to commit transaction");
@@ -241,7 +242,7 @@ pub async fn test_create_policy_version_set_as_default(pool: &sqlx::PgPool) {
         .set_as_default(true)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create policy version as default");
     tx.commit().await.expect("Failed to commit transaction");
@@ -262,7 +263,7 @@ pub async fn test_create_policy_version_not_default(pool: &sqlx::PgPool) {
         .set_as_default(false)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create policy version (not default)");
     tx.commit().await.expect("Failed to commit transaction");
@@ -284,7 +285,7 @@ pub async fn test_create_policy_version_limit_exceeded(pool: &sqlx::PgPool) {
         .set_as_default(false)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create policy version v5");
     tx.commit().await.expect("Failed to commit transaction");
@@ -299,7 +300,7 @@ pub async fn test_create_policy_version_limit_exceeded(pool: &sqlx::PgPool) {
         .set_as_default(false)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a 6th policy version must fail");
@@ -313,7 +314,7 @@ pub async fn test_create_policy_version_nonexistent_policy(pool: &sqlx::PgPool) 
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a version for a nonexistent policy must fail");
@@ -329,7 +330,7 @@ pub async fn test_create_policy_version_mismatched_path(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create policy");
     tx.commit().await.expect("Failed to commit transaction");
@@ -340,7 +341,7 @@ pub async fn test_create_policy_version_mismatched_path(pool: &sqlx::PgPool) {
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a version with a mismatched path must fail");
@@ -354,7 +355,7 @@ pub async fn test_create_policy_version_invalid_document(pool: &sqlx::PgPool) {
         .policy_document("not valid json")
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a version with an invalid document must fail");
@@ -376,7 +377,7 @@ pub async fn test_create_policy_version_invalid_arn(pool: &sqlx::PgPool) {
             .policy_document(VALID_POLICY_DOCUMENT.to_string())
             .build()
             .expect("Failed to build CreatePolicyVersionRequest")
-            .execute(&mut tx)
+            .execute(&mut tx, RequestId::new())
             .await;
         tx.rollback().await.expect("Failed to rollback transaction");
         let err = match result {
@@ -402,7 +403,7 @@ pub async fn test_delete_policy_version_simple(pool: &sqlx::PgPool) {
         .version_id("v1")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete policy version v1");
     tx.commit().await.expect("Failed to commit transaction");
@@ -414,7 +415,7 @@ pub async fn test_delete_policy_version_simple(pool: &sqlx::PgPool) {
         .version_id("v1")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Re-deleting v1 should fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -430,7 +431,7 @@ pub async fn test_delete_policy_version_default_fails(pool: &sqlx::PgPool) {
         .version_id("v3")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting the default version should fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -443,7 +444,7 @@ pub async fn test_delete_policy_version_default_fails(pool: &sqlx::PgPool) {
         .version_id("v3")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Default version still cannot be deleted on a retry");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -460,7 +461,7 @@ pub async fn test_delete_policy_version_with_path(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create policy at /engineering/PathDelVersion");
     let doc_v2 = r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:PutObject","Resource":"*"}]}"#;
@@ -470,7 +471,7 @@ pub async fn test_delete_policy_version_with_path(pool: &sqlx::PgPool) {
         .set_as_default(true)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create v2 of /engineering/PathDelVersion");
     tx.commit().await.expect("Failed to commit transaction");
@@ -482,7 +483,7 @@ pub async fn test_delete_policy_version_with_path(pool: &sqlx::PgPool) {
         .version_id("v1")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete v1 of /engineering/PathDelVersion");
     tx.commit().await.expect("Failed to commit transaction");
@@ -497,7 +498,7 @@ pub async fn test_delete_policy_version_mismatched_path(pool: &sqlx::PgPool) {
         .version_id("v2")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting with a mismatched path must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -512,7 +513,7 @@ pub async fn test_delete_policy_version_nonexistent_policy(pool: &sqlx::PgPool) 
         .version_id("v1")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting a version of a nonexistent policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -527,7 +528,7 @@ pub async fn test_delete_policy_version_nonexistent_version(pool: &sqlx::PgPool)
         .version_id("v99")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting a nonexistent version must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -555,7 +556,7 @@ pub async fn test_delete_policy_version_invalid_arn(pool: &sqlx::PgPool) {
             .version_id("v1")
             .build()
             .expect("Failed to build DeletePolicyVersionRequest")
-            .execute(&mut tx)
+            .execute(&mut tx, RequestId::new())
             .await;
         tx.rollback().await.expect("Failed to rollback transaction");
         let err = match result {
@@ -581,7 +582,7 @@ pub async fn test_delete_policy_version_aws_account(pool: &sqlx::PgPool) {
         .account_id("000000000000")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create AWS-owned policy");
     let doc_v2 =
@@ -592,7 +593,7 @@ pub async fn test_delete_policy_version_aws_account(pool: &sqlx::PgPool) {
         .set_as_default(false)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create v2 of AwsOwnedDelVersion");
     tx.commit().await.expect("Failed to commit transaction");
@@ -604,7 +605,7 @@ pub async fn test_delete_policy_version_aws_account(pool: &sqlx::PgPool) {
         .version_id("v2")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete v2 of AwsOwnedDelVersion via 'aws' account");
     tx.commit().await.expect("Failed to commit transaction");
@@ -617,7 +618,7 @@ pub async fn test_delete_policy_version_aws_account(pool: &sqlx::PgPool) {
         .version_id("v2")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Re-deleting v2 should fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -630,7 +631,7 @@ pub async fn test_delete_policy_version_aws_account(pool: &sqlx::PgPool) {
         .version_id("v1")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("v1 is the default and cannot be deleted");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -649,7 +650,7 @@ pub async fn test_set_default_policy_version_simple(pool: &sqlx::PgPool) {
         .version_id("v4")
         .build()
         .expect("Failed to build SetDefaultPolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to set default to v4");
     tx.commit().await.expect("Failed to commit transaction");
@@ -659,7 +660,7 @@ pub async fn test_set_default_policy_version_simple(pool: &sqlx::PgPool) {
         .policy_arn(arn.to_string())
         .build()
         .expect("Failed to build GetPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get VersionedPolicy");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -672,7 +673,7 @@ pub async fn test_set_default_policy_version_simple(pool: &sqlx::PgPool) {
         .version_id("v3")
         .build()
         .expect("Failed to build SetDefaultPolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to restore default to v3");
     tx.commit().await.expect("Failed to commit transaction");
@@ -685,7 +686,7 @@ pub async fn test_set_default_policy_version_nonexistent_version(pool: &sqlx::Pg
         .version_id("v99")
         .build()
         .expect("Failed to build SetDefaultPolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Set default to nonexistent version should fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -699,7 +700,7 @@ pub async fn test_set_default_policy_version_nonexistent_policy(pool: &sqlx::PgP
         .version_id("v1")
         .build()
         .expect("Failed to build SetDefaultPolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Set default on missing policy should fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -713,7 +714,7 @@ pub async fn test_set_default_policy_version_mismatched_path(pool: &sqlx::PgPool
         .version_id("v3")
         .build()
         .expect("Failed to build SetDefaultPolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Set default with mismatched path should fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -729,7 +730,7 @@ pub async fn test_set_default_policy_version_aws_account(pool: &sqlx::PgPool) {
         .version_id("v1")
         .build()
         .expect("Failed to build SetDefaultPolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to set default via 'aws' ARN");
     tx.commit().await.expect("Failed to commit transaction");
@@ -748,7 +749,7 @@ pub async fn test_tag_policy_simple(pool: &sqlx::PgPool) {
         ])
         .build()
         .expect("Failed to build TagPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to tag TestPolicy");
     tx.commit().await.expect("Failed to commit transaction");
@@ -758,7 +759,7 @@ pub async fn test_tag_policy_simple(pool: &sqlx::PgPool) {
         .policy_arn(arn.to_string())
         .build()
         .expect("Failed to build GetPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get TestPolicy after tagging");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -779,7 +780,7 @@ pub async fn test_tag_policy_upsert(pool: &sqlx::PgPool) {
         .set_tags(vec![Tag::builder().key("Env").value("Staging").build().expect("Tag build failed")])
         .build()
         .expect("Failed to build TagPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to upsert tag");
     tx.commit().await.expect("Failed to commit transaction");
@@ -789,7 +790,7 @@ pub async fn test_tag_policy_upsert(pool: &sqlx::PgPool) {
         .policy_arn(arn.to_string())
         .build()
         .expect("Failed to build GetPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get TestPolicy");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -812,7 +813,7 @@ pub async fn test_tag_policy_empty(pool: &sqlx::PgPool) {
         .set_tags(vec![])
         .build()
         .expect("Failed to build TagPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Tagging with empty list should fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -826,7 +827,7 @@ pub async fn test_tag_policy_nonexistent(pool: &sqlx::PgPool) {
         .set_tags(vec![Tag::builder().key("X").value("Y").build().expect("Tag build failed")])
         .build()
         .expect("Failed to build TagPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Tagging missing policy should fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -842,7 +843,7 @@ pub async fn test_untag_policy_simple(pool: &sqlx::PgPool) {
         .set_tag_keys(vec!["Owner".to_string()])
         .build()
         .expect("Failed to build UntagPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to untag Owner");
     tx.commit().await.expect("Failed to commit transaction");
@@ -852,7 +853,7 @@ pub async fn test_untag_policy_simple(pool: &sqlx::PgPool) {
         .policy_arn(arn.to_string())
         .build()
         .expect("Failed to build GetPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get TestPolicy");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -869,7 +870,7 @@ pub async fn test_untag_policy_empty(pool: &sqlx::PgPool) {
         .set_tag_keys(vec![])
         .build()
         .expect("Failed to build UntagPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Untagging with empty list should fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -883,7 +884,7 @@ pub async fn test_untag_policy_nonexistent(pool: &sqlx::PgPool) {
         .set_tag_keys(vec!["X".to_string()])
         .build()
         .expect("Failed to build UntagPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Untagging missing policy should fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -906,7 +907,7 @@ pub async fn test_policy_update_date_lifecycle(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create UpdateDatePolicy");
     tx.commit().await.expect("Failed to commit transaction");
@@ -927,7 +928,7 @@ pub async fn test_policy_update_date_lifecycle(pool: &sqlx::PgPool) {
         .set_as_default(false)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create v2");
     tx.commit().await.expect("Failed to commit transaction");
@@ -947,7 +948,7 @@ pub async fn test_policy_update_date_lifecycle(pool: &sqlx::PgPool) {
         .set_as_default(false)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create v3");
     tx.commit().await.expect("Failed to commit transaction");
@@ -961,7 +962,7 @@ pub async fn test_policy_update_date_lifecycle(pool: &sqlx::PgPool) {
         .version_id("v2")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete v2");
     tx.commit().await.expect("Failed to commit transaction");
@@ -978,7 +979,7 @@ pub async fn test_policy_update_date_lifecycle(pool: &sqlx::PgPool) {
         .version_id("v3")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete v3");
     tx.commit().await.expect("Failed to commit transaction");
@@ -996,7 +997,7 @@ async fn get_policy_update_date(pool: &sqlx::PgPool, arn: &str) -> chrono::DateT
         .policy_arn(arn.to_string())
         .build()
         .expect("Failed to build GetPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get policy");
     tx.rollback().await.expect("Failed to rollback transaction");

@@ -7,6 +7,7 @@ use {
     chrono::{DateTime, Utc},
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListGroupsInternalRequest, ListGroupsResponse},
@@ -20,8 +21,16 @@ impl RequestExecutor for ListGroupsInternalRequest {
     type Response = ListGroupsResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        list_groups(tx, &self.account_id, self.marker.as_deref(), self.max_items, self.path_prefix.as_deref()).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        list_groups(
+            tx,
+            &self.account_id,
+            self.marker.as_deref(),
+            self.max_items,
+            self.path_prefix.as_deref(),
+            request_id,
+        )
+        .await
     }
 }
 
@@ -48,19 +57,20 @@ pub async fn list_groups(
     marker: Option<&str>,
     max_items: Option<i32>,
     path_prefix: Option<&str>,
+    request_id: RequestId,
 ) -> Result<ListGroupsResponse, IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
     if let Some(path_prefix) = path_prefix {
-        validate_path_prefix(path_prefix)?;
+        validate_path_prefix(path_prefix, request_id)?;
     }
-    let max_items = constrain_max_items(max_items)?;
-    let partition = get_current_partition_or_fail(tx).await?;
+    let max_items = constrain_max_items(max_items, request_id)?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
 
-    let paginator = make_iam_paginator(&partition, OP_LIST_GROUPS)?;
+    let paginator = make_iam_paginator(&partition, OP_LIST_GROUPS, request_id)?;
 
     let mut sql = QueryBuilder::new(
         r#"
@@ -79,7 +89,7 @@ pub async fn list_groups(
     if let Some(marker) = marker {
         let info: ListGroupsMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListGroups: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
         sql.push(" AND group_name_lower >= ");
         sql.push_bind(info.next_group_name);
@@ -91,7 +101,7 @@ pub async fn list_groups(
 
     let rows = sql.build_query_as::<ListGroupsRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch groups from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
     let mut results = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -106,7 +116,7 @@ pub async fn list_groups(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListGroups: {e}");
-                        internal_failure()
+                        internal_failure(request_id)
                     })?,
             );
             break;
@@ -120,7 +130,7 @@ pub async fn list_groups(
             .build()
             .map_err(|e| {
                 log::error!("Failed to construct ARN for group: {e}");
-                internal_failure()
+                internal_failure(request_id)
             })?;
 
         results.push(
@@ -133,7 +143,7 @@ pub async fn list_groups(
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct group object: {e}");
-                    internal_failure()
+                    internal_failure(request_id)
                 })?,
         );
     }
@@ -146,6 +156,6 @@ pub async fn list_groups(
 
     builder.build().map_err(|e| {
         log::error!("Failed to build ListGroupsResponse: {e}");
-        internal_failure().into()
+        internal_failure(request_id).into()
     })
 }

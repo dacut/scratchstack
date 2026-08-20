@@ -14,6 +14,7 @@
 
 use {
     pct_str::{PctString, UriReserved},
+    scratchstack_core::RequestId,
     scratchstack_pagination::{
         FixedKeyService, OperationPaginator, ScratchstackOperationMetadata, ScratchstackServiceMetadata,
     },
@@ -92,7 +93,14 @@ pub trait RequestExecutor {
     /// Execute the request and return the response. The transaction is not committed, so any
     /// returned results are subject to the transaction being committed. Do **not** use results
     /// until the commit has been completed.
-    fn execute(&self, tx: &mut PgTransaction<'_>) -> impl Future<Output = Result<Self::Response, Self::Error>>;
+    ///
+    /// `request_id` is the id of the service request that triggered this operation; it is stamped
+    /// on every error returned so callers can correlate a failure with the service logs.
+    fn execute(
+        &self,
+        tx: &mut PgTransaction<'_>,
+        request_id: RequestId,
+    ) -> impl Future<Output = Result<Self::Response, Self::Error>>;
 }
 
 impl ConnectionUrlBuilder {
@@ -166,14 +174,14 @@ impl ConnectionUrlBuilder {
 
 /// Constrain the `max_items` parameter for a list operation to be between 1 and 1000, inclusive, or
 /// return a validation error. If `max_items` is `None`, return the default of 100.
-pub(crate) fn constrain_max_items(max_items: Option<i32>) -> Result<usize, IamValidationError> {
+pub(crate) fn constrain_max_items(max_items: Option<i32>, request_id: RequestId) -> Result<usize, IamValidationError> {
     if let Some(max_items) = max_items {
         if max_items <= 0 {
             let message = "max_items must be a positive integer.".to_string();
-            Err(IamValidationError::builder().message(message).build())
+            Err(IamValidationError::builder().message(message).request_id(request_id).build())
         } else if max_items > 1000 {
             let message = "max_items must be at most 1000.".to_string();
-            Err(IamValidationError::builder().message(message).build())
+            Err(IamValidationError::builder().message(message).request_id(request_id).build())
         } else {
             Ok(max_items as usize)
         }
@@ -185,14 +193,15 @@ pub(crate) fn constrain_max_items(max_items: Option<i32>) -> Result<usize, IamVa
 /// Construct a generic `InternalFailure` with the standard internal-failure message. Use
 /// this for every "unexpected database/builder/etc. error" call site — never leak
 /// underlying details to the caller (those go to the log).
-pub(crate) fn internal_failure() -> IamInternalFailure {
-    IamInternalFailure::builder().message(constants::MSG_INTERNAL_FAILURE).build()
+pub(crate) fn internal_failure(request_id: RequestId) -> IamInternalFailure {
+    IamInternalFailure::builder().message(constants::MSG_INTERNAL_FAILURE).request_id(request_id).build()
 }
 
 /// Construct an `OperationPaginator` for an IAM operation.
 pub(crate) fn make_iam_paginator(
     partition: &str,
     operation_name: &'static str,
+    request_id: RequestId,
 ) -> Result<OperationPaginator<FixedKeyService, FixedKeyService>, IamError> {
     let service_metadata = ScratchstackServiceMetadata::new(partition.to_string(), "", constants::SERVICE_ID_IAM);
     let operation_metadata = ScratchstackOperationMetadata::new(constants::IAM_API_VERSION, operation_name);
@@ -204,7 +213,7 @@ pub(crate) fn make_iam_paginator(
     )
     .map_err(|e| {
         log::error!("Failed to create paginator for {operation_name}: {e}");
-        internal_failure().into()
+        internal_failure(request_id).into()
     })
 }
 
@@ -215,6 +224,7 @@ pub(crate) fn make_iam_paginator(
 pub(crate) fn make_paginator_sts(
     partition: &str,
     operation_name: &'static str,
+    request_id: RequestId,
 ) -> Result<OperationPaginator<FixedKeyService, FixedKeyService>, StsError> {
     let service_metadata = ScratchstackServiceMetadata::new(partition.to_string(), "", constants::SERVICE_ID_STS);
     let operation_metadata = ScratchstackOperationMetadata::new(constants::STS_API_VERSION, operation_name);
@@ -226,7 +236,7 @@ pub(crate) fn make_paginator_sts(
     )
     .map_err(|e| {
         log::error!("Failed to create paginator for {operation_name}: {e}");
-        internal_failure().into()
+        internal_failure(request_id).into()
     })
 }
 

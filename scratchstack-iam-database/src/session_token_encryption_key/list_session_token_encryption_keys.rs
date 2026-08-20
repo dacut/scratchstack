@@ -7,6 +7,7 @@ use {
     chrono::{DateTime, Utc},
     indoc::indoc,
     scratchstack_aws_principal::IamResourceType,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListSessionTokenEncryptionKeysRequest, ListSessionTokenEncryptionKeysResponse},
@@ -25,8 +26,8 @@ impl RequestExecutor for ListSessionTokenEncryptionKeysRequest {
     type Response = ListSessionTokenEncryptionKeysResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        list_session_token_encryption_keys(tx, &self.filters, self.marker.as_deref(), self.max_items).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        list_session_token_encryption_keys(tx, &self.filters, self.marker.as_deref(), self.max_items, request_id).await
     }
 }
 
@@ -54,10 +55,11 @@ pub async fn list_session_token_encryption_keys(
     filters: &[ListSessionTokenEncryptionKeysFilter],
     marker: Option<&str>,
     max_items: Option<i32>,
+    request_id: RequestId,
 ) -> Result<ListSessionTokenEncryptionKeysResponse, IamError> {
-    let max_items = constrain_max_items(max_items)?;
-    let partition = get_current_partition_or_fail(tx).await?;
-    let paginator = make_iam_paginator(&partition, OP_LIST_SESSION_TOKEN_ENCRYPTION_KEYS)?;
+    let max_items = constrain_max_items(max_items, request_id)?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
+    let paginator = make_iam_paginator(&partition, OP_LIST_SESSION_TOKEN_ENCRYPTION_KEYS, request_id)?;
 
     let mut sql = QueryBuilder::new(indoc! {"
         SELECT
@@ -80,7 +82,7 @@ pub async fn list_session_token_encryption_keys(
                 for value in &filter.values {
                     let Ok(time) = DateTime::parse_from_rfc3339(value) else {
                         let message = format!("Invalid datetime value in IssueValidFromStartTime filter: {value}");
-                        return Err(ValidationError::builder().message(message).build().into());
+                        return Err(ValidationError::builder().message(message).request_id(request_id).build().into());
                     };
 
                     issue_valid_from_start_max = Some(
@@ -93,7 +95,7 @@ pub async fn list_session_token_encryption_keys(
                 for value in &filter.values {
                     let Ok(time) = DateTime::parse_from_rfc3339(value) else {
                         let message = format!("Invalid datetime value in IssueValidFromEndTime filter: {value}");
-                        return Err(ValidationError::builder().message(message).build().into());
+                        return Err(ValidationError::builder().message(message).request_id(request_id).build().into());
                     };
 
                     issue_valid_from_end_min = Some(
@@ -106,7 +108,7 @@ pub async fn list_session_token_encryption_keys(
                 for value in &filter.values {
                     let Ok(time) = DateTime::parse_from_rfc3339(value) else {
                         let message = format!("Invalid datetime value in IssueExpiresAtStartTime filter: {value}");
-                        return Err(ValidationError::builder().message(message).build().into());
+                        return Err(ValidationError::builder().message(message).request_id(request_id).build().into());
                     };
 
                     issue_expires_at_start_max = Some(
@@ -119,7 +121,7 @@ pub async fn list_session_token_encryption_keys(
                 for value in &filter.values {
                     let Ok(time) = DateTime::parse_from_rfc3339(value) else {
                         let message = format!("Invalid datetime value in IssueExpiresAtEndTime filter: {value}");
-                        return Err(ValidationError::builder().message(message).build().into());
+                        return Err(ValidationError::builder().message(message).request_id(request_id).build().into());
                     };
 
                     issue_expires_at_end_min = Some(
@@ -132,7 +134,7 @@ pub async fn list_session_token_encryption_keys(
                 for value in &filter.values {
                     let Ok(time) = DateTime::parse_from_rfc3339(value) else {
                         let message = format!("Invalid datetime value in AcceptExpiresAtStartTime filter: {value}");
-                        return Err(ValidationError::builder().message(message).build().into());
+                        return Err(ValidationError::builder().message(message).request_id(request_id).build().into());
                     };
 
                     accept_expires_at_start_max = Some(
@@ -145,7 +147,7 @@ pub async fn list_session_token_encryption_keys(
                 for value in &filter.values {
                     let Ok(time) = DateTime::parse_from_rfc3339(value) else {
                         let message = format!("Invalid datetime value in AcceptExpiresAtEndTime filter: {value}");
-                        return Err(ValidationError::builder().message(message).build().into());
+                        return Err(ValidationError::builder().message(message).request_id(request_id).build().into());
                     };
 
                     accept_expires_at_end_min = Some(
@@ -194,7 +196,7 @@ pub async fn list_session_token_encryption_keys(
     if let Some(marker) = marker {
         let info: ListSessionTokenEncryptionKeysMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token: {e}");
-            InternalFailure::builder().message(MSG_INTERNAL_FAILURE.to_string()).build()
+            InternalFailure::builder().message(MSG_INTERNAL_FAILURE.to_string()).request_id(request_id).build()
         })?;
         sql.push(" AND session_token_encryption_key_id >= ");
         sql.push_bind(info.next_session_token_encryption_key_id);
@@ -206,7 +208,7 @@ pub async fn list_session_token_encryption_keys(
 
     let rows = sql.build_query_as::<ListSessionTokenEncryptionKeysRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch session token encryption keys from database: {e}");
-        InternalFailure::builder().message(MSG_INTERNAL_FAILURE.to_string()).build()
+        InternalFailure::builder().message(MSG_INTERNAL_FAILURE.to_string()).request_id(request_id).build()
     })?;
 
     let mut result = Vec::with_capacity(rows.len().min(max_items));
@@ -222,7 +224,10 @@ pub async fn list_session_token_encryption_keys(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token: {e}");
-                        InternalFailure::builder().message(MSG_INTERNAL_FAILURE.to_string()).build()
+                        InternalFailure::builder()
+                            .message(MSG_INTERNAL_FAILURE.to_string())
+                            .request_id(request_id)
+                            .build()
                     })?,
             );
             break;
@@ -233,7 +238,7 @@ pub async fn list_session_token_encryption_keys(
         let encryption_algorithm =
             SessionTokenEncryptionAlgorithm::from_str(&row.encryption_algorithm).map_err(|e| {
                 log::error!("Failed to parse encryption algorithm from database value: {e}");
-                InternalFailure::builder().message(MSG_INTERNAL_FAILURE.to_string()).build()
+                InternalFailure::builder().message(MSG_INTERNAL_FAILURE.to_string()).request_id(request_id).build()
             })?;
 
         result.push(SessionTokenEncryptionKey {

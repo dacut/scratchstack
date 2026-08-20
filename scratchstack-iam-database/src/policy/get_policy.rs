@@ -13,6 +13,7 @@ use {
     chrono::{DateTime, Utc},
     indoc::indoc,
     scratchstack_aws_principal::IamResourceType,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{GetPolicyRequest, GetPolicyResponse},
@@ -25,13 +26,17 @@ impl RequestExecutor for GetPolicyRequest {
     type Response = GetPolicyResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        get_policy(tx, &self.policy_arn).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        get_policy(tx, &self.policy_arn, request_id).await
     }
 }
 
 /// Get details for a single managed policy by ARN.
-pub async fn get_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Result<GetPolicyResponse, IamError> {
+pub async fn get_policy(
+    tx: &mut PgTransaction<'_>,
+    policy_arn: &str,
+    request_id: RequestId,
+) -> Result<GetPolicyResponse, IamError> {
     /// The row returned by the query to the iam.policies table to get details for the requested
     /// policy ARN.
     #[derive(FromRow)]
@@ -46,12 +51,12 @@ pub async fn get_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Result<
         update_date: DateTime<Utc>,
     }
 
-    let parts = parse_policy_arn(policy_arn)?;
+    let parts = parse_policy_arn(policy_arn, request_id)?;
     let policy_account_id = match parts.account_id() {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    let partition = get_current_partition_or_fail(tx).await?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
 
     let policy_row: PolicyRow = query_as(indoc! {"
             SELECT managed_policy_id, managed_policy_name_cased, path, default_version, deprecated,
@@ -66,22 +71,32 @@ pub async fn get_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Result<
     .await
     .map_err(|e| {
         log::error!("Failed to query managed policy from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?
-    .ok_or_else(|| NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())?;
+    .ok_or_else(|| {
+        NoSuchEntityException::builder()
+            .message(format!("Policy {policy_arn} was not found."))
+            .request_id(request_id)
+            .build()
+    })?;
 
-    let arn =
-        build_policy_arn(&partition, parts.account_id(), &policy_row.path, &policy_row.managed_policy_name_cased)?;
-    let tags = fetch_policy_tags(tx, &policy_row.managed_policy_id).await?;
+    let arn = build_policy_arn(
+        &partition,
+        parts.account_id(),
+        &policy_row.path,
+        &policy_row.managed_policy_name_cased,
+        request_id,
+    )?;
+    let tags = fetch_policy_tags(tx, &policy_row.managed_policy_id, request_id).await?;
     let attachment_count = if parts.account_id() == AWS_ACCOUNT_ID_NUMERIC {
         None
     } else {
-        Some(get_policy_attachment_count(tx, &policy_row.managed_policy_id).await?)
+        Some(get_policy_attachment_count(tx, &policy_row.managed_policy_id, request_id).await?)
     };
     let permissions_boundary_usage_count = if policy_account_id == AWS_ACCOUNT_ID_NUMERIC {
         None
     } else {
-        Some(get_policy_permissions_boundary_usage_count(tx, &policy_row.managed_policy_id).await?)
+        Some(get_policy_permissions_boundary_usage_count(tx, &policy_row.managed_policy_id, request_id).await?)
     };
 
     let policy = Policy::builder()
@@ -97,7 +112,11 @@ pub async fn get_policy(tx: &mut PgTransaction<'_>, policy_arn: &str) -> Result<
         .policy_name(policy_row.managed_policy_name_cased)
         .update_date(policy_row.update_date)
         .set_tags(tags)
-        .build()?;
+        .build()
+        .map_err(|e| {
+            log::error!("Failed to construct policy object: {e}");
+            internal_failure(request_id)
+        })?;
     Ok(GetPolicyResponse {
         policy: Some(policy),
     })

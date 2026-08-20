@@ -5,6 +5,7 @@ use {
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{UpdateSessionTokenEncryptionKeyRequest, UpdateSessionTokenEncryptionKeyResponse},
@@ -21,13 +22,14 @@ impl RequestExecutor for UpdateSessionTokenEncryptionKeyRequest {
     type Response = UpdateSessionTokenEncryptionKeyResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
         update_session_token_encryption_key(
             tx,
             &self.session_token_encryption_key_id,
             self.issue_valid_from,
             self.issue_expires_at,
             self.accept_expires_at,
+            request_id,
         )
         .await
     }
@@ -52,8 +54,9 @@ pub async fn update_session_token_encryption_key(
     issue_valid_from: Option<DateTime<Utc>>,
     issue_expires_at: Option<DateTime<Utc>>,
     accept_expires_at: Option<DateTime<Utc>>,
+    request_id: RequestId,
 ) -> Result<UpdateSessionTokenEncryptionKeyResponse, IamError> {
-    validate_session_token_encryption_key_id(stek_id)?;
+    validate_session_token_encryption_key_id(stek_id, request_id)?;
     let stek_id_stored = &stek_id[4..];
 
     let row: Option<SessionTokenEncryptionKeyRow> = query_as(indoc! {"
@@ -67,18 +70,19 @@ pub async fn update_session_token_encryption_key(
     .await
     .map_err(|e| {
         log::error!("Failed to fetch session token encryption key from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let row = row.ok_or_else(|| {
         NoSuchEntityException::builder()
             .message(format!("The session token encryption key with id {stek_id} cannot be found."))
+            .request_id(request_id)
             .build()
     })?;
 
     let encryption_algorithm = SessionTokenEncryptionAlgorithm::from_str(&row.encryption_algorithm).map_err(|e| {
         log::error!("Failed to parse encryption algorithm from database value: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let new_issue_valid_from = issue_valid_from.unwrap_or(row.issue_valid_from);
@@ -88,12 +92,14 @@ pub async fn update_session_token_encryption_key(
     if new_issue_expires_at < new_issue_valid_from {
         return Err(ValidationError::builder()
             .message("issue_expires_at cannot be less than issue_valid_from.")
+            .request_id(request_id)
             .build()
             .into());
     }
     if new_accept_expires_at < new_issue_expires_at {
         return Err(ValidationError::builder()
             .message("accept_expires_at cannot be less than issue_expires_at.")
+            .request_id(request_id)
             .build()
             .into());
     }
@@ -112,7 +118,7 @@ pub async fn update_session_token_encryption_key(
         .await
         .map_err(|e| {
             log::error!("Failed to update session token encryption key in database: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
     }
 

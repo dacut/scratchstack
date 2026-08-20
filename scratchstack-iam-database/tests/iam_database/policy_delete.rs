@@ -3,6 +3,7 @@
 use {
     super::common::VALID_POLICY_DOCUMENT,
     pretty_assertions::assert_eq,
+    scratchstack_core::RequestId,
     scratchstack_iam_database::RequestExecutor,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -31,7 +32,7 @@ pub async fn test_delete_policy_simple(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create DeleteMeSimple");
     tx.commit().await.expect("Failed to commit transaction");
@@ -41,7 +42,7 @@ pub async fn test_delete_policy_simple(pool: &sqlx::PgPool) {
         .policy_arn(arn.to_string())
         .build()
         .expect("Failed to build DeletePolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete DeleteMeSimple");
     tx.commit().await.expect("Failed to commit transaction");
@@ -52,7 +53,7 @@ pub async fn test_delete_policy_simple(pool: &sqlx::PgPool) {
         .policy_arn(arn.to_string())
         .build()
         .expect("Failed to build GetPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("DeleteMeSimple should no longer exist");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -64,7 +65,7 @@ pub async fn test_delete_policy_simple(pool: &sqlx::PgPool) {
         .policy_arn(arn.to_string())
         .build()
         .expect("Failed to build DeletePolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Re-deleting DeleteMeSimple should fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -86,7 +87,7 @@ pub async fn test_delete_policy_cascade_tags_and_default_version(pool: &sqlx::Pg
             .set_tags(vec![Tag::builder().key("Environment").value("Dev").build().expect("Failed to build tag")])
             .build()
             .expect("Failed to build CreatePolicyInternalRequest")
-            .execute(&mut tx)
+            .execute(&mut tx, RequestId::new())
             .await
             .expect("Failed to create DeleteMeCascade");
         tx.commit().await.expect("Failed to commit transaction");
@@ -113,7 +114,7 @@ pub async fn test_delete_policy_cascade_tags_and_default_version(pool: &sqlx::Pg
         .policy_arn(arn.to_string())
         .build()
         .expect("Failed to build DeletePolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete DeleteMeCascade");
     tx.commit().await.expect("Failed to commit transaction");
@@ -145,7 +146,7 @@ pub async fn test_delete_policy_attached_to_user_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create DeleteMeUserAttached");
     let managed_policy_id = managed_policy_id_from(resp.policy.as_ref().expect("Response should include policy"));
@@ -160,7 +161,7 @@ pub async fn test_delete_policy_attached_to_user_fails(pool: &sqlx::PgPool) {
         .policy_arn(arn.to_string())
         .build()
         .expect("Failed to build DeletePolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting a user-attached policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -178,7 +179,7 @@ pub async fn test_delete_policy_attached_to_group_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create DeleteMeGroupAttached");
     let managed_policy_id = managed_policy_id_from(resp.policy.as_ref().expect("Response should include policy"));
@@ -193,7 +194,7 @@ pub async fn test_delete_policy_attached_to_group_fails(pool: &sqlx::PgPool) {
         .policy_arn(arn.to_string())
         .build()
         .expect("Failed to build DeletePolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting a group-attached policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -211,7 +212,7 @@ pub async fn test_delete_policy_attached_to_role_fails(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create DeleteMeRoleAttached");
     let managed_policy_id = managed_policy_id_from(resp.policy.as_ref().expect("Response should include policy"));
@@ -226,7 +227,7 @@ pub async fn test_delete_policy_attached_to_role_fails(pool: &sqlx::PgPool) {
         .policy_arn(arn.to_string())
         .build()
         .expect("Failed to build DeletePolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting a role-attached policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -244,7 +245,7 @@ pub async fn test_delete_policy_user_permissions_boundary_fails(pool: &sqlx::PgP
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create DeleteMeUserPB");
     let managed_policy_id = managed_policy_id_from(resp.policy.as_ref().expect("Response should include policy"));
@@ -259,7 +260,7 @@ pub async fn test_delete_policy_user_permissions_boundary_fails(pool: &sqlx::PgP
         .policy_arn(arn.to_string())
         .build()
         .expect("Failed to build DeletePolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting a policy that is a user's permissions boundary must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -277,7 +278,7 @@ pub async fn test_delete_policy_role_permissions_boundary_fails(pool: &sqlx::PgP
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create DeleteMeRolePB");
     let managed_policy_id = managed_policy_id_from(resp.policy.as_ref().expect("Response should include policy"));
@@ -292,7 +293,7 @@ pub async fn test_delete_policy_role_permissions_boundary_fails(pool: &sqlx::PgP
         .policy_arn(arn.to_string())
         .build()
         .expect("Failed to build DeletePolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting a policy that is a role's permissions boundary must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -310,7 +311,7 @@ pub async fn test_delete_policy_with_non_default_versions_fails(pool: &sqlx::PgP
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create DeleteMeMultiVersion");
     CreatePolicyVersionRequest::builder()
@@ -322,7 +323,7 @@ pub async fn test_delete_policy_with_non_default_versions_fails(pool: &sqlx::PgP
         .set_as_default(false)
         .build()
         .expect("Failed to build CreatePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create v2 of DeleteMeMultiVersion");
     tx.commit().await.expect("Failed to commit transaction");
@@ -332,7 +333,7 @@ pub async fn test_delete_policy_with_non_default_versions_fails(pool: &sqlx::PgP
         .policy_arn(arn.to_string())
         .build()
         .expect("Failed to build DeletePolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting a policy with non-default versions must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -346,14 +347,14 @@ pub async fn test_delete_policy_with_non_default_versions_fails(pool: &sqlx::PgP
         .version_id("v2")
         .build()
         .expect("Failed to build DeletePolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete v2");
     DeletePolicyRequest::builder()
         .policy_arn(arn.to_string())
         .build()
         .expect("Failed to build DeletePolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete DeleteMeMultiVersion after pruning v2");
     tx.commit().await.expect("Failed to commit transaction");
@@ -366,7 +367,7 @@ pub async fn test_delete_policy_nonexistent(pool: &sqlx::PgPool) {
         .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchDeletePolicy")
         .build()
         .expect("Failed to build DeletePolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting a nonexistent policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -383,7 +384,7 @@ pub async fn test_delete_policy_mismatched_path(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create /engineering/MismatchedDeleteMe");
     tx.commit().await.expect("Failed to commit transaction");
@@ -394,7 +395,7 @@ pub async fn test_delete_policy_mismatched_path(pool: &sqlx::PgPool) {
         .policy_arn("arn:test-partition:iam::123456789012:policy/MismatchedDeleteMe")
         .build()
         .expect("Failed to build DeletePolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Deleting with a mismatched path must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -406,7 +407,7 @@ pub async fn test_delete_policy_mismatched_path(pool: &sqlx::PgPool) {
         .policy_arn("arn:test-partition:iam::123456789012:policy/engineering/MismatchedDeleteMe")
         .build()
         .expect("Failed to build DeletePolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete /engineering/MismatchedDeleteMe");
     tx.commit().await.expect("Failed to commit transaction");
@@ -427,7 +428,7 @@ pub async fn test_delete_policy_invalid_arn(pool: &sqlx::PgPool) {
             .policy_arn(arn.to_string())
             .build()
             .expect("Failed to build DeletePolicyRequest")
-            .execute(&mut tx)
+            .execute(&mut tx, RequestId::new())
             .await;
         tx.rollback().await.expect("Failed to rollback transaction");
         let err = match result {
@@ -451,7 +452,7 @@ pub async fn test_delete_policy_aws_account(pool: &sqlx::PgPool) {
         .account_id("000000000000")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create AwsOwnedDeleteMe");
     tx.commit().await.expect("Failed to commit transaction");
@@ -462,7 +463,7 @@ pub async fn test_delete_policy_aws_account(pool: &sqlx::PgPool) {
         .policy_arn("arn:test-partition:iam::aws:policy/AwsOwnedDeleteMe")
         .build()
         .expect("Failed to build DeletePolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete AwsOwnedDeleteMe via 'aws' account alias");
     tx.commit().await.expect("Failed to commit transaction");
@@ -474,7 +475,7 @@ pub async fn test_delete_policy_aws_account(pool: &sqlx::PgPool) {
         .policy_arn("arn:test-partition:iam::000000000000:policy/AwsOwnedDeleteMe")
         .build()
         .expect("Failed to build DeletePolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("AwsOwnedDeleteMe should already be gone");
     tx.rollback().await.expect("Failed to rollback transaction");

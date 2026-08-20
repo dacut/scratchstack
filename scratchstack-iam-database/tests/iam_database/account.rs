@@ -1,6 +1,7 @@
 //! Account test suite.
 use {
     pretty_assertions::assert_eq,
+    scratchstack_core::RequestId,
     scratchstack_iam_database::RequestExecutor,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -20,7 +21,7 @@ pub async fn test_create_account_specific_id(pool: &sqlx::PgPool) {
         email: None,
         account_alias: None,
     }
-    .execute(&mut tx)
+    .execute(&mut tx, RequestId::new())
     .await
     .expect("Failed to create account with specific ID");
     tx.commit().await.expect("Failed to commit transaction");
@@ -40,7 +41,7 @@ pub async fn test_create_account_with_email_and_alias(pool: &sqlx::PgPool) {
         email: Some("admin@example.com".to_string()),
         account_alias: Some("example-corp".to_string()),
     }
-    .execute(&mut tx)
+    .execute(&mut tx, RequestId::new())
     .await
     .expect("Failed to create account with email and alias");
     tx.commit().await.expect("Failed to commit transaction");
@@ -58,7 +59,7 @@ pub async fn test_create_account_random_id(pool: &sqlx::PgPool) {
         email: None,
         account_alias: None,
     }
-    .execute(&mut tx)
+    .execute(&mut tx, RequestId::new())
     .await
     .expect("Failed to create account with random ID");
     tx.commit().await.expect("Failed to commit transaction");
@@ -77,7 +78,7 @@ pub async fn test_create_account_random_id(pool: &sqlx::PgPool) {
         max_items: None,
         marker: None,
     }
-    .execute(&mut tx)
+    .execute(&mut tx, RequestId::new())
     .await
     .expect("Failed to list accounts");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -94,7 +95,7 @@ pub async fn test_create_account_duplicate_id(pool: &sqlx::PgPool) {
         email: None,
         account_alias: None,
     }
-    .execute(&mut tx)
+    .execute(&mut tx, RequestId::new())
     .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating a duplicate account ID must fail");
@@ -108,7 +109,7 @@ pub async fn test_create_account_invalid_id(pool: &sqlx::PgPool) {
         email: None,
         account_alias: None,
     }
-    .execute(&mut tx)
+    .execute(&mut tx, RequestId::new())
     .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating an account with an invalid ID must fail");
@@ -122,7 +123,7 @@ pub async fn test_create_account_invalid_alias_leading_dash(pool: &sqlx::PgPool)
         email: None,
         account_alias: Some("-bad-alias".to_string()),
     }
-    .execute(&mut tx)
+    .execute(&mut tx, RequestId::new())
     .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating an account with an invalid alias must fail");
@@ -136,7 +137,7 @@ pub async fn test_create_account_alias_too_short(pool: &sqlx::PgPool) {
         email: None,
         account_alias: Some("ab".to_string()),
     }
-    .execute(&mut tx)
+    .execute(&mut tx, RequestId::new())
     .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating an account with a too-short alias must fail");
@@ -150,7 +151,7 @@ pub async fn test_create_account_organization_id_unsupported(pool: &sqlx::PgPool
         email: None,
         account_alias: None,
     }
-    .execute(&mut tx)
+    .execute(&mut tx, RequestId::new())
     .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Creating an account in an organization must fail (unsupported)");
@@ -166,7 +167,7 @@ pub async fn test_list_accounts_explicit(pool: &sqlx::PgPool) {
         max_items: None,
         marker: None,
     }
-    .execute(&mut tx)
+    .execute(&mut tx, RequestId::new())
     .await
     .expect("Failed to list accounts");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -196,7 +197,7 @@ pub async fn test_create_350_accounts(pool: &sqlx::PgPool) {
             email: Some(email.clone()),
             account_alias: Some(alias.clone()),
         }
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .unwrap_or_else(|e| panic!("Failed to create account {account_id}: {e}"));
         tx.commit().await.expect("Failed to commit transaction");
@@ -220,7 +221,7 @@ pub async fn test_list_350_accounts(pool: &sqlx::PgPool) {
             max_items: Some(100),
             marker: marker.clone(),
         }
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list accounts");
         tx.rollback().await.expect("Failed to rollback transaction");
@@ -283,7 +284,7 @@ pub async fn test_list_accounts_filter_single_account_id(pool: &sqlx::PgPool) {
         max_items: None,
         marker: None,
     }
-    .execute(&mut tx)
+    .execute(&mut tx, RequestId::new())
     .await
     .expect("Failed to list accounts by single account ID");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -308,7 +309,7 @@ pub async fn test_list_accounts_filter_multiple_account_ids(pool: &sqlx::PgPool)
         max_items: None,
         marker: None,
     }
-    .execute(&mut tx)
+    .execute(&mut tx, RequestId::new())
     .await
     .expect("Failed to list accounts by multiple account IDs");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -336,7 +337,7 @@ pub async fn test_list_accounts_filter_by_email(pool: &sqlx::PgPool) {
         max_items: None,
         marker: None,
     }
-    .execute(&mut tx)
+    .execute(&mut tx, RequestId::new())
     .await
     .expect("Failed to list accounts by email");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -360,7 +361,7 @@ pub async fn test_list_accounts_filter_by_alias(pool: &sqlx::PgPool) {
         max_items: None,
         marker: None,
     }
-    .execute(&mut tx)
+    .execute(&mut tx, RequestId::new())
     .await
     .expect("Failed to list accounts by alias");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -391,7 +392,7 @@ pub async fn test_list_accounts_filter_combined_match(pool: &sqlx::PgPool) {
         max_items: None,
         marker: None,
     }
-    .execute(&mut tx)
+    .execute(&mut tx, RequestId::new())
     .await
     .expect("Failed to list accounts with combined matching filters");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -423,7 +424,7 @@ pub async fn test_list_accounts_filter_combined_no_match(pool: &sqlx::PgPool) {
         max_items: None,
         marker: None,
     }
-    .execute(&mut tx)
+    .execute(&mut tx, RequestId::new())
     .await
     .expect("Failed to list accounts with combined non-matching filters");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -447,7 +448,7 @@ pub async fn test_list_accounts_filter_nonexistent(pool: &sqlx::PgPool) {
         max_items: None,
         marker: None,
     }
-    .execute(&mut tx)
+    .execute(&mut tx, RequestId::new())
     .await
     .expect("Failed to list accounts with nonexistent account ID filter");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -466,7 +467,7 @@ pub async fn test_list_account_aliases_with_alias(pool: &sqlx::PgPool) {
         .account_id("100000000002")
         .build()
         .expect("Failed to build ListAccountAliasesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list account aliases");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -484,7 +485,7 @@ pub async fn test_list_account_aliases_without_alias(pool: &sqlx::PgPool) {
         .account_id("100000000001")
         .build()
         .expect("Failed to build ListAccountAliasesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list account aliases for un-aliased account");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -501,7 +502,7 @@ pub async fn test_list_account_aliases_nonexistent_account(pool: &sqlx::PgPool) 
         .account_id("999999999999")
         .build()
         .expect("Failed to build ListAccountAliasesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("ListAccountAliases on a nonexistent account must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -525,7 +526,7 @@ pub async fn test_create_account_alias_simple(pool: &sqlx::PgPool) {
         .account_alias("my-new-alias")
         .build()
         .expect("Failed to build CreateAccountAliasInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create account alias");
     tx.commit().await.expect("Failed to commit transaction");
@@ -535,7 +536,7 @@ pub async fn test_create_account_alias_simple(pool: &sqlx::PgPool) {
         .account_id("100000000001")
         .build()
         .expect("Failed to build ListAccountAliasesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list account aliases after create");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -552,7 +553,7 @@ pub async fn test_create_account_alias_replaces(pool: &sqlx::PgPool) {
         .account_alias("replacement-alias")
         .build()
         .expect("Failed to build CreateAccountAliasInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to replace account alias");
     tx.commit().await.expect("Failed to commit transaction");
@@ -562,7 +563,7 @@ pub async fn test_create_account_alias_replaces(pool: &sqlx::PgPool) {
         .account_id("100000000002")
         .build()
         .expect("Failed to build ListAccountAliasesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list account aliases after replace");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -577,7 +578,7 @@ pub async fn test_create_account_alias_nonexistent_account(pool: &sqlx::PgPool) 
         .account_alias("orphan-alias")
         .build()
         .expect("Failed to build CreateAccountAliasInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("CreateAccountAlias on a nonexistent account must fail");
     tx.rollback().await.expect("Failed to rollback transaction");

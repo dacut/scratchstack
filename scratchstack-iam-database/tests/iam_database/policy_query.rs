@@ -3,6 +3,7 @@
 use {
     super::common::VALID_POLICY_DOCUMENT,
     pretty_assertions::assert_eq,
+    scratchstack_core::RequestId,
     scratchstack_iam_database::RequestExecutor,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -24,7 +25,7 @@ pub async fn test_get_policy_simple(pool: &sqlx::PgPool) {
         .policy_arn("arn:test-partition:iam::123456789012:policy/TestPolicy")
         .build()
         .expect("Failed to build GetPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get TestPolicy");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -47,7 +48,7 @@ pub async fn test_get_policy_with_path(pool: &sqlx::PgPool) {
         .policy_arn("arn:test-partition:iam::123456789012:policy/engineering/PathPolicy")
         .build()
         .expect("Failed to build GetPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get PathPolicy at /engineering/");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -64,7 +65,7 @@ pub async fn test_get_policy_aws_account(pool: &sqlx::PgPool) {
         .policy_arn("arn:test-partition:iam::aws:policy/AwsOwnedDelVersion")
         .build()
         .expect("Failed to build GetPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get AwsOwnedDelVersion via 'aws' account");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -79,7 +80,7 @@ pub async fn test_get_policy_mismatched_path(pool: &sqlx::PgPool) {
         .policy_arn("arn:test-partition:iam::123456789012:policy/engineering/TestPolicy")
         .build()
         .expect("Failed to build GetPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Get with mismatched path should fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -92,7 +93,7 @@ pub async fn test_get_policy_nonexistent(pool: &sqlx::PgPool) {
         .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchGetPolicy")
         .build()
         .expect("Failed to build GetPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Get on missing policy should fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -107,7 +108,7 @@ pub async fn test_get_policy_version_simple(pool: &sqlx::PgPool) {
         .version_id("v3")
         .build()
         .expect("Failed to build GetPolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get v3 of VersionedPolicy");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -125,7 +126,7 @@ pub async fn test_get_policy_version_simple(pool: &sqlx::PgPool) {
         .version_id("v4")
         .build()
         .expect("Failed to build GetPolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to get v4 of VersionedPolicy");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -142,7 +143,7 @@ pub async fn test_get_policy_version_nonexistent_version(pool: &sqlx::PgPool) {
         .version_id("v99")
         .build()
         .expect("Failed to build GetPolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Get nonexistent version should fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -156,7 +157,7 @@ pub async fn test_get_policy_version_mismatched_path(pool: &sqlx::PgPool) {
         .version_id("v1")
         .build()
         .expect("Failed to build GetPolicyVersionRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Get with wrong path should fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -171,7 +172,7 @@ pub async fn test_list_policy_versions_simple(pool: &sqlx::PgPool) {
         .policy_arn("arn:test-partition:iam::123456789012:policy/VersionedPolicy")
         .build()
         .expect("Failed to build ListPolicyVersionsRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list versions of VersionedPolicy");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -193,7 +194,7 @@ pub async fn test_list_policy_versions_nonexistent(pool: &sqlx::PgPool) {
         .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchListVersions")
         .build()
         .expect("Failed to build ListPolicyVersionsRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("List versions on missing policy should fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -209,7 +210,7 @@ pub async fn test_list_policy_versions_pagination(pool: &sqlx::PgPool) {
         .max_items(2)
         .build()
         .expect("Failed to build ListPolicyVersionsRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list page 1");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -225,7 +226,7 @@ pub async fn test_list_policy_versions_pagination(pool: &sqlx::PgPool) {
         .marker(marker)
         .build()
         .expect("Failed to build ListPolicyVersionsRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list page 2");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -246,7 +247,7 @@ pub async fn test_list_policies_local(pool: &sqlx::PgPool) {
         .max_items(1000)
         .build()
         .expect("Failed to build ListPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list local policies");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -265,7 +266,7 @@ pub async fn test_list_policies_aws(pool: &sqlx::PgPool) {
         .max_items(1000)
         .build()
         .expect("Failed to build ListPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list AWS-scope policies");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -283,7 +284,7 @@ pub async fn test_list_policies_all(pool: &sqlx::PgPool) {
         .max_items(1000)
         .build()
         .expect("Failed to build ListPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list all policies");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -302,7 +303,7 @@ pub async fn test_list_policies_path_prefix(pool: &sqlx::PgPool) {
         .max_items(1000)
         .build()
         .expect("Failed to build ListPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list policies with /engineering/ path");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -335,7 +336,7 @@ pub async fn test_list_policies_only_attached(pool: &sqlx::PgPool) {
         .max_items(1000)
         .build()
         .expect("Failed to build ListPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list attached policies");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -355,7 +356,7 @@ pub async fn test_list_policies_only_attached(pool: &sqlx::PgPool) {
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create CrossAttachOnly");
     // managed_policy_id stored in the DB is the IAM id without its 4-char "ANPA" prefix.
@@ -395,7 +396,7 @@ pub async fn test_list_policies_only_attached(pool: &sqlx::PgPool) {
         .max_items(1000)
         .build()
         .expect("Failed to build ListPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list attached policies");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -418,7 +419,7 @@ pub async fn test_list_policies_usage_filter_pb(pool: &sqlx::PgPool) {
         .max_items(1000)
         .build()
         .expect("Failed to build ListPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list PB policies");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -444,7 +445,7 @@ pub async fn test_list_policies_usage_filter_permissions_policy(pool: &sqlx::PgP
         .max_items(1000)
         .build()
         .expect("Failed to build ListPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list PermissionsPolicy-filtered policies");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -475,7 +476,7 @@ pub async fn test_list_policies_pagination(pool: &sqlx::PgPool) {
             .path("/pagination/")
             .build()
             .expect("Failed to build CreatePolicyInternalRequest")
-            .execute(&mut tx)
+            .execute(&mut tx, RequestId::new())
             .await
             .unwrap_or_else(|e| panic!("Failed to create PaginationPolicy{i}: {e:?}"));
     }
@@ -494,7 +495,7 @@ pub async fn test_list_policies_pagination(pool: &sqlx::PgPool) {
         builder
             .build()
             .expect("Failed to build ListPoliciesInternalRequest")
-            .execute(tx)
+            .execute(tx, RequestId::new())
             .await
             .expect("Failed to list policies page")
     };
@@ -545,7 +546,7 @@ pub async fn test_list_entities_for_policy_default(pool: &sqlx::PgPool) {
         .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list entities for policy");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -573,7 +574,7 @@ pub async fn test_list_entities_for_policy_user_filter(pool: &sqlx::PgPool) {
         .entity_filter(EntityType::User)
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list entities for policy with user filter");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -591,7 +592,7 @@ pub async fn test_list_entities_for_policy_group_filter(pool: &sqlx::PgPool) {
         .entity_filter(EntityType::Group)
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list entities for policy with group filter");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -609,7 +610,7 @@ pub async fn test_list_entities_for_policy_role_filter(pool: &sqlx::PgPool) {
         .entity_filter(EntityType::Role)
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list entities for policy with role filter");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -630,7 +631,7 @@ pub async fn test_list_entities_for_policy_pb_filter(pool: &sqlx::PgPool) {
         .policy_usage_filter(PolicyUsageType::PermissionsBoundary)
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list entities for policy with PB filter");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -654,7 +655,7 @@ pub async fn test_list_entities_for_policy_pagination(pool: &sqlx::PgPool) {
         .max_items(2)
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list entities (page 1)");
 
@@ -673,7 +674,7 @@ pub async fn test_list_entities_for_policy_pagination(pool: &sqlx::PgPool) {
         .marker(marker)
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list entities (page 2)");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -692,7 +693,7 @@ pub async fn test_list_entities_for_policy_nonexistent_policy(pool: &sqlx::PgPoo
         .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchListEntities")
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Listing entities for a nonexistent policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -712,7 +713,7 @@ pub async fn test_list_entities_for_policy_path_prefix(pool: &sqlx::PgPool) {
         .path("/engineering/")
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create EngineeringGroup");
     AttachGroupPolicyInternalRequest::builder()
@@ -721,7 +722,7 @@ pub async fn test_list_entities_for_policy_path_prefix(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to attach Example-Managed-Policy-1 to EngineeringGroup");
 
@@ -730,7 +731,7 @@ pub async fn test_list_entities_for_policy_path_prefix(pool: &sqlx::PgPool) {
         .path_prefix("/engineering/")
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list entities with path_prefix");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -751,7 +752,7 @@ pub async fn test_list_entities_for_policy_invalid_filter(pool: &sqlx::PgPool) {
         .entity_filter(EntityType::AWSManagedPolicy)
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("EntityFilter=AWSManagedPolicy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -773,7 +774,7 @@ pub async fn test_list_entities_for_policy_cross_account_attachment(pool: &sqlx:
         .account_id("000000000000")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create AWS-managed policy");
     CreateUserInternalRequest::builder()
@@ -781,7 +782,7 @@ pub async fn test_list_entities_for_policy_cross_account_attachment(pool: &sqlx:
         .user_name("xacct-user")
         .build()
         .expect("Failed to build CreateUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create xacct-user");
     CreateGroupInternalRequest::builder()
@@ -789,7 +790,7 @@ pub async fn test_list_entities_for_policy_cross_account_attachment(pool: &sqlx:
         .group_name("xacct-group")
         .build()
         .expect("Failed to build CreateGroupInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create xacct-group");
 
@@ -799,7 +800,7 @@ pub async fn test_list_entities_for_policy_cross_account_attachment(pool: &sqlx:
         .policy_arn("arn:aws:iam::aws:policy/CrossAccountListEntities")
         .build()
         .expect("Failed to build AttachUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to attach AWS-managed policy to xacct-user");
     AttachGroupPolicyInternalRequest::builder()
@@ -808,7 +809,7 @@ pub async fn test_list_entities_for_policy_cross_account_attachment(pool: &sqlx:
         .policy_arn("arn:aws:iam::aws:policy/CrossAccountListEntities")
         .build()
         .expect("Failed to build AttachGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to attach AWS-managed policy to xacct-group");
 
@@ -818,7 +819,7 @@ pub async fn test_list_entities_for_policy_cross_account_attachment(pool: &sqlx:
         .policy_arn("arn:test-partition:iam::aws:policy/CrossAccountListEntities")
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list entities for cross-account policy");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -842,7 +843,7 @@ pub async fn test_list_entities_for_policy_within_section_pagination(pool: &sqlx
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create WithinSectionPaginationPolicy");
 
@@ -870,7 +871,7 @@ pub async fn test_list_entities_for_policy_within_section_pagination(pool: &sqlx
             .policy_arn("arn:aws:iam::123456789012:policy/WithinSectionPaginationPolicy")
             .build()
             .expect("Failed to build AttachRolePolicyInternalRequest")
-            .execute(&mut tx)
+            .execute(&mut tx, RequestId::new())
             .await
             .unwrap_or_else(|e| panic!("Failed to attach to {role_name}: {e:?}"));
     }
@@ -881,7 +882,7 @@ pub async fn test_list_entities_for_policy_within_section_pagination(pool: &sqlx
         .max_items(2)
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list entities (page 1)");
     let marker = page1.marker.clone().expect("Page 1 should provide a continuation marker");
@@ -892,7 +893,7 @@ pub async fn test_list_entities_for_policy_within_section_pagination(pool: &sqlx
         .marker(marker)
         .build()
         .expect("Failed to build ListEntitiesForPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list entities (page 2)");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -916,7 +917,7 @@ pub async fn test_list_policy_tags_simple(pool: &sqlx::PgPool) {
         .policy_arn("arn:test-partition:iam::123456789012:policy/TestPolicy")
         .build()
         .expect("Failed to build ListPolicyTagsRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list tags on TestPolicy");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -936,7 +937,7 @@ pub async fn test_list_policy_tags_empty(pool: &sqlx::PgPool) {
         .policy_arn("arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build ListPolicyTagsRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list tags on Example-Managed-Policy-1");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -950,7 +951,7 @@ pub async fn test_list_policy_tags_nonexistent(pool: &sqlx::PgPool) {
         .policy_arn("arn:test-partition:iam::123456789012:policy/NoSuchPolicyTags")
         .build()
         .expect("Failed to build ListPolicyTagsRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Listing tags on a nonexistent policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -965,7 +966,7 @@ pub async fn test_list_policy_tags_invalid_arn(pool: &sqlx::PgPool) {
         .policy_arn("not-an-arn-but-long-enough-to-pass")
         .build()
         .expect("Failed to build ListPolicyTagsRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Listing tags with a bad ARN must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -991,7 +992,7 @@ pub async fn test_list_policy_tags_pagination(pool: &sqlx::PgPool) {
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create PaginationTagsPolicy");
     let tags: Vec<Tag> = (0..5)
@@ -1008,7 +1009,7 @@ pub async fn test_list_policy_tags_pagination(pool: &sqlx::PgPool) {
         .set_tags(tags)
         .build()
         .expect("Failed to build TagPolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to tag PaginationTagsPolicy");
     tx.commit().await.expect("Failed to commit transaction");
@@ -1024,7 +1025,7 @@ pub async fn test_list_policy_tags_pagination(pool: &sqlx::PgPool) {
         builder
             .build()
             .expect("Failed to build ListPolicyTagsRequest")
-            .execute(tx)
+            .execute(tx, RequestId::new())
             .await
             .expect("Failed to list policy tags page")
     };
@@ -1060,7 +1061,7 @@ pub async fn test_list_policy_tags_pagination(pool: &sqlx::PgPool) {
         .policy_arn(pol_arn.to_string())
         .build()
         .expect("Failed to build DeletePolicyRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to delete PaginationTagsPolicy");
     tx.commit().await.expect("Failed to commit transaction");

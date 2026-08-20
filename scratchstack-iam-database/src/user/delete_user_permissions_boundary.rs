@@ -2,6 +2,7 @@
 use {
     crate::{RequestExecutor, account::validate_account_id, constants::*, internal_failure, user::validate_user_name},
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError, operation::DeleteUserPermissionsBoundaryInternalRequest,
         types::error::NoSuchEntityException,
@@ -13,8 +14,8 @@ impl RequestExecutor for DeleteUserPermissionsBoundaryInternalRequest {
     type Response = ();
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        delete_user_permissions_boundary(tx, &self.account_id, &self.user_name).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        delete_user_permissions_boundary(tx, &self.account_id, &self.user_name, request_id).await
     }
 }
 
@@ -25,13 +26,14 @@ pub async fn delete_user_permissions_boundary(
     tx: &mut PgTransaction<'_>,
     account_id: &str,
     user_name: &str,
+    request_id: RequestId,
 ) -> Result<(), IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    validate_user_name(user_name)?;
+    validate_user_name(user_name, request_id)?;
 
     let result = match query(indoc! {"
             UPDATE iam.users
@@ -46,13 +48,14 @@ pub async fn delete_user_permissions_boundary(
         Ok(result) => result,
         Err(e) => {
             log::error!("Failed to clear user permissions boundary in database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
     if result.rows_affected() == 0 {
         return Err(NoSuchEntityException::builder()
             .message(format!("The user with name {user_name} cannot be found."))
+            .request_id(request_id)
             .build()
             .into());
     }

@@ -28,7 +28,7 @@ mod tests;
 use {
     crate::{account::*, group::*, partition::*, policy::*, role::*, session_token_encryption_key::*, user::*},
     clap::{Parser, Subcommand},
-    scratchstack_core::error::ProvideErrorMetadata,
+    scratchstack_core::{RequestId, error::ProvideErrorMetadata},
     scratchstack_iam_database::RequestExecutor,
     scratchstack_shapes_iam::{error_meta::Error as IamError, types::error::InternalFailure},
     serde::Serialize as _,
@@ -934,7 +934,9 @@ where
         IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
     })?;
 
-    match request.execute(&mut tx).await {
+    let request_id = RequestId::new();
+
+    match request.execute(&mut tx, request_id).await {
         Ok(response) => {
             tx.commit().await.map_err(|e| {
                 log::error!("Failed to commit transaction: {e}");

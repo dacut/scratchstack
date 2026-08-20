@@ -16,6 +16,7 @@ use {
     indoc::indoc,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::IamResourceType,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{CreateUserInternalRequest, CreateUserResponse},
@@ -28,7 +29,7 @@ impl RequestExecutor for CreateUserInternalRequest {
     type Response = CreateUserResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
         create_user(
             tx,
             &self.account_id,
@@ -36,6 +37,7 @@ impl RequestExecutor for CreateUserInternalRequest {
             self.path.as_deref(),
             self.permissions_boundary.as_deref(),
             &self.tags,
+            request_id,
         )
         .await
     }
@@ -49,29 +51,30 @@ pub async fn create_user(
     path: Option<&str>,
     permissions_boundary: Option<&str>,
     tags: &[Tag],
+    request_id: RequestId,
 ) -> Result<CreateUserResponse, IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
     let path = path.unwrap_or("/");
-    validate_path(path)?;
-    validate_user_name(user_name)?;
+    validate_path(path, request_id)?;
+    validate_user_name(user_name, request_id)?;
 
     for tag in tags {
-        validate_tag_key(&tag.key)?;
-        validate_tag_value(&tag.value)?;
+        validate_tag_key(&tag.key, request_id)?;
+        validate_tag_value(&tag.value, request_id)?;
     }
 
     // Generate a new user id for this user.
     let user_id = IamId::new(IamResourceType::User, account_id.parse().unwrap()).to_string();
-    let partition = get_current_partition_or_fail(tx).await?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
 
     // If a permissions boundary was specified, look it up and verify that it exists. We need the actual IAM
     // identifier for the boundary, not just the ARN.
     let permissions_boundary_id = if let Some(permissions_boundary) = permissions_boundary {
-        Some(get_permissions_boundary_id(tx, account_id, permissions_boundary).await?)
+        Some(get_permissions_boundary_id(tx, account_id, permissions_boundary, request_id).await?)
     } else {
         None
     };
@@ -95,14 +98,14 @@ pub async fn create_user(
         Ok(result) => result,
         Err(e) => {
             log::error!("Failed to insert user into database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
     let created_at: DateTime<Utc> = match result.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
             log::error!("Failed to get created_at from database row: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
@@ -123,7 +126,7 @@ pub async fn create_user(
         .await
         {
             log::error!("Failed to insert user tag into database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     }
 
@@ -137,7 +140,7 @@ pub async fn create_user(
         Ok(arn) => arn,
         Err(e) => {
             log::error!("Failed to construct ARN for new user: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
@@ -149,7 +152,7 @@ pub async fn create_user(
                 .build()
                 .map_err(|e| {
                     log::error!("Failed to construct permissions boundary for new user: {e}");
-                    internal_failure()
+                    internal_failure(request_id)
                 })?,
         )
     } else {
@@ -167,7 +170,7 @@ pub async fn create_user(
         .build()
         .map_err(|e| {
             log::error!("Failed to construct user object for new user: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
 
     Ok(CreateUserResponse::builder().user(user).build().unwrap())

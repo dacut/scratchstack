@@ -5,6 +5,7 @@ use {
         make_iam_paginator, partition::get_current_partition_or_fail, role::validate_role_name,
     },
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{ListRoleTagsInternalRequest, ListRoleTagsResponse},
@@ -18,8 +19,8 @@ impl RequestExecutor for ListRoleTagsInternalRequest {
     type Response = ListRoleTagsResponse;
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        list_role_tags(tx, &self.account_id, &self.role_name, self.marker.as_deref(), self.max_items).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        list_role_tags(tx, &self.account_id, &self.role_name, self.marker.as_deref(), self.max_items, request_id).await
     }
 }
 
@@ -44,16 +45,17 @@ pub async fn list_role_tags(
     role_name: &str,
     marker: Option<&str>,
     max_items: Option<i32>,
+    request_id: RequestId,
 ) -> Result<ListRoleTagsResponse, IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    validate_role_name(role_name)?;
+    validate_role_name(role_name, request_id)?;
     let role_name_lower = role_name.to_lowercase();
-    let max_items = constrain_max_items(max_items)?;
-    let partition = get_current_partition_or_fail(tx).await?;
+    let max_items = constrain_max_items(max_items, request_id)?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
 
     let role_row = query(indoc! {"
         SELECT role_id
@@ -67,7 +69,7 @@ pub async fn list_role_tags(
     .await
     .map_err(|e| {
         log::error!("Failed to check if role exists in database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     let role_id: String = match role_row {
@@ -75,12 +77,13 @@ pub async fn list_role_tags(
         None => {
             return Err(NoSuchEntityException::builder()
                 .message(format!("The role with name {role_name} cannot be found."))
+                .request_id(request_id)
                 .build()
                 .into());
         }
     };
 
-    let paginator = make_iam_paginator(&partition, OP_LIST_ROLE_TAGS)?;
+    let paginator = make_iam_paginator(&partition, OP_LIST_ROLE_TAGS, request_id)?;
 
     let mut sql = QueryBuilder::new(indoc! {"
         SELECT key_lower, key_cased, value
@@ -91,7 +94,7 @@ pub async fn list_role_tags(
     if let Some(marker) = marker {
         let m: ListRoleTagsMarker = paginator.decrypt_token(marker).await.map_err(|e| {
             log::error!("Failed to decrypt pagination token for ListRoleTags: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?;
         sql.push("\nAND key_lower >= ");
         sql.push_bind(m.next_key_lower);
@@ -103,7 +106,7 @@ pub async fn list_role_tags(
 
     let rows = sql.build_query_as::<ListRoleTagsRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
         log::error!("Failed to fetch role tags from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
     let mut results = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -118,7 +121,7 @@ pub async fn list_role_tags(
                     .await
                     .map_err(|e| {
                         log::error!("Failed to encrypt pagination token for ListRoleTags: {e}");
-                        internal_failure()
+                        internal_failure(request_id)
                     })?,
             );
             break;
@@ -126,7 +129,7 @@ pub async fn list_role_tags(
 
         results.push(Tag::builder().key(row.key_cased).value(row.value).build().map_err(|e| {
             log::error!("Failed to construct tag object: {e}");
-            internal_failure()
+            internal_failure(request_id)
         })?);
     }
 
@@ -138,6 +141,6 @@ pub async fn list_role_tags(
 
     builder.build().map_err(|e| {
         log::error!("Failed to build ListRoleTagsResponse: {e}");
-        internal_failure().into()
+        internal_failure(request_id).into()
     })
 }

@@ -30,7 +30,7 @@ pub use {
 };
 
 use {
-    crate::constants::*, scratchstack_arn::validate_iam_resource_name,
+    crate::constants::*, scratchstack_arn::validate_iam_resource_name, scratchstack_core::RequestId,
     scratchstack_shapes_iam::types::error::ValidationError,
 };
 
@@ -51,23 +51,29 @@ fn user_arn_resource(path: &str, user_name: &str) -> String {
 /// 16..=128 characters of `[A-Za-z0-9_]`. The shape-level validation on
 /// `DeleteAccessKeyInternalRequest` / `UpdateAccessKeyInternalRequest` already enforces the regex
 /// and length window; this adds the prefix requirement so we can derive the stored body.
-pub(crate) fn validate_access_key_id(access_key_id: &str) -> Result<(), ValidationError> {
+pub(crate) fn validate_access_key_id(access_key_id: &str, request_id: RequestId) -> Result<(), ValidationError> {
     if access_key_id.len() < 16 || access_key_id.len() > 128 || !access_key_id.starts_with("AKIA") {
-        return Err(ValidationError::builder().message(format!("Access key id {access_key_id} is not valid.")).build());
+        return Err(ValidationError::builder()
+            .message(format!("Access key id {access_key_id} is not valid."))
+            .request_id(request_id)
+            .build());
     }
     if !access_key_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-        return Err(ValidationError::builder().message(format!("Access key id {access_key_id} is not valid.")).build());
+        return Err(ValidationError::builder()
+            .message(format!("Access key id {access_key_id} is not valid."))
+            .request_id(request_id)
+            .build());
     }
     Ok(())
 }
 
 /// Validate that the user name is valid according to AWS IAM rules.
-pub fn validate_user_name(user_name: impl AsRef<str>) -> Result<(), ValidationError> {
+pub fn validate_user_name(user_name: impl AsRef<str>, request_id: RequestId) -> Result<(), ValidationError> {
     const MESSAGE: &str = "User name must contain only alphanumeric characters or the following symbols: =,.@- and must be between 1 and 64 characters long.";
 
     let user_name = user_name.as_ref();
     if user_name.len() > 64 || validate_iam_resource_name(user_name).is_err() {
-        Err(ValidationError::builder().message(MESSAGE).build())
+        Err(ValidationError::builder().message(MESSAGE).request_id(request_id).build())
     } else {
         Ok(())
     }

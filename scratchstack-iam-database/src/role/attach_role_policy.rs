@@ -5,6 +5,7 @@ use {
         role::validate_role_name,
     },
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError, operation::AttachRolePolicyInternalRequest, types::error::NoSuchEntityException,
     },
@@ -15,8 +16,8 @@ impl RequestExecutor for AttachRolePolicyInternalRequest {
     type Response = ();
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        attach_role_policy(tx, &self.account_id, &self.role_name, &self.policy_arn).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        attach_role_policy(tx, &self.account_id, &self.role_name, &self.policy_arn, request_id).await
     }
 }
 
@@ -26,18 +27,20 @@ pub async fn attach_role_policy(
     account_id: &str,
     role_name: &str,
     policy_arn: &str,
+    request_id: RequestId,
 ) -> Result<(), IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    validate_role_name(role_name)?;
+    validate_role_name(role_name, request_id)?;
 
-    let parts = parse_policy_arn(policy_arn)?;
+    let parts = parse_policy_arn(policy_arn, request_id)?;
     if parts.account_id() != account_id && parts.account_id() != AWS_ACCOUNT_ID {
         return Err(NoSuchEntityException::builder()
             .message(format!("Policy {policy_arn} was not found."))
+            .request_id(request_id)
             .build()
             .into());
     }
@@ -62,12 +65,13 @@ pub async fn attach_role_policy(
         Ok(None) => {
             return Err(NoSuchEntityException::builder()
                 .message(format!("Policy {policy_arn} was not found."))
+                .request_id(request_id)
                 .build()
                 .into());
         }
         Err(e) => {
             log::error!("Failed to look up managed policy in database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
@@ -86,12 +90,13 @@ pub async fn attach_role_policy(
         Ok(None) => {
             return Err(NoSuchEntityException::builder()
                 .message(format!("The role with name {role_name} cannot be found."))
+                .request_id(request_id)
                 .build()
                 .into());
         }
         Err(e) => {
             log::error!("Failed to look up role in database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
@@ -106,7 +111,7 @@ pub async fn attach_role_policy(
     .await
     {
         log::error!("Failed to attach policy to role in database: {e}");
-        return Err(internal_failure().into());
+        return Err(internal_failure(request_id).into());
     }
 
     Ok(())

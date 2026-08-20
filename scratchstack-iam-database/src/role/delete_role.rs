@@ -2,6 +2,7 @@
 use {
     crate::{RequestExecutor, account::validate_account_id, constants::*, internal_failure, role::validate_role_name},
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::DeleteRoleInternalRequest,
@@ -14,21 +15,26 @@ impl RequestExecutor for DeleteRoleInternalRequest {
     type Response = ();
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        delete_role(tx, &self.account_id, &self.role_name).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        delete_role(tx, &self.account_id, &self.role_name, request_id).await
     }
 }
 
 /// Delete a role from the database. The role must have no remaining dependent resources
 /// (attached managed policies, inline policies, etc.); a FK violation from the underlying DELETE
 /// is surfaced as `DeleteConflictException`. Role tags are removed via FK cascade.
-pub async fn delete_role(tx: &mut PgTransaction<'_>, account_id: &str, role_name: &str) -> Result<(), IamError> {
-    validate_account_id(account_id)?;
+pub async fn delete_role(
+    tx: &mut PgTransaction<'_>,
+    account_id: &str,
+    role_name: &str,
+    request_id: RequestId,
+) -> Result<(), IamError> {
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    validate_role_name(role_name)?;
+    validate_role_name(role_name, request_id)?;
 
     let result = match query(indoc! {"
             DELETE FROM iam.roles
@@ -47,16 +53,17 @@ pub async fn delete_role(tx: &mut PgTransaction<'_>, account_id: &str, role_name
                 let message = format!(
                     "Cannot delete role {role_name} because it has attached managed policies, inline policies, or other dependent resources. You must remove them before deleting the role."
                 );
-                return Err(DeleteConflictException::builder().message(message).build().into());
+                return Err(DeleteConflictException::builder().message(message).request_id(request_id).build().into());
             }
             log::error!("Failed to delete role from database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
     if result.rows_affected() == 0 {
         Err(NoSuchEntityException::builder()
             .message(format!("The role with name {role_name} cannot be found."))
+            .request_id(request_id)
             .build()
             .into())
     } else {

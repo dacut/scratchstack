@@ -5,6 +5,7 @@ use {
         user::validate_user_name,
     },
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError, operation::AddUserToGroupInternalRequest, types::error::NoSuchEntityException,
     },
@@ -15,8 +16,8 @@ impl RequestExecutor for AddUserToGroupInternalRequest {
     type Response = ();
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        add_user_to_group(tx, &self.account_id, &self.group_name, &self.user_name).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        add_user_to_group(tx, &self.account_id, &self.group_name, &self.user_name, request_id).await
     }
 }
 
@@ -26,14 +27,15 @@ pub async fn add_user_to_group(
     account_id: &str,
     group_name: &str,
     user_name: &str,
+    request_id: RequestId,
 ) -> Result<(), IamError> {
-    validate_account_id(account_id)?;
+    validate_account_id(account_id, request_id)?;
     let account_id = match account_id {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    validate_group_name(group_name)?;
-    validate_user_name(user_name)?;
+    validate_group_name(group_name, request_id)?;
+    validate_user_name(user_name, request_id)?;
 
     // Look up the group_id.
     let group_id: String = match query(indoc! {"
@@ -50,12 +52,13 @@ pub async fn add_user_to_group(
         Ok(None) => {
             return Err(NoSuchEntityException::builder()
                 .message(format!("The group with name {group_name} cannot be found."))
+                .request_id(request_id)
                 .build()
                 .into());
         }
         Err(e) => {
             log::error!("Failed to look up group in database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
@@ -74,12 +77,13 @@ pub async fn add_user_to_group(
         Ok(None) => {
             return Err(NoSuchEntityException::builder()
                 .message(format!("The user with name {user_name} cannot be found."))
+                .request_id(request_id)
                 .build()
                 .into());
         }
         Err(e) => {
             log::error!("Failed to look up user in database: {e}");
-            return Err(internal_failure().into());
+            return Err(internal_failure(request_id).into());
         }
     };
 
@@ -95,7 +99,7 @@ pub async fn add_user_to_group(
     .await
     {
         log::error!("Failed to add user to group in database: {e}");
-        return Err(internal_failure().into());
+        return Err(internal_failure(request_id).into());
     }
 
     Ok(())

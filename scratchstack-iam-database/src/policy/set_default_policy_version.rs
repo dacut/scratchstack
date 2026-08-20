@@ -7,6 +7,7 @@ use {
         policy::{parse_policy_arn, parse_policy_version_id},
     },
     indoc::indoc,
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::SetDefaultPolicyVersionRequest,
@@ -19,8 +20,8 @@ impl RequestExecutor for SetDefaultPolicyVersionRequest {
     type Response = ();
     type Error = IamError;
 
-    async fn execute(&self, tx: &mut PgTransaction<'_>) -> Result<Self::Response, Self::Error> {
-        set_default_policy_version(tx, &self.policy_arn, &self.version_id).await
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        set_default_policy_version(tx, &self.policy_arn, &self.version_id, request_id).await
     }
 }
 
@@ -29,6 +30,7 @@ pub async fn set_default_policy_version(
     tx: &mut PgTransaction<'_>,
     policy_arn: &str,
     version_id: &str,
+    request_id: RequestId,
 ) -> Result<(), IamError> {
     /// The row returned by the query to the iam.policies table to get the managed_policy_id for
     /// the requested policy ARN.
@@ -37,13 +39,16 @@ pub async fn set_default_policy_version(
         managed_policy_id: String,
     }
 
-    let parts = parse_policy_arn(policy_arn)?;
+    let parts = parse_policy_arn(policy_arn, request_id)?;
     let policy_account_id = match parts.account_id() {
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
     let version_number = parse_policy_version_id(version_id).ok_or_else(|| {
-        ValidationError::builder().message(format!("Invalid policy version id: {version_id}")).build()
+        ValidationError::builder()
+            .message(format!("Invalid policy version id: {version_id}"))
+            .request_id(request_id)
+            .build()
     })?;
 
     // Lock the managed_policies row FOR UPDATE to serialize against DeletePolicyVersion (which
@@ -62,9 +67,14 @@ pub async fn set_default_policy_version(
     .await
     .map_err(|e| {
         log::error!("Failed to query managed policy from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?
-    .ok_or_else(|| NoSuchEntityException::builder().message(format!("Policy {policy_arn} was not found.")).build())?;
+    .ok_or_else(|| {
+        NoSuchEntityException::builder()
+            .message(format!("Policy {policy_arn} was not found."))
+            .request_id(request_id)
+            .build()
+    })?;
 
     // Also lock the specific version row. This ensures a separate transaction can't delete this
     // version after we check it exists but before we set it as default.
@@ -80,12 +90,13 @@ pub async fn set_default_policy_version(
     .await
     .map_err(|e| {
         log::error!("Failed to query managed policy version from database: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     if version_exists.is_none() {
         return Err(NoSuchEntityException::builder()
             .message(format!("Policy {policy_arn} version {version_id} was not found."))
+            .request_id(request_id)
             .build()
             .into());
     }
@@ -101,7 +112,7 @@ pub async fn set_default_policy_version(
     .await
     .map_err(|e| {
         log::error!("Failed to update managed policy default_version: {e}");
-        internal_failure()
+        internal_failure(request_id)
     })?;
 
     Ok(())

@@ -2,6 +2,7 @@
 use {
     super::common::VALID_POLICY_DOCUMENT,
     pretty_assertions::assert_eq,
+    scratchstack_core::RequestId,
     scratchstack_iam_database::RequestExecutor,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -24,7 +25,7 @@ pub async fn test_attach_user_policy_simple(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to attach policy to user");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -38,8 +39,8 @@ pub async fn test_attach_user_policy_idempotent(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachUserPolicyInternalRequest");
-    req.execute(&mut tx).await.expect("First attach must succeed");
-    req.execute(&mut tx).await.expect("Second attach must succeed (idempotent)");
+    req.execute(&mut tx, RequestId::new()).await.expect("First attach must succeed");
+    req.execute(&mut tx, RequestId::new()).await.expect("Second attach must succeed (idempotent)");
     tx.rollback().await.expect("Failed to rollback transaction");
 }
 
@@ -51,7 +52,7 @@ pub async fn test_attach_user_policy_nonexistent_policy(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy")
         .build()
         .expect("Failed to build AttachUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Attaching a nonexistent policy must fail");
@@ -65,7 +66,7 @@ pub async fn test_attach_user_policy_nonexistent_user(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Attaching a policy to a nonexistent user must fail");
@@ -81,7 +82,7 @@ pub async fn test_attach_group_policy_simple(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to attach policy to group");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -95,8 +96,8 @@ pub async fn test_attach_group_policy_idempotent(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachGroupPolicyInternalRequest");
-    req.execute(&mut tx).await.expect("First attach must succeed");
-    req.execute(&mut tx).await.expect("Second attach must succeed (idempotent)");
+    req.execute(&mut tx, RequestId::new()).await.expect("First attach must succeed");
+    req.execute(&mut tx, RequestId::new()).await.expect("Second attach must succeed (idempotent)");
     tx.rollback().await.expect("Failed to rollback transaction");
 }
 
@@ -108,7 +109,7 @@ pub async fn test_attach_group_policy_nonexistent_policy(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy")
         .build()
         .expect("Failed to build AttachGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Attaching a nonexistent policy to a group must fail");
@@ -122,7 +123,7 @@ pub async fn test_attach_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Attaching a policy to a nonexistent group must fail");
@@ -138,7 +139,7 @@ pub async fn test_attach_role_policy_simple(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to attach policy to role");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -152,8 +153,8 @@ pub async fn test_attach_role_policy_idempotent(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachRolePolicyInternalRequest");
-    req.execute(&mut tx).await.expect("First attach must succeed");
-    req.execute(&mut tx).await.expect("Second attach must succeed (idempotent)");
+    req.execute(&mut tx, RequestId::new()).await.expect("First attach must succeed");
+    req.execute(&mut tx, RequestId::new()).await.expect("Second attach must succeed (idempotent)");
     tx.rollback().await.expect("Failed to rollback transaction");
 }
 
@@ -165,7 +166,7 @@ pub async fn test_attach_role_policy_nonexistent_policy(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy")
         .build()
         .expect("Failed to build AttachRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Attaching a nonexistent policy to a role must fail");
@@ -179,7 +180,7 @@ pub async fn test_attach_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Attaching a policy to a nonexistent role must fail");
@@ -195,7 +196,7 @@ pub async fn test_detach_user_policy_simple(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to attach policy to user");
     DetachUserPolicyInternalRequest::builder()
@@ -204,7 +205,7 @@ pub async fn test_detach_user_policy_simple(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to detach policy from user");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -218,7 +219,7 @@ pub async fn test_detach_user_policy_not_attached(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Detaching an unattached policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -233,7 +234,7 @@ pub async fn test_detach_user_policy_nonexistent_policy(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy")
         .build()
         .expect("Failed to build DetachUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Detaching a nonexistent policy must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -248,7 +249,7 @@ pub async fn test_detach_user_policy_nonexistent_user(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachUserPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Detaching from a nonexistent user must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -265,7 +266,7 @@ pub async fn test_detach_group_policy_simple(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to attach policy to group");
     DetachGroupPolicyInternalRequest::builder()
@@ -274,7 +275,7 @@ pub async fn test_detach_group_policy_simple(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to detach policy from group");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -290,7 +291,7 @@ pub async fn test_detach_group_policy_not_attached(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to detach seed attachment");
     let err = DetachGroupPolicyInternalRequest::builder()
@@ -299,7 +300,7 @@ pub async fn test_detach_group_policy_not_attached(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Detaching an unattached policy from group must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -314,7 +315,7 @@ pub async fn test_detach_group_policy_nonexistent_policy(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy")
         .build()
         .expect("Failed to build DetachGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Detaching a nonexistent policy from group must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -329,7 +330,7 @@ pub async fn test_detach_group_policy_nonexistent_group(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachGroupPolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Detaching from a nonexistent group must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -346,7 +347,7 @@ pub async fn test_detach_role_policy_simple(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build AttachRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to attach policy to role");
     DetachRolePolicyInternalRequest::builder()
@@ -355,7 +356,7 @@ pub async fn test_detach_role_policy_simple(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to detach policy from role");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -371,7 +372,7 @@ pub async fn test_detach_role_policy_not_attached(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to detach seed attachment");
     let err = DetachRolePolicyInternalRequest::builder()
@@ -380,7 +381,7 @@ pub async fn test_detach_role_policy_not_attached(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Detaching an unattached policy from role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -395,7 +396,7 @@ pub async fn test_detach_role_policy_nonexistent_policy(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/NonexistentPolicy")
         .build()
         .expect("Failed to build DetachRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Detaching a nonexistent policy from role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -410,7 +411,7 @@ pub async fn test_detach_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
         .policy_arn("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1")
         .build()
         .expect("Failed to build DetachRolePolicyInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Detaching from a nonexistent role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -427,7 +428,7 @@ pub async fn test_list_attached_user_policies_seed(pool: &sqlx::PgPool) {
         .user_name("Example-User-2")
         .build()
         .expect("Failed to build ListAttachedUserPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list attached user policies");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -449,7 +450,7 @@ pub async fn test_list_attached_user_policies_empty(pool: &sqlx::PgPool) {
         .user_name("alice")
         .build()
         .expect("Failed to build ListAttachedUserPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list attached user policies");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -463,7 +464,7 @@ pub async fn test_list_attached_user_policies_nonexistent_user(pool: &sqlx::PgPo
         .user_name("no-such-user")
         .build()
         .expect("Failed to build ListAttachedUserPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Listing attached policies for a nonexistent user must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -479,7 +480,7 @@ pub async fn test_list_attached_user_policies_path_prefix(pool: &sqlx::PgPool) {
         .path_prefix("/nomatch/")
         .build()
         .expect("Failed to build ListAttachedUserPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list attached user policies");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -496,7 +497,7 @@ pub async fn test_list_attached_user_policies_pagination(pool: &sqlx::PgPool) {
         .user_name("attach-test-user-2")
         .build()
         .expect("Failed to build CreateUserInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to create attach-test-user-2");
 
@@ -507,7 +508,7 @@ pub async fn test_list_attached_user_policies_pagination(pool: &sqlx::PgPool) {
             .policy_document(VALID_POLICY_DOCUMENT.to_string())
             .build()
             .expect("Failed to build CreatePolicyInternalRequest")
-            .execute(&mut tx)
+            .execute(&mut tx, RequestId::new())
             .await
             .unwrap_or_else(|e| panic!("Failed to create policy {name}: {e:?}"));
         AttachUserPolicyInternalRequest::builder()
@@ -516,7 +517,7 @@ pub async fn test_list_attached_user_policies_pagination(pool: &sqlx::PgPool) {
             .policy_arn(format!("arn:aws:iam::123456789012:policy/{name}"))
             .build()
             .expect("Failed to build AttachUserPolicyInternalRequest")
-            .execute(&mut tx)
+            .execute(&mut tx, RequestId::new())
             .await
             .unwrap_or_else(|e| panic!("Failed to attach policy {name}: {e:?}"));
     }
@@ -528,7 +529,7 @@ pub async fn test_list_attached_user_policies_pagination(pool: &sqlx::PgPool) {
         .max_items(2)
         .build()
         .expect("Failed to build ListAttachedUserPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list attached user policies (page 1)");
     assert_eq!(page1.attached_policies.len(), 2, "Page 1 should contain 2 policies");
@@ -543,7 +544,7 @@ pub async fn test_list_attached_user_policies_pagination(pool: &sqlx::PgPool) {
         .marker(marker)
         .build()
         .expect("Failed to build ListAttachedUserPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list attached user policies (page 2)");
     assert_eq!(page2.attached_policies.len(), 1, "Page 2 should contain 1 policy");
@@ -571,7 +572,7 @@ pub async fn test_list_attached_group_policies_seed(pool: &sqlx::PgPool) {
         .group_name("Example-Group-1")
         .build()
         .expect("Failed to build ListAttachedGroupPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list attached group policies");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -591,7 +592,7 @@ pub async fn test_list_attached_group_policies_nonexistent_group(pool: &sqlx::Pg
         .group_name("NoSuchGroup")
         .build()
         .expect("Failed to build ListAttachedGroupPoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Listing attached policies for a nonexistent group must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -607,7 +608,7 @@ pub async fn test_list_attached_role_policies_seed(pool: &sqlx::PgPool) {
         .role_name("Example-Role-1")
         .build()
         .expect("Failed to build ListAttachedRolePoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect("Failed to list attached role policies");
     tx.rollback().await.expect("Failed to rollback transaction");
@@ -627,7 +628,7 @@ pub async fn test_list_attached_role_policies_nonexistent_role(pool: &sqlx::PgPo
         .role_name("no-such-role")
         .build()
         .expect("Failed to build ListAttachedRolePoliciesInternalRequest")
-        .execute(&mut tx)
+        .execute(&mut tx, RequestId::new())
         .await
         .expect_err("Listing attached policies for a nonexistent role must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
