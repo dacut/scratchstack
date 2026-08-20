@@ -18,6 +18,9 @@
 
 use anyhow::{Result as AnyResult, bail};
 
+/// The actions (operation names) callable on this service, and the API version.
+pub mod action;
+
 /// Error metadata type that contains a union of all possible errors returned by operations in this service.
 pub mod error_meta;
 

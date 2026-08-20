@@ -37,6 +37,7 @@ pub use {
 /// Writers that will write generated code into the appropriate module.
 #[derive(Builder, Debug)]
 pub struct Writers<W: Write> {
+    pub action: W,
     pub error_meta: W,
     pub operation: W,
     pub types: W,
@@ -163,6 +164,7 @@ mod tests {
         let mut m: SmithyModel = serde_json::from_str(IAM_MODEL).expect("Failed to deserialize IAM service model");
         m.resolve();
         let mut w = Writers::builder()
+            .action(NullWriter)
             .error_meta(NullWriter)
             .operation(NullWriter)
             .types(NullWriter)

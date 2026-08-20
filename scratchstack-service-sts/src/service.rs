@@ -1,14 +1,17 @@
 use {
     crate::{constants::*, operations::get_caller_identity},
     axum::{
-        body::Body,
-        extract::{Extension, Form},
+        body::{Body, Bytes},
+        extract::{Extension, RawQuery},
         response::Response,
     },
     scratchstack_aws_principal::{Principal, SessionData},
     scratchstack_core::{RequestId, response::Responder as _},
-    scratchstack_shapes_sts::types::error::InvalidAction,
-    std::collections::HashMap,
+    scratchstack_shapes_sts::{
+        action::{Action, VERSION as STS_VERSION},
+        types::error::{InternalFailure, InvalidAction, MalformedInput},
+    },
+    std::{borrow::Cow, str::from_utf8},
 };
 
 #[axum::debug_handler]
@@ -16,30 +19,66 @@ pub(crate) async fn serve_request(
     request_id: RequestId,
     Extension(principal): Extension<Principal>,
     Extension(session_data): Extension<SessionData>,
-    Form(parameters): Form<HashMap<String, String>>,
+    RawQuery(query): RawQuery,
+    body: Bytes,
 ) -> Response<Body> {
-    let action = parameters.get(QP_ACTION).map(String::as_str).unwrap_or(NO_ACTION_SPECIFIED);
-    let version = parameters.get(QP_VERSION).map(String::as_str).unwrap_or(NO_VERSION_SPECIFIED);
+    let body = match from_utf8(&body) {
+        Ok(body) => body,
+        Err(e) => {
+            log::debug!("{request_id}: Request body is not valid UTF-8: {e}");
+            return malformed_input(request_id);
+        }
+    };
 
-    // AWS reports an unknown action and an unknown version the same way: it cannot find the
-    // operation for that (action, version) pair.
-    if version != STS_VERSION_20110615 {
-        return invalid_action(request_id, action, version);
+    // The AWS query protocol carries parameters in the query string, in the body, or split across
+    // both; SigV4 signs both, so we join them into a single parameter list. Body parameters are
+    // appended last so they win if a parameter appears in both places. These are left url-encoded
+    // here; each operation deserializes the parameters into its own request type.
+    let query = query.as_deref().unwrap_or_default();
+    let parameters: Cow<'_, str> = match (query, body) {
+        ("", body) => Cow::Borrowed(body),
+        (query, "") => Cow::Borrowed(query),
+        (query, body) => Cow::Owned(format!("{query}&{body}")),
+    };
+
+    let mut action: Cow<'_, str> = Cow::Borrowed(NO_ACTION_SPECIFIED);
+    let mut version: Cow<'_, str> = Cow::Borrowed(NO_VERSION_SPECIFIED);
+
+    for (key, value) in form_urlencoded::parse(parameters.as_bytes()) {
+        match key.as_ref() {
+            QP_ACTION => action = value,
+            QP_VERSION => version = value,
+            _ => (),
+        }
     }
 
-    match action {
-        ACTION_GET_CALLER_IDENTITY => get_caller_identity(request_id, &principal, &session_data),
-        _ => invalid_action(request_id, action, version),
+    if version != STS_VERSION {
+        return invalid_action(request_id, &action, &version);
+    }
+
+    match action.parse::<Action>() {
+        Ok(Action::GetCallerIdentity) => get_caller_identity(request_id, &principal, &session_data),
+        _ => invalid_action(request_id, &action, &version),
     }
 }
 
+/// Generate an `InternalFailure` error response.
+pub(crate) fn internal_failure(request_id: RequestId) -> Response<Body> {
+    InternalFailure::builder().message(MSG_INTERNAL_FAILURE).request_id(request_id).build().respond()
+}
+
 /// Generate an `InvalidAction` error response.
-fn invalid_action(request_id: RequestId, action: &str, version: &str) -> Response<Body> {
+pub(crate) fn invalid_action(request_id: RequestId, action: &str, version: &str) -> Response<Body> {
     InvalidAction::builder()
         .message(format!("Could not find operation {action} for version {version}"))
         .request_id(request_id)
         .build()
         .respond()
+}
+
+/// Generate a `MalformedInput` error response.
+pub(crate) fn malformed_input(request_id: RequestId) -> Response<Body> {
+    MalformedInput::builder().request_id(request_id).build().respond()
 }
 
 #[cfg(test)]
@@ -48,8 +87,8 @@ mod tests {
         super::serve_request,
         crate::constants::*,
         axum::{
-            body::Body,
-            extract::{Extension, Form},
+            body::{Body, Bytes},
+            extract::{Extension, RawQuery},
             http::StatusCode,
             response::Response,
         },
@@ -57,7 +96,6 @@ mod tests {
         pretty_assertions::assert_eq,
         scratchstack_aws_principal::{Principal, SessionData, SessionValue, User},
         scratchstack_core::RequestId,
-        std::collections::HashMap,
     };
 
     const TEST_ACCOUNT_ID: &str = "123456789012";
@@ -79,12 +117,25 @@ mod tests {
     }
 
     async fn call(parameters: &[(&str, &str)]) -> (StatusCode, String) {
-        let parameters: HashMap<String, String> =
-            parameters.iter().map(|(k, v)| ((*k).to_string(), (*v).to_string())).collect();
+        let mut body = Vec::new();
 
-        let response: Response<Body> =
-            serve_request(request_id(), Extension(test_principal()), Extension(test_session_data()), Form(parameters))
-                .await;
+        for (key, value) in parameters {
+            if !body.is_empty() {
+                body.push(b'&');
+            }
+            body.extend(form_urlencoded::byte_serialize(key.as_bytes()).flat_map(str::bytes));
+            body.push(b'=');
+            body.extend(form_urlencoded::byte_serialize(value.as_bytes()).flat_map(str::bytes));
+        }
+
+        let response: Response<Body> = serve_request(
+            request_id(),
+            Extension(test_principal()),
+            Extension(test_session_data()),
+            RawQuery(None),
+            Bytes::from(body),
+        )
+        .await;
 
         let status = response.status();
         let body = response.into_body().collect().await.expect("failed to read body").to_bytes();
@@ -93,7 +144,7 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn get_caller_identity_returns_the_signed_in_principal() {
-        let (status, body) = call(&[("Action", ACTION_GET_CALLER_IDENTITY), ("Version", STS_VERSION_20110615)]).await;
+        let (status, body) = call(&[("Action", "GetCallerIdentity"), ("Version", "2011-06-15")]).await;
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(
@@ -106,13 +157,13 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn unknown_action_is_rejected() {
-        let (status, body) = call(&[("Action", "NoSuchOperation"), ("Version", STS_VERSION_20110615)]).await;
+        let (status, body) = call(&[("Action", "NoSuchOperation"), ("Version", "2011-06-15")]).await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(
             body,
             format!(
-                r#"<ErrorResponse xmlns="{XML_NS_STS}"><Error><Type>Sender</Type><Code>InvalidAction</Code><Message>Could not find operation NoSuchOperation for version {STS_VERSION_20110615}</Message></Error><RequestId>{TEST_REQUEST_ID}</RequestId></ErrorResponse>"#
+                r#"<ErrorResponse xmlns="{XML_NS_STS}"><Error><Type>Sender</Type><Code>InvalidAction</Code><Message>Could not find operation NoSuchOperation for version 2011-06-15</Message></Error><RequestId>{TEST_REQUEST_ID}</RequestId></ErrorResponse>"#
             )
         );
     }
@@ -120,7 +171,7 @@ mod tests {
     /// An unknown version is reported the same way AWS reports it: as an unfindable operation.
     #[test_log::test(tokio::test)]
     async fn unknown_version_is_rejected() {
-        let (status, body) = call(&[("Action", ACTION_GET_CALLER_IDENTITY), ("Version", "1999-01-01")]).await;
+        let (status, body) = call(&[("Action", "GetCallerIdentity"), ("Version", "1999-01-01")]).await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(
