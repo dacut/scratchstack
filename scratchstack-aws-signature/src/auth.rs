@@ -12,8 +12,8 @@ use {
     crate::{
         GetSigningKeyRequest, GetSigningKeyResponse, KSigningKey, SignatureError, constants::*, crypto::hmac_sha256,
     },
+    bon::Builder,
     chrono::{DateTime, Duration, Utc},
-    derive_builder::Builder,
     log::{debug, trace},
     qualifier_attr::qualifiers,
     scratchstack_aws_principal::{Principal, SessionData},
@@ -41,7 +41,7 @@ pub struct SigV4Authenticator {
     pub(crate) credential: String,
 
     /// The optional session token.
-    #[builder(setter(into, strip_option), default)]
+    #[builder(into)]
     session_token: Option<String>,
 
     /// The signature passed into the request.
@@ -52,15 +52,6 @@ pub struct SigV4Authenticator {
 }
 
 impl SigV4Authenticator {
-    /// Create a builder for `SigV4Authenticator`.
-    #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
-    #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
-    #[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
-    #[inline(always)]
-    fn builder() -> SigV4AuthenticatorBuilder {
-        SigV4AuthenticatorBuilder::default()
-    }
-
     /// Retrieve the SHA-256 hash of the canonical request.
     #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
     #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
@@ -344,23 +335,6 @@ impl Debug for SigV4Authenticator {
     }
 }
 
-impl SigV4AuthenticatorBuilder {
-    /// Retrieve the credential passed into the request.
-    pub fn get_credential(&self) -> Option<&str> {
-        self.credential.as_deref()
-    }
-
-    /// Retrieve the signature passed into the request.
-    pub fn get_signature(&self) -> Option<&str> {
-        self.signature.as_deref()
-    }
-
-    /// Retrieve the session token passed into the request.
-    pub fn get_session_token(&self) -> Option<&str> {
-        self.session_token.as_ref()?.as_deref()
-    }
-}
-
 /// Upon successful authentication of a signature, this is returned to convey the principal,
 /// session data, and possibly policies associated with the request.
 ///
@@ -369,21 +343,15 @@ impl SigV4AuthenticatorBuilder {
 #[derive(Builder, Clone, Debug)]
 pub struct SigV4AuthenticatorResponse {
     /// The principal actor of the request.
-    #[builder(setter(into))]
+    #[builder(into)]
     principal: Principal,
 
     /// The session data associated with the principal.
-    #[builder(setter(into), default)]
+    #[builder(into, default)]
     session_data: SessionData,
 }
 
 impl SigV4AuthenticatorResponse {
-    /// Create a [`SigV4AuthenticatorResponseBuilder`] to construct a `SigV4AuthenticatorResponse`.
-    #[inline]
-    pub fn builder() -> SigV4AuthenticatorResponseBuilder {
-        SigV4AuthenticatorResponseBuilder::default()
-    }
-
     /// Retrieve the principal actors of the request.
     #[inline]
     pub fn principal(&self) -> &Principal {
@@ -421,7 +389,7 @@ mod tests {
         super::duration_to_string,
         crate::{
             GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, SignatureError,
-            auth::{SigV4Authenticator, SigV4AuthenticatorBuilder, SigV4AuthenticatorResponse},
+            auth::{SigV4Authenticator, SigV4AuthenticatorResponse},
             constants::*,
             service_for_signing_key_fn,
         },
@@ -461,14 +429,13 @@ mod tests {
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
             29, 30, 31,
         ];
-        let auth2 = SigV4AuthenticatorBuilder::default()
+        let auth2 = SigV4Authenticator::builder()
             .canonical_request_sha256(sha256)
             .credential("AKIA1/20151231/us-east-1/example/aws4_request".to_string())
             .session_token("token".to_string())
             .signature("1234".to_string())
             .request_timestamp(test_time)
-            .build()
-            .unwrap();
+            .build();
 
         assert_eq!(
             auth2.canonical_request_sha256().as_slice(),
@@ -562,8 +529,7 @@ mod tests {
             .session_token("expired")
             .signature("invalid".to_string())
             .request_timestamp(outdated_timestamp)
-            .build()
-            .unwrap();
+            .build();
 
         let e = auth
             .validate_signature("us-east-1", "example", test_timestamp, mismatch, &mut get_signing_key_svc.clone())
@@ -587,8 +553,7 @@ mod tests {
             .session_token("expired")
             .signature("invalid".to_string())
             .request_timestamp(future_timestamp)
-            .build()
-            .unwrap();
+            .build();
 
         let e = auth
             .validate_signature("us-east-1", "example", test_timestamp, mismatch, &mut get_signing_key_svc.clone())
@@ -612,8 +577,7 @@ mod tests {
             .session_token("expired")
             .signature("invalid".to_string())
             .request_timestamp(test_timestamp)
-            .build()
-            .unwrap();
+            .build();
 
         let e = auth
             .validate_signature("us-east-1", "example", test_timestamp, mismatch, &mut get_signing_key_svc.clone())
@@ -637,8 +601,7 @@ mod tests {
             .session_token("expired")
             .signature("invalid".to_string())
             .request_timestamp(test_timestamp)
-            .build()
-            .unwrap();
+            .build();
 
         let e = auth
             .validate_signature("us-east-1", "example", test_timestamp, mismatch, &mut get_signing_key_svc.clone())
@@ -662,8 +625,7 @@ mod tests {
             .session_token("invalid")
             .signature("invalid".to_string())
             .request_timestamp(test_timestamp)
-            .build()
-            .unwrap();
+            .build();
 
         let e = auth
             .validate_signature("us-east-1", "example", test_timestamp, mismatch, &mut get_signing_key_svc.clone())
@@ -684,8 +646,7 @@ mod tests {
             .session_token("expired")
             .signature("invalid".to_string())
             .request_timestamp(test_timestamp)
-            .build()
-            .unwrap();
+            .build();
 
         let e = auth
             .validate_signature("us-east-1", "example", test_timestamp, mismatch, &mut get_signing_key_svc.clone())
@@ -706,8 +667,7 @@ mod tests {
             .session_token("internal-service-error")
             .signature("invalid".to_string())
             .request_timestamp(test_timestamp)
-            .build()
-            .unwrap();
+            .build();
 
         let e = auth
             .validate_signature("us-east-1", "example", test_timestamp, mismatch, &mut get_signing_key_svc.clone())
@@ -729,8 +689,7 @@ mod tests {
             .session_token("io-error")
             .signature("invalid".to_string())
             .request_timestamp(test_timestamp)
-            .build()
-            .unwrap();
+            .build();
 
         let e = auth
             .validate_signature("us-east-1", "example", test_timestamp, mismatch, &mut get_signing_key_svc.clone())
@@ -753,8 +712,7 @@ mod tests {
             .session_token("ok")
             .signature("invalid".to_string())
             .request_timestamp(test_timestamp)
-            .build()
-            .unwrap();
+            .build();
 
         let e = auth
             .validate_signature("us-east-1", "example", test_timestamp, mismatch, &mut get_signing_key_svc.clone())
@@ -775,8 +733,7 @@ mod tests {
             .session_token("ok")
             .signature("invalid".to_string())
             .request_timestamp(test_timestamp)
-            .build()
-            .unwrap();
+            .build();
 
         let e = auth
             .validate_signature("us-east-1", "example", test_timestamp, mismatch, &mut get_signing_key_svc.clone())
@@ -800,8 +757,7 @@ mod tests {
             .session_token("ok")
             .signature("88bf1ccb1e3e4df7bb2ed6d89bcd8558d6770845007e1a5c392ac9edce0d5deb".to_string())
             .request_timestamp(test_timestamp)
-            .build()
-            .unwrap();
+            .build();
 
         let _ = auth
             .validate_signature("us-east-1", "example", test_timestamp, mismatch, &mut get_signing_key_svc.clone())
@@ -821,7 +777,7 @@ mod tests {
     #[test_log::test]
     fn test_response_builder() {
         let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
-        let response = SigV4AuthenticatorResponse::builder().principal(principal).build().unwrap();
+        let response = SigV4AuthenticatorResponse::builder().principal(principal).build();
         assert!(response.principal().as_user().is_some());
         assert!(response.session_data().is_empty());
 
