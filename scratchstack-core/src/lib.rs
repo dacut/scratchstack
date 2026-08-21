@@ -1,7 +1,7 @@
 //! Scratchstack core types.
 //!
 //! This crate provides the core types shared across Scratchstack libraries and services: the
-//! error traits and types, the [`RequestId`][request_id::RequestId] type, and
+//! error traits and types, the `RequestId` type, and
 //! TLS support for serving Axum applications.
 
 #![warn(clippy::all)]

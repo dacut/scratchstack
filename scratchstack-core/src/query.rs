@@ -10,7 +10,7 @@
 //! ```
 //!
 //! carries a scalar `RoleArn` member and a `PolicyArns` list whose first element is a structure
-//! with an `arn` member. [`from_query_str`] rebuilds the parameter tree from the flattened form
+//! with an `arn` member. `from_query_str` rebuilds the parameter tree from the flattened form
 //! and drives a [`serde`] deserializer over it, so request shapes can be deserialized directly
 //! from a query string or form-encoded request body.
 //!
