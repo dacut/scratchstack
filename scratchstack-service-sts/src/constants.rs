@@ -2,6 +2,9 @@
 //!
 //! Please keep this file organized alphabetically.
 
+/// The ARN resource type for IAM roles.
+pub(crate) const ARN_RESOURCE_TYPE_ROLE: &str = "role";
+
 /// Content-Type string for HTML forms
 #[allow(dead_code)]
 pub(crate) const CT_APPLICATION_X_WWW_FORM_URLENCODED: &str = "application/x-www-form-urlencoded";
@@ -21,6 +24,9 @@ pub(crate) const MIME_TYPE_XML: &str = "text/xml";
 /// Error message used when an operation fails for reasons the caller cannot act on.
 pub(crate) const MSG_INTERNAL_FAILURE: &str = "Internal failure";
 
+/// Error message used when the account root user attempts to assume a role.
+pub(crate) const MSG_ROOT_CANNOT_ASSUME_ROLE: &str = "Roles may not be assumed by root accounts.";
+
 /// Error message used when the caller's credentials do not identify a usable principal.
 pub(crate) const MSG_SECURITY_TOKEN_INVALID: &str = "The security token included in the request is invalid.";
 
@@ -39,8 +45,20 @@ pub(crate) const QP_VERSION: &str = "Version";
 /// The service name used in SigV4 credential scopes.
 pub(crate) const SERVICE_STS: &str = "sts";
 
+/// Session key holding the time of policy evaluation as a timestamp.
+pub(crate) const SESSION_KEY_AWS_CURRENT_TIME: &str = "aws:CurrentTime";
+
+/// Session key holding the time of policy evaluation in seconds since the Unix epoch.
+pub(crate) const SESSION_KEY_AWS_EPOCH_TIME: &str = "aws:EpochTime";
+
+/// Session key indicating whether the request arrived over a TLS connection.
+pub(crate) const SESSION_KEY_AWS_SECURE_TRANSPORT: &str = "aws:SecureTransport";
+
 /// Session key holding the caller's user id.
 pub(crate) const SESSION_KEY_AWS_USERID: &str = "aws:userid";
+
+/// Session key holding the external id supplied in an AssumeRole request.
+pub(crate) const SESSION_KEY_STS_EXTERNAL_ID: &str = "sts:ExternalId";
 
 /// XML namespace for AWSFault errors.
 #[allow(dead_code)]

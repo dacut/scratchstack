@@ -13,6 +13,7 @@
 )]
 #![cfg_attr(doc, feature(doc_cfg))]
 
+pub(crate) mod authz;
 pub(crate) mod config;
 pub(crate) mod constants;
 pub(crate) mod operations;
@@ -107,13 +108,13 @@ fn main() -> ExitCode {
 }
 
 async fn run_server_from_config(config: ResolvedStsServiceConfig) -> Result<(), BoxError> {
-    use crate::service::serve_request;
+    use crate::service::{ServiceState, serve_request};
 
     let common = config.common;
     debug!("Connecting to database at {}", common.database.url);
     let pool = common.database.pool_options.connect(&common.database.url).await?;
     let pool = Arc::new(pool);
-    let gsk = GetSigningKeyFromDatabase::new(pool, &common.scope.partition, &common.scope.region, SERVICE_STS);
+    let gsk = GetSigningKeyFromDatabase::new(pool.clone(), &common.scope.partition, &common.scope.region, SERVICE_STS);
 
     let verifier = AwsSigV4VerifierLayer::builder()
         .region(common.scope.region.clone())
@@ -125,11 +126,17 @@ async fn run_server_from_config(config: ResolvedStsServiceConfig) -> Result<(), 
         .error_mapper(XmlErrorMapper::new(XML_NS_STS))
         .build();
 
+    let svc_state = ServiceState {
+        db: pool,
+        secure_transport: common.listener.tls.is_some(),
+    };
+
     let app = Router::new()
         .route("/", get(serve_request))
         .route("/", post(serve_request))
         .route("/", put(serve_request))
-        .layer(verifier);
+        .layer(verifier)
+        .with_state(svc_state);
     let listener = TcpListener::bind(&common.listener.socket_addr).await?;
 
     match common.listener.tls {

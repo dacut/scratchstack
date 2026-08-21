@@ -272,9 +272,12 @@ impl Statement {
                 log::trace!("NotResource: no matches");
             }
         }
-        // StatementBuilder::validate requires exactly one of Resource or NotResource, so one of
-        // the branches above always runs; reaching this point means the resource clause did not
-        // rule the statement out.
+        // A statement with a principal clause may omit both Resource and NotResource (the
+        // resource-based policy form); the statement then applies to whatever resource the policy
+        // is attached to, so the resource clause cannot rule it out. Otherwise,
+        // StatementBuilder::validate requires exactly one of Resource or NotResource, and one of
+        // the branches above ran; reaching this point means the resource clause did not rule the
+        // statement out.
 
         // Does the principal match the context?
         if let Some(principal) = self.principal()
@@ -450,9 +453,15 @@ impl StatementBuilder {
             _ => (),
         }
 
+        // Resource-based policies (e.g. role trust policies) omit the resource clause entirely:
+        // the statement implicitly applies to the resource the policy is attached to. Such
+        // statements are recognizable by their principal clause, which identity-based policies
+        // must not carry.
+        let has_principal_clause =
+            matches!(self.principal, Some(Some(_))) || matches!(self.not_principal, Some(Some(_)));
         match (&self.resource, &self.not_resource) {
             (Some(_), Some(_)) => errors.push("Resource and NotResource cannot both be set."),
-            (None, None) => errors.push("Either Resource or NotResource must be set."),
+            (None, None) if !has_principal_clause => errors.push("Either Resource or NotResource must be set."),
             _ => (),
         }
 
@@ -587,6 +596,62 @@ mod tests {
         } else {
             panic!("not_principal is not SpecifiedPrincipal");
         }
+    }
+
+    /// A statement with a principal clause -- the resource-based policy form used by role trust
+    /// policies -- may omit Resource and NotResource entirely, and then applies to any actor the
+    /// principal clause matches regardless of the context's resources.
+    #[test_log::test]
+    fn test_resource_based_statement_without_resource() {
+        let policy = Policy::from_str(indoc! { r#"
+            {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {"AWS": "arn:aws:iam::123456789012:user/MyUser"},
+                        "Action": "sts:AssumeRole"
+                    }
+                ]
+            }"# })
+        .unwrap();
+
+        let statement = &policy.statement()[0];
+        assert!(statement.resource().is_none());
+        assert!(statement.not_resource().is_none());
+
+        let trusted = PrincipalActor::from(User::new("aws", "123456789012", "/", "MyUser").unwrap());
+        let context = Context::builder()
+            .api("AssumeRole")
+            .actor(trusted)
+            .service("sts")
+            .session_data(SessionData::new())
+            .build()
+            .unwrap();
+        assert_eq!(statement.evaluate(&context, policy.version()).unwrap(), Decision::Allow);
+
+        // The statement also applies when the context carries the resource being acted upon.
+        let role_arn = Arn::from_str("arn:aws:iam::123456789012:role/MyRole").unwrap();
+        let context = context.with_resources(vec![role_arn]);
+        assert_eq!(statement.evaluate(&context, policy.version()).unwrap(), Decision::Allow);
+
+        let untrusted = PrincipalActor::from(User::new("aws", "123456789012", "/", "OtherUser").unwrap());
+        let context = Context::builder()
+            .api("AssumeRole")
+            .actor(untrusted)
+            .service("sts")
+            .session_data(SessionData::new())
+            .build()
+            .unwrap();
+        assert_eq!(statement.evaluate(&context, policy.version()).unwrap(), Decision::DefaultDeny);
+
+        // Without a principal clause, the resource clause is still required.
+        let err = Statement::builder()
+            .effect(Effect::Allow)
+            .action(Action::from_str("sts:AssumeRole").unwrap())
+            .build()
+            .unwrap_err();
+        assert_eq!(err.to_string(), "Either Resource or NotResource must be set.");
     }
 
     #[test_log::test]

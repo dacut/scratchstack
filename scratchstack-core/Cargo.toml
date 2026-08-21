@@ -19,6 +19,7 @@ tls = ["axum", "dep:tokio-rustls", "tokio/net"]
 axum = { workspace = true, optional = true }
 bon.workspace = true
 chrono = { workspace = true, features = ["clock", "std"] }
+form_urlencoded.workspace = true
 http.workspace = true
 log.workspace = true
 quick-xml = { workspace = true, optional = true, features = ["serialize"] }
