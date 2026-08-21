@@ -25,6 +25,9 @@ pub mod error;
 /// Request id handling.
 pub mod request_id;
 
+/// Deserialization of AWS query-protocol request parameters.
+pub mod query;
+
 /// Response types.
 #[cfg(feature = "axum")]
 pub mod response;
