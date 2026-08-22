@@ -1,7 +1,8 @@
 use {
     crate::{
-        GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, NO_ADDITIONAL_SIGNED_HEADERS, SignatureOptions,
-        canonical::CanonicalRequest, constants::*, service_for_signing_key_fn, sigv4_validate_request,
+        GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, NoSignedHeaderRequirements, SignatureError,
+        SignatureOptions, canonical::CanonicalRequest, constants::*, service_for_signing_key_fn,
+        sigv4_validate_request,
     },
     bytes::{Bytes, BytesMut},
     chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc},
@@ -14,6 +15,7 @@ use {
     },
     log::debug,
     scratchstack_aws_principal::{Principal, User},
+    scratchstack_core::RequestId,
     std::{
         env,
         fs::File,
@@ -21,7 +23,6 @@ use {
         path::PathBuf,
         str::{FromStr, from_utf8},
     },
-    tower::BoxError,
 };
 
 #[test_log::test(tokio::test)]
@@ -191,6 +192,7 @@ async fn post_x_www_form_urlencoded_post_x_www_form_urlencoded() {
 
 #[allow(clippy::expect_fun_call)]
 async fn run(basename: &str) {
+    let request_id = RequestId::from_microseconds_and_random(1440964261000000, 0);
     let manifest_dir = env::var("CARGO_MANIFEST_DIR")
         .unwrap_or(env::current_dir().unwrap().to_string_lossy().to_string() + "/base-library");
     let mut req_path = PathBuf::new();
@@ -206,7 +208,7 @@ async fn run(basename: &str) {
 
     // Read the signed request file and generate our request format from it.
     let sreq = File::open(&sreq_path).expect(&format!("Failed to open {:?}", sreq_path));
-    let request = parse_file(sreq, &sreq_path);
+    let request = parse_file(sreq, &sreq_path, request_id);
     let (parts, body) = request.into_parts();
     let (canonical, parts, body) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM)
         .expect("Failed to parse request");
@@ -223,7 +225,7 @@ async fn run(basename: &str) {
 
     // Check the canonical request.
     let auth_params =
-        canonical.get_auth_parameters(&NO_ADDITIONAL_SIGNED_HEADERS).expect("Failed to get auth parameters");
+        canonical.get_auth_parameters(&NoSignedHeaderRequirements).expect("Failed to get auth parameters");
     let canonical_request = canonical.canonical_request(&auth_params.signed_headers);
     assert_eq!(
         String::from_utf8_lossy(canonical_request.as_slice()),
@@ -275,14 +277,14 @@ async fn run(basename: &str) {
         TEST_SERVICE,
         &mut signing_key_svc,
         test_time,
-        &NO_ADDITIONAL_SIGNED_HEADERS,
+        &NoSignedHeaderRequirements,
         SignatureOptions::URL_ENCODE_FORM,
     )
     .await
     .expect(&format!("Failed to validate request: {:?}", sreq_path));
 }
 
-async fn get_signing_key(request: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, BoxError> {
+async fn get_signing_key(request: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, SignatureError> {
     let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
     let k_secret = KSecretKey::from_str("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY").unwrap();
     let k_signing = k_secret.to_ksigning(request.request_date(), request.region(), request.service());
@@ -292,7 +294,7 @@ async fn get_signing_key(request: GetSigningKeyRequest) -> Result<GetSigningKeyR
 }
 
 #[allow(clippy::expect_fun_call)]
-fn parse_file(f: File, filename: &PathBuf) -> Request<Bytes> {
+fn parse_file(f: File, filename: &PathBuf, request_id: RequestId) -> Request<Bytes> {
     let size = if let Ok(metadata) = f.metadata() {
         metadata.len() as i64
     } else {
@@ -316,7 +318,7 @@ fn parse_file(f: File, filename: &PathBuf) -> Request<Bytes> {
     let mut muq_parts = muq.splitn(2, |c| *c == b' ');
     let method = muq_parts.next().expect(format!("No method in {}", method_line_str).as_str());
     let method = Method::from_bytes(method).expect(format!("Invalid method in {}", method_line_str).as_str());
-    let builder = builder.method(method);
+    let builder = builder.method(method).extension(request_id);
 
     let path_query_str = muq_parts.next().expect(format!("No path/query in {}", method_line_str).as_str());
     let path_query_str = BytesMut::from(path_query_str);

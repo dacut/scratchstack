@@ -136,14 +136,19 @@ async fn subtest_current_partition(pool: &PgPool) {
     partition::test_get_current_partition(pool).await;
 }
 
-/// authz::get_policies_for_user + aspen authorize against seeded data. Runs directly after the
-/// partition is set so the seed data is still pristine; mutating cases roll back their
-/// transactions.
+/// authz::get_policies_for_user / authz::get_policies_for_role + aspen authorize against seeded
+/// data. Runs directly after the partition is set so the seed data is still pristine; mutating
+/// cases roll back their transactions.
 async fn subtest_authz(pool: &PgPool) {
+    authz::test_get_policies_by_ids(pool).await;
+    authz::test_get_policies_by_ids_unresolvable(pool).await;
+    authz::test_get_policies_for_role_direct(pool).await;
+    authz::test_get_policies_for_role_nonexistent(pool).await;
     authz::test_get_policies_for_user_direct(pool).await;
     authz::test_get_policies_for_user_via_group(pool).await;
     authz::test_get_policies_for_user_nonexistent(pool).await;
     authz::test_authorize_allow_via_group_attached(pool).await;
+    authz::test_authorize_assumed_role(pool).await;
     authz::test_authorize_boundary_deny(pool).await;
     authz::test_authorize_default_deny_no_policy(pool).await;
     authz::test_authorize_explicit_deny(pool).await;
@@ -340,6 +345,7 @@ async fn subtest_create_role(pool: &PgPool) {
 /// AssumeRoleRequest
 async fn subtest_assume_role(pool: &PgPool) {
     role::test_assume_role(pool).await;
+    role::test_assume_role_with_session_policies(pool).await;
     role::test_assume_role_nonexistent_role(pool).await;
     role::test_assume_role_invalid_arn(pool).await;
     role::test_assume_role_malformed_policy(pool).await;

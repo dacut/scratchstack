@@ -15,7 +15,7 @@ use {
     indoc::indoc,
     scratchstack_arn::{IamResourceArn, validate_iam_resource_name},
     scratchstack_aspen::Policy as AspenPolicy,
-    scratchstack_aws_principal::{AssumedRole, IamResourceType, SessionData},
+    scratchstack_aws_principal::{AssumedRole, IamResourceType, SessionData, SessionValue},
     scratchstack_aws_signature::{
         EncryptedSessionTokenData, KSecretKey, SessionTokenData,
         SessionTokenEncryptionAlgorithm as SigSessionTokenEncryptionAlgorithm, SessionTokenEncryptionKeyInfo,
@@ -73,7 +73,6 @@ pub async fn assume_role(
         AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
         account_id => account_id,
     };
-    let metadata = SessionData::default();
 
     let mut managed_policy_ids = Vec::with_capacity(request.policy_arns.len());
     for policy_descriptor in &request.policy_arns {
@@ -234,6 +233,17 @@ pub async fn assume_role(
         assumed_role_id: format!("{}{}:{}", IamResourceType::Role, role_id, request.role_session_name),
     };
 
+    let mut metadata = SessionData::default();
+    // Principal properties
+    metadata.insert("aws:PrincipalArn", SessionValue::String(principal.to_string()));
+    metadata.insert("aws:PrincipalAccount", SessionValue::String(role_account_id.to_string()));
+    metadata.insert("aws:PrincipalType", SessionValue::String("AssumedRole".to_string()));
+    metadata.insert("aws:userid", SessionValue::String(format!("AROA{}:{}", role_id, request.role_session_name)));
+
+    // Role session properties
+    metadata.insert("aws:MultiFactorAuthPresent", SessionValue::Bool(false));
+    metadata.insert("aws:TokenIssueTime", SessionValue::Timestamp(issued_at));
+
     let session_token = SessionTokenData {
         role_id,
         access_key_id: access_key_id.to_string(),
@@ -260,6 +270,11 @@ pub async fn assume_role(
         );
         Err(internal_failure(request_id))?;
     }
+    log::info!(
+        "Encrypting session token with session token encryption key {} (algorithm: {})",
+        stek.session_token_encryption_key_id,
+        stek.encryption_algorithm,
+    );
 
     let raw_encryption_key = Zeroizing::new(URL_SAFE.decode(&stek.encryption_key).map_err(|e| {
         log::error!(
@@ -268,11 +283,11 @@ pub async fn assume_role(
         );
         internal_failure(request_id)
     })?);
-    let key_info = SessionTokenEncryptionKeyInfo {
-        session_token_encryption_key_id: stek.session_token_encryption_key_id,
-        encryption_algorithm: SigSessionTokenEncryptionAlgorithm::Aes256Gcm,
-        encryption_key: raw_encryption_key,
-    };
+    let key_info = SessionTokenEncryptionKeyInfo::builder()
+        .session_token_encryption_key_id(stek.session_token_encryption_key_id)
+        .encryption_algorithm(SigSessionTokenEncryptionAlgorithm::Aes256Gcm)
+        .encryption_key(raw_encryption_key)
+        .build();
 
     let session_token_string = EncryptedSessionTokenData::encrypt(&session_token, &key_info, role_account_id)
         .and_then(|encrypted| encrypted.to_session_token())

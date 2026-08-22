@@ -8,9 +8,10 @@ use {
     chrono::{DateTime, Duration, Utc},
     http::request::{Parts, Request},
     log::trace,
+    scratchstack_core::RequestId,
     std::future::Future,
     subtle::ConstantTimeEq,
-    tower::{BoxError, Service},
+    tower::Service,
 };
 
 /// Options that can be used to configure the signature service.
@@ -142,7 +143,7 @@ pub struct StreamingSignatureState {
 ///   is the current time, `Utc::now()`.
 /// * `required_headers` - The headers that are required to be signed in the request in addition to
 ///   the default SigV4 headers. If none, use
-///   [`NO_ADDITIONAL_SIGNED_HEADERS`][crate::NO_ADDITIONAL_SIGNED_HEADERS].
+///   [`NoSignedHeaderRequirements`][crate::NoSignedHeaderRequirements].
 /// * `options` - [`SignatureOptions`] that affect the behavior of the signature validation. For
 ///   most services, use `SignatureOptions::default()`.
 ///
@@ -159,11 +160,11 @@ pub async fn sigv4_validate_request<B, G, F, S>(
     server_timestamp: DateTime<Utc>,
     required_headers: &S,
     options: SignatureOptions,
-) -> Result<(Parts, Bytes, SigV4AuthenticatorResponse), BoxError>
+) -> Result<(Parts, Bytes, SigV4AuthenticatorResponse), SignatureError>
 where
     B: IntoRequestBytes,
-    G: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = BoxError, Future = F> + Send,
-    F: Future<Output = Result<GetSigningKeyResponse, BoxError>> + Send,
+    G: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = SignatureError, Future = F> + Send,
+    F: Future<Output = Result<GetSigningKeyResponse, SignatureError>> + Send,
     S: SignedHeaderRequirements,
 {
     let (parts, body) = request.into_parts();
@@ -172,8 +173,10 @@ where
     trace!("Created canonical request: {canonical_request:?}");
     let auth = canonical_request.get_authenticator(required_headers)?;
     trace!("Created authenticator: {auth:?}");
-    let sigv4_response =
-        auth.validate_signature(region, service, server_timestamp, options.allowed_mismatch, get_signing_key).await?;
+    let request_id = parts.extensions.get::<RequestId>().cloned().unwrap_or_else(RequestId::new);
+    let sigv4_response = auth
+        .validate_signature(region, service, server_timestamp, options.allowed_mismatch, get_signing_key, request_id)
+        .await?;
 
     Ok((parts, body, sigv4_response))
 }
@@ -201,7 +204,7 @@ where
 ///   is the current time, `Utc::now()`.
 /// * `required_headers` - The headers that are required to be signed in the request in addition to
 ///   the default SigV4 headers. If none, use
-///   [`NO_ADDITIONAL_SIGNED_HEADERS`][crate::NO_ADDITIONAL_SIGNED_HEADERS].
+///   [`NoSignedHeaderRequirements`][crate::NoSignedHeaderRequirements].
 /// * `options` - [`SignatureOptions`] that affect the behavior of the signature validation. For
 ///   most services, use `SignatureOptions::default()`.
 ///
@@ -221,10 +224,11 @@ pub async fn sigv4_validate_streaming_headers<B, G, F, S>(
     server_timestamp: DateTime<Utc>,
     required_headers: &S,
     options: SignatureOptions,
-) -> Result<StreamingSignatureState, BoxError>
+    request_id: RequestId,
+) -> Result<StreamingSignatureState, SignatureError>
 where
-    G: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = BoxError, Future = F> + Send,
-    F: Future<Output = Result<GetSigningKeyResponse, BoxError>> + Send,
+    G: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = SignatureError, Future = F> + Send,
+    F: Future<Output = Result<GetSigningKeyResponse, SignatureError>> + Send,
     S: SignedHeaderRequirements,
 {
     let canonical_request = CanonicalRequest::from_request_and_body_hash(request, body_hash, options)?;
@@ -233,7 +237,7 @@ where
     trace!("Created authenticator: {auth:?}");
 
     // Obtain the signing key for the request.
-    let gsk_response = auth.get_signing_key(region, service, get_signing_key).await?;
+    let gsk_response = auth.get_signing_key(region, service, get_signing_key, request_id).await?;
 
     // This will validate the signature; on success, this returns nothing.
     auth.validate_signature_with_key(
@@ -242,6 +246,7 @@ where
         server_timestamp,
         options.allowed_mismatch,
         gsk_response.signing_key(),
+        request_id,
     )?;
 
     let auth_response = SigV4AuthenticatorResponse::builder()
@@ -313,7 +318,7 @@ impl StreamingSignatureState {
 mod tests {
     use {
         crate::{
-            GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, NO_ADDITIONAL_SIGNED_HEADERS, SignatureError,
+            GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, NoSignedHeaderRequirements, SignatureError,
             SignatureOptions, SignedHeaderRequirements, VecSignedHeaderRequirements, auth::SigV4AuthenticatorResponse,
             constants::*, service_for_signing_key_fn, sigv4_validate_request, sigv4_validate_streaming_headers,
         },
@@ -326,8 +331,8 @@ mod tests {
         },
         lazy_static::lazy_static,
         scratchstack_aws_principal::{Principal, User},
-        std::{borrow::Cow, future::Future, str::FromStr},
-        tower::BoxError,
+        scratchstack_core::RequestId,
+        std::{borrow::Cow, error::Error as _, future::Future, str::FromStr},
     };
 
     lazy_static! {
@@ -341,17 +346,14 @@ mod tests {
         ($test:expr, $expected:ident) => {
             match $test {
                 Ok(ref v) => panic!("Expected Err({}); got Ok({:?})", stringify!($expected), v),
-                Err(e) => match e.downcast::<SignatureError>() {
-                    Ok(e) => {
-                        let e_string = e.to_string();
-                        let e_debug = format!("{:?}", e);
-                        match *e {
-                            SignatureError::$expected(_) => e_string,
-                            _ => panic!("Expected {}; got {}: {}", stringify!($expected), e_debug, e_string),
-                        }
+                Err(e) => {
+                    let e_string = e.to_string();
+                    let e_debug = format!("{:?}", e);
+                    match e {
+                        SignatureError::$expected(_) => e_string,
+                        _ => panic!("Expected {}; got {}: {}", stringify!($expected), e_debug, e_string),
                     }
-                    Err(ref other) => panic!("Expected {}; got {:#?}: {}", stringify!($expected), &other, &other),
-                },
+                }
             }
         };
     }
@@ -371,7 +373,7 @@ mod tests {
         secret_key: &str,
     ) -> impl Fn(
         GetSigningKeyRequest,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<GetSigningKeyResponse, BoxError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<GetSigningKeyResponse, SignatureError>> + Send>> {
         let secret_key = secret_key.to_string();
         move |req: GetSigningKeyRequest| {
             let secret_key = secret_key.clone();
@@ -385,7 +387,7 @@ mod tests {
         }
     }
 
-    async fn get_signing_key(req: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, BoxError> {
+    async fn get_signing_key(req: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, SignatureError> {
         let k_secret = KSecretKey::from_str("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY").unwrap();
         let k_signing = k_secret.to_ksigning(req.request_date(), req.region(), req.service());
 
@@ -393,16 +395,18 @@ mod tests {
         Ok(GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build())
     }
 
-    async fn run_auth_test(auth_str: &str) -> Result<(Parts, Bytes, SigV4AuthenticatorResponse), BoxError> {
+    async fn run_auth_test(auth_str: &str) -> Result<(Parts, Bytes, SigV4AuthenticatorResponse), SignatureError> {
         let uri = Uri::builder().path_and_query(PathAndQuery::from_static("/")).build().unwrap();
         let request = Request::builder()
             .method(Method::GET)
+            .extension(RequestId::new())
             .uri(uri)
             .header("authorization", auth_str)
             .header("host", "example.amazonaws.com")
             .header("x-amz-date", "20150830T123600Z")
             .body(())
             .unwrap();
+
         let mut get_signing_key_svc = service_for_signing_key_fn(get_signing_key);
         sigv4_validate_request(
             request,
@@ -410,7 +414,7 @@ mod tests {
             TEST_SERVICE,
             &mut get_signing_key_svc,
             *TEST_TIMESTAMP,
-            &NO_ADDITIONAL_SIGNED_HEADERS,
+            &NoSignedHeaderRequirements,
             SignatureOptions::URL_ENCODE_FORM,
         )
         .await
@@ -431,6 +435,7 @@ mod tests {
         let request = Request::builder()
             .method(Method::GET)
             .uri(uri)
+            .extension(RequestId::new())
             .header("authorization", VALID_AUTH_HEADER)
             .header("host", "localhost")
             .body(())
@@ -442,8 +447,8 @@ mod tests {
                 TEST_SERVICE,
                 &mut gsk_service,
                 *TEST_TIMESTAMP,
-                &NO_ADDITIONAL_SIGNED_HEADERS,
-                SignatureOptions::URL_ENCODE_FORM
+                &NoSignedHeaderRequirements,
+                SignatureOptions::URL_ENCODE_FORM,
             )
             .await,
             IncompleteSignature
@@ -461,6 +466,7 @@ mod tests {
         let request = Request::builder()
             .method(Method::GET)
             .uri(uri)
+            .extension(RequestId::new())
             .header("authorization", VALID_AUTH_HEADER)
             .header("date", "zzzzzzzzz")
             .body(())
@@ -472,8 +478,8 @@ mod tests {
                 TEST_SERVICE,
                 &mut gsk_service,
                 *TEST_TIMESTAMP,
-                &NO_ADDITIONAL_SIGNED_HEADERS,
-                SignatureOptions::URL_ENCODE_FORM
+                &NoSignedHeaderRequirements,
+                SignatureOptions::URL_ENCODE_FORM,
             )
             .await,
             IncompleteSignature
@@ -509,6 +515,7 @@ mod tests {
             let mut builder = Request::builder()
                 .method(Method::GET)
                 .uri(uri)
+                .extension(RequestId::new())
                 .header("x-amz-request-id", "12345")
                 .header("ETag", "ABCD");
 
@@ -573,8 +580,7 @@ mod tests {
             } else {
                 let e = result.unwrap_err();
                 assert!(e.source().is_none());
-                let e = e.downcast_ref::<SignatureError>().expect("Expected SignatureError");
-                match (i, e) {
+                match (i, &e) {
                     (0, SignatureError::MalformedQueryString(_)) => {
                         assert_eq!(e.to_string().as_str(), "Illegal hex character in escape % pattern: %yy")
                     }
@@ -715,6 +721,7 @@ mod tests {
             let mut builder = Request::builder()
                 .method(Method::GET)
                 .uri(uri)
+                .extension(RequestId::new())
                 .header("x-amz-request-id", "12345")
                 .header("ETag", "ABCD");
 
@@ -775,8 +782,7 @@ mod tests {
             } else {
                 let e = result.unwrap_err();
                 assert!(e.source().is_none());
-                let e = e.downcast::<SignatureError>().unwrap();
-                match (i, &*e) {
+                match (i, &e) {
                     (0, SignatureError::MalformedQueryString(_)) => {
                         assert_eq!(e.to_string().as_str(), "Illegal hex character in escape % pattern: %yy");
                         assert_eq!(e.error_code(), "MalformedQueryString");
@@ -971,6 +977,7 @@ mod tests {
         let req = Request::builder()
             .method(Method::GET)
             .uri("/a/path/../to//something") // Becomes /a/to/something.
+            .extension(RequestId::new())
             .header("Host", "example.amazonaws.com")
             .header("X-Amz-Date", "20150830T123600Z")
             .header("Authorization", "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, Signature=444cab3690e122afc941d086f06cfbc82c1b4f5c553e32ac81e7629a82ff3831, SignedHeaders=host;x-amz-date")
@@ -984,8 +991,8 @@ mod tests {
                 "service",
                 &mut get_signing_key_svc,
                 *TEST_TIMESTAMP,
-                &NO_ADDITIONAL_SIGNED_HEADERS,
-                SignatureOptions::default()
+                &NoSignedHeaderRequirements,
+                SignatureOptions::default(),
             )
             .await
             .is_ok()
@@ -995,6 +1002,7 @@ mod tests {
         let req = Request::builder()
             .method(Method::GET)
             .uri("/a/path/../to//something") // Remains as /a/path/../to//something
+            .extension(RequestId::new())
             .header("Host", "example.amazonaws.com")
             .header("X-Amz-Date", "20150830T123600Z")
             .header("Authorization", "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, Signature=b475de2c96e7bfdfe03bd784d948218730ef62f48ac8bb9f2922af9a44f8657c, SignedHeaders=host;x-amz-date")
@@ -1008,7 +1016,7 @@ mod tests {
                 "service",
                 &mut get_signing_key_svc,
                 *TEST_TIMESTAMP,
-                &NO_ADDITIONAL_SIGNED_HEADERS,
+                &NoSignedHeaderRequirements,
                 SignatureOptions::S3,
             )
             .await
@@ -1056,6 +1064,7 @@ mod tests {
         required_headers.add_always_present("x-amz-date");
         required_headers.add_always_present("x-amz-decoded-content-length");
         required_headers.add_always_present("x-amz-storage-class");
+        let request_id = RequestId::new();
         let mut sig_state = sigv4_validate_streaming_headers(
             &req,
             "STREAMING-AWS4-HMAC-SHA256-PAYLOAD",
@@ -1066,6 +1075,7 @@ mod tests {
             timestamp,
             &required_headers,
             signature_options,
+            request_id,
         )
         .await
         .expect("Failed to validate streaming headers");
@@ -1101,6 +1111,7 @@ mod tests {
         let req = Request::builder()
             .method(Method::GET)
             .uri("https://example.com:1234/test-bucket/test-object?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA7N4QX2J9L6MZ8T3P%2F20150830%2Feu-central-1%2Fs3%2Faws4_request&X-Amz-Date=20150830T123602Z&X-Amz-Expires=86400&X-Amz-SignedHeaders=host&X-Amz-Signature=353ce66394a6cf278a1047c0158ab2c0d1050cae1138c51d47fd3b6bb2198492")
+            .extension(RequestId::new())
             .header(http::header::HOST, "example.com:1234")
             .body(Bytes::from("The body of pre-signed URL request should be ignored as it is unsigned".as_bytes()))
             .unwrap();
@@ -1112,7 +1123,7 @@ mod tests {
                 "s3",
                 &mut get_signing_key_svc,
                 *TEST_TIMESTAMP,
-                &NO_ADDITIONAL_SIGNED_HEADERS,
+                &NoSignedHeaderRequirements,
                 SignatureOptions::S3,
             )
             .await
@@ -1135,6 +1146,7 @@ mod tests {
         let req = Request::builder()
             .method(Method::GET)
             .uri("https://127.0.0.1:8899/test-bucket/?location=")
+            .extension(RequestId::new())
             .header(http::header::HOST, "127.0.0.1:8899")
             .header("X-Amz-Date", "20260723T150030Z")
             .header("X-Amz-Content-Sha256", "UNSIGNED-PAYLOAD")
@@ -1159,7 +1171,7 @@ mod tests {
                 "s3",
                 &mut get_signing_key_svc,
                 request_timestamp,
-                &NO_ADDITIONAL_SIGNED_HEADERS,
+                &NoSignedHeaderRequirements,
                 SignatureOptions::S3,
             )
             .await

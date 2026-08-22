@@ -1,9 +1,10 @@
 use {
-    crate::{KeyLengthError, constants::*, crypto::hmac_sha256},
+    crate::{KeyLengthError, SessionPolicies, SignatureError, constants::*, crypto::hmac_sha256},
     base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
     bon::Builder,
     chrono::NaiveDate,
     scratchstack_aws_principal::{Principal, SessionData},
+    scratchstack_core::RequestId,
     serde::{
         Deserialize, Serialize,
         de::{Deserializer, Visitor},
@@ -15,7 +16,7 @@ use {
         str::FromStr,
     },
     subtle::{Choice, ConstantTimeEq},
-    tower::{BoxError, service_fn, util::ServiceFn},
+    tower::{service_fn, util::ServiceFn},
     zeroize::{Zeroize, ZeroizeOnDrop},
 };
 
@@ -417,37 +418,47 @@ pub struct GetSigningKeyRequest {
     /// The service of the request.
     #[builder(into)]
     service: String,
+
+    /// The request id of the request.
+    #[builder(into)]
+    request_id: RequestId,
 }
 
 impl GetSigningKeyRequest {
     /// Retrieve the access key used in the request.
-    #[inline]
+    #[inline(always)]
     pub fn access_key(&self) -> &str {
         &self.access_key
     }
 
     /// Retrieve the session token provided in the request, if any.
-    #[inline]
+    #[inline(always)]
     pub fn session_token(&self) -> Option<&str> {
         self.session_token.as_deref()
     }
 
     /// Retrieve the date of the request.
-    #[inline]
+    #[inline(always)]
     pub fn request_date(&self) -> NaiveDate {
         self.request_date
     }
 
     /// Retrieve the region of the request.
-    #[inline]
+    #[inline(always)]
     pub fn region(&self) -> &str {
         &self.region
     }
 
     /// Retrieve the service of the request.
-    #[inline]
+    #[inline(always)]
     pub fn service(&self) -> &str {
         &self.service
+    }
+
+    /// Retrieve the request id of the request.
+    #[inline(always)]
+    pub fn request_id(&self) -> RequestId {
+        self.request_id
     }
 }
 
@@ -479,6 +490,12 @@ pub struct GetSigningKeyResponse {
     #[builder(into, default)]
     pub(crate) session_data: SessionData,
 
+    /// The session policies restricting the principal's permissions. The default (empty) value
+    /// means the session is unrestricted; providers that recognize temporary credentials
+    /// populate this from the session token.
+    #[builder(into, default)]
+    pub(crate) session_policies: SessionPolicies,
+
     /// The signing key.
     pub(crate) signing_key: KSigningKey,
 }
@@ -494,6 +511,12 @@ impl GetSigningKeyResponse {
     #[inline]
     pub fn session_data(&self) -> &SessionData {
         &self.session_data
+    }
+
+    /// Retrieve the session policies restricting the principal's permissions.
+    #[inline]
+    pub fn session_policies(&self) -> &SessionPolicies {
+        &self.session_policies
     }
 
     /// Retrieve the signing key.
@@ -517,7 +540,7 @@ impl GetSigningKeyResponse {
 pub fn service_for_signing_key_fn<F, Fut>(f: F) -> ServiceFn<F>
 where
     F: FnOnce(GetSigningKeyRequest) -> Fut + Send + 'static,
-    Fut: Future<Output = Result<GetSigningKeyResponse, BoxError>> + Send + 'static,
+    Fut: Future<Output = Result<GetSigningKeyResponse, SignatureError>> + Send + 'static,
 {
     service_fn(f)
 }
@@ -528,6 +551,7 @@ mod tests {
         crate::{GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, constants::*},
         chrono::NaiveDate,
         scratchstack_aws_principal::{AssumedRole, Principal},
+        scratchstack_core::RequestId,
         std::str::FromStr,
     };
 
@@ -627,6 +651,7 @@ mod tests {
     #[test_log::test]
     fn test_gsk_derived() {
         let date = NaiveDate::from_ymd_opt(2015, 8, 30).unwrap();
+        let request_id = RequestId::new();
 
         let gsk_req1a = GetSigningKeyRequest {
             access_key: "AKIDEXAMPLE".to_string(),
@@ -634,6 +659,7 @@ mod tests {
             request_date: date,
             region: "us-east-1".to_string(),
             service: "example".to_string(),
+            request_id,
         };
 
         // Make sure we can debug print the request, and that the session token is redacted.

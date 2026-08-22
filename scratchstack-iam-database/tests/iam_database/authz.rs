@@ -3,13 +3,17 @@
 use {
     pretty_assertions::assert_eq,
     scratchstack_aspen::{Context, Decision, PolicySet, PolicySource, authorize},
-    scratchstack_aws_principal::{Principal as PrincipalActor, SessionData, SessionValue, User},
+    scratchstack_aws_principal::{AssumedRole, Principal as PrincipalActor, SessionData, SessionValue, User},
     scratchstack_core::RequestId,
-    scratchstack_iam_database::{authz::get_policies_for_user, user::put_user_policy},
+    scratchstack_iam_database::{
+        authz::{get_policies_by_ids, get_policies_for_role, get_policies_for_user},
+        user::put_user_policy,
+    },
 };
 
 const EXAMPLE_ACCOUNT_1: &str = "123456789012";
 const EXAMPLE_ACCOUNT_2: &str = "210987654321";
+const EXAMPLE_ROLE_ID_1: &str = "EXAMPLEROLEID123";
 const EXAMPLE_USER_ID_1: &str = "EXAMPLEUSERID123";
 const EXAMPLE_USER_ID_2: &str = "EXAMPLEUSERID456";
 
@@ -37,6 +41,85 @@ fn make_context_with_session(
         .session_data(session_data)
         .build()
         .expect("Failed to build context")
+}
+
+/// Build an evaluation context for an assumed-role session on the given seeded role.
+fn make_assumed_role_context(service: &str, api: &str, account_id: &str, role_name: &str) -> Context {
+    let actor = PrincipalActor::from(
+        AssumedRole::new("test-partition", account_id, role_name, "example-session")
+            .expect("Failed to create assumed-role principal"),
+    );
+    Context::builder()
+        .api(api)
+        .actor(actor)
+        .service(service)
+        .session_data(SessionData::new())
+        .build()
+        .expect("Failed to build context")
+}
+
+pub async fn test_get_policies_by_ids(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let policies = get_policies_by_ids(&mut tx, &["ANPAAAAABBBBCCCCDDDD".to_string()], RequestId::new())
+        .await
+        .expect("Failed to fetch policies by id")
+        .expect("Seeded managed policy should resolve");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(policies.len(), 1);
+    assert!(policies[0].to_string().contains("s3:ListBucket"));
+}
+
+pub async fn test_get_policies_by_ids_unresolvable(pool: &sqlx::PgPool) {
+    // An id that does not resolve (e.g. the policy was deleted after the session was created)
+    // makes the whole set unresolvable, even when other ids resolve.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let policies = get_policies_by_ids(
+        &mut tx,
+        &["ANPAAAAABBBBCCCCDDDD".to_string(), "ANPADOESNOTEXIST0000".to_string()],
+        RequestId::new(),
+    )
+    .await
+    .expect("Fetching policies with a nonexistent id should not error");
+    assert_eq!(policies, None);
+
+    // An id without the managed-policy prefix is likewise unresolvable.
+    let policies = get_policies_by_ids(&mut tx, &["AIDAAAAABBBBCCCCDDDD".to_string()], RequestId::new())
+        .await
+        .expect("Fetching policies with a malformed id should not error");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert_eq!(policies, None);
+}
+
+pub async fn test_get_policies_for_role_direct(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let policy_set = get_policies_for_role(&mut tx, EXAMPLE_ACCOUNT_1, EXAMPLE_ROLE_ID_1, RequestId::new())
+        .await
+        .expect("Failed to gather policies for Example-Role-1");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let sources: Vec<&PolicySource> = policy_set.policies().iter().map(|(source, _)| source).collect();
+    assert_eq!(sources.len(), 2);
+    assert!(sources.contains(&&PolicySource::new_entity_inline(
+        "arn:test-partition:iam::123456789012:role/Example-Role-1",
+        "AROAEXAMPLEROLEID123",
+        "Example-Role-Inline-Policy-1",
+    )));
+    assert!(sources.contains(&&PolicySource::new_entity_attached_policy(
+        "arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1",
+        "ANPAAAAABBBBCCCCDDDD",
+        "v1",
+    )));
+}
+
+pub async fn test_get_policies_for_role_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let policy_set = get_policies_for_role(&mut tx, EXAMPLE_ACCOUNT_1, "NONEXISTENTROLEID", RequestId::new())
+        .await
+        .expect("Gathering policies for a nonexistent role should succeed");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(policy_set, PolicySet::new());
 }
 
 pub async fn test_get_policies_for_user_direct(pool: &sqlx::PgPool) {
@@ -213,4 +296,30 @@ pub async fn test_authorize_condition_keys(pool: &sqlx::PgPool) {
         make_context_with_session("iam", "ListUsers", EXAMPLE_ACCOUNT_2, "/a/b/c/", "Example-User-2", session_data);
     let result = authorize(&context, &policy_set).expect("Failed to authorize");
     assert_eq!(result.decision(), Decision::DefaultDeny);
+}
+
+pub async fn test_authorize_assumed_role(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let policy_set = get_policies_for_role(&mut tx, EXAMPLE_ACCOUNT_1, EXAMPLE_ROLE_ID_1, RequestId::new())
+        .await
+        .expect("Failed to gather policies for Example-Role-1");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    // The role's attached managed policy allows s3:ListBucket.
+    let context = make_assumed_role_context("s3", "ListBucket", EXAMPLE_ACCOUNT_1, "Example-Role-1");
+    let result = authorize(&context, &policy_set).expect("Failed to authorize");
+    assert_eq!(result.decision(), Decision::Allow);
+    assert!(result.sources().iter().any(|source| matches!(source, PolicySource::EntityAttachedPolicy { .. })));
+
+    // The role's inline policy allows lambda:*.
+    let context = make_assumed_role_context("lambda", "InvokeFunction", EXAMPLE_ACCOUNT_1, "Example-Role-1");
+    let result = authorize(&context, &policy_set).expect("Failed to authorize");
+    assert_eq!(result.decision(), Decision::Allow);
+    assert!(result.sources().iter().any(|source| matches!(source, PolicySource::EntityInline { .. })));
+
+    // Nothing grants iam:ListUsers to the role.
+    let context = make_assumed_role_context("iam", "ListUsers", EXAMPLE_ACCOUNT_1, "Example-Role-1");
+    let result = authorize(&context, &policy_set).expect("Failed to authorize");
+    assert_eq!(result.decision(), Decision::DefaultDeny);
+    assert!(!result.is_allowed());
 }
