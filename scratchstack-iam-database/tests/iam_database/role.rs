@@ -4,11 +4,12 @@ use {
     chrono::Utc,
     pretty_assertions::assert_eq,
     scratchstack_aws_signature::{
-        DefaultSessionTokenExtractor, SessionTokenEncryptionAlgorithm as SigSessionTokenEncryptionAlgorithm,
-        SessionTokenEncryptionKeyInfo, StaticKeyService,
+        ExtractSessionTokenRequest, GetSigningKeyRequest, PostcardSessionTokenExtractor,
+        SessionTokenEncryptionAlgorithm as SigSessionTokenEncryptionAlgorithm, SessionTokenEncryptionKeyInfo,
+        StaticKeyService,
     },
     scratchstack_core::RequestId,
-    scratchstack_iam_database::RequestExecutor,
+    scratchstack_iam_database::{GetSigningKeyFromDatabase, RequestExecutor},
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
@@ -21,7 +22,10 @@ use {
         },
         types::{PermissionsBoundaryAttachmentType, Tag},
     },
-    scratchstack_shapes_sts::{error_meta::Error as StsError, operation::AssumeRoleRequest},
+    scratchstack_shapes_sts::{
+        error_meta::Error as StsError, operation::AssumeRoleRequest, types::PolicyDescriptorType,
+    },
+    std::sync::Arc,
     tower::{Service as _, ServiceExt as _},
     zeroize::Zeroizing,
 };
@@ -1991,6 +1995,7 @@ pub fn test_delete_role_policy_invalid_name() {
 pub async fn test_assume_role(pool: &sqlx::PgPool) {
     // Create a session token encryption key for AssumeRole to encrypt the session token with.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let request_id = RequestId::new();
     let stek = CreateSessionTokenEncryptionKeyRequest::builder()
         .issue_valid_from(Utc::now())
         .build()
@@ -2028,19 +2033,25 @@ pub async fn test_assume_role(pool: &sqlx::PgPool) {
     assert!(credentials.expiration > Utc::now());
 
     // Decrypt the session token and verify that it matches the issued credentials.
-    let key_info = SessionTokenEncryptionKeyInfo {
-        session_token_encryption_key_id: stek.session_token_encryption_key_id.clone(),
-        encryption_algorithm: SigSessionTokenEncryptionAlgorithm::Aes256Gcm,
-        encryption_key: Zeroizing::new(URL_SAFE.decode(&stek.encryption_key).expect("Failed to decode encryption key")),
-    };
+    let key_info = SessionTokenEncryptionKeyInfo::builder()
+        .session_token_encryption_key_id(stek.session_token_encryption_key_id.clone())
+        .encryption_algorithm(SigSessionTokenEncryptionAlgorithm::Aes256Gcm)
+        .encryption_key(Zeroizing::new(URL_SAFE.decode(&stek.encryption_key).expect("Failed to decode encryption key")))
+        .build();
+
     let mut key_service = StaticKeyService::new();
     key_service.0.insert(stek.session_token_encryption_key_id.clone(), key_info);
-    let mut extractor = DefaultSessionTokenExtractor::new(key_service);
+    let mut extractor = PostcardSessionTokenExtractor::builder().key_service(key_service).build();
+    let req = ExtractSessionTokenRequest::builder()
+        .session_token(credentials.session_token.clone())
+        .request_id(request_id)
+        .build();
+
     let token_data = extractor
         .ready()
         .await
         .expect("Extractor should be ready")
-        .call(credentials.session_token.clone())
+        .call(req)
         .await
         .expect("Failed to extract session token");
 
@@ -2051,6 +2062,70 @@ pub async fn test_assume_role(pool: &sqlx::PgPool) {
     assert_eq!(token_data.expires_at, credentials.expiration);
     assert!(token_data.inline_policy.is_none());
     assert!(token_data.managed_policy_ids.is_empty());
+}
+
+/// AssumeRole with session policies records them in the session token, and the direct-database
+/// signing-key provider surfaces them as `SessionPolicies` for the service's authorization step.
+pub async fn test_assume_role_with_session_policies(pool: &sqlx::PgPool) {
+    const SESSION_POLICY: &str =
+        r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:ListBucket","Resource":"*"}]}"#;
+
+    // Create a session token encryption key for AssumeRole to encrypt the session token with.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateSessionTokenEncryptionKeyRequest::builder()
+        .issue_valid_from(Utc::now())
+        .build()
+        .expect("Failed to build CreateSessionTokenEncryptionKeyRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to create session token encryption key");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = AssumeRoleRequest::builder()
+        .role_arn("arn:aws:iam::123456789012:role/example-role-1")
+        .role_session_name("policy-session")
+        .policy(SESSION_POLICY)
+        .policy_arns(PolicyDescriptorType {
+            arn: Some("arn:aws:iam::123456789012:policy/Example-Managed-Policy-1".to_string()),
+        })
+        .build()
+        .expect("Failed to build AssumeRoleRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to assume role");
+    tx.commit().await.expect("Failed to commit transaction");
+    let credentials = resp.credentials.expect("Credentials should be present");
+
+    // Fetch a signing key with the temporary credentials; the provider must surface the session
+    // policies carried in the token.
+    let mut gsk = GetSigningKeyFromDatabase::builder()
+        .pool(Arc::new(pool.clone()))
+        .partition("aws")
+        .region("us-east-1")
+        .service("iam")
+        .build();
+    let gsk_request = GetSigningKeyRequest::builder()
+        .access_key(credentials.access_key_id.clone())
+        .session_token(credentials.session_token.clone())
+        .request_date(Utc::now().date_naive())
+        .region("us-east-1")
+        .service("iam")
+        .request_id(RequestId::new())
+        .build();
+    let gsk_response = gsk
+        .ready()
+        .await
+        .expect("GetSigningKeyFromDatabase should be ready")
+        .call(gsk_request)
+        .await
+        .expect("Failed to get signing key");
+
+    assert!(gsk_response.principal().as_assumed_role().is_some());
+    let session_policies = gsk_response.session_policies();
+    let inline_policy = session_policies.inline_policy().expect("Inline session policy should be present");
+    assert!(inline_policy.to_string().contains("s3:ListBucket"));
+    assert_eq!(session_policies.managed_policy_ids(), ["ANPAAAAABBBBCCCCDDDD".to_string()]);
 }
 
 /// AssumeRole on a nonexistent role must fail with AccessDenied, not NoSuchEntity, to avoid

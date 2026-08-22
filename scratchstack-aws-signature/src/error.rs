@@ -235,7 +235,7 @@ signature_errors! {
 
     /// Invalid session token.
     InvalidSessionToken => InvalidSessionTokenError, caller_facing, ERR_CODE_INVALID_SESSION_TOKEN, StatusCode::FORBIDDEN,
-        ERR_MSG_INVALID_SESSION_TOKEN;
+        MSG_SECURITY_TOKEN_INVALID;
 
     /// The URI path includes invalid components. This can be a malformed hex encoding (e.g. `%0J`), a non-absolute
     /// URI path (`foo/bar`), or a URI path that attempts to navigate above the root (`/x/../../../y`).
@@ -339,13 +339,19 @@ pub enum KeyLengthError {
 impl Display for KeyLengthError {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
-            KeyLengthError::TooLong => f.write_str(ERR_MSG_KEY_TOO_LONG),
-            KeyLengthError::TooShort => f.write_str(ERR_MSG_KEY_TOO_SHORT),
+            KeyLengthError::TooLong => f.write_str(MSG_KEY_TOO_LONG),
+            KeyLengthError::TooShort => f.write_str(MSG_KEY_TOO_SHORT),
         }
     }
 }
 
 impl Error for KeyLengthError {}
+
+impl From<KeyLengthError> for SignatureError {
+    fn from(_: KeyLengthError) -> SignatureError {
+        InternalServiceError::builder().build().into()
+    }
+}
 
 #[cfg(test)]
 mod tests {

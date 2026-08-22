@@ -115,7 +115,12 @@ async fn run_server_from_config(config: ResolvedIamServiceConfig) -> Result<(), 
     let pool = common.database.pool_options.connect(&common.database.url).await?;
     let pool = Arc::new(pool);
     let allowed_content_types = vec!["application/x-www-form-urlencoded".to_string()];
-    let gsk = GetSigningKeyFromDatabase::new(pool.clone(), &common.scope.partition, &common.scope.region, SERVICE_IAM);
+    let gsk = GetSigningKeyFromDatabase::builder()
+        .pool(pool.clone())
+        .partition(&common.scope.partition)
+        .region(&common.scope.region)
+        .service(SERVICE_IAM)
+        .build();
 
     let verifier = AwsSigV4VerifierLayer::builder()
         .region(common.scope.region.clone())

@@ -82,15 +82,6 @@ pub(crate) const ERR_CODE_MISSING_REQUIRED_HEADER: &str = "MissingRequiredHeader
 /// Error code: SignatureDoesNotMatch
 pub(crate) const ERR_CODE_SIGNATURE_DOES_NOT_MATCH: &str = "SignatureDoesNotMatch";
 
-/// Error message: Key too long
-pub(crate) const ERR_MSG_KEY_TOO_LONG: &str = "Key too long";
-
-/// Error message: Key too short
-pub(crate) const ERR_MSG_KEY_TOO_SHORT: &str = "Key too short";
-
-/// Error message: Invalid session token
-pub(crate) const ERR_MSG_INVALID_SESSION_TOKEN: &str = "Invalid session token";
-
 /// Header for `authorization`
 pub(crate) const HDR_AUTHORIZATION: &str = "authorization";
 
@@ -144,36 +135,6 @@ pub(crate) const MAX_SESSION_TOKEN_SIZE: usize = 1 << 20; // 1 MiB
 /// Maximum size of a secret key in bytes.
 pub(crate) const MAX_SECRET_KEY_SIZE: usize = 256;
 
-/// Default error message for `ExpiredToken`.
-pub(crate) const MSG_EXPIRED_TOKEN: &str = "The security token included in the request is expired";
-
-/// Default error message for `IncompleteSignature`.
-pub(crate) const MSG_INCOMPLETE_SIGNATURE: &str = "The request signature does not conform to AWS standards";
-
-/// Default error message for `InvalidBodyEncoding`.
-pub(crate) const MSG_INVALID_BODY_ENCODING: &str = "The request body used an unsupported character set encoding";
-
-/// Default error message for `InvalidClientTokenId`.
-pub(crate) const MSG_INVALID_CLIENT_TOKEN_ID: &str = "The AWS access key provided does not exist in our records";
-
-/// Default error message for `InvalidContentType`.
-pub(crate) const MSG_INVALID_CONTENT_TYPE: &str = "The content-type of the request is unsupported";
-
-/// Default error message for `InvalidRequestMethod`.
-pub(crate) const MSG_INVALID_REQUEST_METHOD: &str = "Invalid request method";
-
-/// Default error message for `InvalidURIPath`.
-pub(crate) const MSG_INVALID_URI_PATH: &str = "The URI path includes invalid components";
-
-/// Default error message for `MalformedHeader`.
-pub(crate) const MSG_MALFORMED_HEADER: &str = "Invalid request header";
-
-/// Default error message for `MalformedQueryString`.
-pub(crate) const MSG_MALFORMED_QUERY_STRING: &str = "Invalid request query string";
-
-/// Default error message for `MissingRequiredHeader`.
-pub(crate) const MSG_MISSING_REQUIRED_HEADER: &str = "Request is missing a required header";
-
 /// Error message: `"Authorization header requires 'Credential' parameter."`
 pub(crate) const MSG_AUTH_HEADER_REQ_CREDENTIAL: &str = "Authorization header requires 'Credential' parameter.";
 
@@ -196,22 +157,55 @@ pub(crate) const MSG_CREDENTIAL_MUST_HAVE_FIVE_PARTS: &str =
 pub(crate) const MSG_DUPLICATE_HEADER_AND_QUERY_PARAMETER: &str =
     "The request contains a query parameter that duplicates a header value.";
 
+/// Default error message for `ExpiredToken`.
+pub(crate) const MSG_EXPIRED_TOKEN: &str = "The security token included in the request is expired";
+
 /// Error message: `"'Host' or ':authority' must be a 'SignedHeader' in the AWS Authorization."`
 pub(crate) const MSG_HOST_AUTHORITY_MUST_BE_SIGNED: &str =
     "'Host' or ':authority' must be a 'SignedHeader' in the AWS Authorization.";
 
+/// Error message: Key too long
+pub(crate) const MSG_KEY_TOO_LONG: &str = "Key too long";
+
+/// Error message: Key too short
+pub(crate) const MSG_KEY_TOO_SHORT: &str = "Key too short";
+
 /// Error message: `"Illegal hex character in escape % pattern: %"`
 pub(crate) const MSG_ILLEGAL_HEX_CHAR: &str = "Illegal hex character in escape % pattern: %";
 
+/// Default error message for `IncompleteSignature`.
+pub(crate) const MSG_INCOMPLETE_SIGNATURE: &str = "The request signature does not conform to AWS standards";
+
 /// Error message: `"Incomplete trailing escape % sequence"`
 pub(crate) const MSG_INCOMPLETE_TRAILING_ESCAPE: &str = "Incomplete trailing escape % sequence";
+
+/// Error message: `"Internal Service Error"`
+pub(crate) const MSG_INTERNAL_SERVICE_ERROR: &str = "Internal Service Error";
+
+/// Default error message for `InvalidBodyEncoding`.
+pub(crate) const MSG_INVALID_BODY_ENCODING: &str = "The request body used an unsupported character set encoding";
+
+/// Default error message for `InvalidClientTokenId`.
+pub(crate) const MSG_INVALID_CLIENT_TOKEN_ID: &str = "The AWS access key provided does not exist in our records";
+
+/// Default error message for `InvalidContentType`.
+pub(crate) const MSG_INVALID_CONTENT_TYPE: &str = "The content-type of the request is unsupported";
+
+/// Default error message for `InvalidRequestMethod`.
+pub(crate) const MSG_INVALID_REQUEST_METHOD: &str = "Invalid request method";
+
+/// Default error message for `InvalidURIPath`.
+pub(crate) const MSG_INVALID_URI_PATH: &str = "The URI path includes invalid components";
 
 /// Error message: `"Invalid x-amz-content-sha256 value"`
 #[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
 pub(crate) const MSG_INVALID_XACS_VALUE: &str = "Invalid x-amz-content-sha256 value";
 
-/// Error message: `"Internal Service Error"`
-pub(crate) const MSG_INTERNAL_SERVICE_ERROR: &str = "Internal Service Error";
+/// Default error message for `MalformedHeader`.
+pub(crate) const MSG_MALFORMED_HEADER: &str = "Invalid request header";
+
+/// Default error message for `MalformedQueryString`.
+pub(crate) const MSG_MALFORMED_QUERY_STRING: &str = "Invalid request query string";
 
 /// Error message: `"Malformed X-Amz-Content-Sha256 header value"`
 #[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
@@ -220,6 +214,9 @@ pub(crate) const MSG_MALFORMED_XACS_HEADER_VALUE: &str = "Malformed X-Amz-Conten
 /// Error message: `"Malformed X-Amz-Content-Sha256 query parameter"`
 #[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
 pub(crate) const MSG_MALFORMED_XACS_QUERY_PARAMETER: &str = "Malformed X-Amz-Content-Sha256 query parameter";
+
+/// Default error message for `MissingRequiredHeader`.
+pub(crate) const MSG_MISSING_REQUIRED_HEADER: &str = "Request is missing a required header";
 
 /// Error message: `"AWS query-string parameters must include 'X-Amz-Credential'"`
 pub(crate) const MSG_QUERY_STRING_MUST_INCLUDE_CREDENTIAL: &str =
@@ -249,6 +246,9 @@ pub(crate) const MSG_REQUEST_MISSING_XACS: &str =
 
 /// Error message: `"The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details."`
 pub(crate) const MSG_REQUEST_SIGNATURE_MISMATCH: &str = "The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details.";
+
+/// Error message: `"The security token included in the request is invalid"`
+pub(crate) const MSG_SECURITY_TOKEN_INVALID: &str = "The security token included in the request is invalid";
 
 /// Error message: `"Unsupported AWS 'algorithm': "`
 pub(crate) const MSG_UNSUPPORTED_ALGORITHM: &str = "Unsupported AWS 'algorithm': ";

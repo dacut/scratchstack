@@ -33,7 +33,7 @@
 //! 1. Convert an HTTP `Request` object into a scratchstack `Request` object.
 //! 2. Create a `GetSigningKeyRequest` from this `Request`.
 //! 3. Call your service to obtain the principal and signing key for this request.
-//! 4. Verify the request using `sigv4_verify` or `sigv4_verify_at`.
+//! 4. Verify the request using `sigv4_validate_request`.
 //!
 //! ## Example
 //! ```rust
@@ -42,8 +42,10 @@
 //! use scratchstack_aws_principal::{Principal, User};
 //! use scratchstack_aws_signature::{
 //!     service_for_signing_key_fn, sigv4_validate_request, GetSigningKeyRequest,
-//!     GetSigningKeyResponse, KSecretKey, SignatureOptions, NO_ADDITIONAL_SIGNED_HEADERS,
+//!     GetSigningKeyResponse, KSecretKey, NoSignedHeaderRequirements, SignatureOptions,
+//!     SignatureError,
 //! };
+//! use scratchstack_core::RequestId;
 //! use std::str::FromStr;
 //! use tower::{BoxError, Service};
 //!
@@ -71,11 +73,11 @@
 //! // a signing key.
 //! async fn get_signing_key(
 //!     request: GetSigningKeyRequest)
-//! -> Result<GetSigningKeyResponse, BoxError> {
+//! -> Result<GetSigningKeyResponse, SignatureError> {
 //!     assert_eq!(request.access_key(), ACCESS_KEY);
 //!     assert_eq!(request.region(), REGION);
 //!     assert_eq!(request.service(), SERVICE);
-//!     let user = User::new(PARTITION, ACCOUNT_ID, PATH, USER_NAME)?;
+//!     let user = User::new(PARTITION, ACCOUNT_ID, PATH, USER_NAME).unwrap();
 //!     let secret_key = KSecretKey::from_str(SECRET_KEY).unwrap();
 //!     let signing_key = secret_key.to_ksigning(request.request_date(), REGION, SERVICE);
 //!     Ok(GetSigningKeyResponse::builder()
@@ -89,6 +91,7 @@
 //!
 //! // Normally this would come from your web framework.
 //! let req = Request::get("https://example.com")
+//!     .extension(RequestId::new())
 //!     .header("Host", "example.com")
 //!     .header("X-Amz-Date", "20210101T000000Z")
 //!     .header("Authorization", "AWS4-HMAC-SHA256 \
@@ -100,7 +103,7 @@
 //!
 //! // The headers that _must_ be signed (beyond the default SigV4 headers) for this service.
 //! // In this case, we're not requiring any additional headers.
-//! let signed_headers = NO_ADDITIONAL_SIGNED_HEADERS;
+//! let signed_headers = NoSignedHeaderRequirements;
 //!
 //! // Signature options for the request. Defaults are typically used, except for S3.
 //! let signature_options = SignatureOptions::default();
@@ -155,8 +158,8 @@ pub use axum_layer::*;
 
 #[doc(inline)]
 pub use canonical::{
-    ConstSignedHeaderRequirements, NO_ADDITIONAL_SIGNED_HEADERS, NoSignedHeaderRequirements, SignedHeaderRequirements,
-    SliceSignedHeaderRequirements, VecSignedHeaderRequirements,
+    ConstSignedHeaderRequirements, NoSignedHeaderRequirements, SignedHeaderRequirements, SliceSignedHeaderRequirements,
+    VecSignedHeaderRequirements,
 };
 
 #[cfg(doc)]

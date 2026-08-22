@@ -6,6 +6,7 @@ use {
     },
     axum::{body::Body, response::Response},
     scratchstack_aws_principal::{Principal, SessionData, SessionValue},
+    scratchstack_aws_signature::SessionPolicies,
     scratchstack_core::{RequestId, response::Responder as _},
     scratchstack_iam_database::RequestExecutor,
     scratchstack_shapes_iam::{
@@ -17,14 +18,16 @@ use {
 /// Handle a `ListUsers` request.
 ///
 /// The caller has already been authenticated by the SigV4 layer. The caller's identity-based
-/// policies (including group-inherited policies and any permissions boundary) must allow
-/// `iam:ListUsers`; the account root user is implicitly allowed. `iam:ListUsers` does not support
-/// resource-level permissions, so policies must grant it with `Resource: "*"`.
+/// policies (including group-inherited policies and any permissions boundary), intersected with
+/// any session policies, must allow `iam:ListUsers`; the account root user is implicitly
+/// allowed. `iam:ListUsers` does not support resource-level permissions, so policies must grant
+/// it with `Resource: "*"`.
 pub(crate) async fn list_users(
     svc_state: ServiceState,
     request_id: RequestId,
     principal: Principal,
     session_data: SessionData,
+    session_policies: SessionPolicies,
     parameters: &str,
 ) -> Response<Body> {
     let Some(account_id) = session_data.get(SESSION_KEY_AWS_PRINCIPAL_ACCOUNT) else {
@@ -73,6 +76,7 @@ pub(crate) async fn list_users(
         request_id,
         &principal,
         &session_data,
+        &session_policies,
         svc_state.secure_transport,
         Action::ListUsers,
         &[],

@@ -2,24 +2,29 @@
 use {
     crate::{KSecretKey, SignatureError},
     ascii_casing::{AsciiString, CaseInsensitive},
+    bon::Builder,
     chrono::{DateTime, Utc},
     scratchstack_aspen::Policy as AspenPolicy,
     scratchstack_aws_principal::{Principal, SessionData},
+    scratchstack_core::RequestId,
     serde::{Deserialize, Serialize},
     std::collections::{HashMap, HashSet},
     tower::Service,
 };
 
 /// Data from a session token.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Builder, Clone, Debug, Deserialize, Serialize)]
 pub struct SessionTokenData {
     /// The ID of the role associated with this session.
+    #[builder(into)]
     pub role_id: String,
 
     /// The access key ID of the session token.
+    #[builder(into)]
     pub access_key_id: String,
 
     /// The secret key of the session token.
+    #[builder(into)]
     pub secret_key: KSecretKey,
 
     /// The principal associated with the session token.
@@ -33,33 +38,98 @@ pub struct SessionTokenData {
     /// associated with session tokens. Scratchstack does not enforce this requirement, but it is
     /// recommended to avoid potential security issues and to maintain consistency with AWS's
     /// session token usage.
+    #[builder(into)]
     pub principal: Principal,
 
     /// The expiration time of the session token.
+    #[builder(into)]
     pub expires_at: DateTime<Utc>,
 
     /// The issuing time of the session token.
+    #[builder(into)]
     pub issued_at: DateTime<Utc>,
 
     /// Inline policy associated with the session token.
     #[serde(with = "inline_policy_json")]
+    #[builder(into)]
     pub inline_policy: Option<AspenPolicy>,
 
     /// Managed policy identifiers associated with the session token.
+    #[builder(into)]
     pub managed_policy_ids: Vec<String>,
 
     /// The name of the session.
+    #[builder(into)]
     pub role_session_name: String,
 
     /// Additional metadata associated with the session token.
+    #[builder(into)]
     pub metadata: SessionData,
 
     /// Tags associated with the session token.
+    #[builder(into)]
     pub tags: HashMap<AsciiString<CaseInsensitive>, String>,
 
     /// Keys of the transitive tags associated with the session token. These are tags that will be
     /// passed to any sessions that are assumed by this session.
+    #[builder(into)]
     pub transitive_tag_keys: HashSet<AsciiString<CaseInsensitive>>,
+}
+
+/// Policies that restrict a session's permissions, carried from the session token into request
+/// handling.
+///
+/// A signing-key provider that recognizes temporary credentials populates this from the
+/// [`SessionTokenData`] it extracts; the Axum layer then attaches it to the request as an
+/// extension alongside the principal and session data. Services evaluate these policies as an
+/// additional gate intersected with the principal's identity-based policies.
+///
+/// The default value — no inline policy, no managed policy ids — means the session is
+/// unrestricted: either the caller used long-term credentials, or no session policies were
+/// passed to `sts:AssumeRole`.
+#[derive(Builder, Clone, Debug, Default)]
+pub struct SessionPolicies {
+    /// The inline session policy document supplied to `sts:AssumeRole`, if any.
+    inline_policy: Option<AspenPolicy>,
+
+    /// Prefixed ("ANPA…") managed policy ids supplied to `sts:AssumeRole` via `PolicyArns`.
+    /// These are references: the policy documents are resolved when a request is authorized,
+    /// not when the session is created.
+    #[builder(into, default)]
+    managed_policy_ids: Vec<String>,
+}
+
+impl SessionPolicies {
+    /// Retrieve the inline session policy, if any.
+    #[inline]
+    pub fn inline_policy(&self) -> Option<&AspenPolicy> {
+        self.inline_policy.as_ref()
+    }
+
+    /// Indicates whether the session is unrestricted: no inline policy and no managed policy
+    /// ids.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.inline_policy.is_none() && self.managed_policy_ids.is_empty()
+    }
+
+    /// Retrieve the prefixed ("ANPA…") managed policy ids.
+    #[inline]
+    pub fn managed_policy_ids(&self) -> &[String] {
+        &self.managed_policy_ids
+    }
+}
+
+/// Request for extracting session token data from an opaque session token string.
+#[derive(Builder, Clone, Debug)]
+pub struct ExtractSessionTokenRequest {
+    /// The opaque session token string.
+    #[builder(into)]
+    session_token: String,
+
+    /// The request id for logging and tracing.
+    #[builder(into)]
+    request_id: RequestId,
 }
 
 /// Trait for extracting data from an opaque session token.
@@ -75,9 +145,15 @@ pub struct SessionTokenData {
 ///
 /// This trait is blanket-implemented for every [`Service`] with the matching request, response,
 /// and error types; do not implement it directly.
-pub trait ExtractSessionToken: Service<String, Response = SessionTokenData, Error = SignatureError> {}
+pub trait ExtractSessionToken:
+    Service<ExtractSessionTokenRequest, Response = SessionTokenData, Error = SignatureError>
+{
+}
 
-impl<T> ExtractSessionToken for T where T: Service<String, Response = SessionTokenData, Error = SignatureError> {}
+impl<T> ExtractSessionToken for T where
+    T: Service<ExtractSessionTokenRequest, Response = SessionTokenData, Error = SignatureError>
+{
+}
 
 /// Serde adapter for [`SessionTokenData::inline_policy`] that carries the policy as its JSON
 /// document string. Aspen policies use flexible JSON representations (e.g. element-or-list) that

@@ -2,7 +2,7 @@
 use {
     crate::{
         group::group_arn_resource, internal_failure, partition::get_current_partition_or_fail,
-        policy::build_policy_arn, user::user_arn_resource,
+        policy::build_policy_arn, role::role_arn_resource, user::user_arn_resource,
     },
     indoc::indoc,
     scratchstack_arn::Arn,
@@ -11,11 +11,11 @@ use {
     scratchstack_core::RequestId,
     scratchstack_shapes_iam::error_meta::Error as IamError,
     sqlx::{FromRow, postgres::PgTransaction, query_as},
-    std::str::FromStr as _,
+    std::{collections::HashMap, str::FromStr as _},
 };
 
-/// A row returned by the policies-for-user gather query. Which columns are populated depends on
-/// the `source` discriminator; [row_to_policy_source] enforces the expectations.
+/// A row returned by the policy gather queries. Which columns are populated depends on the
+/// `source` discriminator; [row_to_policy_source] enforces the expectations.
 #[derive(FromRow)]
 struct PrincipalPolicyRow {
     source: String,
@@ -30,6 +30,219 @@ struct PrincipalPolicyRow {
     managed_policy_name: Option<String>,
     managed_policy_path: Option<String>,
     managed_policy_version: Option<i64>,
+}
+
+/// Fetch the policy documents for the given prefixed ("ANPA…") managed policy ids, resolving
+/// each id to its current default version.
+///
+/// This reconstructs the session-policy gate for temporary credentials: `sts:AssumeRole` records
+/// managed session policies by id in the session token, and the documents are resolved when a
+/// request is authorized rather than when the session is created.
+///
+/// Returns `Ok(None)` if any id does not carry the managed-policy prefix or no longer resolves
+/// (e.g. the policy was deleted after the session was created). The session gate cannot be
+/// reconstructed in that case, so callers must fail closed and deny the request.
+pub async fn get_policies_by_ids(
+    tx: &mut PgTransaction<'_>,
+    prefixed_policy_ids: &[String],
+    request_id: RequestId,
+) -> Result<Option<Vec<Policy>>, IamError> {
+    let mut policy_ids = Vec::with_capacity(prefixed_policy_ids.len());
+    for prefixed_policy_id in prefixed_policy_ids {
+        let Some(policy_id) = prefixed_policy_id.strip_prefix(IamResourceType::ManagedPolicy.as_str()) else {
+            log::warn!("Policy id {prefixed_policy_id} is not a prefixed managed policy id");
+            return Ok(None);
+        };
+        policy_ids.push(policy_id.to_string());
+    }
+
+    #[derive(FromRow)]
+    struct PolicyDocumentRow {
+        managed_policy_id: String,
+        policy_document: String,
+    }
+
+    let rows: Vec<PolicyDocumentRow> = query_as(indoc! {"
+            SELECT mp.managed_policy_id, mpv.policy_document
+            FROM iam.managed_policies mp
+            INNER JOIN iam.managed_policy_versions mpv
+                ON mpv.managed_policy_id = mp.managed_policy_id
+                AND mpv.managed_policy_version = mp.default_version
+            WHERE mp.managed_policy_id = ANY($1)
+        "})
+    .bind(&policy_ids)
+    .fetch_all(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to fetch policy documents by id: {e}");
+        internal_failure(request_id)
+    })?;
+
+    let documents: HashMap<String, String> =
+        rows.into_iter().map(|row| (row.managed_policy_id, row.policy_document)).collect();
+
+    let mut policies = Vec::with_capacity(policy_ids.len());
+    for policy_id in &policy_ids {
+        let Some(document) = documents.get(policy_id) else {
+            // The policy was deleted (or lost its default version) after the id was recorded.
+            log::warn!("Managed policy id {policy_id} not found while fetching policy documents");
+            return Ok(None);
+        };
+
+        // Policy documents were validated when they were stored, so a parse failure here means
+        // the stored document is corrupt. Fail closed rather than skip: skipping a document
+        // could silently drop an explicit deny.
+        let policy = Policy::from_str(document).map_err(|e| {
+            log::error!("Failed to parse stored policy document for managed policy id {policy_id}: {e}");
+            internal_failure(request_id)
+        })?;
+        policies.push(policy);
+    }
+
+    Ok(Some(policies))
+}
+
+/// Gather the identity-based policies that govern an IAM role: the role's inline policies, the
+/// default versions of managed policies attached to the role, and the role's permissions
+/// boundary (if any). Roles cannot belong to groups, so no group policies apply. Session
+/// policies supplied to `sts:AssumeRole` travel in the session token rather than the database
+/// and are not gathered here.
+///
+/// `role_id` is the internal, unprefixed role id (i.e. the `aws:userid` session value minus its
+/// leading `AROA` prefix and trailing `:role-session-name`). If the role row does not exist in
+/// `account_id`, an empty [PolicySet] is returned; evaluating it will produce a default deny.
+pub async fn get_policies_for_role(
+    tx: &mut PgTransaction<'_>,
+    account_id: &str,
+    role_id: &str,
+    request_id: RequestId,
+) -> Result<PolicySet, IamError> {
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
+
+    // Fetch the caller's role row; this also supplies the components of the role's ARN.
+    #[derive(FromRow)]
+    struct RoleRow {
+        role_name_cased: String,
+        path: String,
+    }
+
+    let role_row: Option<RoleRow> = query_as(indoc! {"
+            SELECT role_name_cased, path
+            FROM iam.roles
+            WHERE role_id = $1 AND account_id = $2
+        "})
+    .bind(role_id)
+    .bind(account_id)
+    .fetch_optional(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to look up role for authorization: {e}");
+        internal_failure(request_id)
+    })?;
+
+    let Some(role_row) = role_row else {
+        // The role was deleted (or moved accounts) between the session's creation and now.
+        log::warn!("Role id {role_id} not found in account {account_id} while gathering policies");
+        return Ok(PolicySet::new());
+    };
+
+    let role_arn = build_iam_arn(
+        &partition,
+        account_id,
+        role_arn_resource(&role_row.path, &role_row.role_name_cased),
+        request_id,
+    )?;
+    let prefixed_role_id = format!("{}{role_id}", IamResourceType::Role.as_str());
+
+    // Gather every policy document that applies to the role in a single round trip. Managed
+    // policies resolve to their default version; a managed policy with no default version (which
+    // cannot happen for an attachable policy) drops out of the inner join.
+    let rows: Vec<PrincipalPolicyRow> = query_as(indoc! {"
+            SELECT
+                'entity_inline' AS source,
+                rip.policy_name_cased AS policy_name,
+                rip.policy_document AS policy_document,
+                NULL::VARCHAR AS group_account_id,
+                NULL::VARCHAR AS group_id,
+                NULL::VARCHAR AS group_name,
+                NULL::VARCHAR AS group_path,
+                NULL::VARCHAR AS managed_policy_account_id,
+                NULL::VARCHAR AS managed_policy_id,
+                NULL::VARCHAR AS managed_policy_name,
+                NULL::VARCHAR AS managed_policy_path,
+                NULL::BIGINT AS managed_policy_version
+            FROM iam.role_inline_policies rip
+            WHERE rip.role_id = $1
+
+            UNION ALL
+
+            SELECT
+                'entity_attached',
+                NULL::VARCHAR,
+                mpv.policy_document,
+                NULL::VARCHAR,
+                NULL::VARCHAR,
+                NULL::VARCHAR,
+                NULL::VARCHAR,
+                mp.account_id,
+                mp.managed_policy_id,
+                mp.managed_policy_name_cased,
+                mp.path,
+                mp.default_version
+            FROM iam.role_attached_policies rap
+            INNER JOIN iam.managed_policies mp ON mp.managed_policy_id = rap.managed_policy_id
+            INNER JOIN iam.managed_policy_versions mpv
+                ON mpv.managed_policy_id = mp.managed_policy_id
+                AND mpv.managed_policy_version = mp.default_version
+            WHERE rap.role_id = $1
+
+            UNION ALL
+
+            SELECT
+                'boundary',
+                NULL::VARCHAR,
+                mpv.policy_document,
+                NULL::VARCHAR,
+                NULL::VARCHAR,
+                NULL::VARCHAR,
+                NULL::VARCHAR,
+                mp.account_id,
+                mp.managed_policy_id,
+                mp.managed_policy_name_cased,
+                mp.path,
+                mp.default_version
+            FROM iam.roles r
+            INNER JOIN iam.managed_policies mp
+                ON mp.managed_policy_id = r.permissions_boundary_managed_policy_id
+            INNER JOIN iam.managed_policy_versions mpv
+                ON mpv.managed_policy_id = mp.managed_policy_id
+                AND mpv.managed_policy_version = mp.default_version
+            WHERE r.role_id = $1 AND r.account_id = $2
+        "})
+    .bind(role_id)
+    .bind(account_id)
+    .fetch_all(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to gather policies for role: {e}");
+        internal_failure(request_id)
+    })?;
+
+    let mut policy_set = PolicySet::new();
+    for row in rows.into_iter() {
+        // Policy documents were validated when they were stored, so a parse failure here means
+        // the stored document is corrupt. Fail closed rather than skip: skipping a document
+        // could silently drop an explicit deny.
+        let policy = Policy::from_str(&row.policy_document).map_err(|e| {
+            log::error!("Failed to parse stored policy document ({}) for role id {role_id}: {e}", row.source);
+            internal_failure(request_id)
+        })?;
+
+        let source = row_to_policy_source(&partition, &role_arn, &prefixed_role_id, row, request_id)?;
+        policy_set.add_policy(source, policy);
+    }
+
+    Ok(policy_set)
 }
 
 /// Gather the identity-based policies that govern an IAM user: the user's inline policies, the
@@ -87,7 +300,7 @@ pub async fn get_policies_for_user(
     // cannot happen for an attachable policy) drops out of the inner join.
     let rows: Vec<PrincipalPolicyRow> = query_as(indoc! {"
             SELECT
-                'user_inline' AS source,
+                'entity_inline' AS source,
                 uip.policy_name_cased AS policy_name,
                 uip.policy_document AS policy_document,
                 NULL::VARCHAR AS group_account_id,
@@ -105,7 +318,7 @@ pub async fn get_policies_for_user(
             UNION ALL
 
             SELECT
-                'user_attached',
+                'entity_attached',
                 NULL::VARCHAR,
                 mpv.policy_document,
                 NULL::VARCHAR,
@@ -236,8 +449,8 @@ fn build_iam_arn(partition: &str, account_id: &str, resource: String, request_id
 /// internal failure.
 fn row_to_policy_source(
     partition: &str,
-    user_arn: &Arn,
-    prefixed_user_id: &str,
+    entity_arn: &Arn,
+    prefixed_entity_id: &str,
     row: PrincipalPolicyRow,
     request_id: RequestId,
 ) -> Result<PolicySource, IamError> {
@@ -252,10 +465,10 @@ fn row_to_policy_source(
     }
 
     match row.source.as_str() {
-        "user_inline" => {
-            Ok(PolicySource::new_entity_inline(user_arn.to_string(), prefixed_user_id, required!(policy_name)))
+        "entity_inline" => {
+            Ok(PolicySource::new_entity_inline(entity_arn.to_string(), prefixed_entity_id, required!(policy_name)))
         }
-        source @ ("user_attached" | "group_attached" | "boundary") => {
+        source @ ("entity_attached" | "group_attached" | "boundary") => {
             let policy_arn = build_policy_arn(
                 partition,
                 &required!(managed_policy_account_id),
@@ -267,7 +480,7 @@ fn row_to_policy_source(
             let version = format!("v{}", required!(managed_policy_version));
 
             match source {
-                "user_attached" => {
+                "entity_attached" => {
                     Ok(PolicySource::new_entity_attached_policy(policy_arn.to_string(), policy_id, version))
                 }
                 "group_attached" => {

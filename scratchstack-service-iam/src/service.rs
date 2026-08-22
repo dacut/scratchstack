@@ -6,6 +6,7 @@ use {
         response::Response,
     },
     scratchstack_aws_principal::{Principal, SessionData},
+    scratchstack_aws_signature::SessionPolicies,
     scratchstack_core::{RequestId, response::Responder as _},
     scratchstack_shapes_iam::{
         action::{Action, VERSION as IAM_VERSION},
@@ -31,6 +32,7 @@ pub(crate) async fn serve_request(
     request_id: RequestId,
     Extension(principal): Extension<Principal>,
     Extension(session_data): Extension<SessionData>,
+    Extension(session_policies): Extension<SessionPolicies>,
     RawQuery(query): RawQuery,
     body: Bytes,
 ) -> Response<Body> {
@@ -69,7 +71,9 @@ pub(crate) async fn serve_request(
     }
 
     match action.parse::<Action>() {
-        Ok(Action::ListUsers) => list_users(svc_state, request_id, principal, session_data, &parameters).await,
+        Ok(Action::ListUsers) => {
+            list_users(svc_state, request_id, principal, session_data, session_policies, &parameters).await
+        }
         _ => invalid_action(request_id, &action, &version),
     }
 }
@@ -107,11 +111,13 @@ mod tests {
         },
         http_body_util::BodyExt as _,
         pretty_assertions::assert_eq,
-        scratchstack_aws_principal::{Principal, RootUser, SessionData, SessionValue, User},
+        scratchstack_aspen::Policy as AspenPolicy,
+        scratchstack_aws_principal::{AssumedRole, Principal, RootUser, SessionData, SessionValue, User},
+        scratchstack_aws_signature::SessionPolicies,
         scratchstack_core::RequestId,
         scratchstack_iam_database::{migrate::MIGRATOR, utils::TempDatabase},
         sqlx::raw_sql,
-        std::sync::Arc,
+        std::{str::FromStr as _, sync::Arc},
     };
 
     const TEST_ACCOUNT_ID: &str = "123456789012";
@@ -149,6 +155,21 @@ mod tests {
         ('SVCTESTEPOCHUSR1', 'allow-after-2020-epoch', 'Allow-After-2020-Epoch',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
            "Condition":{"NumericGreaterThan":{"aws:EpochTime":"1577836800"}}}]}');
+
+        INSERT INTO iam.roles(role_id, account_id, role_name_lower, role_name_cased, path, assume_role_policy_document) VALUES
+        ('SVCTESTROLE00001', '123456789012', 'session-role', 'Session-Role', '/',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}');
+
+        INSERT INTO iam.role_inline_policies(role_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+        ('SVCTESTROLE00001', 'allow-list-users', 'Allow-List-Users',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*"}]}');
+
+        INSERT INTO iam.managed_policies(managed_policy_id, account_id, managed_policy_name_lower,
+            managed_policy_name_cased, path, default_version, deprecated, latest_version) VALUES
+        ('SVCTESTSESSPOL01', '123456789012', 'session-allow-iam', 'Session-Allow-Iam', '/', 1, false, 1);
+
+        INSERT INTO iam.managed_policy_versions(managed_policy_id, managed_policy_version, policy_document) VALUES
+        ('SVCTESTSESSPOL01', 1, '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:*","Resource":"*"}]}');
     "#;
 
     /// Build the principal and session data the SigV4 layer would produce for a seeded user.
@@ -167,6 +188,23 @@ mod tests {
         (principal, session_data)
     }
 
+    /// Build the principal and session data the SigV4 layer would produce for a session on the
+    /// seeded role.
+    fn role_identity(role_id: &str, role_name: &str) -> (Principal, SessionData) {
+        let principal = Principal::from(
+            AssumedRole::new("aws", TEST_ACCOUNT_ID, role_name, "test-session").expect("failed to build assumed role"),
+        );
+        let mut session_data = SessionData::new();
+        session_data.insert("aws:PrincipalAccount", SessionValue::String(TEST_ACCOUNT_ID.to_string()));
+        session_data.insert(
+            "aws:PrincipalArn",
+            SessionValue::String(format!("arn:aws:sts::{TEST_ACCOUNT_ID}:assumed-role/{role_name}/test-session")),
+        );
+        session_data.insert("aws:userid", SessionValue::String(format!("AROA{role_id}:test-session")));
+        session_data.insert("aws:PrincipalType", SessionValue::String("AssumedRole".to_string()));
+        (principal, session_data)
+    }
+
     /// Invoke `serve_request` directly with the given identity and return the status and body.
     async fn call(
         svc_state: &ServiceState,
@@ -174,11 +212,24 @@ mod tests {
         session_data: SessionData,
         parameters: &str,
     ) -> (StatusCode, String) {
+        call_with_session_policies(svc_state, principal, session_data, SessionPolicies::default(), parameters).await
+    }
+
+    /// Invoke `serve_request` directly with the given identity and session policies and return
+    /// the status and body.
+    async fn call_with_session_policies(
+        svc_state: &ServiceState,
+        principal: Principal,
+        session_data: SessionData,
+        session_policies: SessionPolicies,
+        parameters: &str,
+    ) -> (StatusCode, String) {
         let response: Response<Body> = serve_request(
             State(svc_state.clone()),
             RequestId::new(),
             Extension(principal),
             Extension(session_data),
+            Extension(session_policies),
             RawQuery(None),
             Bytes::from(parameters.as_bytes().to_vec()),
         )
@@ -273,5 +324,66 @@ mod tests {
         let (status, body) = call(&svc_state, principal, session_data, parameters).await;
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
         assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        // An assumed-role session with no session policies is governed by the role's inline
+        // policy, which allows iam:ListUsers.
+        let (principal, session_data) = role_identity("SVCTESTROLE00001", "session-role");
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        // An inline session policy that also allows iam:ListUsers leaves the intersection
+        // intact.
+        let allow_iam = AspenPolicy::from_str(
+            r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:*","Resource":"*"}]}"#,
+        )
+        .expect("failed to parse policy");
+        let session_policies = SessionPolicies::builder().inline_policy(allow_iam).build();
+        let (principal, session_data) = role_identity("SVCTESTROLE00001", "session-role");
+        let (status, body) =
+            call_with_session_policies(&svc_state, principal, session_data, session_policies, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        // An inline session policy that does not allow iam:ListUsers removes it from the
+        // intersection even though the role's own policy allows it.
+        let allow_s3_only = AspenPolicy::from_str(
+            r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:*","Resource":"*"}]}"#,
+        )
+        .expect("failed to parse policy");
+        let session_policies = SessionPolicies::builder().inline_policy(allow_s3_only).build();
+        let (principal, session_data) = role_identity("SVCTESTROLE00001", "session-role");
+        let (status, body) =
+            call_with_session_policies(&svc_state, principal, session_data, session_policies, parameters).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+        assert!(
+            body.contains(&format!(
+                "User: arn:aws:sts::{TEST_ACCOUNT_ID}:assumed-role/session-role/test-session is not \
+                 authorized to perform: iam:ListUsers on resource: * because no session policy allows \
+                 the iam:ListUsers action"
+            )),
+            "unexpected body: {body}"
+        );
+
+        // A managed session policy resolves to its current default version, which allows iam:*.
+        let session_policies =
+            SessionPolicies::builder().managed_policy_ids(["ANPASVCTESTSESSPOL01".to_string()]).build();
+        let (principal, session_data) = role_identity("SVCTESTROLE00001", "session-role");
+        let (status, body) =
+            call_with_session_policies(&svc_state, principal, session_data, session_policies, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        // A managed session policy that no longer resolves cannot be reconstructed; the request
+        // is denied (not an internal failure).
+        let session_policies =
+            SessionPolicies::builder().managed_policy_ids(["ANPADOESNOTEXIST0000".to_string()]).build();
+        let (principal, session_data) = role_identity("SVCTESTROLE00001", "session-role");
+        let (status, body) =
+            call_with_session_policies(&svc_state, principal, session_data, session_policies, parameters).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+        assert!(body.contains("because no session policy allows the iam:ListUsers action"), "unexpected body: {body}");
     }
 }

@@ -1,22 +1,14 @@
 use {
     crate::{
-        GetSigningKeyRequest, GetSigningKeyResponse, SignatureError, SignatureOptions, SignedHeaderRequirements,
-        canonical::get_content_type_and_charset,
-        constants::{ERR_CODE_INTERNAL_FAILURE, MSG_INTERNAL_SERVICE_ERROR},
-        sigv4_validate_request,
+        GetSigningKeyRequest, GetSigningKeyResponse, InternalServiceError, InvalidContentTypeError,
+        InvalidRequestMethodError, SignatureError, SignatureOptions, SignedHeaderRequirements,
+        canonical::get_content_type_and_charset, constants::*, sigv4_validate_request,
     },
-    axum::{
-        body::Body,
-        extract::Request,
-        http::{StatusCode, method::Method},
-        response::Response,
-    },
+    axum::{body::Body, extract::Request, http::method::Method, response::Response},
     bon::Builder,
     chrono::Utc,
-    log::{error, info, trace},
     scratchstack_core::{
         RequestId,
-        error::GenericError,
         response::{ErrorResponseEnvelope, Responder as _},
     },
     std::{
@@ -29,7 +21,7 @@ use {
         pin::Pin,
         task::{Context, Poll},
     },
-    tower::{BoxError, Layer, Service, ServiceExt},
+    tower::{Layer, Service, ServiceExt},
 };
 
 /// AWSSigV4VerifierLayer implements a Tower layer that produces an [`AwsSigV4VerifierMiddleware`] for authenticating
@@ -106,9 +98,9 @@ impl<S, SE, G, E, SHR> Layer<S> for AwsSigV4VerifierLayer<G, E, SHR>
 where
     S: Service<Request, Response = Response, Error = SE> + Clone + Send + 'static,
     SE: StdError + Send + Sync + 'static,
-    G: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = BoxError> + Clone + Send + 'static,
+    G: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = SignatureError> + Clone + Send + 'static,
     G::Future: Send,
-    E: Clone + ErrorMapper,
+    E: Clone + ErrorMapper<SE>,
     SHR: Clone,
 {
     type Service = AwsSigV4VerifierMiddleware<S, SE, G, E, SHR>;
@@ -173,9 +165,9 @@ where
     S: Service<Request, Response = Response, Error = SE> + Clone + Send + 'static,
     SE: StdError + Send + Sync + 'static,
     S::Future: Send,
-    G: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = BoxError> + Clone + Send + 'static,
+    G: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = SignatureError> + Clone + Send + 'static,
     G::Future: Send,
-    E: ErrorMapper,
+    E: ErrorMapper<SE>,
     SHR: SignedHeaderRequirements + Clone + Send + Sync + 'static,
 {
     type Response = S::Response;
@@ -213,12 +205,10 @@ where
         match self.poll_error.take() {
             AwsSigV4VerifierPollError::None => (),
             AwsSigV4VerifierPollError::Inner(e) => {
-                trace!("AwsSigV4VerifierMiddleware: error from inner service: {e}");
-                return Box::pin(async move { Ok(error_mapper.map_error(e.into(), request_id).await) });
+                return Box::pin(async move { Ok(error_mapper.map_service_error(e, request_id)) });
             }
             AwsSigV4VerifierPollError::GetSigningKey(e) => {
-                trace!("AwsSigV4VerifierMiddleware: error from get signing key: {e}");
-                return Box::pin(async move { Ok(error_mapper.map_error(e, request_id).await) });
+                return Box::pin(async move { Ok(error_mapper.map_signature_error(e, request_id)) });
             }
         }
 
@@ -238,7 +228,6 @@ where
                 Some(request_id) => *request_id,
                 None => {
                     let new_request_id = RequestId::new();
-                    trace!("AwsSigV4VerifierMiddleware: Generated request-id: {new_request_id}");
                     extensions.insert(new_request_id);
 
                     new_request_id
@@ -247,20 +236,14 @@ where
 
             // Rule 2: Is the request method appropriate?
             if !allowed_request_methods.is_empty() && !allowed_request_methods.contains(req.method()) {
-                trace!(
-                    "AwsSigV4VerifierMiddleware: method {} is not in allowed methods {:?}",
-                    req.method(),
-                    allowed_request_methods
-                );
-                return Ok(error_mapper
-                    .map_error(
-                        SignatureError::InvalidRequestMethod(
-                            format!("Unsupported request method '{}", req.method()).into(),
-                        )
+                return Ok(error_mapper.map_signature_error(
+                    InvalidRequestMethodError::builder()
+                        .message(format!("Unsupported request method '{}'", req.method()))
+                        .request_id(request_id)
+                        .build()
                         .into(),
-                        Some(request_id),
-                    )
-                    .await);
+                    Some(request_id),
+                ));
             }
 
             // Rule 3: Is the content type appropriate?
@@ -285,17 +268,14 @@ where
                 }
 
                 if !get_ok {
-                    info!(
-                        "AwsSigV4VerifierMiddleware: content-type: {} is not in allowed types: {:?}",
-                        ctc.content_type, allowed_content_types
-                    );
-                    return Ok(error_mapper
-                        .map_error(
-                            SignatureError::InvalidContentType("The content-type of the request is unsupported".into())
-                                .into(),
-                            Some(request_id),
-                        )
-                        .await);
+                    return Ok(error_mapper.map_signature_error(
+                        InvalidContentTypeError::builder()
+                            .message(MSG_INVALID_CONTENT_TYPE)
+                            .request_id(request_id)
+                            .build()
+                            .into(),
+                        Some(request_id),
+                    ));
                 }
             }
 
@@ -312,25 +292,22 @@ where
 
             match result {
                 Ok((mut parts, body, response)) => {
-                    trace!("AwsSigV4VerifierMiddleware: SigV4 validated succeeded with response {response:?}");
                     let body = Body::from(body);
                     parts.extensions.insert(response.principal().clone());
                     parts.extensions.insert(response.session_data().clone());
+                    parts.extensions.insert(response.session_policies().clone());
                     let req = Request::from_parts(parts, body);
                     match inner.oneshot(req).await {
                         Ok(resp) => Ok(resp),
                         Err(e) => {
                             log::error!(
-                                "AwsSigV4VerifierMiddleware: inner service returned an error while processing request: {e}"
+                                "{request_id}: AwsSigV4VerifierMiddleware: inner service returned an error while processing request: {e}"
                             );
-                            Ok(error_mapper.map_error(e.into(), Some(request_id)).await)
+                            Ok(error_mapper.map_service_error(e, Some(request_id)))
                         }
                     }
                 }
-                Err(e) => {
-                    trace!("AwsSigV4VerifierMiddleware: SigV4 validation failed with error: {e}");
-                    Ok(error_mapper.map_error(e, Some(request_id)).await)
-                }
+                Err(e) => Ok(error_mapper.map_signature_error(e, Some(request_id))),
             }
         })
     }
@@ -347,7 +324,7 @@ enum AwsSigV4VerifierPollError<SE> {
     Inner(SE),
 
     /// GetSigningKey service returned an error
-    GetSigningKey(BoxError),
+    GetSigningKey(SignatureError),
 }
 
 impl<SE> AwsSigV4VerifierPollError<SE> {
@@ -383,12 +360,15 @@ where
 }
 
 /// A trait for mapping authentication errors to HTTP responses.
-pub trait ErrorMapper: Clone + Send + 'static {
-    /// Attempt to map the error to an HTTP response.
-    fn map_error(self, error: BoxError, request_id: Option<RequestId>) -> impl Future<Output = Response<Body>> + Send;
+pub trait ErrorMapper<E>: Clone + Send + 'static {
+    /// Map a service error to an HTTP response.
+    fn map_service_error(self, error: E, request_id: Option<RequestId>) -> Response<Body>;
+
+    /// Map a [`SignatureError`] to an HTTP response.
+    fn map_signature_error(self, error: SignatureError, request_id: Option<RequestId>) -> Response<Body>;
 }
 
-/// An implementation of [ErrorMapper] that returns an XML body.
+/// An implementation of [`ErrorMapper`] that returns an XML body.
 #[derive(Clone)]
 pub struct XmlErrorMapper {
     namespace: String,
@@ -403,30 +383,22 @@ impl XmlErrorMapper {
     }
 }
 
-impl ErrorMapper for XmlErrorMapper {
-    async fn map_error(self, e: BoxError, request_id: Option<RequestId>) -> Response<Body> {
-        match e.downcast::<SignatureError>() {
-            Ok(e) => {
-                trace!("XmlErrorMapper: mapping SignatureError {:?} to XML, http status: {}", e, e.http_status());
-                // The error knows its own code, status and message; all this layer adds is the
-                // request id, which is generated per-request rather than at the failure site.
-                let e = match request_id {
-                    Some(request_id) => e.with_request_id(request_id),
-                    None => *e,
-                };
-                ErrorResponseEnvelope::new_with_xmlns(&e, &self.namespace).respond()
-            }
-            Err(any) => {
-                error!("Error is not a SignatureError: {any}");
-                let response = GenericError::builder()
-                    .code(ERR_CODE_INTERNAL_FAILURE)
-                    .http_status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .message(MSG_INTERNAL_SERVICE_ERROR)
-                    .maybe_request_id(request_id.map(|id| id.to_string()))
-                    .build();
-                ErrorResponseEnvelope::new_with_xmlns(&response, &self.namespace).respond()
-            }
-        }
+impl<SE: Display> ErrorMapper<SE> for XmlErrorMapper {
+    fn map_service_error(self, e: SE, request_id: Option<RequestId>) -> Response<Body> {
+        // Swallow the error and return a generic internal service error response.
+        log::error!(
+            "{request_id:?}: underlying service returned an error, will convert to InternalServiceError with loss of information: {e}"
+        );
+        let err = InternalServiceError::builder().maybe_request_id(request_id).build();
+        ErrorResponseEnvelope::new_with_xmlns(&err, &self.namespace).respond()
+    }
+
+    fn map_signature_error(self, e: SignatureError, request_id: Option<RequestId>) -> Response<Body> {
+        let e = match request_id {
+            Some(request_id) => e.with_request_id(request_id),
+            None => e,
+        };
+        ErrorResponseEnvelope::new_with_xmlns(&e, &self.namespace).respond()
     }
 }
 
@@ -434,7 +406,8 @@ impl ErrorMapper for XmlErrorMapper {
 mod tests {
     use {
         crate::{
-            AwsSigV4VerifierLayer, GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, NoSignedHeaderRequirements,
+            AwsSigV4VerifierLayer, ExpiredTokenError, GetSigningKeyRequest, GetSigningKeyResponse,
+            InternalServiceError, InvalidClientTokenIdError, KSecretKey, NoSignedHeaderRequirements, SessionPolicies,
             SignatureError, SignatureOptions, XmlErrorMapper,
         },
         axum::{
@@ -461,8 +434,14 @@ mod tests {
     const TEST_ACCESS_KEY: &str = "AKIDEXAMPLE";
     const TEST_SECRET_KEY: &str = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
 
-    /// A handler that returns the principal of the request if it is authenticated.
-    async fn hello_response(Extension(principal): Extension<Principal>) -> Response<Body> {
+    /// A handler that returns the principal of the request if it is authenticated. Extracting
+    /// [SessionPolicies] also verifies that the layer attaches it to every authenticated
+    /// request; extraction fails with a 500 if the extension is missing.
+    async fn hello_response(
+        Extension(principal): Extension<Principal>,
+        Extension(session_policies): Extension<SessionPolicies>,
+    ) -> Response<Body> {
+        assert!(session_policies.is_empty(), "long-term credentials must produce unrestricted sessions");
         let body = format!("Hello {principal:?}");
         Response::builder().status(StatusCode::OK).header("Content-Type", "text/plain").body(Body::from(body)).unwrap()
     }
@@ -718,7 +697,7 @@ mod tests {
     //     }
     // }
 
-    async fn get_creds_fn(request: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, BoxError> {
+    async fn get_creds_fn(request: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, SignatureError> {
         if request.access_key() == TEST_ACCESS_KEY {
             let k_secret = KSecretKey::from_str(TEST_SECRET_KEY)?;
             let k_signing = k_secret.to_ksigning(request.request_date(), request.region(), request.service());
@@ -726,9 +705,7 @@ mod tests {
             let response = GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build();
             Ok(response)
         } else {
-            Err(Box::new(SignatureError::InvalidClientTokenId(
-                "The AWS access key provided does not exist in our records".into(),
-            )))
+            Err(InvalidClientTokenIdError::builder().request_id(request.request_id()).build().into())
         }
     }
 
@@ -738,18 +715,14 @@ mod tests {
 
     impl GetDummyCreds {
         #[allow(dead_code)] // Until we fix up our GSK middleware
-        async fn get_signing_key(req: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, BoxError> {
+        async fn get_signing_key(req: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, SignatureError> {
             if let Some(token) = req.session_token() {
                 match token {
                     "invalid" => {
-                        return Err(Box::new(SignatureError::InvalidClientTokenId(
-                            "The security token included in the request is invalid".into(),
-                        )));
+                        return Err(InvalidClientTokenIdError::builder().request_id(req.request_id()).build().into());
                     }
                     "expired" => {
-                        return Err(Box::new(SignatureError::ExpiredToken(
-                            "The security token included in the request is expired".into(),
-                        )));
+                        return Err(ExpiredTokenError::builder().request_id(req.request_id()).build().into());
                     }
                     _ => (),
                 }
@@ -762,17 +735,14 @@ mod tests {
                 let response = GetSigningKeyResponse::builder().principal(principal).signing_key(signing_key).build();
                 Ok(response)
             } else {
-                Err(SignatureError::InvalidClientTokenId(
-                    "The AWS access key provided does not exist in our records".into(),
-                )
-                .into())
+                Err(InvalidClientTokenIdError::builder().request_id(req.request_id()).build().into())
             }
         }
     }
 
     impl Service<GetSigningKeyRequest> for GetDummyCreds {
         type Response = GetSigningKeyResponse;
-        type Error = BoxError;
+        type Error = SignatureError;
         type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
         fn poll_ready(&mut self, _c: &mut Context) -> Poll<Result<(), Self::Error>> {
@@ -807,7 +777,7 @@ mod tests {
         }
 
         fn call(&mut self, _req: GetSigningKeyRequest) -> Self::Future {
-            Box::pin(async move { Err(SignatureError::internal_service_error("Internal Failure").into()) })
+            Box::pin(async move { Err(InternalServiceError::builder().build().into()) })
         }
     }
 }

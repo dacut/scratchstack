@@ -29,9 +29,10 @@ strip = "symbols"
 
 [profile.dev]
 debug = "full"
-lto = "thin"
+# lto = "thin"
 opt-level = 0
 panic = "unwind"
+split-debuginfo = "unpacked"
 strip = "none"
 
 [workspace.package]

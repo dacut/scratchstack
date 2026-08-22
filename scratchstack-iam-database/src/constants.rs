@@ -63,9 +63,9 @@ pub(crate) const MAX_SESSION_TOKEN_TIMESTAMP_ERROR_SECS: i64 = 15 * 60;
 /// Ref: https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html
 pub(crate) const MIN_ROLE_SESSION_DURATION_SECS: i32 = 15 * 60;
 
-/// Error message: `"The AWS access key provided does not exist in our records."`
+/// Error message: `"The AWS access key provided does not exist in our records"`
 pub(crate) const MSG_ACCESS_KEY_PROVIDED_DOES_NOT_EXIST: &str =
-    "The AWS access key provided does not exist in our records.";
+    "The AWS access key provided does not exist in our records";
 
 /// Error message: `"Internal failure"`.
 pub(crate) const MSG_INTERNAL_FAILURE: &str = "Internal failure";
