@@ -39,7 +39,7 @@ impl IntoRequestBytes for Bytes {
     }
 }
 
-/// Convert an [`axum::body::Body`] into a [`Bytes`] object.
+/// Convert an Axum [`Body`][`scratchstack_core::axum::body::Body`] into a [`Bytes`] object.
 #[cfg(feature = "axum")]
 impl IntoRequestBytes for scratchstack_core::axum::body::Body {
     async fn into_request_bytes(self) -> Result<Bytes, BoxError> {
