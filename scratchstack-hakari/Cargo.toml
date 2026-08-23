@@ -42,6 +42,7 @@ libsqlite3-sys = { version = "0.37", default-features = false, features = ["bund
 log = { version = "0.4", default-features = false, features = ["std"] }
 memchr = { version = "2" }
 num-traits = { version = "0.2", default-features = false, features = ["std"] }
+percent-encoding = { version = "2" }
 postcard = { version = "1", features = ["use-std"] }
 rand = { version = "0.10" }
 regex = { version = "1" }
@@ -103,6 +104,7 @@ libsqlite3-sys = { version = "0.37", default-features = false, features = ["bund
 log = { version = "0.4", default-features = false, features = ["std"] }
 memchr = { version = "2" }
 num-traits = { version = "0.2", default-features = false, features = ["std"] }
+percent-encoding = { version = "2" }
 postcard = { version = "1", features = ["use-std"] }
 proc-macro2 = { version = "1" }
 quote = { version = "1" }

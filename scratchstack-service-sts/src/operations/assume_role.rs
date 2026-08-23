@@ -4,10 +4,14 @@ use {
         constants::*,
         service::{ServiceState, internal_failure, malformed_input, security_token_invalid},
     },
-    axum::{body::Body, response::Response},
     scratchstack_arn::IamResourceArn,
     scratchstack_aws_principal::{Principal, SessionData},
-    scratchstack_core::{RequestId, query::from_query_str, response::Responder as _},
+    scratchstack_core::{
+        RequestId,
+        axum::{body::Body, response::Response},
+        query::from_query_str,
+        response::Responder as _,
+    },
     scratchstack_iam_database::RequestExecutor as _,
     scratchstack_shapes_sts::{
         operation::{AssumeRoleRequest, AssumeRoleResponseEnvelope},

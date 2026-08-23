@@ -24,16 +24,18 @@ use {
         constants::*,
         service::ServiceState,
     },
-    axum::{
-        Router,
-        http::Method,
-        routing::{get, post, put},
-    },
     clap::Parser,
     log::{debug, error, info},
     scratchstack_aws_signature::{AwsSigV4VerifierLayer, NoSignedHeaderRequirements, XmlErrorMapper},
     scratchstack_config::Resolvable as _,
-    scratchstack_core::TlsListener,
+    scratchstack_core::{
+        TlsListener,
+        axum::{
+            self, Router,
+            http::Method,
+            routing::{get, post, put},
+        },
+    },
     scratchstack_iam_database::GetSigningKeyFromDatabase,
     std::{
         path::PathBuf,

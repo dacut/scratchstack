@@ -1,13 +1,16 @@
 //! Authorization support for the IAM service.
 use {
     crate::{constants::*, service::internal_failure},
-    axum::{body::Body, response::Response},
     chrono::Utc,
     scratchstack_arn::Arn,
     scratchstack_aspen::{Context, Decision, PolicySource, authorize},
     scratchstack_aws_principal::{IamResourceType, Principal, SessionData, SessionValue},
     scratchstack_aws_signature::SessionPolicies,
-    scratchstack_core::{RequestId, response::Responder as _},
+    scratchstack_core::{
+        RequestId,
+        axum::{body::Body, response::Response},
+        response::Responder as _,
+    },
     scratchstack_iam_database::authz::{get_policies_by_ids, get_policies_for_role, get_policies_for_user},
     scratchstack_shapes_iam::{action::Action, types::error::AccessDeniedException},
     sqlx::postgres::PgTransaction,

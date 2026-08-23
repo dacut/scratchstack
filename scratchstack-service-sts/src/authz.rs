@@ -1,14 +1,17 @@
 //! Authorization support for the STS service.
 use {
     crate::{constants::*, service::internal_failure},
-    axum::{body::Body, response::Response},
     chrono::Utc,
     scratchstack_arn::{Arn, IamResourceArn},
     scratchstack_aspen::{
         AwsPrincipal, Context, Decision, Effect, Policy as AspenPolicy, PolicySet, PolicySource, authorize,
     },
     scratchstack_aws_principal::{IamResourceType, Principal, SessionData, SessionValue},
-    scratchstack_core::{RequestId, response::Responder as _},
+    scratchstack_core::{
+        RequestId,
+        axum::{body::Body, response::Response},
+        response::Responder as _,
+    },
     scratchstack_iam_database::{authz::get_policies_for_user, role::get_role},
     scratchstack_shapes_iam::error_meta::Error as IamError,
     scratchstack_shapes_sts::{action::Action, types::error::AccessDeniedException},

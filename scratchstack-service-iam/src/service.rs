@@ -1,13 +1,16 @@
 use {
     crate::{constants::*, operations::list_users},
-    axum::{
-        body::{Body, Bytes},
-        extract::{Extension, RawQuery, State},
-        response::Response,
-    },
     scratchstack_aws_principal::{Principal, SessionData},
     scratchstack_aws_signature::SessionPolicies,
-    scratchstack_core::{RequestId, response::Responder as _},
+    scratchstack_core::{
+        RequestId,
+        axum::{
+            body::{Body, Bytes},
+            extract::{Extension, RawQuery, State},
+            response::Response,
+        },
+        response::Responder as _,
+    },
     scratchstack_shapes_iam::{
         action::{Action, VERSION as IAM_VERSION},
         types::error::{InternalFailure, InvalidAction, MalformedInput},
@@ -26,7 +29,6 @@ pub(crate) struct ServiceState {
     pub(crate) secure_transport: bool,
 }
 
-#[axum::debug_handler]
 pub(crate) async fn serve_request(
     State(svc_state): State<ServiceState>,
     request_id: RequestId,
@@ -103,18 +105,20 @@ pub(crate) fn malformed_input(request_id: RequestId) -> Response<Body> {
 mod tests {
     use {
         super::{ServiceState, serve_request},
-        axum::{
-            body::{Body, Bytes},
-            extract::{Extension, RawQuery, State},
-            http::StatusCode,
-            response::Response,
-        },
         http_body_util::BodyExt as _,
         pretty_assertions::assert_eq,
         scratchstack_aspen::Policy as AspenPolicy,
         scratchstack_aws_principal::{AssumedRole, Principal, RootUser, SessionData, SessionValue, User},
         scratchstack_aws_signature::SessionPolicies,
-        scratchstack_core::RequestId,
+        scratchstack_core::{
+            RequestId,
+            axum::{
+                body::{Body, Bytes},
+                extract::{Extension, RawQuery, State},
+                http::StatusCode,
+                response::Response,
+            },
+        },
         scratchstack_iam_database::{migrate::MIGRATOR, utils::TempDatabase},
         sqlx::raw_sql,
         std::{str::FromStr as _, sync::Arc},

@@ -21,4 +21,3 @@ derive_builder.workspace = true
 scratchstack-arn = { path = "../scratchstack-arn", features = ["iam"] }
 scratchstack-hakari = { path = "../scratchstack-hakari" }
 serde = { workspace = true, features = ["derive"], optional = true }
-zeroize.workspace = true

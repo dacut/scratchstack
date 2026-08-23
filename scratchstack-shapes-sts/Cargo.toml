@@ -24,7 +24,6 @@ anyhow.workspace = true
 bon.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true, optional = true, features = ["derive"] }
-derive_builder.workspace = true
 log.workspace = true
 regex.workspace = true
 scratchstack-cli-utils = { path = "../scratchstack-cli-utils", optional = true }

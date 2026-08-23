@@ -6,16 +6,18 @@ use {
     },
     bytes::{Bytes, BytesMut},
     chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc},
-    http::{
-        header::HeaderValue,
-        method::Method,
-        request::Request,
-        uri::{PathAndQuery, Uri},
-        version::Version as HttpVersion,
-    },
     log::debug,
     scratchstack_aws_principal::{Principal, User},
-    scratchstack_core::RequestId,
+    scratchstack_core::{
+        RequestId,
+        http::{
+            header::HeaderValue,
+            method::Method,
+            request::Request,
+            uri::{PathAndQuery, Uri},
+            version::Version as HttpVersion,
+        },
+    },
     std::{
         env,
         fs::File,
