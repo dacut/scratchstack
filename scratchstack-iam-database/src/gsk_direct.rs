@@ -219,10 +219,7 @@ async fn get_signing_key_from_database(
             .await;
 
             let row: UserCredsRow = match result {
-                Ok(row) => {
-                    log::info!("{}: Found user credentials for access key {}", req.request_id(), access_key);
-                    row
-                }
+                Ok(row) => row,
                 Err(e) => {
                     return Err(match e {
                         SqlxError::RowNotFound => {

@@ -223,7 +223,6 @@ where
         let nonce = Nonce::try_from(nonce.as_slice())
             .map_err(|_| InvalidSessionTokenError::builder().request_id(request.request_id).build())?;
         let associated_data = format!("AccountId={account_id}");
-        log::info!("Encryption key {}: {:02x?}", key_info.session_token_encryption_key_id, key_info.encryption_key);
         let cipher = Aes256Gcm::new_from_slice(key_info.encryption_key.as_slice()).map_err(|e| {
             log::error!(
                 "Failed to create cipher for session token decryption with key {}: {e}",
