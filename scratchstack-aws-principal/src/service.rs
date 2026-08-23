@@ -1,26 +1,65 @@
 use {
     crate::{PrincipalError, utils::validate_dns},
+    derive_builder::Builder,
     scratchstack_arn::utils::validate_region,
     std::fmt::{Display, Formatter, Result as FmtResult},
 };
 
 /// Details about an AWS or AWS-like service.
 ///
-/// Service structs are immutable.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+/// `Service` structs are immutable. They are created using the [`ServiceBuilder`] returned by [`Service::builder`].
+#[derive(Builder, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[builder(build_fn(validate = "Self::validate", error = "PrincipalError"))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Service {
     /// Name of the service.
+    #[builder(setter(into))]
     service_name: String,
 
     /// The region the service is running in. If None, the service is global.
+    #[builder(setter(into, strip_option), default)]
     region: Option<String>,
 
     /// The DNS suffix of the service. This is usually amazonaws.com.
+    #[builder(setter(into))]
     dns_suffix: String,
 }
 
 impl Service {
+    /// Create a [`ServiceBuilder`] for building a [`Service`] representing an AWS(-ish) service.
+    ///
+    /// # Fields
+    ///
+    /// * `service_name`: The name of the service. This must meet the following requirements or a
+    ///   [`PrincipalError::InvalidService`] error will be returned:
+    ///   * The name must contain between 1 and 32 characters.
+    ///   * The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
+    /// * `region`: The region the service is running in. If unset, the service is global.
+    /// * `dns_suffix`: The DNS suffix of the service. This is usually amazonaws.com.
+    ///
+    /// # Example
+    /// ```
+    /// # use scratchstack_aws_principal::Service;
+    /// let service = Service::builder()
+    ///     .service_name("s3")
+    ///     .region("us-east-1")
+    ///     .dns_suffix("amazonaws.com")
+    ///     .build()
+    ///     .unwrap();
+    /// assert_eq!(service.service_name(), "s3");
+    /// assert_eq!(service.region(), Some("us-east-1"));
+    /// assert_eq!(service.dns_suffix(), "amazonaws.com");
+    /// assert_eq!(service.regional_dns_name(), "s3.us-east-1.amazonaws.com");
+    /// assert_eq!(service.global_dns_name(), "s3.amazonaws.com");
+    ///
+    /// // Omitting the region creates a global service.
+    /// let global = Service::builder().service_name("s3").dns_suffix("amazonaws.com").build().unwrap();
+    /// assert_eq!(global.region(), None);
+    /// ```
+    pub fn builder() -> ServiceBuilder {
+        ServiceBuilder::default()
+    }
+
     /// Create a [`Service`] object representing an AWS(-ish) service.
     ///
     /// # Arguments
@@ -34,34 +73,29 @@ impl Service {
     ///
     /// If all of the requirements are met, a [`Service`] object is returned.  Otherwise, a [`PrincipalError`] error is
     /// returned.
-    ///
-    /// # Example
-    /// ```
-    /// # use scratchstack_aws_principal::Service;
-    /// let service = Service::new("s3", Some("us-east-1".to_string()), "amazonaws.com").unwrap();
-    /// assert_eq!(service.service_name(), "s3");
-    /// assert_eq!(service.region(), Some("us-east-1"));
-    /// assert_eq!(service.dns_suffix(), "amazonaws.com");
-    /// assert_eq!(service.regional_dns_name(), "s3.us-east-1.amazonaws.com");
-    /// assert_eq!(service.global_dns_name(), "s3.amazonaws.com");
-    /// ```
+    #[deprecated(since = "0.12.0", note = "Use Service::builder() instead.")]
     pub fn new(service_name: &str, region: Option<String>, dns_suffix: &str) -> Result<Self, PrincipalError> {
-        validate_dns(service_name, 32, PrincipalError::InvalidService)?;
-        validate_dns(dns_suffix, 128, PrincipalError::InvalidService)?;
-
-        let region = match region {
-            None => None,
-            Some(region) => {
-                validate_region(region.as_str())?;
-                Some(region)
-            }
-        };
+        Self::validate_parts(service_name, region.as_deref(), dns_suffix)?;
 
         Ok(Self {
             service_name: service_name.to_string(),
             region,
             dns_suffix: dns_suffix.into(),
         })
+    }
+
+    /// Validate the components of a [`Service`].
+    ///
+    /// This is shared by [`Service::new`] and [`ServiceBuilder::build`] so both enforce identical requirements.
+    fn validate_parts(service_name: &str, region: Option<&str>, dns_suffix: &str) -> Result<(), PrincipalError> {
+        validate_dns(service_name, 32, PrincipalError::InvalidService)?;
+        validate_dns(dns_suffix, 128, PrincipalError::InvalidService)?;
+
+        if let Some(region) = region {
+            validate_region(region)?;
+        }
+
+        Ok(())
     }
 
     /// The name of the service.
@@ -96,6 +130,18 @@ impl Service {
     }
 }
 
+impl ServiceBuilder {
+    /// Validate the fields set on this builder, returning a [`PrincipalError`] if any required field is missing or
+    /// any field is invalid.
+    fn validate(&self) -> Result<(), PrincipalError> {
+        let service_name = self.service_name.as_deref().ok_or(PrincipalError::MissingField("service_name"))?;
+        let dns_suffix = self.dns_suffix.as_deref().ok_or(PrincipalError::MissingField("dns_suffix"))?;
+        let region = self.region.as_ref().and_then(|region| region.as_deref());
+
+        Service::validate_parts(service_name, region, dns_suffix)
+    }
+}
+
 impl Display for Service {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match &self.region {
@@ -109,7 +155,7 @@ impl Display for Service {
 mod tests {
     use {
         super::Service,
-        crate::{Principal, PrincipalSource},
+        crate::{Principal, PrincipalError, PrincipalSource},
         std::{
             collections::hash_map::DefaultHasher,
             hash::{Hash, Hasher},
@@ -118,8 +164,8 @@ mod tests {
 
     #[test]
     fn check_components() {
-        let s1 = Service::new("s3", None, "amazonaws.com").unwrap();
-        let s2 = Service::new("s3", Some("us-east-1".into()), "amazonaws.com").unwrap();
+        let s1 = Service::builder().service_name("s3").dns_suffix("amazonaws.com").build().unwrap();
+        let s2 = Service::builder().service_name("s3").region("us-east-1").dns_suffix("amazonaws.com").build().unwrap();
 
         assert_eq!(s1.service_name(), "s3");
         assert_eq!(s1.region(), None);
@@ -137,13 +183,13 @@ mod tests {
 
     #[test]
     fn check_derived() {
-        let s1a = Service::new("s3", None, "amazonaws.com").unwrap();
-        let s1b = Service::new("s3", None, "amazonaws.com").unwrap();
-        let s2 = Service::new("s3", None, "amazonaws.net").unwrap();
-        let s3 = Service::new("s3", Some("us-east-1".into()), "amazonaws.net").unwrap();
-        let s4 = Service::new("s3", Some("us-east-2".into()), "amazonaws.net").unwrap();
-        let s5 = Service::new("s4", None, "amazonaws.net").unwrap();
-        let s6 = Service::new("s4", Some("us-east-1".into()), "amazonaws.net").unwrap();
+        let s1a = Service::builder().service_name("s3").dns_suffix("amazonaws.com").build().unwrap();
+        let s1b = Service::builder().service_name("s3").dns_suffix("amazonaws.com").build().unwrap();
+        let s2 = Service::builder().service_name("s3").dns_suffix("amazonaws.net").build().unwrap();
+        let s3 = Service::builder().service_name("s3").region("us-east-1").dns_suffix("amazonaws.net").build().unwrap();
+        let s4 = Service::builder().service_name("s3").region("us-east-2").dns_suffix("amazonaws.net").build().unwrap();
+        let s5 = Service::builder().service_name("s4").dns_suffix("amazonaws.net").build().unwrap();
+        let s6 = Service::builder().service_name("s4").region("us-east-1").dns_suffix("amazonaws.net").build().unwrap();
 
         assert_eq!(s1a, s1b);
         assert_ne!(s1a, s2);
@@ -198,11 +244,20 @@ mod tests {
 
     #[test]
     fn check_valid_services() {
-        let s1a = Service::new("service-name", None, "amazonaws.com").unwrap();
-        let s1b = Service::new("service-name", None, "amazonaws.com").unwrap();
-        let s2 = Service::new("service-name2", None, "amazonaws.com").unwrap();
-        let s3 = Service::new("service-name", Some("us-east-1".to_string()), "amazonaws.com").unwrap();
-        let s4 = Service::new("aservice-name-with-32-characters", None, "amazonaws.com").unwrap();
+        let s1a = Service::builder().service_name("service-name").dns_suffix("amazonaws.com").build().unwrap();
+        let s1b = Service::builder().service_name("service-name").dns_suffix("amazonaws.com").build().unwrap();
+        let s2 = Service::builder().service_name("service-name2").dns_suffix("amazonaws.com").build().unwrap();
+        let s3 = Service::builder()
+            .service_name("service-name")
+            .region("us-east-1")
+            .dns_suffix("amazonaws.com")
+            .build()
+            .unwrap();
+        let s4 = Service::builder()
+            .service_name("aservice-name-with-32-characters")
+            .dns_suffix("amazonaws.com")
+            .build()
+            .unwrap();
 
         assert_eq!(s1a, s1b);
         assert_ne!(s1a, s2);
@@ -223,40 +278,128 @@ mod tests {
     #[test]
     fn check_invalid_services() {
         assert_eq!(
-            Service::new("service name", None, "amazonaws.com",).unwrap_err().to_string(),
+            Service::builder()
+                .service_name("service name")
+                .dns_suffix("amazonaws.com")
+                .build()
+                .unwrap_err()
+                .to_string(),
             r#"Invalid service name: "service name""#
         );
 
         assert_eq!(
-            Service::new("service name", Some("us-east-1".to_string()), "amazonaws.com",).unwrap_err().to_string(),
+            Service::builder()
+                .service_name("service name")
+                .region("us-east-1")
+                .dns_suffix("amazonaws.com")
+                .build()
+                .unwrap_err()
+                .to_string(),
             r#"Invalid service name: "service name""#
         );
 
         assert_eq!(
-            Service::new("service!name", None, "amazonaws.com",).unwrap_err().to_string(),
+            Service::builder()
+                .service_name("service!name")
+                .dns_suffix("amazonaws.com")
+                .build()
+                .unwrap_err()
+                .to_string(),
             r#"Invalid service name: "service!name""#
         );
 
         assert_eq!(
-            Service::new("service!name", Some("us-east-1".to_string()), "amazonaws.com",).unwrap_err().to_string(),
+            Service::builder()
+                .service_name("service!name")
+                .region("us-east-1")
+                .dns_suffix("amazonaws.com")
+                .build()
+                .unwrap_err()
+                .to_string(),
             r#"Invalid service name: "service!name""#
         );
 
-        assert_eq!(Service::new("", None, "amazonaws.com",).unwrap_err().to_string(), r#"Invalid service name: """#);
+        assert_eq!(
+            Service::builder().service_name("").dns_suffix("amazonaws.com").build().unwrap_err().to_string(),
+            r#"Invalid service name: """#
+        );
 
         assert_eq!(
-            Service::new("a-service-name-with-33-characters", None, "amazonaws.com",).unwrap_err().to_string(),
+            Service::builder()
+                .service_name("a-service-name-with-33-characters")
+                .dns_suffix("amazonaws.com")
+                .build()
+                .unwrap_err()
+                .to_string(),
             r#"Invalid service name: "a-service-name-with-33-characters""#
         );
 
         assert_eq!(
-            Service::new("service-name", Some("us-east-".to_string()), "amazonaws.com",).unwrap_err().to_string(),
+            Service::builder()
+                .service_name("service-name")
+                .region("us-east-")
+                .dns_suffix("amazonaws.com")
+                .build()
+                .unwrap_err()
+                .to_string(),
             r#"Invalid region: "us-east-""#
         );
 
         assert_eq!(
-            Service::new("service-name", Some("us-east-1".to_string()), "amazonaws..com",).unwrap_err().to_string(),
+            Service::builder()
+                .service_name("service-name")
+                .region("us-east-1")
+                .dns_suffix("amazonaws..com")
+                .build()
+                .unwrap_err()
+                .to_string(),
             r#"Invalid service name: "amazonaws..com""#
+        );
+    }
+
+    #[test]
+    fn check_builder_missing_fields() {
+        let err = Service::builder().build().unwrap_err();
+        assert_eq!(err, PrincipalError::MissingField("service_name"));
+
+        // The region is optional; the DNS suffix is not.
+        let err = Service::builder().service_name("s3").region("us-east-1").build().unwrap_err();
+        assert_eq!(err, PrincipalError::MissingField("dns_suffix"));
+        assert_eq!(err.to_string(), "Missing required field: dns_suffix");
+    }
+
+    #[test]
+    fn check_builder_region() {
+        // An unset region yields a global service.
+        let global = Service::builder().service_name("s3").dns_suffix("amazonaws.com").build().unwrap();
+        assert_eq!(global.region(), None);
+
+        let regional =
+            Service::builder().service_name("s3").region("us-east-1").dns_suffix("amazonaws.com").build().unwrap();
+        assert_eq!(regional.region(), Some("us-east-1"));
+
+        let err =
+            Service::builder().service_name("s3").region("us-east-1-").dns_suffix("amazonaws.com").build().unwrap_err();
+        assert_eq!(err, PrincipalError::InvalidRegion("us-east-1-".to_string()));
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn check_deprecated_new() {
+        let expected =
+            Service::builder().service_name("s3").region("us-east-1").dns_suffix("amazonaws.com").build().unwrap();
+        assert_eq!(Service::new("s3", Some("us-east-1".to_string()), "amazonaws.com").unwrap(), expected);
+
+        let expected = Service::builder().service_name("s3").dns_suffix("amazonaws.com").build().unwrap();
+        assert_eq!(Service::new("s3", None, "amazonaws.com").unwrap(), expected);
+
+        assert_eq!(
+            Service::new("s3", Some("us-east-1-".to_string()), "amazonaws.com").unwrap_err(),
+            PrincipalError::InvalidRegion("us-east-1-".to_string())
+        );
+        assert_eq!(
+            Service::new("service name", None, "amazonaws.com").unwrap_err(),
+            PrincipalError::InvalidService("service name".to_string())
         );
     }
 }

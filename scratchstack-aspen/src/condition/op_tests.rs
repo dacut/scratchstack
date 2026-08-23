@@ -15,7 +15,8 @@ fn session_matches(cmap: &Condition, session_data: &SessionData) -> bool {
 }
 
 fn make_context(session_data: &SessionData) -> Context {
-    let principal = Principal::from(Service::new("example", None, "amazonaws.com").unwrap());
+    let principal =
+        Principal::from(Service::builder().service_name("example").dns_suffix("amazonaws.com").build().unwrap());
     Context::builder()
         .api("action")
         .actor(principal)

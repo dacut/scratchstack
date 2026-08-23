@@ -233,8 +233,13 @@ async fn get_signing_key_from_database(
                 }
             };
 
-            let user =
-                User::new(partition.as_str(), &row.account_id, &row.path, &row.user_name_cased).map_err(|e| {
+            let user = User::builder()
+                .partition(partition.as_str())
+                .account_id(&row.account_id)
+                .path(&row.path)
+                .user_name(&row.user_name_cased)
+                .build()
+                .map_err(|e| {
                     log::error!("{}: Failed to create User principal: {}", req.request_id(), e);
                     InternalServiceError::builder().request_id(req.request_id()).build()
                 })?;

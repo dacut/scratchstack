@@ -620,7 +620,9 @@ mod tests {
         assert!(statement.resource().is_none());
         assert!(statement.not_resource().is_none());
 
-        let trusted = PrincipalActor::from(User::new("aws", "123456789012", "/", "MyUser").unwrap());
+        let trusted = PrincipalActor::from(
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("MyUser").build().unwrap(),
+        );
         let context = Context::builder()
             .api("AssumeRole")
             .actor(trusted)
@@ -635,7 +637,15 @@ mod tests {
         let context = context.with_resources(vec![role_arn]);
         assert_eq!(statement.evaluate(&context, policy.version()).unwrap(), Decision::Allow);
 
-        let untrusted = PrincipalActor::from(User::new("aws", "123456789012", "/", "OtherUser").unwrap());
+        let untrusted = PrincipalActor::from(
+            User::builder()
+                .partition("aws")
+                .account_id("123456789012")
+                .path("/")
+                .user_name("OtherUser")
+                .build()
+                .unwrap(),
+        );
         let context = Context::builder()
             .api("AssumeRole")
             .actor(untrusted)
@@ -660,7 +670,9 @@ mod tests {
         sb.effect(Effect::Allow).action(Action::Any).resource(Resource::Any);
 
         let s = sb.build().unwrap();
-        let actor = PrincipalActor::from(User::new("aws", "123456789012", "/", "MyUser").unwrap());
+        let actor = PrincipalActor::from(
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("MyUser").build().unwrap(),
+        );
         let sd = SessionData::new();
         let context =
             Context::builder().api("DescribeInstances").actor(actor).service("ec2").session_data(sd).build().unwrap();
@@ -681,7 +693,9 @@ mod tests {
     fn test_multi_resource_context() {
         let bucket_a = Arn::from_str("arn:aws:s3:::bucket-a").unwrap();
         let bucket_b = Arn::from_str("arn:aws:s3:::bucket-b").unwrap();
-        let actor = PrincipalActor::from(User::new("aws", "123456789012", "/", "MyUser").unwrap());
+        let actor = PrincipalActor::from(
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("MyUser").build().unwrap(),
+        );
         let context = Context::builder()
             .api("ListBucket")
             .actor(actor)

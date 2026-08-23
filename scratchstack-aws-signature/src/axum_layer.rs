@@ -701,7 +701,15 @@ mod tests {
         if request.access_key() == TEST_ACCESS_KEY {
             let k_secret = KSecretKey::from_str(TEST_SECRET_KEY)?;
             let k_signing = k_secret.to_ksigning(request.request_date(), request.region(), request.service());
-            let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
+            let principal = Principal::from(
+                User::builder()
+                    .partition("aws")
+                    .account_id("123456789012")
+                    .path("/")
+                    .user_name("test")
+                    .build()
+                    .unwrap(),
+            );
             let response = GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build();
             Ok(response)
         } else {
@@ -731,7 +739,15 @@ mod tests {
             if req.access_key() == TEST_ACCESS_KEY {
                 let k_secret = KSecretKey::from_str(TEST_SECRET_KEY)?;
                 let signing_key = k_secret.to_ksigning(req.request_date(), req.region(), req.service());
-                let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
+                let principal = Principal::from(
+                    User::builder()
+                        .partition("aws")
+                        .account_id("123456789012")
+                        .path("/")
+                        .user_name("test")
+                        .build()
+                        .unwrap(),
+                );
                 let response = GetSigningKeyResponse::builder().principal(principal).signing_key(signing_key).build();
                 Ok(response)
             } else {

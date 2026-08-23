@@ -285,7 +285,9 @@ async fn run(basename: &str) {
 }
 
 async fn get_signing_key(request: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, SignatureError> {
-    let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
+    let principal = Principal::from(
+        User::builder().partition("aws").account_id("123456789012").path("/").user_name("test").build().unwrap(),
+    );
     let k_secret = KSecretKey::from_str("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY").unwrap();
     let k_signing = k_secret.to_ksigning(request.request_date(), request.region(), request.service());
 

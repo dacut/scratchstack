@@ -477,7 +477,15 @@ mod tests {
 
         match request.access_key() {
             "AKIDEXAMPLE" => {
-                let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
+                let principal = Principal::from(
+                    User::builder()
+                        .partition("aws")
+                        .account_id("123456789012")
+                        .path("/")
+                        .user_name("test")
+                        .build()
+                        .unwrap(),
+                );
                 let k_secret = KSecretKey::from_str("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY").unwrap();
                 let k_signing = k_secret.to_ksigning(request.request_date(), request.region(), request.service());
 
@@ -849,7 +857,9 @@ mod tests {
 
     #[test_log::test]
     fn test_response_builder() {
-        let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
+        let principal = Principal::from(
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("test").build().unwrap(),
+        );
         let response = SigV4AuthenticatorResponse::builder().principal(principal).build();
         assert!(response.principal().as_user().is_some());
         assert!(response.session_data().is_empty());

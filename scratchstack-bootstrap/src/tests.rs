@@ -7095,7 +7095,6 @@ impl TestHarness for TempDatabase {
                         .message("An internal error has occurred.")
                         .build(),
                 )
-                .into()
             })
         }
     }

@@ -1,5 +1,6 @@
 use {
     crate::PrincipalError,
+    derive_builder::Builder,
     scratchstack_arn::{
         Arn,
         utils::{validate_account_id, validate_partition},
@@ -9,18 +10,43 @@ use {
 
 /// Details about an AWS account root user.
 ///
-/// RootUser structs are immutable.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+/// `RootUser` structs are immutable. They are created using the [`RootUserBuilder`] returned by
+/// [`RootUser::builder`].
+#[derive(Builder, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[builder(build_fn(validate = "Self::validate", error = "PrincipalError"))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RootUser {
     /// The partition this principal exists in.
+    #[builder(setter(into))]
     partition: String,
 
     /// The account id.
+    #[builder(setter(into))]
     account_id: String,
 }
 
 impl RootUser {
+    /// Create a [`RootUserBuilder`] for building a [`RootUser`], refering to an actor with root credentials for the
+    /// specified AWS account.
+    ///
+    /// # Fields
+    ///
+    /// * `partition` - The partition this principal exists in.
+    /// * `account_id`: The 12 digit account id. This must be composed of 12 ASCII digits or a
+    ///   [`PrincipalError::InvalidAccountId`] error will be returned.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scratchstack_aws_principal::RootUser;
+    /// let root_user = RootUser::builder().partition("aws").account_id("123456789012").build().unwrap();
+    /// assert_eq!(root_user.partition(), "aws");
+    /// assert_eq!(root_user.account_id(), "123456789012");
+    /// ```
+    pub fn builder() -> RootUserBuilder {
+        RootUserBuilder::default()
+    }
+
     /// Create a [`RootUser`] object, refering to an actor with root credentials for the specified
     /// AWS account.
     ///
@@ -33,14 +59,24 @@ impl RootUser {
     /// # Return value
     ///
     /// If the requirement is met, a [`RootUser`] object is returned. Otherwise, a [`PrincipalError`] error is returned.
+    #[deprecated(since = "0.12.0", note = "Use RootUser::builder() instead.")]
     pub fn new(partition: &str, account_id: &str) -> Result<Self, PrincipalError> {
-        validate_partition(partition)?;
-        validate_account_id(account_id)?;
+        Self::validate_parts(partition, account_id)?;
 
         Ok(Self {
             partition: partition.into(),
             account_id: account_id.into(),
         })
+    }
+
+    /// Validate the components of a [`RootUser`].
+    ///
+    /// This is shared by [`RootUser::new`] and [`RootUserBuilder::build`] so both enforce identical requirements.
+    fn validate_parts(partition: &str, account_id: &str) -> Result<(), PrincipalError> {
+        validate_partition(partition)?;
+        validate_account_id(account_id)?;
+
+        Ok(())
     }
 
     /// The partition of the user.
@@ -53,6 +89,17 @@ impl RootUser {
     #[inline]
     pub fn account_id(&self) -> &str {
         &self.account_id
+    }
+}
+
+impl RootUserBuilder {
+    /// Validate the fields set on this builder, returning a [`PrincipalError`] if any required field is missing or
+    /// any field is invalid.
+    fn validate(&self) -> Result<(), PrincipalError> {
+        let partition = self.partition.as_deref().ok_or(PrincipalError::MissingField("partition"))?;
+        let account_id = self.account_id.as_deref().ok_or(PrincipalError::MissingField("account_id"))?;
+
+        RootUser::validate_parts(partition, account_id)
     }
 }
 
@@ -72,7 +119,7 @@ impl Display for RootUser {
 mod tests {
     use {
         super::RootUser,
-        crate::{Principal, PrincipalSource},
+        crate::{Principal, PrincipalError, PrincipalSource},
         scratchstack_arn::Arn,
         std::{
             collections::hash_map::DefaultHasher,
@@ -82,7 +129,7 @@ mod tests {
 
     #[test]
     fn check_components() {
-        let root_user = RootUser::new("aws", "123456789012").unwrap();
+        let root_user = RootUser::builder().partition("aws").account_id("123456789012").build().unwrap();
         assert_eq!(root_user.partition(), "aws");
         assert_eq!(root_user.account_id(), "123456789012");
 
@@ -94,10 +141,10 @@ mod tests {
 
     #[test]
     fn check_derived() {
-        let r1a = RootUser::new("aws", "123456789012").unwrap();
-        let r1b = RootUser::new("aws", "123456789012").unwrap();
-        let r2 = RootUser::new("aws", "123456789099").unwrap();
-        let r3 = RootUser::new("awt", "123456789099").unwrap();
+        let r1a = RootUser::builder().partition("aws").account_id("123456789012").build().unwrap();
+        let r1b = RootUser::builder().partition("aws").account_id("123456789012").build().unwrap();
+        let r2 = RootUser::builder().partition("aws").account_id("123456789099").build().unwrap();
+        let r3 = RootUser::builder().partition("awt").account_id("123456789099").build().unwrap();
 
         // Ensure we can hash a root user.
         let mut h1a = DefaultHasher::new();
@@ -122,9 +169,9 @@ mod tests {
 
     #[test]
     fn check_valid_root_users() {
-        let r1a = RootUser::new("aws", "123456789012").unwrap();
-        let r1b = RootUser::new("aws", "123456789012").unwrap();
-        let r2 = RootUser::new("aws", "123456789099").unwrap();
+        let r1a = RootUser::builder().partition("aws").account_id("123456789012").build().unwrap();
+        let r1b = RootUser::builder().partition("aws").account_id("123456789012").build().unwrap();
+        let r2 = RootUser::builder().partition("aws").account_id("123456789099").build().unwrap();
 
         assert_eq!(r1a, r1b);
         assert_ne!(r1a, r2);
@@ -144,8 +191,33 @@ mod tests {
 
     #[test]
     fn check_invalid_root_users() {
-        assert_eq!(RootUser::new("", "123456789012",).unwrap_err().to_string(), r#"Invalid partition: """#);
-        assert_eq!(RootUser::new("aws", "",).unwrap_err().to_string(), r#"Invalid account id: """#);
+        assert_eq!(
+            RootUser::builder().partition("").account_id("123456789012").build().unwrap_err().to_string(),
+            r#"Invalid partition: """#
+        );
+        assert_eq!(
+            RootUser::builder().partition("aws").account_id("").build().unwrap_err().to_string(),
+            r#"Invalid account id: """#
+        );
+    }
+
+    #[test]
+    fn check_builder_missing_fields() {
+        let err = RootUser::builder().build().unwrap_err();
+        assert_eq!(err, PrincipalError::MissingField("partition"));
+        assert_eq!(err.to_string(), "Missing required field: partition");
+
+        let err = RootUser::builder().partition("aws").build().unwrap_err();
+        assert_eq!(err, PrincipalError::MissingField("account_id"));
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn check_deprecated_new() {
+        let expected = RootUser::builder().partition("aws").account_id("123456789012").build().unwrap();
+        assert_eq!(RootUser::new("aws", "123456789012").unwrap(), expected);
+        assert_eq!(RootUser::new("", "123456789012").unwrap_err(), PrincipalError::InvalidPartition("".to_string()));
+        assert_eq!(RootUser::new("aws", "").unwrap_err(), PrincipalError::InvalidAccountId("".to_string()));
     }
 }
 // end tests -- do not delete; needed for coverage.

@@ -1,4 +1,5 @@
 use {
+    derive_builder::UninitializedFieldError,
     scratchstack_arn::ArnError,
     std::{
         error::Error,
@@ -8,6 +9,7 @@ use {
 
 /// Errors that can be raise during the parsing of principals.
 #[derive(Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum PrincipalError {
     /// Entity does not have a valid ARN.
     CannotConvertToArn,
@@ -74,6 +76,9 @@ pub enum PrincipalError {
 
     /// Invalid user id. The argument contains the specified user id.
     InvalidUserId(String),
+
+    /// A required field was not set on a builder. The argument contains the name of the field.
+    MissingField(&'static str),
 }
 
 impl Error for PrincipalError {}
@@ -121,7 +126,15 @@ impl Display for PrincipalError {
             }
             Self::InvalidUserName(user_name) => write!(f, "Invalid user name: {user_name:#?}"),
             Self::InvalidUserId(user_id) => write!(f, "Invalid user id: {user_id:#?}"),
+            Self::MissingField(field) => write!(f, "Missing required field: {field}"),
         }
+    }
+}
+
+/// Allows [`PrincipalError`] to be used as the error type for `derive_builder`-generated builders.
+impl From<UninitializedFieldError> for PrincipalError {
+    fn from(err: UninitializedFieldError) -> Self {
+        Self::MissingField(err.field_name())
     }
 }
 
@@ -144,7 +157,7 @@ impl From<ArnError> for PrincipalError {
 
 #[cfg(test)]
 mod tests {
-    use {super::PrincipalError, scratchstack_arn::ArnError};
+    use {super::PrincipalError, derive_builder::UninitializedFieldError, scratchstack_arn::ArnError};
 
     #[test]
     fn exercise_unused_in_crate() {
@@ -174,6 +187,13 @@ mod tests {
         check_arn_err_into(ArnError::InvalidResource("".to_string()));
         check_arn_err_into(ArnError::InvalidScheme("https".to_string()));
         check_arn_err_into(ArnError::InvalidService("foo".to_string()));
+    }
+
+    #[test]
+    fn test_from_uninitialized_field_error() {
+        let err = PrincipalError::from(UninitializedFieldError::new("account_id"));
+        assert_eq!(err, PrincipalError::MissingField("account_id"));
+        assert_eq!(err.to_string(), "Missing required field: account_id");
     }
 }
 // end tests -- do not delete; needed for coverage.

@@ -3,6 +3,7 @@ use {
         PrincipalError,
         utils::{validate_name, validate_path},
     },
+    derive_builder::Builder,
     scratchstack_arn::{
         Arn,
         utils::{validate_account_id, validate_partition},
@@ -15,24 +16,67 @@ use {
 
 /// Details about an AWS IAM user.
 ///
-/// User structs are immutable.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+/// `User` structs are immutable. They are created using the [`UserBuilder`] returned by [`User::builder`].
+#[derive(Builder, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[builder(build_fn(validate = "Self::validate", error = "PrincipalError"))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct User {
     /// The partition this principal exists in.
+    #[builder(setter(into))]
     partition: String,
 
     /// The account id.
+    #[builder(setter(into))]
     account_id: String,
 
     /// Path, starting with a `/`.
+    #[builder(setter(into))]
     path: String,
 
     /// Name of the principal, case-insensitive.
+    #[builder(setter(into))]
     user_name: String,
 }
 
 impl User {
+    /// Create a [`UserBuilder`] for building a [`User`].
+    ///
+    /// # Fields
+    ///
+    /// * `partition`: The partition this principal exists in.
+    /// * `account_id`: The 12 digit account id. This must be composed of 12 ASCII digits or a
+    ///   [`PrincipalError::InvalidAccountId`] error will be returned.
+    /// * `path`: The IAM path the group is under. This must meet the following requirements or a
+    ///   [`PrincipalError::InvalidPath`] error will be returned:
+    ///   * The path must contain between 1 and 512 characters.
+    ///   * The path must start and end with `/`.
+    ///   * All characters in the path must be in the ASCII range 0x21 (`!`) through 0x7E (`~`). The AWS documentation
+    ///     erroneously indicates that 0x7F (DEL) is acceptable; however, the IAM APIs reject this character.
+    /// * `user_name`: The name of the user. This must meet the following requirements or a
+    ///   [`PrincipalError::InvalidUserName`] error will be returned:
+    ///   * The name must contain between 1 and 64 characters.
+    ///   * The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scratchstack_aws_principal::User;
+    /// let user = User::builder()
+    ///     .partition("aws")
+    ///     .account_id("123456789012")
+    ///     .path("/")
+    ///     .user_name("user-name")
+    ///     .build()
+    ///     .unwrap();
+    /// assert_eq!(user.partition(), "aws");
+    /// assert_eq!(user.account_id(), "123456789012");
+    /// assert_eq!(user.path(), "/");
+    /// assert_eq!(user.user_name(), "user-name");
+    /// ```
+    pub fn builder() -> UserBuilder {
+        UserBuilder::default()
+    }
+
     /// Create a [`User`] object.
     ///
     /// # Arguments
@@ -54,11 +98,9 @@ impl User {
     ///
     /// If all of the requirements are met, a [`User`] object is returned. Otherwise, a [`PrincipalError`] error
     /// is returned.
+    #[deprecated(since = "0.12.0", note = "Use User::builder() instead.")]
     pub fn new(partition: &str, account_id: &str, path: &str, user_name: &str) -> Result<Self, PrincipalError> {
-        validate_partition(partition)?;
-        validate_account_id(account_id)?;
-        validate_path(path)?;
-        validate_name(user_name, 64, PrincipalError::InvalidUserName)?;
+        Self::validate_parts(partition, account_id, path, user_name)?;
 
         Ok(Self {
             partition: partition.into(),
@@ -66,6 +108,18 @@ impl User {
             path: path.into(),
             user_name: user_name.into(),
         })
+    }
+
+    /// Validate the components of a [`User`].
+    ///
+    /// This is shared by [`User::new`] and [`UserBuilder::build`] so both enforce identical requirements.
+    fn validate_parts(partition: &str, account_id: &str, path: &str, user_name: &str) -> Result<(), PrincipalError> {
+        validate_partition(partition)?;
+        validate_account_id(account_id)?;
+        validate_path(path)?;
+        validate_name(user_name, 64, PrincipalError::InvalidUserName)?;
+
+        Ok(())
     }
 
     /// The partition of the user.
@@ -90,6 +144,19 @@ impl User {
     #[inline]
     pub fn user_name(&self) -> &str {
         &self.user_name
+    }
+}
+
+impl UserBuilder {
+    /// Validate the fields set on this builder, returning a [`PrincipalError`] if any required field is missing or
+    /// any field is invalid.
+    fn validate(&self) -> Result<(), PrincipalError> {
+        let partition = self.partition.as_deref().ok_or(PrincipalError::MissingField("partition"))?;
+        let account_id = self.account_id.as_deref().ok_or(PrincipalError::MissingField("account_id"))?;
+        let path = self.path.as_deref().ok_or(PrincipalError::MissingField("path"))?;
+        let user_name = self.user_name.as_deref().ok_or(PrincipalError::MissingField("user_name"))?;
+
+        User::validate_parts(partition, account_id, path, user_name)
     }
 }
 
@@ -159,7 +226,7 @@ impl TryFrom<&Arn> for User {
         let path = &path_and_username[..=last_slash];
         let user_name = &path_and_username[last_slash + 1..];
 
-        Self::new(arn.partition(), arn.account_id(), path, user_name)
+        Self::builder().partition(arn.partition()).account_id(arn.account_id()).path(path).user_name(user_name).build()
     }
 }
 
@@ -173,7 +240,7 @@ impl Display for User {
 mod tests {
     use {
         super::User,
-        crate::{Principal, PrincipalSource},
+        crate::{Principal, PrincipalError, PrincipalSource},
         scratchstack_arn::Arn,
         std::{
             collections::hash_map::DefaultHasher,
@@ -184,7 +251,13 @@ mod tests {
 
     #[test]
     fn check_components() {
-        let user = User::new("aws", "123456789012", "/my/path/", "user-name").unwrap();
+        let user = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/my/path/")
+            .user_name("user-name")
+            .build()
+            .unwrap();
         assert_eq!(user.partition(), "aws");
         assert_eq!(user.account_id(), "123456789012");
         assert_eq!(user.path(), "/my/path/");
@@ -205,12 +278,33 @@ mod tests {
 
     #[test]
     fn check_derived() {
-        let u1a = User::new("aws", "123456789012", "/", "user1").unwrap();
-        let u1b = User::new("aws", "123456789012", "/", "user1").unwrap();
-        let u2 = User::new("aws", "123456789012", "/", "user2").unwrap();
-        let u3 = User::new("aws", "123456789012", "/path/", "user2").unwrap();
-        let u4 = User::new("aws", "123456789013", "/path/", "user2").unwrap();
-        let u5 = User::new("awt", "123456789013", "/path/", "user2").unwrap();
+        let u1a =
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("user1").build().unwrap();
+        let u1b =
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("user1").build().unwrap();
+        let u2 =
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("user2").build().unwrap();
+        let u3 = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/path/")
+            .user_name("user2")
+            .build()
+            .unwrap();
+        let u4 = User::builder()
+            .partition("aws")
+            .account_id("123456789013")
+            .path("/path/")
+            .user_name("user2")
+            .build()
+            .unwrap();
+        let u5 = User::builder()
+            .partition("awt")
+            .account_id("123456789013")
+            .path("/path/")
+            .user_name("user2")
+            .build()
+            .unwrap();
 
         assert_eq!(u1a, u1b);
         assert_ne!(u1a, u2);
@@ -253,19 +347,41 @@ mod tests {
 
     #[test]
     fn check_valid_users() {
-        let u1a = User::new("aws", "123456789012", "/", "user-name").unwrap();
-        let u1b = User::new("aws", "123456789012", "/", "user-name").unwrap();
-        let u2 = User::new("aws", "123456789012", "/", "user-name_is@ok.with,accepted=symbols").unwrap();
-        let u3 = User::new(
-            "aws",
-            "123456789012",
-            "/!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~/",
-            "user-name",
-        )
-        .unwrap();
-        let u4 =
-            User::new("aws", "123456789012", "/", "user-name-with-64-characters====================================")
-                .unwrap();
+        let u1a = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/")
+            .user_name("user-name")
+            .build()
+            .unwrap();
+        let u1b = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/")
+            .user_name("user-name")
+            .build()
+            .unwrap();
+        let u2 = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/")
+            .user_name("user-name_is@ok.with,accepted=symbols")
+            .build()
+            .unwrap();
+        let u3 = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~/")
+            .user_name("user-name")
+            .build()
+            .unwrap();
+        let u4 = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/")
+            .user_name("user-name-with-64-characters====================================")
+            .build()
+            .unwrap();
 
         assert_eq!(u1a, u1b);
         assert_ne!(u1a, u2);
@@ -281,9 +397,21 @@ mod tests {
         assert_eq!(u1a.to_string(), "arn:aws:iam::123456789012:user/user-name");
         assert_eq!(u2.to_string(), "arn:aws:iam::123456789012:user/user-name_is@ok.with,accepted=symbols");
 
-        User::new("aws", "123456789012", "/path/test/", "user-name").unwrap();
-        User::new("aws", "123456789012", "/path///multi-slash/test/", "user-name").unwrap();
-        User::new("aws", "123456789012", "/", "user-name").unwrap();
+        User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/path/test/")
+            .user_name("user-name")
+            .build()
+            .unwrap();
+        User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/path///multi-slash/test/")
+            .user_name("user-name")
+            .build()
+            .unwrap();
+        User::builder().partition("aws").account_id("123456789012").path("/").user_name("user-name").build().unwrap();
 
         // Make sure we can debug a user.
         let _ = format!("{u3:?}");
@@ -291,38 +419,79 @@ mod tests {
 
     #[test]
     fn check_invalid_users() {
-        let err = User::new("", "123456789012", "/", "user-name").unwrap_err();
+        let err = User::builder()
+            .partition("")
+            .account_id("123456789012")
+            .path("/")
+            .user_name("user-name")
+            .build()
+            .unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid partition: """#);
         let err = User::from_str("arn::iam::123456789012:user/user-name").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid partition: """#);
 
-        let err = User::new("aws", "", "/", "user-name").unwrap_err();
+        let err = User::builder().partition("aws").account_id("").path("/").user_name("user-name").build().unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid account id: """#);
 
-        let err = User::new("aws", "123456789012", "", "user-name").unwrap_err();
+        let err = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("")
+            .user_name("user-name")
+            .build()
+            .unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid path: """#);
 
-        let err = User::new("aws", "123456789012", "/", "").unwrap_err();
+        let err =
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("").build().unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid user name: """#);
 
-        let err =
-            User::new("aws", "123456789012", "/", "user-name-with-65-characters=====================================")
-                .unwrap_err();
+        let err = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/")
+            .user_name("user-name-with-65-characters=====================================")
+            .build()
+            .unwrap_err();
         assert_eq!(
             err.to_string(),
             r#"Invalid user name: "user-name-with-65-characters=====================================""#
         );
 
-        let err = User::new("aws", "123456789012", "/", "user!name").unwrap_err();
+        let err = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/")
+            .user_name("user!name")
+            .build()
+            .unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid user name: "user!name""#);
 
-        let err = User::new("aws", "123456789012", "path/test/", "user-name").unwrap_err();
+        let err = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("path/test/")
+            .user_name("user-name")
+            .build()
+            .unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid path: "path/test/""#);
 
-        let err = User::new("aws", "123456789012", "/path/test", "user-name").unwrap_err();
+        let err = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/path/test")
+            .user_name("user-name")
+            .build()
+            .unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid path: "/path/test""#);
 
-        let err = User::new("aws", "123456789012", "/path test/", "user-name").unwrap_err();
+        let err = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/path test/")
+            .user_name("user-name")
+            .build()
+            .unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid path: "/path test/""#);
 
         let err = User::from_str("arn:aws:sts::123456789012:user/user-name").unwrap_err();
@@ -333,6 +502,38 @@ mod tests {
 
         let err = User::from_str("arn:aws:iam::123456789012:role/user-name").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid resource: "role/user-name""#);
+    }
+
+    #[test]
+    fn check_builder_missing_fields() {
+        let err = User::builder().build().unwrap_err();
+        assert_eq!(err, PrincipalError::MissingField("partition"));
+
+        let err = User::builder().partition("aws").build().unwrap_err();
+        assert_eq!(err, PrincipalError::MissingField("account_id"));
+
+        let err = User::builder().partition("aws").account_id("123456789012").build().unwrap_err();
+        assert_eq!(err, PrincipalError::MissingField("path"));
+
+        let err = User::builder().partition("aws").account_id("123456789012").path("/").build().unwrap_err();
+        assert_eq!(err, PrincipalError::MissingField("user_name"));
+        assert_eq!(err.to_string(), "Missing required field: user_name");
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn check_deprecated_new() {
+        let expected =
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("user").build().unwrap();
+        assert_eq!(User::new("aws", "123456789012", "/", "user").unwrap(), expected);
+        assert_eq!(
+            User::new("", "123456789012", "/", "user").unwrap_err(),
+            PrincipalError::InvalidPartition("".to_string())
+        );
+        assert_eq!(
+            User::new("aws", "123456789012", "path/", "user").unwrap_err(),
+            PrincipalError::InvalidPath("path/".to_string())
+        );
     }
 }
 // end tests -- do not delete; needed for coverage.

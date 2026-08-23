@@ -619,7 +619,15 @@ mod tests {
             .role_id("AROAEXAMPLEROLEID")
             .access_key_id("ASIAEXAMPLEACCESSKEY")
             .secret_key(KSecretKey::from_str("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY").unwrap())
-            .principal(AssumedRole::new("aws", TEST_ACCOUNT_ID, "TestRole", "test-session").unwrap())
+            .principal(
+                AssumedRole::builder()
+                    .partition("aws")
+                    .account_id(TEST_ACCOUNT_ID)
+                    .role_name("TestRole")
+                    .session_name("test-session")
+                    .build()
+                    .unwrap(),
+            )
             .expires_at(issued_at + Duration::hours(1))
             .issued_at(issued_at)
             .inline_policy(inline_policy)

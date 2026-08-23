@@ -7,8 +7,8 @@ use {
     libfuzzer_sys::{Corpus, fuzz_target},
     scratchstack_aws_principal::{Principal, User},
     scratchstack_aws_signature::{
-        service_for_signing_key_fn, sigv4_validate_request, GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey,
-        SignedHeaderRequirements,
+        GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, SignedHeaderRequirements, service_for_signing_key_fn,
+        sigv4_validate_request,
     },
     tokio::runtime::Builder as RuntimeBuilder,
     tower::BoxError,
@@ -59,7 +59,9 @@ async fn get_signing_key(req: GetSigningKeyRequest) -> Result<GetSigningKeyRespo
     let k_secret = KSecretKey::from_str("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
     let k_sigining = k_secret.to_ksigning(req.request_date, req.region.as_str(), req.service.as_str());
 
-    let principal = Principal::from(vec![User::new("aws", "123456789012", "/", "test").unwrap().into()]);
+    let principal = Principal::from(vec![
+        User::builder().partition("aws").account_id("123456789012").path("/").user_name("test").build().unwrap().into(),
+    ]);
 
     Ok(GetSigningKeyResponse {
         principal,
@@ -82,8 +84,16 @@ fn run_target(data: ValidateInput) -> Result<(), BoxError> {
     let method: Method = data.method.into();
     let request = Request::builder().method(method).uri(uri).body(Bytes::from(data.body))?;
     let rt = RuntimeBuilder::new_current_thread().enable_all().build()?;
-    rt.block_on(async move{
-        let _ = sigv4_validate_request(request, region.as_str(), service.as_str(), &mut gsk, server_timestamp, &required_headers).await;
+    rt.block_on(async move {
+        let _ = sigv4_validate_request(
+            request,
+            region.as_str(),
+            service.as_str(),
+            &mut gsk,
+            server_timestamp,
+            &required_headers,
+        )
+        .await;
         Ok(())
     })
 }
