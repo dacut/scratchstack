@@ -26,7 +26,7 @@ pub struct RootUser {
 }
 
 impl RootUser {
-    /// Create a [`RootUserBuilder`] for building a [`RootUser`], refering to an actor with root credentials for the
+    /// Create a [`RootUserBuilder`] for building a [`RootUser`], referring to an actor with root credentials for the
     /// specified AWS account.
     ///
     /// # Fields
