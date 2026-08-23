@@ -18,7 +18,19 @@ use {
 };
 
 /// Options that can be used to configure the signature service.
+///
+/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
+/// [`SignatureOptions::builder`] rather than struct literal syntax, so that adding a field stays a
+/// non-breaking change. The fields remain public for reading.
+///
+/// ```compile_fail,E0639
+/// # use scratchstack_aws_signature::SignatureOptions;
+/// let _ = SignatureOptions {
+///     s3: true,
+/// };
+/// ```
 #[derive(Builder, Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct SignatureOptions {
     /// Canonicalize requests according to S3 rules and allow S3-style streaming requests.
     #[builder(default = false)]

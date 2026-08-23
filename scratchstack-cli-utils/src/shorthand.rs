@@ -40,7 +40,28 @@ use {
 // ---------------------------------------------------------------------------
 
 /// Position within the input where an error occurred.
+///
+/// The fields are public for reading, but the struct is `#[non_exhaustive]`, so code outside this
+/// crate must go through [`ErrorLocation::builder`] to construct one. That keeps adding a field a
+/// non-breaking change.
+///
+/// ```
+/// # use scratchstack_cli_utils::ErrorLocation;
+/// let location = ErrorLocation::builder().input("Key=Value").index(3).build();
+/// assert_eq!(location.index, 3);
+/// ```
+///
+/// Struct literal syntax is rejected outside this crate:
+///
+/// ```compile_fail,E0639
+/// # use scratchstack_cli_utils::ErrorLocation;
+/// let location = ErrorLocation {
+///     input: "Key=Value".to_string(),
+///     index: 3,
+/// };
+/// ```
 #[derive(Builder, Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ErrorLocation {
     /// The literal input string being parsed.
     #[builder(into)]

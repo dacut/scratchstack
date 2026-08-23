@@ -39,7 +39,19 @@ pub struct HttpListenerConfig {
 
 /// Resolved HTTP listener configuration data for a service. Optional fields and references to files
 /// from [`HttpListenerConfig`] have been resolved and defaults have been applied.
+///
+/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
+/// [`ResolvedHttpListenerConfig::builder`] rather than struct literal syntax, so that adding a field stays a
+/// non-breaking change. The fields remain public for reading.
+///
+/// ```compile_fail,E0639
+/// # use scratchstack_config::ResolvedHttpListenerConfig;
+/// let _ = ResolvedHttpListenerConfig {
+///     tls: None,
+/// };
+/// ```
 #[derive(Builder, Clone)]
+#[non_exhaustive]
 pub struct ResolvedHttpListenerConfig {
     /// The socket address to listen on.
     pub socket_addr: SocketAddr,

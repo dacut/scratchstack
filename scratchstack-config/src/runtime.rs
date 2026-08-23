@@ -19,7 +19,19 @@ pub struct RuntimeConfig {
 }
 
 /// Resolved runtime configuration for a service.
+///
+/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
+/// [`ResolvedRuntimeConfig::builder`] rather than struct literal syntax, so that adding a field stays a
+/// non-breaking change. The fields remain public for reading.
+///
+/// ```compile_fail,E0639
+/// # use scratchstack_config::ResolvedRuntimeConfig;
+/// let _ = ResolvedRuntimeConfig {
+///     threads: 4,
+/// };
+/// ```
 #[derive(Builder, Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct ResolvedRuntimeConfig {
     /// The number of threads to use for the service.
     pub threads: usize,
