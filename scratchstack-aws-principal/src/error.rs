@@ -7,7 +7,7 @@ use {
     },
 };
 
-/// Errors that can be raise during the parsing of principals.
+/// Errors that can be raised during the parsing of principals.
 #[derive(Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum PrincipalError {
