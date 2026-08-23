@@ -46,7 +46,7 @@ impl User {
     /// * `partition`: The partition this principal exists in.
     /// * `account_id`: The 12 digit account id. This must be composed of 12 ASCII digits or a
     ///   [`PrincipalError::InvalidAccountId`] error will be returned.
-    /// * `path`: The IAM path the group is under. This must meet the following requirements or a
+    /// * `path`: The IAM path the user is under. This must meet the following requirements or a
     ///   [`PrincipalError::InvalidPath`] error will be returned:
     ///   * The path must contain between 1 and 512 characters.
     ///   * The path must start and end with `/`.
