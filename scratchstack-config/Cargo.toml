@@ -10,6 +10,7 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
+bon.workspace = true
 chrono.workspace = true
 humantime.workspace = true
 humantime-serde.workspace = true

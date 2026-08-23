@@ -1,5 +1,6 @@
 //! Scratchstack STS service configuration types.
 use {
+    bon::Builder,
     scratchstack_config::{
         CommonServiceConfig, ConfigError, Resolvable, ResolvedCommonServiceConfig, read_config_file,
     },
@@ -8,7 +9,7 @@ use {
 };
 
 /// Configuration schema for the Scratchstack STS service.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Builder, Clone, Debug, Deserialize)]
 pub struct StsServiceConfig {
     /// Configuration common to all Scratchstack services.
     #[serde(flatten)]
@@ -16,7 +17,7 @@ pub struct StsServiceConfig {
 }
 
 /// Resolved configuration for the Scratchstack STS service.
-#[derive(Clone, Debug)]
+#[derive(Builder, Clone, Debug)]
 pub struct ResolvedStsServiceConfig {
     /// Configuration common to all Scratchstack services.
     pub common: ResolvedCommonServiceConfig,

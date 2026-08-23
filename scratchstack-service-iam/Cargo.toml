@@ -10,6 +10,7 @@ repository.workspace = true
 version.workspace = true
 
 [dependencies]
+bon.workspace = true
 chrono.workspace = true
 clap = { workspace = true, features = ["derive"] }
 derive_builder.workspace = true

@@ -14,6 +14,8 @@ use {
 };
 
 /// InvalidAction error
+// `bon::Builder` is spelled out here because this module already imports `derive_builder::Builder`.
+#[derive(bon::Builder)]
 pub struct InvalidActionError<'a> {
     /// The action attempted in the request.
     pub action: &'a str,

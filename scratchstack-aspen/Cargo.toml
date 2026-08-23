@@ -15,6 +15,7 @@ name = "scratchstack_aspen"
 
 [dependencies]
 base64.workspace = true
+bon.workspace = true
 chrono.workspace = true
 derive_builder.workspace = true
 ipnet.workspace = true

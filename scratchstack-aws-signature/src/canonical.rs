@@ -698,15 +698,18 @@ impl SignedHeaderRequirements for NoSignedHeaderRequirements {
 }
 
 /// Static implementation of [`SignedHeaderRequirements`] that uses slices of string slices.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Builder, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SliceSignedHeaderRequirements<'a, 'b, 'c> {
     /// Headers that must always be present in SignedHeaders.
+    #[builder(default)]
     always_present: &'a [Cow<'a, str>],
 
     /// Headers that must be present in SignedHeaders if they are present in the request.
+    #[builder(default)]
     if_in_request: &'b [Cow<'b, str>],
 
     /// Prefixes that must be present in SignedHeaders if any headers with that prefix are present in the request.
+    #[builder(default)]
     prefixes: &'c [Cow<'c, str>],
 }
 
@@ -746,15 +749,24 @@ impl<'a, 'b, 'c> SliceSignedHeaderRequirements<'a, 'b, 'c> {
 pub type ConstSignedHeaderRequirements = SliceSignedHeaderRequirements<'static, 'static, 'static>;
 
 /// `SignedHeaderRequirements` that can be dynamically changed.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Builder, Clone, Debug, Default, PartialEq, Eq)]
 pub struct VecSignedHeaderRequirements {
     /// Headers that must always be present in SignedHeaders.
+    #[builder(default, with = |headers: impl IntoIterator<Item = impl Into<String>>| {
+        headers.into_iter().map(|h| Cow::Owned(h.into())).collect()
+    })]
     always_present: Vec<Cow<'static, str>>,
 
     /// Headers that must be present in SignedHeaders if they are present in the request.
+    #[builder(default, with = |headers: impl IntoIterator<Item = impl Into<String>>| {
+        headers.into_iter().map(|h| Cow::Owned(h.into())).collect()
+    })]
     if_in_request: Vec<Cow<'static, str>>,
 
     /// Prefixes that must be present in SignedHeaders if any headers with that prefix are present in the request.
+    #[builder(default, with = |prefixes: impl IntoIterator<Item = impl Into<String>>| {
+        prefixes.into_iter().map(|p| Cow::Owned(p.into())).collect()
+    })]
     prefixes: Vec<Cow<'static, str>>,
 }
 

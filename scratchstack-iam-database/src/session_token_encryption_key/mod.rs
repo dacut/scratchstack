@@ -10,6 +10,7 @@ pub use {
 };
 
 use {
+    bon::Builder,
     indoc::indoc,
     scratchstack_aws_signature::{AES256_KEY_LENGTH, SignatureError},
     scratchstack_core::RequestId,
@@ -46,7 +47,7 @@ pub(crate) fn validate_session_token_encryption_key_id(
 }
 
 /// A session token encryption key service that utilizes a database for storage.
-#[derive(Clone)]
+#[derive(Builder, Clone)]
 pub struct DatabaseKeyService {
     /// The pool to use for database connections.
     pub db_pool: PgPool,

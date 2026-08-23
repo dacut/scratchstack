@@ -4,6 +4,7 @@ use {
         ConfigError, DatabaseConfig, HttpListenerConfig, Resolvable, ResolvedDatabaseConfig,
         ResolvedHttpListenerConfig, ResolvedRuntimeConfig, ResolvedScopeConfig, RuntimeConfig, ScopeConfig,
     },
+    bon::Builder,
     serde::Deserialize,
 };
 
@@ -11,7 +12,7 @@ use {
 ///
 /// Service configuration types embed this via `#[serde(flatten)]` so the common sections appear
 /// at the top level of the service's configuration file alongside any service-specific sections.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Builder, Clone, Debug, Deserialize)]
 pub struct CommonServiceConfig {
     /// HTTP listener configuration.
     #[serde(default)]
@@ -28,7 +29,7 @@ pub struct CommonServiceConfig {
 }
 
 /// Resolved configuration common to all Scratchstack services.
-#[derive(Clone, Debug)]
+#[derive(Builder, Clone, Debug)]
 pub struct ResolvedCommonServiceConfig {
     /// HTTP listener configuration
     pub listener: ResolvedHttpListenerConfig,
@@ -68,7 +69,37 @@ impl Resolvable for CommonServiceConfig {
 
 #[cfg(test)]
 mod tests {
-    use {super::CommonServiceConfig, crate::Resolvable, serde::Deserialize, std::time::Duration};
+    use {
+        super::CommonServiceConfig,
+        crate::{
+            DatabaseConfig, HttpListenerConfig, Resolvable, ResolvedScopeConfig, RuntimeConfig, ScopeConfig, TlsConfig,
+        },
+        serde::Deserialize,
+        std::time::Duration,
+    };
+
+    #[test]
+    fn smoke_builders() {
+        let scope = ScopeConfig::builder().region("us-east-1").build();
+        assert_eq!(scope.region.as_deref(), Some("us-east-1"));
+        assert!(scope.partition.is_none());
+
+        let db = DatabaseConfig::builder().url("postgresql://localhost/x").port(5432u16).build();
+        assert_eq!(db.url.as_deref(), Some("postgresql://localhost/x"));
+
+        let listener = HttpListenerConfig::builder().port(8080u16).build();
+        assert_eq!(listener.port(), 8080);
+
+        let rt = RuntimeConfig::builder().threads(4usize).build();
+        let common = CommonServiceConfig::builder().scope(scope).database(db).runtime(rt).listener(listener).build();
+        assert_eq!(common.runtime.resolve().unwrap().threads, 4);
+
+        let tls = TlsConfig::builder().certificate_chain_file("/tmp/c.pem").private_key_file("/tmp/k.pem").build();
+        assert_eq!(tls.certificate_chain_file, "/tmp/c.pem");
+
+        let rscope = ResolvedScopeConfig::builder().partition("aws").region("us-east-1").build();
+        assert_eq!(rscope.partition, "aws");
+    }
 
     /// A service configuration as a service crate would define it: common sections flattened to
     /// the top level of the file, plus a service-specific section alongside them.

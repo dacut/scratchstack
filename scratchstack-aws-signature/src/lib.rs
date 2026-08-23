@@ -38,14 +38,13 @@
 //! ## Example
 //! ```rust
 //! use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
-//! use http::Request;
 //! use scratchstack_aws_principal::{Principal, User};
 //! use scratchstack_aws_signature::{
 //!     service_for_signing_key_fn, sigv4_validate_request, GetSigningKeyRequest,
 //!     GetSigningKeyResponse, KSecretKey, NoSignedHeaderRequirements, SignatureOptions,
 //!     SignatureError,
 //! };
-//! use scratchstack_core::RequestId;
+//! use scratchstack_core::{http::Request, RequestId};
 //! use std::str::FromStr;
 //! use tower::{BoxError, Service};
 //!

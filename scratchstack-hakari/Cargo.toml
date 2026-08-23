@@ -106,8 +106,6 @@ memchr = { version = "2" }
 num-traits = { version = "0.2", default-features = false, features = ["std"] }
 percent-encoding = { version = "2" }
 postcard = { version = "1", features = ["use-std"] }
-proc-macro2 = { version = "1" }
-quote = { version = "1" }
 rand = { version = "0.10" }
 regex = { version = "1" }
 regex-automata = { version = "0.4", default-features = false, features = ["dfa-onepass", "hybrid", "meta", "nfa-backtrack", "perf-inline", "perf-literal", "std", "unicode"] }

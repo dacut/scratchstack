@@ -25,6 +25,7 @@
 //! Licensed under the Apache License, Version 2.0.
 
 use {
+    bon::Builder,
     chrono::{DateTime, Utc},
     std::{
         collections::HashMap,
@@ -39,9 +40,10 @@ use {
 // ---------------------------------------------------------------------------
 
 /// Position within the input where an error occurred.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Builder, Debug, Clone, PartialEq, Eq)]
 pub struct ErrorLocation {
     /// The literal input string being parsed.
+    #[builder(into)]
     pub input: String,
 
     /// The byte index within the input where the error was detected.

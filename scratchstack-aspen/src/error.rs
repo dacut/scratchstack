@@ -1,6 +1,9 @@
-use std::{
-    error::Error,
-    fmt::{Display, Formatter, Result as FmtResult},
+use {
+    derive_builder::UninitializedFieldError,
+    std::{
+        error::Error,
+        fmt::{Display, Formatter, Result as FmtResult},
+    },
 };
 
 /// The error type used to convey Aspen errors.
@@ -23,6 +26,9 @@ pub enum AspenError {
 
     /// An invalid variable substitution was specified in a policy. The string contains the invalid variable.
     InvalidSubstitution(String),
+
+    /// A required field was not set when building a policy element. The string contains the name of the field.
+    MissingField(&'static str),
 }
 
 impl Display for AspenError {
@@ -34,11 +40,19 @@ impl Display for AspenError {
             Self::InvalidPrincipal(principal) => write!(f, "Invalid principal: {principal}"),
             Self::InvalidResource(resource) => write!(f, "Invalid resource: {resource}"),
             Self::InvalidSubstitution(element) => write!(f, "Invalid variable substitution: {element}"),
+            Self::MissingField(field) => write!(f, "Missing required field: {field}"),
         }
     }
 }
 
 impl Error for AspenError {}
+
+/// Allows [`AspenError`] to be used as the error type for `derive_builder`-generated builders.
+impl From<UninitializedFieldError> for AspenError {
+    fn from(err: UninitializedFieldError) -> Self {
+        Self::MissingField(err.field_name())
+    }
+}
 
 #[cfg(test)]
 mod tests {

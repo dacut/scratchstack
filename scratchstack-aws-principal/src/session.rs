@@ -1,5 +1,6 @@
 use {
     base64::{Engine, engine::general_purpose::STANDARD as BASE64_ENGINE},
+    bon::Builder,
     chrono::{DateTime, FixedOffset, Utc},
     std::{
         collections::{
@@ -19,10 +20,16 @@ use {
 ///
 /// This wraps the standard Rust [`HashMap`] type, providing the case-insensitive key lookup and setting values to
 /// the [`SessionValue`] type.
-#[derive(Clone, Debug)]
+#[derive(Builder, Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SessionData {
     /// The variables associated with the session with the keys lower-cased.
+    ///
+    /// The setter lower-cases keys on the way in, preserving the case-insensitive lookup
+    /// invariant that [`SessionData::insert`] maintains.
+    #[builder(default, with = |variables: impl IntoIterator<Item = (impl AsRef<str>, SessionValue)>| {
+        variables.into_iter().map(|(k, v)| (k.as_ref().to_lowercase(), v)).collect()
+    })]
     variables: HashMap<String, SessionValue>,
 }
 

@@ -2474,6 +2474,7 @@ name = "scratchstack-aspen"
 version = "0.12.0"
 dependencies = [
  "base64 0.23.1",
+ "bon",
  "chrono",
  "derive_builder",
  "env_logger",
@@ -2496,6 +2497,7 @@ name = "scratchstack-aws-principal"
 version = "0.12.0"
 dependencies = [
  "base64 0.23.1",
+ "bon",
  "chrono",
  "derive_builder",
  "scratchstack-arn",
@@ -2573,6 +2575,7 @@ name = "scratchstack-cli-utils"
 version = "0.12.0"
 dependencies = [
  "anyhow",
+ "bon",
  "chrono",
  "clap",
  "pretty_assertions",
@@ -2585,6 +2588,7 @@ dependencies = [
 name = "scratchstack-config"
 version = "0.12.0"
 dependencies = [
+ "bon",
  "chrono",
  "humantime",
  "humantime-serde",
@@ -2660,8 +2664,6 @@ dependencies = [
  "num-traits",
  "percent-encoding",
  "postcard",
- "proc-macro2",
- "quote",
  "rand",
  "regex",
  "regex-automata",
@@ -2707,6 +2709,7 @@ dependencies = [
  "bon",
  "chrono",
  "clap",
+ "derive_builder",
  "env_logger",
  "hex",
  "indoc",
@@ -2764,6 +2767,7 @@ dependencies = [
 name = "scratchstack-service-iam"
 version = "0.12.0"
 dependencies = [
+ "bon",
  "chrono",
  "clap",
  "derive_builder",

@@ -1,5 +1,6 @@
 use {
     crate::{AspenError, eval::regex_from_glob, serutil::StringLikeList},
+    derive_builder::Builder,
     log::debug,
     std::{
         fmt::{Display, Formatter, Result as FmtResult},
@@ -23,12 +24,20 @@ pub enum Action {
     Specific(SpecificActionDetails),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// The service and API pattern of an [`Action::Specific`] action.
+///
+/// `SpecificActionDetails` structs are immutable. They are created using the
+/// [`SpecificActionDetailsBuilder`] returned by [`SpecificActionDetails::builder`], which applies
+/// the same validation as [`Action::new`].
+#[derive(Builder, Clone, Debug, Eq, PartialEq)]
+#[builder(build_fn(validate = "Self::validate", error = "AspenError"))]
 pub struct SpecificActionDetails {
     /// The service the action is for. This may not contain wildcards.
+    #[builder(setter(into))]
     service: String,
 
     /// The api pattern. This may contain wildcards.
+    #[builder(setter(into))]
     api: String,
 }
 
@@ -51,52 +60,13 @@ impl Action {
     ///
     /// An [AspenError::InvalidAction] error is returned in any of the following cases:
     /// * `service` or `api` is empty.
-    /// * `service` contains non-ASCII alphanumeric characters, hyphen (`-`), or underscore (`_`).
+    /// * `service` contains characters other than ASCII alphanumerics, hyphen (`-`), or underscore (`_`).
     /// * `service` begins or ends with a hyphen or underscore.
-    /// * `api` contains non-ASCII alphanumeric characters, hyphen (`-`), underscore (`_`), asterisk (`*`), or
+    /// * `api` contains characters other than ASCII alphanumerics, hyphen (`-`), underscore (`_`), asterisk (`*`), or
     ///   question mark (`?`).
     /// * `api` begins or ends with a hyphen or underscore.
     pub fn new<S: Into<String>, A: Into<String>>(service: S, api: A) -> Result<Self, AspenError> {
-        let service = service.into();
-        let api = api.into();
-
-        if service.is_empty() {
-            debug!("Action '{service}:{api}' has an empty service.");
-            return Err(AspenError::InvalidAction(format!("{service}:{api}")));
-        }
-
-        if api.is_empty() {
-            debug!("Action '{service}:{api}' has an empty API.");
-            return Err(AspenError::InvalidAction(format!("{service}:{api}")));
-        }
-
-        if !service.is_ascii() || !api.is_ascii() {
-            debug!("Action '{service}:{api}' is not ASCII.");
-            return Err(AspenError::InvalidAction(format!("{service}:{api}")));
-        }
-
-        for (i, c) in service.bytes().enumerate() {
-            if !c.is_ascii_alphanumeric() && !(i > 0 && i < service.len() - 1 && (c == b'-' || c == b'_')) {
-                debug!("Action '{service}:{api}' has an invalid service.");
-                return Err(AspenError::InvalidAction(format!("{service}:{api}")));
-            }
-        }
-
-        for (i, c) in api.bytes().enumerate() {
-            if !c.is_ascii_alphanumeric()
-                && c != b'*'
-                && c != b'?'
-                && !(i > 0 && i < api.len() - 1 && (c == b'-' || c == b'_'))
-            {
-                debug!("Action '{service}:{api}' has an invalid API.");
-                return Err(AspenError::InvalidAction(format!("{service}:{api}")));
-            }
-        }
-
-        Ok(Action::Specific(SpecificActionDetails {
-            service,
-            api,
-        }))
+        Ok(Action::Specific(SpecificActionDetails::builder().service(service).api(api).build()?))
     }
 
     /// Returns true if this action is [Action::Any].
@@ -184,6 +154,89 @@ impl Display for Action {
     }
 }
 
+impl SpecificActionDetails {
+    /// Create a [`SpecificActionDetailsBuilder`] for building a [`SpecificActionDetails`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scratchstack_aspen::SpecificActionDetails;
+    /// let details = SpecificActionDetails::builder().service("ec2").api("Describe*").build().unwrap();
+    /// assert_eq!(details.service(), "ec2");
+    /// assert_eq!(details.api(), "Describe*");
+    /// ```
+    pub fn builder() -> SpecificActionDetailsBuilder {
+        SpecificActionDetailsBuilder::default()
+    }
+
+    /// The service the action is for.
+    #[inline]
+    pub fn service(&self) -> &str {
+        &self.service
+    }
+
+    /// The API pattern for the action. This may contain wildcards.
+    #[inline]
+    pub fn api(&self) -> &str {
+        &self.api
+    }
+}
+
+impl SpecificActionDetailsBuilder {
+    /// Validate that the service and API pattern are well-formed.
+    ///
+    /// # Errors
+    ///
+    /// An [`AspenError::InvalidAction`] error is returned in any of the following cases:
+    /// * `service` or `api` is empty.
+    /// * `service` contains characters other than ASCII alphanumerics, hyphen (`-`), or underscore (`_`).
+    /// * `service` begins or ends with a hyphen or underscore.
+    /// * `api` contains characters other than ASCII alphanumerics, hyphen (`-`), underscore (`_`), asterisk (`*`), or
+    ///   question mark (`?`).
+    /// * `api` begins or ends with a hyphen or underscore.
+    fn validate(&self) -> Result<(), AspenError> {
+        // Unset fields are reported by derive_builder's own required-field check.
+        let (Some(service), Some(api)) = (self.service.as_deref(), self.api.as_deref()) else {
+            return Ok(());
+        };
+
+        if service.is_empty() {
+            debug!("Action '{service}:{api}' has an empty service.");
+            return Err(AspenError::InvalidAction(format!("{service}:{api}")));
+        }
+
+        if api.is_empty() {
+            debug!("Action '{service}:{api}' has an empty API.");
+            return Err(AspenError::InvalidAction(format!("{service}:{api}")));
+        }
+
+        if !service.is_ascii() || !api.is_ascii() {
+            debug!("Action '{service}:{api}' is not ASCII.");
+            return Err(AspenError::InvalidAction(format!("{service}:{api}")));
+        }
+
+        for (i, c) in service.bytes().enumerate() {
+            if !c.is_ascii_alphanumeric() && !(i > 0 && i < service.len() - 1 && (c == b'-' || c == b'_')) {
+                debug!("Action '{service}:{api}' has an invalid service.");
+                return Err(AspenError::InvalidAction(format!("{service}:{api}")));
+            }
+        }
+
+        for (i, c) in api.bytes().enumerate() {
+            if !c.is_ascii_alphanumeric()
+                && c != b'*'
+                && c != b'?'
+                && !(i > 0 && i < api.len() - 1 && (c == b'-' || c == b'_'))
+            {
+                debug!("Action '{service}:{api}' has an invalid API.");
+                return Err(AspenError::InvalidAction(format!("{service}:{api}")));
+            }
+        }
+
+        Ok(())
+    }
+}
+
 impl Display for SpecificActionDetails {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(f, "{}:{}", self.service, self.api)
@@ -193,11 +246,42 @@ impl Display for SpecificActionDetails {
 #[cfg(test)]
 mod tests {
     use {
-        crate::{Action, ActionList},
+        crate::{Action, ActionList, AspenError, SpecificActionDetails},
         indoc::indoc,
         pretty_assertions::{assert_eq, assert_ne},
         std::{panic::catch_unwind, str::FromStr},
     };
+
+    #[test_log::test]
+    fn test_specific_action_details_builder() {
+        let details = SpecificActionDetails::builder().service("ec2").api("Describe*").build().unwrap();
+        assert_eq!(details.service(), "ec2");
+        assert_eq!(details.api(), "Describe*");
+        assert_eq!(Action::Specific(details), Action::new("ec2", "Describe*").unwrap());
+    }
+
+    #[test_log::test]
+    fn test_specific_action_details_builder_validates() {
+        // The same rules Action::new enforces apply to the builder.
+        for (service, api) in [("", "Get*"), ("ec2", ""), ("ec2!", "Get*"), ("ec2", "Get!"), ("-ec2", "Get*")] {
+            assert_eq!(
+                SpecificActionDetails::builder().service(service).api(api).build().unwrap_err(),
+                AspenError::InvalidAction(format!("{service}:{api}"))
+            );
+        }
+    }
+
+    #[test_log::test]
+    fn test_specific_action_details_builder_missing_field() {
+        assert_eq!(
+            SpecificActionDetails::builder().service("ec2").build().unwrap_err(),
+            AspenError::MissingField("api")
+        );
+        assert_eq!(
+            SpecificActionDetails::builder().api("Get*").build().unwrap_err(),
+            AspenError::MissingField("service")
+        );
+    }
 
     #[test_log::test]
     fn test_eq() {
