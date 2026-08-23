@@ -11,8 +11,20 @@ use {
 pub const DEFAULT_PARTITION: &str = "aws";
 
 /// Cloud scope configuration for a service.
+///
+/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
+/// [`ScopeConfig::builder`] rather than struct literal syntax, so that adding a field stays a
+/// non-breaking change. The fields remain public for reading.
+///
+/// ```compile_fail,E0639
+/// # use scratchstack_config::ScopeConfig;
+/// let _ = ScopeConfig {
+///     region: Some("us-east-1".to_string()),
+/// };
+/// ```
 #[derive(Builder, Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[non_exhaustive]
 pub struct ScopeConfig {
     /// The cloud partition this service is running in.
     #[builder(into)]
@@ -24,7 +36,19 @@ pub struct ScopeConfig {
 }
 
 /// Resolved cloud scope configuration for a service.
+///
+/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
+/// [`ResolvedScopeConfig::builder`] rather than struct literal syntax, so that adding a field stays a
+/// non-breaking change. The fields remain public for reading.
+///
+/// ```compile_fail,E0639
+/// # use scratchstack_config::ResolvedScopeConfig;
+/// let _ = ResolvedScopeConfig {
+///     partition: "aws".to_string(),
+/// };
+/// ```
 #[derive(Builder, Clone, Debug)]
+#[non_exhaustive]
 pub struct ResolvedScopeConfig {
     /// The cloud partition this service is running in.
     #[builder(into)]

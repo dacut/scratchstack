@@ -46,8 +46,20 @@ const RESOURCE_ID_BITS: u32 = 39;
 /// A = account id
 /// R = resource id
 /// ```
+///
+/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
+/// [`IamId::builder`] rather than struct literal syntax, so that adding a field stays a
+/// non-breaking change. The fields remain public for reading.
+///
+/// ```compile_fail,E0639
+/// # use scratchstack_iam_database::id::IamId;
+/// let _ = IamId {
+///     account_id: 557925715019,
+/// };
+/// ```
 #[derive(Builder, Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[builder(build_fn(validate = "Self::validate", error = "InvalidIamId"))]
+#[non_exhaustive]
 pub struct IamId {
     /// The resource type that the identifier represents. This is a 4-character string that is unique across
     /// all resource types.

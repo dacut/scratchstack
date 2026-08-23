@@ -16,7 +16,19 @@ fn pct_encode(s: &str) -> String {
 }
 
 /// Database configuration for a service.
+///
+/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
+/// [`DatabaseConfig::builder`] rather than struct literal syntax, so that adding a field stays a
+/// non-breaking change. The fields remain public for reading.
+///
+/// ```compile_fail,E0639
+/// # use scratchstack_config::DatabaseConfig;
+/// let _ = DatabaseConfig {
+///     url: Some("postgresql://localhost/scratchstack".to_string()),
+/// };
+/// ```
 #[derive(Builder, Clone, Debug, Deserialize)]
+#[non_exhaustive]
 pub struct DatabaseConfig {
     /// The database URL to connect to. If the URL contains the placeholder `${password}`, then either
     /// `password` or `password_file` must be specified to provide a value for the placeholder.
@@ -93,7 +105,19 @@ pub struct DatabaseConfig {
 }
 
 /// The resolved database configuration after validating fields and resolving any references.
+///
+/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
+/// [`ResolvedDatabaseConfig::builder`] rather than struct literal syntax, so that adding a field stays a
+/// non-breaking change. The fields remain public for reading.
+///
+/// ```compile_fail,E0639
+/// # use scratchstack_config::ResolvedDatabaseConfig;
+/// let _ = ResolvedDatabaseConfig {
+///     url: "postgresql://localhost/scratchstack".to_string(),
+/// };
+/// ```
 #[derive(Builder, Clone, Debug)]
+#[non_exhaustive]
 pub struct ResolvedDatabaseConfig {
     /// The database URL to connect to.
     #[builder(into)]

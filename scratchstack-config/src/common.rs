@@ -12,7 +12,19 @@ use {
 ///
 /// Service configuration types embed this via `#[serde(flatten)]` so the common sections appear
 /// at the top level of the service's configuration file alongside any service-specific sections.
+///
+/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
+/// [`CommonServiceConfig::builder`] rather than struct literal syntax, so that adding a field stays a
+/// non-breaking change. The fields remain public for reading.
+///
+/// ```compile_fail,E0639
+/// # use scratchstack_config::CommonServiceConfig;
+/// let _ = CommonServiceConfig {
+///     listener: None,
+/// };
+/// ```
 #[derive(Builder, Clone, Debug, Deserialize)]
+#[non_exhaustive]
 pub struct CommonServiceConfig {
     /// HTTP listener configuration.
     #[serde(default)]
@@ -29,7 +41,19 @@ pub struct CommonServiceConfig {
 }
 
 /// Resolved configuration common to all Scratchstack services.
+///
+/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
+/// [`ResolvedCommonServiceConfig::builder`] rather than struct literal syntax, so that adding a field stays a
+/// non-breaking change. The fields remain public for reading.
+///
+/// ```compile_fail,E0639
+/// # use scratchstack_config::ResolvedCommonServiceConfig;
+/// let _ = ResolvedCommonServiceConfig {
+///     runtime: todo!(),
+/// };
+/// ```
 #[derive(Builder, Clone, Debug)]
+#[non_exhaustive]
 pub struct ResolvedCommonServiceConfig {
     /// HTTP listener configuration
     pub listener: ResolvedHttpListenerConfig,

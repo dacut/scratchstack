@@ -47,7 +47,19 @@ pub(crate) fn validate_session_token_encryption_key_id(
 }
 
 /// A session token encryption key service that utilizes a database for storage.
+///
+/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
+/// [`DatabaseKeyService::builder`] rather than struct literal syntax, so that adding a field stays a
+/// non-breaking change. The fields remain public for reading.
+///
+/// ```compile_fail,E0639
+/// # use scratchstack_iam_database::session_token_encryption_key::DatabaseKeyService;
+/// let _ = DatabaseKeyService {
+///     db_pool: todo!(),
+/// };
+/// ```
 #[derive(Builder, Clone)]
+#[non_exhaustive]
 pub struct DatabaseKeyService {
     /// The pool to use for database connections.
     pub db_pool: PgPool,
