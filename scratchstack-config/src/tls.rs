@@ -3,6 +3,7 @@ use {
         Resolvable,
         error::{ConfigError, TlsConfigError},
     },
+    bon::Builder,
     rustls::ServerConfig as TlsServerConfig,
     rustls_pemfile::{certs, rsa_private_keys},
     rustls_pki_types::{CertificateDer, PrivateKeyDer},
@@ -15,14 +16,16 @@ use {
 };
 
 /// TLS configuration for a service.
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Builder, Clone, Deserialize, Debug)]
 pub struct TlsConfig {
     /// The path to the certificate chain file in PEM format. This file should contain the server
     /// certificate followed by any intermediate certificates, in that order.
+    #[builder(into)]
     pub certificate_chain_file: String,
 
     /// The path to the private key file for the server certificate in PEM format. This file should
     /// contain a single RSA private key.
+    #[builder(into)]
     pub private_key_file: String,
 }
 

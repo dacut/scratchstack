@@ -10,6 +10,7 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
+bon.workspace = true
 chrono.workspace = true
 scratchstack-hakari = { path = "../scratchstack-hakari" }
 serde = { workspace = true, features = ["derive"] }

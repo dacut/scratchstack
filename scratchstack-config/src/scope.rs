@@ -2,6 +2,7 @@
 
 use {
     crate::{Resolvable, error::ConfigError},
+    bon::Builder,
     scratchstack_arn::utils::{validate_partition, validate_region},
     serde::Deserialize,
 };
@@ -10,23 +11,27 @@ use {
 pub const DEFAULT_PARTITION: &str = "aws";
 
 /// Cloud scope configuration for a service.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Builder, Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ScopeConfig {
     /// The cloud partition this service is running in.
+    #[builder(into)]
     pub partition: Option<String>,
 
     /// The region this service is running in. This must be specified.
+    #[builder(into)]
     pub region: Option<String>,
 }
 
 /// Resolved cloud scope configuration for a service.
-#[derive(Clone, Debug)]
+#[derive(Builder, Clone, Debug)]
 pub struct ResolvedScopeConfig {
     /// The cloud partition this service is running in.
+    #[builder(into)]
     pub partition: String,
 
     /// The region this service is running in.
+    #[builder(into)]
     pub region: String,
 }
 

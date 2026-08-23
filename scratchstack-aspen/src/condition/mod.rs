@@ -21,6 +21,7 @@ pub use {op::ConditionOp, variant::Variant};
 
 use {
     crate::{AspenError, Context, PolicyVersion, from_str_json, serutil::StringLikeList},
+    bon::Builder,
     serde::{Deserialize, Serialize, de::Deserializer, ser::Serializer},
     std::{
         borrow::Borrow,
@@ -43,8 +44,9 @@ pub type ConditionMap = BTreeMap<String, StringLikeList<String>>;
 /// This is (logically and physically) a two-level map. The first level (this structure) maps [`ConditionOp`] operators
 /// to a [`ConditionMap`]. The second level, the [`ConditionMap`] itself, maps condition variable names to a list of
 /// allowed values.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Builder, Clone, Debug, Eq, PartialEq)]
 pub struct Condition {
+    #[builder(default, with = |entries: impl IntoIterator<Item = (ConditionOp, ConditionMap)>| entries.into_iter().collect())]
     map: BTreeMap<ConditionOp, ConditionMap>,
 }
 

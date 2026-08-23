@@ -29,7 +29,7 @@ pub(crate) mod statement;
 pub(crate) mod serutil;
 
 pub use {
-    action::{Action, ActionList},
+    action::{Action, ActionList, SpecificActionDetails, SpecificActionDetailsBuilder},
     authz::{AuthorizationResult, authorize},
     condition::{Condition, ConditionMap, ConditionOp, Variant as ConditionVariant, op as condop},
     effect::Effect,

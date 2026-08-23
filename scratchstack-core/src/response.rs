@@ -7,6 +7,7 @@ use {
         error::ProvideErrorMetadata,
     },
     axum::body::Body,
+    bon::Builder,
     http::{Response, StatusCode},
     log::error,
     serde::{
@@ -24,7 +25,7 @@ pub trait Responder {
 /// Structure for wrapping an error in an `<ErrorResponse>` XML envelope.
 ///
 /// Serializing this generates the outer `<ErrorResponse xmlns="...">` element.
-#[derive(Serialize)]
+#[derive(Builder, Serialize)]
 #[serde(rename = "ErrorResponse")]
 // The derive would otherwise infer `E: Serialize`. The envelope never serializes `E` directly --
 // it builds `<Error>` from the metadata trait -- so errors need not implement `Serialize`.
@@ -38,6 +39,10 @@ where
     xmlns: &'a str,
 
     /// The error itself.
+    ///
+    /// The setter takes the error by reference; the `<Error>` wrapper is an implementation
+    /// detail and is constructed here.
+    #[builder(with = |error: &'a E| ErrorResponse::from(error))]
     #[serde(rename = "Error")]
     error: ErrorResponse<'a, E>,
 
@@ -58,7 +63,7 @@ struct ErrorResponse<'a, E> {
 ///
 /// Note the asymmetry with errors, which carry `<RequestId>` as a direct child of
 /// `<ErrorResponse>` rather than wrapping it. This mirrors what AWS actually returns.
-#[derive(Serialize)]
+#[derive(Builder, Serialize)]
 pub struct ResponseMetadata<'a> {
     /// The request id associated with the request.
     #[serde(rename = "RequestId")]

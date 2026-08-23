@@ -50,7 +50,7 @@ jobs:
       with:
         shared-key: scratchstack-ci-${{ github.head_ref || github.ref_name }}
     - name: Run Clippy check.
-      run: cargo clippy -- -Dwarnings
+      run: cargo clippy --all-targets -- -Dwarnings
 
   test:
     name: Tests and coverage
@@ -83,6 +83,10 @@ jobs:
       env:
         RUST_LOG: debug
       run: cargo llvm-cov --tests --html --output-dir coverage-report
+    - name: Run doctests
+      env:
+        RUST_LOG: debug
+      run: cargo test --workspace --doc
     - name: Upload coverage report to AWS
       run: aws s3 sync coverage-report/html s3://${{ secrets.COVERAGE_S3_BUCKET }}/coverage/scratchstack/${{ github.run_number }} --no-progress
 

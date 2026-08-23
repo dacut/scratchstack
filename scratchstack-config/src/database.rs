@@ -3,6 +3,7 @@ use {
         Resolvable,
         error::{ConfigError, DatabaseConfigError},
     },
+    bon::Builder,
     log::{debug, error},
     pct_str::{PctString, UriReserved},
     serde::Deserialize,
@@ -15,7 +16,7 @@ fn pct_encode(s: &str) -> String {
 }
 
 /// Database configuration for a service.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Builder, Clone, Debug, Deserialize)]
 pub struct DatabaseConfig {
     /// The database URL to connect to. If the URL contains the placeholder `${password}`, then either
     /// `password` or `password_file` must be specified to provide a value for the placeholder.
@@ -23,12 +24,14 @@ pub struct DatabaseConfig {
     /// If other fields are specified, they will override that portion of the URL.
     ///
     /// If unspecified, the URL will be constructed from other fields in this configuration.
+    #[builder(into)]
     pub url: Option<String>,
 
     /// The database host to connect to. This can also be a directory on Unix systems, in which
     /// case a Unix socket will be used to connect to the database instead of TCP.
     ///
     /// If not specified, defaults to `/tmp`.
+    #[builder(into)]
     pub host: Option<String>,
 
     /// The database port to connect to.
@@ -39,12 +42,14 @@ pub struct DatabaseConfig {
     /// The database username to connect as. Used only if `url` is not specified.
     ///
     /// If not specified, defaults to the current system user.
+    #[builder(into)]
     pub username: Option<String>,
 
     /// The password to use when connecting to the database. Used only if `url` is not specified or
     /// if `url` contains the `${password}` placeholder.
     ///
     /// If not specified, no password will be used when connecting to the database.
+    #[builder(into)]
     #[serde(default)]
     pub password: Option<String>,
 
@@ -52,12 +57,14 @@ pub struct DatabaseConfig {
     /// if `url` contains the `${password}` placeholder.
     ///
     /// If not specified, no password will be used when connecting to the database.
+    #[builder(into)]
     #[serde(default)]
     pub password_file: Option<String>,
 
     /// The database to connect to. Used only if `url` is not specified.
     ///
     /// If not specified, the `scratchstack` database will be used.
+    #[builder(into)]
     pub database: Option<String>,
 
     /// Maximum number of connections to maintain in the pool.
@@ -86,9 +93,10 @@ pub struct DatabaseConfig {
 }
 
 /// The resolved database configuration after validating fields and resolving any references.
-#[derive(Clone, Debug)]
+#[derive(Builder, Clone, Debug)]
 pub struct ResolvedDatabaseConfig {
     /// The database URL to connect to.
+    #[builder(into)]
     pub url: String,
 
     /// The connection pool options to use when connecting to the database.

@@ -4,6 +4,7 @@ use {
         auth::SigV4AuthenticatorResponse, body::IntoRequestBytes, canonical::CanonicalRequest, constants::*,
         crypto::hmac_sha256,
     },
+    bon::Builder,
     bytes::Bytes,
     chrono::{DateTime, Duration, Utc},
     log::trace,
@@ -17,12 +18,14 @@ use {
 };
 
 /// Options that can be used to configure the signature service.
-#[derive(Clone, Copy, Debug)]
+#[derive(Builder, Clone, Copy, Debug)]
 pub struct SignatureOptions {
     /// Canonicalize requests according to S3 rules and allow S3-style streaming requests.
+    #[builder(default = false)]
     pub s3: bool,
 
     /// Fold `application/x-www-form-urlencoded` bodies into the query string.
+    #[builder(default = false)]
     pub url_encode_form: bool,
 
     /// The allowed mismatch between the request timestamp and the server timestamp.
@@ -31,6 +34,7 @@ pub struct SignatureOptions {
     /// This is exposed to allow testing of static requests with a fixed timestamp and signature,
     /// and to test for clock skew in real requests. In production, this should typically be left
     /// at the default value.
+    #[builder(default = Duration::minutes(ALLOWED_MISMATCH_MINUTES))]
     pub allowed_mismatch: Duration,
 }
 

@@ -1,6 +1,7 @@
 //! Runtime configuration types.
 use {
     crate::{Resolvable, error::ConfigError},
+    bon::Builder,
     serde::Deserialize,
 };
 
@@ -8,7 +9,7 @@ use {
 const DEFAULT_THREADS: usize = 1;
 
 /// Runtime configuration for a service.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Builder, Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RuntimeConfig {
     /// The number of threads to use for the service. If unspecified, defaults to the number of
@@ -18,7 +19,7 @@ pub struct RuntimeConfig {
 }
 
 /// Resolved runtime configuration for a service.
-#[derive(Clone, Copy, Debug)]
+#[derive(Builder, Clone, Copy, Debug)]
 pub struct ResolvedRuntimeConfig {
     /// The number of threads to use for the service.
     pub threads: usize,

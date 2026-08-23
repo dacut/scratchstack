@@ -1,4 +1,7 @@
-use crate::{AspenError, Context, Decision, Policy};
+use {
+    crate::{AspenError, Context, Decision, Policy},
+    bon::Builder,
+};
 
 /// The source of a policy.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -221,8 +224,9 @@ impl PolicySource {
 }
 
 /// A set of policies being evaluated to determine the permissions in effect.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Builder, Clone, Debug, Eq, PartialEq)]
 pub struct PolicySet {
+    #[builder(default, with = |policies: impl IntoIterator<Item = (PolicySource, Policy)>| policies.into_iter().collect())]
     policies: Vec<(PolicySource, Policy)>,
 }
 

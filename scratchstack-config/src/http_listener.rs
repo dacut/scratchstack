@@ -4,6 +4,7 @@
 use {
     super::TlsConfig,
     crate::{Resolvable, error::ConfigError},
+    bon::Builder,
     rustls::ServerConfig as TlsServerConfig,
     serde::Deserialize,
     std::{
@@ -18,7 +19,7 @@ pub const DEFAULT_ADDRESS: IpAddr = IpAddr::V6(Ipv6Addr::LOCALHOST);
 
 /// HTTP listener configuration data for a service. This allows for optional fields and references
 /// to files for the TLS configuration.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Builder, Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HttpListenerConfig {
     /// The IP address to listen on. Defaults to the localhost address (`::1`), which does
@@ -38,7 +39,7 @@ pub struct HttpListenerConfig {
 
 /// Resolved HTTP listener configuration data for a service. Optional fields and references to files
 /// from [`HttpListenerConfig`] have been resolved and defaults have been applied.
-#[derive(Clone)]
+#[derive(Builder, Clone)]
 pub struct ResolvedHttpListenerConfig {
     /// The socket address to listen on.
     pub socket_addr: SocketAddr,
