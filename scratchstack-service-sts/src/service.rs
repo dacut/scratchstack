@@ -174,7 +174,14 @@ mod tests {
     "#;
 
     fn test_principal() -> Principal {
-        User::new("aws", TEST_ACCOUNT_ID, "/", "alice").expect("failed to build user").into()
+        User::builder()
+            .partition("aws")
+            .account_id(TEST_ACCOUNT_ID)
+            .path("/")
+            .user_name("alice")
+            .build()
+            .expect("failed to build user")
+            .into()
     }
 
     fn test_session_data() -> SessionData {
@@ -200,8 +207,15 @@ mod tests {
 
     /// Build the principal and session data the SigV4 layer would produce for a seeded user.
     fn user_identity(user_id: &str, user_name: &str) -> (Principal, SessionData) {
-        let principal =
-            Principal::from(User::new("aws", TEST_ACCOUNT_ID, "/", user_name).expect("failed to build user"));
+        let principal = Principal::from(
+            User::builder()
+                .partition("aws")
+                .account_id(TEST_ACCOUNT_ID)
+                .path("/")
+                .user_name(user_name)
+                .build()
+                .expect("failed to build user"),
+        );
         let mut session_data = SessionData::new();
         session_data.insert("aws:PrincipalAccount", SessionValue::String(TEST_ACCOUNT_ID.to_string()));
         session_data.insert(
@@ -472,7 +486,13 @@ mod tests {
         assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
 
         // The account root user may not assume roles at all.
-        let principal = Principal::from(RootUser::new("aws", TEST_ACCOUNT_ID).expect("failed to build root user"));
+        let principal = Principal::from(
+            RootUser::builder()
+                .partition("aws")
+                .account_id(TEST_ACCOUNT_ID)
+                .build()
+                .expect("failed to build root user"),
+        );
         let mut session_data = SessionData::new();
         session_data.insert("aws:PrincipalAccount", SessionValue::String(TEST_ACCOUNT_ID.to_string()));
         let (status, body) = call_as(

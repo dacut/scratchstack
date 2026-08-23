@@ -275,11 +275,36 @@ mod test {
 
     #[test]
     fn check_hash_ord() {
-        let p1 = Principal::from(AssumedRole::new("aws", "123456789012", "Role_name", "session_name").unwrap());
-        let p3 = Principal::from(FederatedUser::new("aws", "123456789012", "user@domain").unwrap());
-        let p4 = Principal::from(RootUser::new("aws", "123456789012").unwrap());
-        let p5 = Principal::from(Service::new("service-name", None, "amazonaws.com").unwrap());
-        let p6 = Principal::from(User::new("aws", "123456789012", "/", "user-name").unwrap());
+        let p1 = Principal::from(
+            AssumedRole::builder()
+                .partition("aws")
+                .account_id("123456789012")
+                .role_name("Role_name")
+                .session_name("session_name")
+                .build()
+                .unwrap(),
+        );
+        let p3 = Principal::from(
+            FederatedUser::builder()
+                .partition("aws")
+                .account_id("123456789012")
+                .user_name("user@domain")
+                .build()
+                .unwrap(),
+        );
+        let p4 = Principal::from(RootUser::builder().partition("aws").account_id("123456789012").build().unwrap());
+        let p5 = Principal::from(
+            Service::builder().service_name("service-name").dns_suffix("amazonaws.com").build().unwrap(),
+        );
+        let p6 = Principal::from(
+            User::builder()
+                .partition("aws")
+                .account_id("123456789012")
+                .path("/")
+                .user_name("user-name")
+                .build()
+                .unwrap(),
+        );
 
         let mut h1 = DefaultHasher::new();
         let mut h3 = DefaultHasher::new();
@@ -314,12 +339,29 @@ mod test {
 
     #[test]
     fn check_assumed_role() {
-        let r1a = AssumedRole::new("aws", "123456789012", "Role_name", "session_name").unwrap();
+        let r1a = AssumedRole::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .role_name("Role_name")
+            .session_name("session_name")
+            .build()
+            .unwrap();
 
-        let r1b = AssumedRole::new("aws", "123456789012", "Role_name", "session_name").unwrap();
+        let r1b = AssumedRole::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .role_name("Role_name")
+            .session_name("session_name")
+            .build()
+            .unwrap();
 
-        let r2 =
-            AssumedRole::new("aws2", "123456789012", "Role@Foo=bar,baz_=world-1234", "Session@1234,_=-,.OK").unwrap();
+        let r2 = AssumedRole::builder()
+            .partition("aws2")
+            .account_id("123456789012")
+            .role_name("Role@Foo=bar,baz_=world-1234")
+            .session_name("Session@1234,_=-,.OK")
+            .build()
+            .unwrap();
 
         let p1a = Principal::from(r1a);
         let p1b = Principal::from(r1b);
@@ -353,9 +395,24 @@ mod test {
 
     #[test]
     fn check_federated_user() {
-        let f1a = FederatedUser::new("aws", "123456789012", "user@domain").unwrap();
-        let f1b = FederatedUser::new("aws", "123456789012", "user@domain").unwrap();
-        let f2 = FederatedUser::new("partition-with-32-characters1234", "123456789012", "user@domain").unwrap();
+        let f1a = FederatedUser::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .user_name("user@domain")
+            .build()
+            .unwrap();
+        let f1b = FederatedUser::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .user_name("user@domain")
+            .build()
+            .unwrap();
+        let f2 = FederatedUser::builder()
+            .partition("partition-with-32-characters1234")
+            .account_id("123456789012")
+            .user_name("user@domain")
+            .build()
+            .unwrap();
 
         let p1a = Principal::from(f1a);
         let p1b = Principal::from(f1b);
@@ -389,9 +446,9 @@ mod test {
 
     #[test]
     fn check_root_user() {
-        let r1a = RootUser::new("aws", "123456789012").unwrap();
-        let r1b = RootUser::new("aws", "123456789012").unwrap();
-        let r2 = RootUser::new("aws", "123456789099").unwrap();
+        let r1a = RootUser::builder().partition("aws").account_id("123456789012").build().unwrap();
+        let r1b = RootUser::builder().partition("aws").account_id("123456789012").build().unwrap();
+        let r2 = RootUser::builder().partition("aws").account_id("123456789099").build().unwrap();
 
         let p1a = Principal::from(r1a);
         let p1b = Principal::from(r1b);
@@ -425,9 +482,9 @@ mod test {
 
     #[test]
     fn check_service() {
-        let s1a = Service::new("service-name", None, "amazonaws.com").unwrap();
-        let s1b = Service::new("service-name", None, "amazonaws.com").unwrap();
-        let s2 = Service::new("service-name2", None, "amazonaws.com").unwrap();
+        let s1a = Service::builder().service_name("service-name").dns_suffix("amazonaws.com").build().unwrap();
+        let s1b = Service::builder().service_name("service-name").dns_suffix("amazonaws.com").build().unwrap();
+        let s2 = Service::builder().service_name("service-name2").dns_suffix("amazonaws.com").build().unwrap();
 
         let p1a = Principal::from(s1a);
         let p1b = Principal::from(s1b);
@@ -453,9 +510,27 @@ mod test {
 
     #[test]
     fn check_user() {
-        let u1a = User::new("aws", "123456789012", "/", "user-name").unwrap();
-        let u1b = User::new("aws", "123456789012", "/", "user-name").unwrap();
-        let u2 = User::new("aws", "123456789012", "/", "user-name2").unwrap();
+        let u1a = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/")
+            .user_name("user-name")
+            .build()
+            .unwrap();
+        let u1b = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/")
+            .user_name("user-name")
+            .build()
+            .unwrap();
+        let u2 = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/")
+            .user_name("user-name2")
+            .build()
+            .unwrap();
 
         let p1a = Principal::from(u1a);
         let p1b = Principal::from(u1b);
@@ -489,9 +564,27 @@ mod test {
 
     #[test]
     fn check_principal_basics() {
-        let ar1a = AssumedRole::new("aws", "123456789012", "Role_name", "session_name").unwrap();
-        let ar1b = AssumedRole::new("aws", "123456789012", "Role_name", "session_name").unwrap();
-        let ar2 = AssumedRole::new("aws", "123456789012", "Role_name2", "session_name").unwrap();
+        let ar1a = AssumedRole::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .role_name("Role_name")
+            .session_name("session_name")
+            .build()
+            .unwrap();
+        let ar1b = AssumedRole::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .role_name("Role_name")
+            .session_name("session_name")
+            .build()
+            .unwrap();
+        let ar2 = AssumedRole::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .role_name("Role_name2")
+            .session_name("session_name")
+            .build()
+            .unwrap();
         assert_eq!(ar1a, ar1b);
         assert_ne!(ar1a, ar2);
         assert_ne!(ar2, ar1b);
@@ -502,9 +595,24 @@ mod test {
         assert_ne!(par1a, par2);
         assert_ne!(par2, par1b);
 
-        let f1a = FederatedUser::new("aws", "123456789012", "user@domain").unwrap();
-        let f1b = FederatedUser::new("aws", "123456789012", "user@domain").unwrap();
-        let f2 = FederatedUser::new("aws", "123456789012", "user2@domain").unwrap();
+        let f1a = FederatedUser::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .user_name("user@domain")
+            .build()
+            .unwrap();
+        let f1b = FederatedUser::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .user_name("user@domain")
+            .build()
+            .unwrap();
+        let f2 = FederatedUser::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .user_name("user2@domain")
+            .build()
+            .unwrap();
         assert_eq!(f1a, f1b);
         assert_ne!(f1a, f2);
         let pf1a = Principal::from(f1a.clone());
@@ -514,9 +622,9 @@ mod test {
         assert_ne!(pf1a, pf2);
         assert_ne!(pf2, pf1b);
 
-        let r1a = RootUser::new("aws", "123456789012").unwrap();
-        let r1b = RootUser::new("aws", "123456789012").unwrap();
-        let r2 = RootUser::new("aws", "123456789013").unwrap();
+        let r1a = RootUser::builder().partition("aws").account_id("123456789012").build().unwrap();
+        let r1b = RootUser::builder().partition("aws").account_id("123456789012").build().unwrap();
+        let r2 = RootUser::builder().partition("aws").account_id("123456789013").build().unwrap();
         assert_eq!(r1a, r1b);
         assert_ne!(r1a, r2);
         assert_ne!(r2, r1b);
@@ -527,9 +635,9 @@ mod test {
         assert_ne!(pr1a, pr2);
         assert_ne!(pr2, pr1b);
 
-        let s1a = Service::new("service-name", None, "amazonaws.com").unwrap();
-        let s1b = Service::new("service-name", None, "amazonaws.com").unwrap();
-        let s2 = Service::new("service-name2", None, "amazonaws.com").unwrap();
+        let s1a = Service::builder().service_name("service-name").dns_suffix("amazonaws.com").build().unwrap();
+        let s1b = Service::builder().service_name("service-name").dns_suffix("amazonaws.com").build().unwrap();
+        let s2 = Service::builder().service_name("service-name2").dns_suffix("amazonaws.com").build().unwrap();
         assert_eq!(s1a, s1b);
         assert_ne!(s1a, s2);
         assert_ne!(s2, s1b);
@@ -540,9 +648,27 @@ mod test {
         assert_ne!(ps1a, ps2);
         assert_ne!(ps2, ps1b);
 
-        let u1a = User::new("aws", "123456789012", "/", "user-name").unwrap();
-        let u1b = User::new("aws", "123456789012", "/", "user-name").unwrap();
-        let u2 = User::new("aws", "123456789012", "/", "user-name2").unwrap();
+        let u1a = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/")
+            .user_name("user-name")
+            .build()
+            .unwrap();
+        let u1b = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/")
+            .user_name("user-name")
+            .build()
+            .unwrap();
+        let u2 = User::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .path("/")
+            .user_name("user-name2")
+            .build()
+            .unwrap();
         assert_eq!(u1a, u1b);
         assert_ne!(u1a, u2);
         assert_ne!(u2, u1b);
@@ -570,21 +696,30 @@ mod test {
         assert!(p.as_service().is_none());
         assert!(p.as_user().is_none());
 
-        let p = Principal::from(FederatedUser::new("aws", "123456789012", "dacut@kanga.org").unwrap());
+        let p = Principal::from(
+            FederatedUser::builder()
+                .partition("aws")
+                .account_id("123456789012")
+                .user_name("dacut@kanga.org")
+                .build()
+                .unwrap(),
+        );
         assert!(p.as_assumed_role().is_none());
         assert!(p.as_federated_user().is_some());
         assert!(p.as_root_user().is_none());
         assert!(p.as_service().is_none());
         assert!(p.as_user().is_none());
 
-        let p = Principal::from(RootUser::new("aws", "123456789012").unwrap());
+        let p = Principal::from(RootUser::builder().partition("aws").account_id("123456789012").build().unwrap());
         assert!(p.as_assumed_role().is_none());
         assert!(p.as_federated_user().is_none());
         assert!(p.as_root_user().is_some());
         assert!(p.as_service().is_none());
         assert!(p.as_user().is_none());
 
-        let p = Principal::from(Service::new("ec2", Some("us-west-2".to_string()), "amazonaws.com").unwrap());
+        let p = Principal::from(
+            Service::builder().service_name("ec2").region("us-west-2").dns_suffix("amazonaws.com").build().unwrap(),
+        );
         assert!(p.as_assumed_role().is_none());
         assert!(p.as_federated_user().is_none());
         assert!(p.as_root_user().is_none());

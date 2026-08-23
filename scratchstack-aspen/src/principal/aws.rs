@@ -119,25 +119,55 @@ mod tests {
     #[test_log::test]
     fn test_matches() {
         assert!(
-            AwsPrincipal::Any.matches(&Principal::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
+            AwsPrincipal::Any.matches(&Principal::from(
+                User::builder()
+                    .partition("aws")
+                    .account_id("123456789012")
+                    .path("/")
+                    .user_name("testuser")
+                    .build()
+                    .unwrap()
+            ))
         );
         assert!(
-            AwsPrincipal::Account("123456789012".to_string())
-                .matches(&Principal::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
+            AwsPrincipal::Account("123456789012".to_string()).matches(&Principal::from(
+                User::builder()
+                    .partition("aws")
+                    .account_id("123456789012")
+                    .path("/")
+                    .user_name("testuser")
+                    .build()
+                    .unwrap()
+            ))
         );
         assert!(
-            !AwsPrincipal::Account("567890123456".to_string())
-                .matches(&Principal::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
+            !AwsPrincipal::Account("567890123456".to_string()).matches(&Principal::from(
+                User::builder()
+                    .partition("aws")
+                    .account_id("123456789012")
+                    .path("/")
+                    .user_name("testuser")
+                    .build()
+                    .unwrap()
+            ))
         );
-        assert!(!AwsPrincipal::Any.matches(&Principal::from(Service::new("iam", None, "amazonaws.com").unwrap())));
-        assert!(
-            !AwsPrincipal::Account("123456789012".to_string())
-                .matches(&Principal::from(Service::new("iam", None, "amazonaws.com").unwrap()))
-        );
+        assert!(!AwsPrincipal::Any.matches(&Principal::from(
+            Service::builder().service_name("iam").dns_suffix("amazonaws.com").build().unwrap()
+        )));
+        assert!(!AwsPrincipal::Account("123456789012".to_string()).matches(&Principal::from(
+            Service::builder().service_name("iam").dns_suffix("amazonaws.com").build().unwrap()
+        )));
 
         assert!(
-            AwsPrincipal::Arn("arn:aws:iam::123456789012:root".parse().unwrap())
-                .matches(&Principal::from(User::new("aws", "123456789012", "/", "testuser").unwrap()))
+            AwsPrincipal::Arn("arn:aws:iam::123456789012:root".parse().unwrap()).matches(&Principal::from(
+                User::builder()
+                    .partition("aws")
+                    .account_id("123456789012")
+                    .path("/")
+                    .user_name("testuser")
+                    .build()
+                    .unwrap()
+            ))
         );
     }
 }

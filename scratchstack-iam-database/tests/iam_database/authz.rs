@@ -32,7 +32,13 @@ fn make_context_with_session(
     session_data: SessionData,
 ) -> Context {
     let actor = PrincipalActor::from(
-        User::new("test-partition", account_id, path, user_name).expect("Failed to create user principal"),
+        User::builder()
+            .partition("test-partition")
+            .account_id(account_id)
+            .path(path)
+            .user_name(user_name)
+            .build()
+            .expect("Failed to create user principal"),
     );
     Context::builder()
         .api(api)
@@ -46,7 +52,12 @@ fn make_context_with_session(
 /// Build an evaluation context for an assumed-role session on the given seeded role.
 fn make_assumed_role_context(service: &str, api: &str, account_id: &str, role_name: &str) -> Context {
     let actor = PrincipalActor::from(
-        AssumedRole::new("test-partition", account_id, role_name, "example-session")
+        AssumedRole::builder()
+            .partition("test-partition")
+            .account_id(account_id)
+            .role_name(role_name)
+            .session_name("example-session")
+            .build()
             .expect("Failed to create assumed-role principal"),
     );
     Context::builder()

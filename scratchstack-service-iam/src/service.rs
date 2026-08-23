@@ -174,8 +174,15 @@ mod tests {
 
     /// Build the principal and session data the SigV4 layer would produce for a seeded user.
     fn user_identity(user_id: &str, user_name: &str) -> (Principal, SessionData) {
-        let principal =
-            Principal::from(User::new("aws", TEST_ACCOUNT_ID, "/", user_name).expect("failed to build user"));
+        let principal = Principal::from(
+            User::builder()
+                .partition("aws")
+                .account_id(TEST_ACCOUNT_ID)
+                .path("/")
+                .user_name(user_name)
+                .build()
+                .expect("failed to build user"),
+        );
         let mut session_data = SessionData::new();
         session_data.insert("aws:PrincipalAccount", SessionValue::String(TEST_ACCOUNT_ID.to_string()));
         session_data.insert(
@@ -192,7 +199,13 @@ mod tests {
     /// seeded role.
     fn role_identity(role_id: &str, role_name: &str) -> (Principal, SessionData) {
         let principal = Principal::from(
-            AssumedRole::new("aws", TEST_ACCOUNT_ID, role_name, "test-session").expect("failed to build assumed role"),
+            AssumedRole::builder()
+                .partition("aws")
+                .account_id(TEST_ACCOUNT_ID)
+                .role_name(role_name)
+                .session_name("test-session")
+                .build()
+                .expect("failed to build assumed role"),
         );
         let mut session_data = SessionData::new();
         session_data.insert("aws:PrincipalAccount", SessionValue::String(TEST_ACCOUNT_ID.to_string()));
@@ -283,7 +296,13 @@ mod tests {
         );
 
         // The account root user is implicitly allowed.
-        let principal = Principal::from(RootUser::new("aws", TEST_ACCOUNT_ID).expect("failed to build root user"));
+        let principal = Principal::from(
+            RootUser::builder()
+                .partition("aws")
+                .account_id(TEST_ACCOUNT_ID)
+                .build()
+                .expect("failed to build root user"),
+        );
         let mut session_data = SessionData::new();
         session_data.insert("aws:PrincipalAccount", SessionValue::String(TEST_ACCOUNT_ID.to_string()));
         let (status, body) = call(&svc_state, principal, session_data, parameters).await;

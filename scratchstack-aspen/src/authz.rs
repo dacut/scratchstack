@@ -136,7 +136,9 @@ mod tests {
     };
 
     fn user_actor() -> PrincipalActor {
-        PrincipalActor::from(User::new("aws", "123456789012", "/", "MyUser").unwrap())
+        PrincipalActor::from(
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("MyUser").build().unwrap(),
+        )
     }
 
     fn context(api: &str, resources: Vec<Arn>) -> Context {
@@ -171,7 +173,8 @@ mod tests {
 
     #[test_log::test]
     fn test_root_user_implicit_allow() {
-        let actor = PrincipalActor::from(RootUser::new("aws", "123456789012").unwrap());
+        let actor =
+            PrincipalActor::from(RootUser::builder().partition("aws").account_id("123456789012").build().unwrap());
         let context = Context::builder()
             .api("ListBucket")
             .actor(actor)

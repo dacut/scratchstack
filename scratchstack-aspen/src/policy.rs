@@ -362,7 +362,9 @@ mod tests {
             ]
         }"# };
 
-        let actor = PrincipalActor::from(User::new("aws", "123456789012", "/", "MyUser").unwrap());
+        let actor = PrincipalActor::from(
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("MyUser").build().unwrap(),
+        );
         let denied_context = Context::builder()
             .api("ListBucket")
             .actor(actor.clone())
@@ -403,7 +405,9 @@ mod tests {
         }"# };
 
         let policy = Policy::from_str(policy_str).unwrap();
-        let actor = PrincipalActor::from(User::new("aws", "123456789012", "/", "MyUser").unwrap());
+        let actor = PrincipalActor::from(
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("MyUser").build().unwrap(),
+        );
         let mut sd = SessionData::new();
         sd.insert("aws:username", SessionValue::from("MyUser"));
         let context = Context::builder()
@@ -1243,7 +1247,9 @@ mod tests {
         }
     "#})
         .unwrap();
-        let actor = PrincipalActor::from(User::new("aws", "123456789012", "/", "MyUser").unwrap());
+        let actor = PrincipalActor::from(
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("MyUser").build().unwrap(),
+        );
         let mut sd = SessionData::new();
         sd.insert("aws:username", SessionValue::from("MyUser"));
         let context = Context::builder()
@@ -1273,7 +1279,9 @@ mod tests {
             ]
         }"# })
         .unwrap();
-        let actor = PrincipalActor::from(User::new("aws", "123456789012", "/", "MyUser").unwrap());
+        let actor = PrincipalActor::from(
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("MyUser").build().unwrap(),
+        );
         let sd = SessionData::new();
         let context = Context::builder()
             .api("DescribeSecurityGroups")
@@ -1489,7 +1497,9 @@ mod tests {
         assert_eq!(format!("{}", aws[0]), "arn:aws:iam::123456789012:root");
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::Allow);
 
-        context_builder.actor(PrincipalActor::from(Service::new("ec2", None, "amazonaws.com").unwrap()));
+        context_builder.actor(PrincipalActor::from(
+            Service::builder().service_name("ec2").dns_suffix("amazonaws.com").build().unwrap(),
+        ));
         let context = context_builder.build().unwrap();
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::DefaultDeny);
 
@@ -1510,7 +1520,9 @@ mod tests {
         let context = context_builder.build().unwrap();
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::DefaultDeny);
 
-        context_builder.actor(PrincipalActor::from(Service::new("ec2", None, "amazonaws.com").unwrap()));
+        context_builder.actor(PrincipalActor::from(
+            Service::builder().service_name("ec2").dns_suffix("amazonaws.com").build().unwrap(),
+        ));
         let context = context_builder.build().unwrap();
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::Allow);
 
@@ -1529,7 +1541,9 @@ mod tests {
         let context = context_builder.build().unwrap();
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::Allow);
 
-        context_builder.actor(PrincipalActor::from(Service::new("ec2", None, "amazonaws.com").unwrap()));
+        context_builder.actor(PrincipalActor::from(
+            Service::builder().service_name("ec2").dns_suffix("amazonaws.com").build().unwrap(),
+        ));
         let context = context_builder.build().unwrap();
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::Allow);
     }

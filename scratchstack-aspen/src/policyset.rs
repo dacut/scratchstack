@@ -600,7 +600,9 @@ mod tests {
         ps.add_policy(session_source.clone(), session_policy.clone());
 
         assert_eq!(ps.policies().len(), 8);
-        let actor = Principal::from(User::new("aws", "123456789012", "/", "MyUser").unwrap());
+        let actor = Principal::from(
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("MyUser").build().unwrap(),
+        );
         let mut sd = SessionData::new();
         sd.insert("aws:username", SessionValue::from("MyUser"));
         let mut context_builder = Context::builder();

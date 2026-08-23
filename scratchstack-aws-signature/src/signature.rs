@@ -381,7 +381,15 @@ mod tests {
                 let k_secret = KSecretKey::from_str(secret_key.as_str()).unwrap();
                 let k_signing = k_secret.to_ksigning(req.request_date(), req.region(), req.service());
 
-                let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
+                let principal = Principal::from(
+                    User::builder()
+                        .partition("aws")
+                        .account_id("123456789012")
+                        .path("/")
+                        .user_name("test")
+                        .build()
+                        .unwrap(),
+                );
                 Ok(GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build())
             })
         }
@@ -391,7 +399,9 @@ mod tests {
         let k_secret = KSecretKey::from_str("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY").unwrap();
         let k_signing = k_secret.to_ksigning(req.request_date(), req.region(), req.service());
 
-        let principal = Principal::from(User::new("aws", "123456789012", "/", "test").unwrap());
+        let principal = Principal::from(
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("test").build().unwrap(),
+        );
         Ok(GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build())
     }
 

@@ -680,7 +680,15 @@ mod tests {
             "us-east-1",
             "example",
         );
-        let principal = Principal::from(AssumedRole::new("aws", "123456789012", "role", "session").unwrap());
+        let principal = Principal::from(
+            AssumedRole::builder()
+                .partition("aws")
+                .account_id("123456789012")
+                .role_name("role")
+                .session_name("session")
+                .build()
+                .unwrap(),
+        );
 
         let gsk_resp1a = GetSigningKeyResponse::builder().signing_key(signing_key).principal(principal).build();
 
@@ -701,7 +709,15 @@ mod tests {
             "us-east-1",
             "example",
         );
-        let principal = Principal::from(AssumedRole::new("aws", "123456789012", "role", "session").unwrap());
+        let principal = Principal::from(
+            AssumedRole::builder()
+                .partition("aws")
+                .account_id("123456789012")
+                .role_name("role")
+                .session_name("session")
+                .build()
+                .unwrap(),
+        );
         let response = GetSigningKeyResponse::builder().principal(principal).signing_key(signing_key).build();
         assert!(response.principal().as_assumed_role().is_some());
         assert!(response.session_data().is_empty());

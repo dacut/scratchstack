@@ -121,13 +121,17 @@ pub async fn assume_role(
             .into());
     }
 
-    let principal =
-        AssumedRole::new(role_arn.partition(), account_id, &role_arn.resource_name_lower(), &request.role_session_name)
-            .map_err(|e| {
-                // This should never happen.
-                log::error!("Internal error creating assumed role principal: {e}");
-                internal_failure(request_id)
-            })?;
+    let principal = AssumedRole::builder()
+        .partition(role_arn.partition())
+        .account_id(account_id)
+        .role_name(role_arn.resource_name_lower())
+        .session_name(&request.role_session_name)
+        .build()
+        .map_err(|e| {
+            // This should never happen.
+            log::error!("Internal error creating assumed role principal: {e}");
+            internal_failure(request_id)
+        })?;
 
     let mut tags = HashMap::with_capacity(request.tags.len());
     let mut transitive_tag_keys = HashSet::with_capacity(request.transitive_tag_keys.len());

@@ -267,7 +267,9 @@ mod test {
 
     #[test_log::test]
     fn test_context_derived() {
-        let actor = Principal::from(User::new("aws", "123456789012", "/", "user").unwrap());
+        let actor = Principal::from(
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("user").build().unwrap(),
+        );
         let c1 = Context::builder()
             .api("RunInstances")
             .actor(actor)

@@ -77,7 +77,7 @@
 //!     assert_eq!(request.access_key(), ACCESS_KEY);
 //!     assert_eq!(request.region(), REGION);
 //!     assert_eq!(request.service(), SERVICE);
-//!     let user = User::new(PARTITION, ACCOUNT_ID, PATH, USER_NAME).unwrap();
+//!     let user = User::builder().partition(PARTITION).account_id(ACCOUNT_ID).path(PATH).user_name(USER_NAME).build().unwrap();
 //!     let secret_key = KSecretKey::from_str(SECRET_KEY).unwrap();
 //!     let signing_key = secret_key.to_ksigning(request.request_date(), REGION, SERVICE);
 //!     Ok(GetSigningKeyResponse::builder()
@@ -115,7 +115,7 @@
 //!     signature_options).await.unwrap();
 //!
 //! // The principal we expect to be associated with the request.
-//! let expected_principal: Principal = User::new(PARTITION, ACCOUNT_ID, PATH, USER_NAME)
+//! let expected_principal: Principal = User::builder().partition(PARTITION).account_id(ACCOUNT_ID).path(PATH).user_name(USER_NAME).build()
 //!     .unwrap()
 //!     .into();
 //! assert_eq!(auth.principal(), &expected_principal);

@@ -133,21 +133,39 @@ mod tests {
         )
         .unwrap();
 
-        let user = User::new("aws", "123456789012", "/", "dacut").unwrap();
-        let federated_user = FederatedUser::new("aws", "123456789012", "dacut@kanga.org").unwrap();
-        let lambda_regional = Service::new("lambda", Some("us-east-1".to_string()), "amazonaws.com").unwrap();
+        let user =
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("dacut").build().unwrap();
+        let federated_user = FederatedUser::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .user_name("dacut@kanga.org")
+            .build()
+            .unwrap();
+        let lambda_regional =
+            Service::builder().service_name("lambda").region("us-east-1").dns_suffix("amazonaws.com").build().unwrap();
 
         assert!(sp.matches(&PrincipalActor::from(user.clone())));
         assert!(sp.matches(&PrincipalActor::from(federated_user.clone())));
         assert!(sp.matches(&PrincipalActor::from(lambda_regional.clone())));
 
-        let user_wrong_partition = User::new("aws-us-gov", "123456789012", "/", "dacut").unwrap();
+        let user_wrong_partition = User::builder()
+            .partition("aws-us-gov")
+            .account_id("123456789012")
+            .path("/")
+            .user_name("dacut")
+            .build()
+            .unwrap();
         assert!(!sp.matches(&PrincipalActor::from(user_wrong_partition)));
 
-        let wrong_federated_user = FederatedUser::new("aws", "123456789012", "evildoer@kanga.org").unwrap();
+        let wrong_federated_user = FederatedUser::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .user_name("evildoer@kanga.org")
+            .build()
+            .unwrap();
         assert!(!sp.matches(&PrincipalActor::from(wrong_federated_user)));
 
-        let wrong_service = Service::new("s3", None, "amazonaws.com").unwrap();
+        let wrong_service = Service::builder().service_name("s3").dns_suffix("amazonaws.com").build().unwrap();
         assert!(!sp.matches(&PrincipalActor::from(wrong_service)));
 
         let empty = SpecifiedPrincipal::builder().build().unwrap();

@@ -1,5 +1,6 @@
 use {
     crate::{PrincipalError, utils::validate_name},
+    derive_builder::Builder,
     scratchstack_arn::{
         Arn,
         utils::{validate_account_id, validate_partition},
@@ -9,21 +10,56 @@ use {
 
 /// Details about an AWS IAM federated user.
 ///
-/// `FederatedUser` structs are immutable.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+/// `FederatedUser` structs are immutable. They are created using the [`FederatedUserBuilder`] returned by
+/// [`FederatedUser::builder`].
+#[derive(Builder, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[builder(build_fn(validate = "Self::validate", error = "PrincipalError"))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FederatedUser {
     /// The partition this principal exists in.
+    #[builder(setter(into))]
     partition: String,
 
     /// The account id.
+    #[builder(setter(into))]
     account_id: String,
 
     /// Name of the principal, case-insensitive.
+    #[builder(setter(into))]
     user_name: String,
 }
 
 impl FederatedUser {
+    /// Create a [`FederatedUserBuilder`] for building a [`FederatedUser`].
+    ///
+    /// # Fields
+    ///
+    /// * `partition`: The partition this principal exists in.
+    /// * `account_id`: The 12 digit account id. This must be composed of 12 ASCII digits or a
+    ///   [`PrincipalError::InvalidAccountId`] error will be returned.
+    /// * `user_name`: The name of the federated user. This must meet the following requirements or a
+    ///   [`PrincipalError::InvalidFederatedUserName`] error will be returned:
+    ///   * The name must contain between 2 and 32 characters.
+    ///   * The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scratchstack_aws_principal::FederatedUser;
+    /// let federated_user = FederatedUser::builder()
+    ///     .partition("aws")
+    ///     .account_id("123456789012")
+    ///     .user_name("user@example.com")
+    ///     .build()
+    ///     .unwrap();
+    /// assert_eq!(federated_user.partition(), "aws");
+    /// assert_eq!(federated_user.account_id(), "123456789012");
+    /// assert_eq!(federated_user.user_name(), "user@example.com");
+    /// ```
+    pub fn builder() -> FederatedUserBuilder {
+        FederatedUserBuilder::default()
+    }
+
     /// Create a [`FederatedUser`] object.
     ///
     /// * `partition`: The partition this principal exists in.
@@ -36,30 +72,31 @@ impl FederatedUser {
     ///
     /// If all of the requirements are met, a [`FederatedUser`] object is returned. Otherwise, a [`PrincipalError`] error
     /// is returned.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use scratchstack_aws_principal::FederatedUser;
-    /// let federated_user = FederatedUser::new("aws", "123456789012", "user@example.com").unwrap();
-    /// assert_eq!(federated_user.partition(), "aws");
-    /// assert_eq!(federated_user.account_id(), "123456789012");
-    /// assert_eq!(federated_user.user_name(), "user@example.com");
-    /// ```
+    #[deprecated(since = "0.12.0", note = "Use FederatedUser::builder() instead.")]
     pub fn new(partition: &str, account_id: &str, user_name: &str) -> Result<Self, PrincipalError> {
+        Self::validate_parts(partition, account_id, user_name)?;
+
+        Ok(Self {
+            partition: partition.into(),
+            account_id: account_id.into(),
+            user_name: user_name.into(),
+        })
+    }
+
+    /// Validate the components of a [`FederatedUser`].
+    ///
+    /// This is shared by [`FederatedUser::new`] and [`FederatedUserBuilder::build`] so both enforce identical
+    /// requirements.
+    fn validate_parts(partition: &str, account_id: &str, user_name: &str) -> Result<(), PrincipalError> {
         validate_partition(partition)?;
         validate_account_id(account_id)?;
         validate_name(user_name, 32, PrincipalError::InvalidFederatedUserName)?;
 
         if user_name.len() < 2 {
-            Err(PrincipalError::InvalidFederatedUserName(user_name.into()))
-        } else {
-            Ok(Self {
-                partition: partition.into(),
-                account_id: account_id.into(),
-                user_name: user_name.into(),
-            })
+            return Err(PrincipalError::InvalidFederatedUserName(user_name.into()));
         }
+
+        Ok(())
     }
 
     /// The partition of the user.
@@ -81,6 +118,18 @@ impl FederatedUser {
     }
 }
 
+impl FederatedUserBuilder {
+    /// Validate the fields set on this builder, returning a [`PrincipalError`] if any required field is missing or
+    /// any field is invalid.
+    fn validate(&self) -> Result<(), PrincipalError> {
+        let partition = self.partition.as_deref().ok_or(PrincipalError::MissingField("partition"))?;
+        let account_id = self.account_id.as_deref().ok_or(PrincipalError::MissingField("account_id"))?;
+        let user_name = self.user_name.as_deref().ok_or(PrincipalError::MissingField("user_name"))?;
+
+        FederatedUser::validate_parts(partition, account_id, user_name)
+    }
+}
+
 impl From<&FederatedUser> for Arn {
     fn from(user: &FederatedUser) -> Arn {
         Arn::new(&user.partition, "sts", "", &user.account_id, &format!("federated-user/{}", user.user_name)).unwrap()
@@ -97,7 +146,7 @@ impl Display for FederatedUser {
 mod tests {
     use {
         super::FederatedUser,
-        crate::{Principal, PrincipalSource},
+        crate::{Principal, PrincipalError, PrincipalSource},
         scratchstack_arn::Arn,
         std::{
             collections::hash_map::DefaultHasher,
@@ -107,7 +156,12 @@ mod tests {
 
     #[test]
     fn check_components() {
-        let user = FederatedUser::new("aws", "123456789012", "test-user").unwrap();
+        let user = FederatedUser::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .user_name("test-user")
+            .build()
+            .unwrap();
         assert_eq!(user.partition(), "aws");
         assert_eq!(user.account_id(), "123456789012");
         assert_eq!(user.user_name(), "test-user");
@@ -127,11 +181,36 @@ mod tests {
     #[test]
     #[allow(clippy::redundant_clone)]
     fn check_derived() {
-        let u1a = FederatedUser::new("aws", "123456789012", "test-user1").unwrap();
-        let u1b = FederatedUser::new("aws", "123456789012", "test-user1").unwrap();
-        let u2 = FederatedUser::new("aws", "123456789012", "test-user2").unwrap();
-        let u3 = FederatedUser::new("aws", "123456789013", "test-user2").unwrap();
-        let u4 = FederatedUser::new("awt", "123456789013", "test-user2").unwrap();
+        let u1a = FederatedUser::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .user_name("test-user1")
+            .build()
+            .unwrap();
+        let u1b = FederatedUser::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .user_name("test-user1")
+            .build()
+            .unwrap();
+        let u2 = FederatedUser::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .user_name("test-user2")
+            .build()
+            .unwrap();
+        let u3 = FederatedUser::builder()
+            .partition("aws")
+            .account_id("123456789013")
+            .user_name("test-user2")
+            .build()
+            .unwrap();
+        let u4 = FederatedUser::builder()
+            .partition("awt")
+            .account_id("123456789013")
+            .user_name("test-user2")
+            .build()
+            .unwrap();
 
         assert_eq!(u1a, u1b);
         assert_ne!(u1a, u2);
@@ -171,10 +250,30 @@ mod tests {
 
     #[test]
     fn check_valid_federated_users() {
-        let f1a = FederatedUser::new("aws", "123456789012", "user@domain").unwrap();
-        let f1b = FederatedUser::new("aws", "123456789012", "user@domain").unwrap();
-        let f2 = FederatedUser::new("partition-with-32-characters1234", "123456789012", "user@domain").unwrap();
-        let f3 = FederatedUser::new("aws", "123456789012", "user@domain-with_32-characters==").unwrap();
+        let f1a = FederatedUser::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .user_name("user@domain")
+            .build()
+            .unwrap();
+        let f1b = FederatedUser::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .user_name("user@domain")
+            .build()
+            .unwrap();
+        let f2 = FederatedUser::builder()
+            .partition("partition-with-32-characters1234")
+            .account_id("123456789012")
+            .user_name("user@domain")
+            .build()
+            .unwrap();
+        let f3 = FederatedUser::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .user_name("user@domain-with_32-characters==")
+            .build()
+            .unwrap();
 
         assert_eq!(f1a, f1b);
         assert_ne!(f1a, f2);
@@ -188,42 +287,124 @@ mod tests {
     #[test]
     fn check_invalid_federated_users() {
         assert_eq!(
-            FederatedUser::new("", "123456789012", "user@domain",).unwrap_err().to_string(),
+            FederatedUser::builder()
+                .partition("")
+                .account_id("123456789012")
+                .user_name("user@domain")
+                .build()
+                .unwrap_err()
+                .to_string(),
             r#"Invalid partition: """#
         );
 
-        assert_eq!(FederatedUser::new("aws", "", "user@domain",).unwrap_err().to_string(), r#"Invalid account id: """#);
+        assert_eq!(
+            FederatedUser::builder()
+                .partition("aws")
+                .account_id("")
+                .user_name("user@domain")
+                .build()
+                .unwrap_err()
+                .to_string(),
+            r#"Invalid account id: """#
+        );
 
         assert_eq!(
-            FederatedUser::new("aws", "123456789012", "",).unwrap_err().to_string(),
+            FederatedUser::builder()
+                .partition("aws")
+                .account_id("123456789012")
+                .user_name("")
+                .build()
+                .unwrap_err()
+                .to_string(),
             r#"Invalid federated user name: """#
         );
 
         assert_eq!(
-            FederatedUser::new("aws", "123456789012", "user!name@domain",).unwrap_err().to_string(),
+            FederatedUser::builder()
+                .partition("aws")
+                .account_id("123456789012")
+                .user_name("user!name@domain")
+                .build()
+                .unwrap_err()
+                .to_string(),
             r#"Invalid federated user name: "user!name@domain""#
         );
 
         assert_eq!(
-            FederatedUser::new("aws", "123456789012", "u",).unwrap_err().to_string(),
+            FederatedUser::builder()
+                .partition("aws")
+                .account_id("123456789012")
+                .user_name("u")
+                .build()
+                .unwrap_err()
+                .to_string(),
             r#"Invalid federated user name: "u""#
         );
 
         assert_eq!(
-            FederatedUser::new("partition-with-33-characters12345", "123456789012", "user@domain",)
+            FederatedUser::builder()
+                .partition("partition-with-33-characters12345")
+                .account_id("123456789012")
+                .user_name("user@domain")
+                .build()
                 .unwrap_err()
                 .to_string(),
             r#"Invalid partition: "partition-with-33-characters12345""#
         );
 
         assert_eq!(
-            FederatedUser::new("aws", "1234567890123", "user@domain",).unwrap_err().to_string(),
+            FederatedUser::builder()
+                .partition("aws")
+                .account_id("1234567890123")
+                .user_name("user@domain")
+                .build()
+                .unwrap_err()
+                .to_string(),
             r#"Invalid account id: "1234567890123""#
         );
 
         assert_eq!(
-            FederatedUser::new("aws", "123456789012", "user@domain-with-33-characters===",).unwrap_err().to_string(),
+            FederatedUser::builder()
+                .partition("aws")
+                .account_id("123456789012")
+                .user_name("user@domain-with-33-characters===")
+                .build()
+                .unwrap_err()
+                .to_string(),
             r#"Invalid federated user name: "user@domain-with-33-characters===""#
+        );
+    }
+
+    #[test]
+    fn check_builder_missing_fields() {
+        let err = FederatedUser::builder().build().unwrap_err();
+        assert_eq!(err, PrincipalError::MissingField("partition"));
+
+        let err = FederatedUser::builder().partition("aws").build().unwrap_err();
+        assert_eq!(err, PrincipalError::MissingField("account_id"));
+
+        let err = FederatedUser::builder().partition("aws").account_id("123456789012").build().unwrap_err();
+        assert_eq!(err, PrincipalError::MissingField("user_name"));
+        assert_eq!(err.to_string(), "Missing required field: user_name");
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn check_deprecated_new() {
+        let expected = FederatedUser::builder()
+            .partition("aws")
+            .account_id("123456789012")
+            .user_name("test-user")
+            .build()
+            .unwrap();
+        assert_eq!(FederatedUser::new("aws", "123456789012", "test-user").unwrap(), expected);
+        assert_eq!(
+            FederatedUser::new("", "123456789012", "test-user").unwrap_err(),
+            PrincipalError::InvalidPartition("".to_string())
+        );
+        assert_eq!(
+            FederatedUser::new("aws", "123456789012", "u").unwrap_err(),
+            PrincipalError::InvalidFederatedUserName("u".to_string())
         );
     }
 }
