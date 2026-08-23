@@ -109,6 +109,3 @@ typenum = "1.20"
 uuid = "1.22"
 whoami = "2.1"
 zeroize = "1.8"
-
-[workspace.metadata.cargo-udeps.ignore]
-normal = ["scratchstack-hakari"]

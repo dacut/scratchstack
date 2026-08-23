@@ -15,10 +15,7 @@ chrono.workspace = true
 clap = { workspace = true, features = ["derive"] }
 env_logger.workspace = true
 form_urlencoded.workspace = true
-http-body.workspace = true
 log.workspace = true
-quick-xml = { workspace = true, features = ["serialize"] }
-rustls.workspace = true
 scratchstack-arn.path = "../scratchstack-arn"
 scratchstack-aspen.path = "../scratchstack-aspen"
 scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features = [
@@ -38,7 +35,7 @@ scratchstack-core = { path = "../scratchstack-core", features = [
     "tower-log",
     "tracing",
 ] }
-scratchstack-hakari = { path = "../scratchstack-hakari" }
+scratchstack-hakari.path = "../scratchstack-hakari"
 scratchstack-iam-database.path = "../scratchstack-iam-database"
 scratchstack-shapes-iam.path = "../scratchstack-shapes-iam"
 scratchstack-shapes-sts.path = "../scratchstack-shapes-sts"
@@ -52,7 +49,6 @@ sqlx = { workspace = true, features = [
     "tls-rustls",
 ] }
 tokio = { workspace = true, features = ["net", "rt-multi-thread"] }
-toml.workspace = true
 tower.workspace = true
 
 [dev-dependencies]
