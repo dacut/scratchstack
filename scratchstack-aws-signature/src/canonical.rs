@@ -19,15 +19,15 @@ use {
     bytes::Bytes,
     chrono::{DateTime, Utc, offset::FixedOffset},
     encoding_rs::UTF_8,
-    http::{
-        header::{HeaderMap, HeaderValue},
-        request::{Parts, Request},
-        uri::Uri,
-    },
     lazy_static::lazy_static,
     log::trace,
     qualifier_attr::qualifiers,
     regex::Regex,
+    scratchstack_core::http::{
+        header::{HeaderMap, HeaderValue},
+        request::{Parts, Request},
+        uri::Uri,
+    },
     std::{
         borrow::Cow,
         collections::HashMap,
@@ -1326,7 +1326,7 @@ mod tests {
             constants::*,
         },
         bytes::Bytes,
-        http::{
+        scratchstack_core::http::{
             method::Method,
             request::Request,
             uri::{PathAndQuery, Uri},

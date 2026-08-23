@@ -3,13 +3,16 @@ use {
         constants::*,
         operations::{assume_role, get_caller_identity},
     },
-    axum::{
-        body::{Body, Bytes},
-        extract::{Extension, RawQuery, State},
-        response::Response,
-    },
     scratchstack_aws_principal::{Principal, SessionData},
-    scratchstack_core::{RequestId, response::Responder as _},
+    scratchstack_core::{
+        RequestId,
+        axum::{
+            body::{Body, Bytes},
+            extract::{Extension, RawQuery, State},
+            response::Response,
+        },
+        response::Responder as _,
+    },
     scratchstack_shapes_sts::{
         action::{Action, VERSION as STS_VERSION},
         types::error::{InternalFailure, InvalidAction, InvalidClientTokenId, MalformedInput},
@@ -28,7 +31,6 @@ pub(crate) struct ServiceState {
     pub(crate) secure_transport: bool,
 }
 
-#[axum::debug_handler]
 pub(crate) async fn serve_request(
     State(svc_state): State<ServiceState>,
     request_id: RequestId,
@@ -107,17 +109,19 @@ mod tests {
     use {
         super::{ServiceState, serve_request},
         crate::constants::*,
-        axum::{
-            body::{Body, Bytes},
-            extract::{Extension, RawQuery, State},
-            http::StatusCode,
-            response::Response,
-        },
         chrono::Utc,
         http_body_util::BodyExt as _,
         pretty_assertions::assert_eq,
         scratchstack_aws_principal::{Principal, RootUser, SessionData, SessionValue, User},
-        scratchstack_core::RequestId,
+        scratchstack_core::{
+            RequestId,
+            axum::{
+                body::{Body, Bytes},
+                extract::{Extension, RawQuery, State},
+                http::StatusCode,
+                response::Response,
+            },
+        },
         scratchstack_iam_database::{RequestExecutor as _, migrate::MIGRATOR, utils::TempDatabase},
         scratchstack_shapes_iam::operation::CreateSessionTokenEncryptionKeyRequest,
         sqlx::{postgres::PgPoolOptions, raw_sql},

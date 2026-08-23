@@ -2501,7 +2501,6 @@ dependencies = [
  "scratchstack-arn",
  "scratchstack-hakari",
  "serde",
- "zeroize",
 ]
 
 [[package]]
@@ -2511,7 +2510,6 @@ dependencies = [
  "aes",
  "aes-gcm",
  "ascii-casing",
- "axum",
  "base64 0.23.1",
  "bon",
  "bytes",
@@ -2520,7 +2518,6 @@ dependencies = [
  "env_logger",
  "hex",
  "hmac",
- "http",
  "http-body",
  "http-body-util",
  "lazy_static",
@@ -2661,6 +2658,7 @@ dependencies = [
  "log",
  "memchr",
  "num-traits",
+ "percent-encoding",
  "postcard",
  "proc-macro2",
  "quote",
@@ -2710,7 +2708,6 @@ dependencies = [
  "chrono",
  "clap",
  "env_logger",
- "futures",
  "hex",
  "indoc",
  "log",
@@ -2767,14 +2764,11 @@ dependencies = [
 name = "scratchstack-service-iam"
 version = "0.12.0"
 dependencies = [
- "axum",
  "chrono",
  "clap",
  "derive_builder",
  "env_logger",
  "form_urlencoded",
- "futures",
- "http",
  "http-body",
  "http-body-util",
  "log",
@@ -2803,15 +2797,12 @@ dependencies = [
 name = "scratchstack-service-sts"
 version = "0.12.0"
 dependencies = [
- "axum",
  "bon",
  "bytes",
  "chrono",
  "clap",
  "env_logger",
  "form_urlencoded",
- "futures",
- "http",
  "http-body",
  "http-body-util",
  "log",
@@ -2858,7 +2849,6 @@ dependencies = [
  "bon",
  "chrono",
  "clap",
- "derive_builder",
  "env_logger",
  "regex",
  "scratchstack-cli-utils",
@@ -2878,7 +2868,6 @@ dependencies = [
  "bon",
  "chrono",
  "clap",
- "derive_builder",
  "env_logger",
  "log",
  "regex",

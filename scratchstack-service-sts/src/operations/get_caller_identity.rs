@@ -3,10 +3,13 @@ use {
         constants::*,
         service::{internal_failure, security_token_invalid},
     },
-    axum::{body::Body, response::Response},
     scratchstack_arn::Arn,
     scratchstack_aws_principal::{Principal, SessionData, SessionValue},
-    scratchstack_core::{RequestId, response::Responder as _},
+    scratchstack_core::{
+        RequestId,
+        axum::{body::Body, response::Response},
+        response::Responder as _,
+    },
     scratchstack_shapes_sts::operation::{GetCallerIdentityResponse, GetCallerIdentityResponseEnvelope},
 };
 

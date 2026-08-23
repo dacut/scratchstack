@@ -4,10 +4,13 @@ use {
         constants::SESSION_KEY_AWS_PRINCIPAL_ACCOUNT,
         service::{ServiceState, internal_failure, malformed_input},
     },
-    axum::{body::Body, response::Response},
     scratchstack_aws_principal::{Principal, SessionData, SessionValue},
     scratchstack_aws_signature::SessionPolicies,
-    scratchstack_core::{RequestId, response::Responder as _},
+    scratchstack_core::{
+        RequestId,
+        axum::{body::Body, response::Response},
+        response::Responder as _,
+    },
     scratchstack_iam_database::RequestExecutor,
     scratchstack_shapes_iam::{
         action::Action,

@@ -21,7 +21,6 @@ base64.workspace = true
 bon.workspace = true
 clap = { workspace = true, optional = true, features = ["derive"] }
 chrono = { workspace = true, features = ["clock", "serde", "std"] }
-futures.workspace = true
 hex.workspace = true
 indoc.workspace = true
 log.workspace = true

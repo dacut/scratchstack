@@ -1,11 +1,11 @@
 use {
     crate::constants::*,
     bon::Builder,
-    http::status::StatusCode,
     log::error,
     scratchstack_core::{
         ProvideRequestId,
         error::{ErrorType, ProvideErrorMetadata},
+        http::status::StatusCode,
     },
     std::{
         error::Error,

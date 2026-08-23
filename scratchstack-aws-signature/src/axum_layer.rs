@@ -4,11 +4,11 @@ use {
         InvalidRequestMethodError, SignatureError, SignatureOptions, SignedHeaderRequirements,
         canonical::get_content_type_and_charset, constants::*, sigv4_validate_request,
     },
-    axum::{body::Body, extract::Request, http::method::Method, response::Response},
     bon::Builder,
     chrono::Utc,
     scratchstack_core::{
         RequestId,
+        axum::{body::Body, extract::Request, http::method::Method, response::Response},
         response::{ErrorResponseEnvelope, Responder as _},
     },
     std::{
@@ -410,7 +410,11 @@ mod tests {
             InternalServiceError, InvalidClientTokenIdError, KSecretKey, NoSignedHeaderRequirements, SessionPolicies,
             SignatureError, SignatureOptions, XmlErrorMapper,
         },
-        axum::{
+        chrono::Duration,
+        http_body_util::BodyExt,
+        pretty_assertions::assert_eq,
+        scratchstack_aws_principal::{Principal, User},
+        scratchstack_core::axum::{
             Router,
             body::Body,
             extract::Extension,
@@ -418,10 +422,6 @@ mod tests {
             response::Response,
             routing::get,
         },
-        chrono::Duration,
-        http_body_util::BodyExt,
-        pretty_assertions::assert_eq,
-        scratchstack_aws_principal::{Principal, User},
         std::{
             future::Future,
             pin::Pin,

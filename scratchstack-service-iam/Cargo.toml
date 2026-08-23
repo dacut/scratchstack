@@ -10,24 +10,11 @@ repository.workspace = true
 version.workspace = true
 
 [dependencies]
-axum = { workspace = true, features = [
-    "form",
-    "http1",
-    "http2",
-    "macros",
-    "original-uri",
-    "query",
-    "tokio",
-    "tower-log",
-    "tracing",
-] }
 chrono.workspace = true
 clap = { workspace = true, features = ["derive"] }
 derive_builder.workspace = true
 env_logger.workspace = true
 form_urlencoded.workspace = true
-futures.workspace = true
-http.workspace = true
 http-body.workspace = true
 log.workspace = true
 quick-xml = { workspace = true, features = ["serialize"] }
@@ -39,7 +26,18 @@ scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features 
 ] }
 scratchstack-aws-principal.path = "../scratchstack-aws-principal"
 scratchstack-config.path = "../scratchstack-config"
-scratchstack-core = { path = "../scratchstack-core", features = ["tls"] }
+scratchstack-core = { path = "../scratchstack-core", features = [
+    "form",
+    "http1",
+    "http2",
+    "macros",
+    "original-uri",
+    "query",
+    "tls",
+    "tokio",
+    "tower-log",
+    "tracing",
+] }
 scratchstack-hakari = { path = "../scratchstack-hakari" }
 scratchstack-iam-database.path = "../scratchstack-iam-database"
 scratchstack-shapes-iam.path = "../scratchstack-shapes-iam"
