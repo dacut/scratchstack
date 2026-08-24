@@ -27,7 +27,8 @@ fn pct_encode(s: &str) -> String {
 ///     url: Some("postgresql://localhost/scratchstack".to_string()),
 /// };
 /// ```
-#[derive(Builder, Clone, Debug, Deserialize)]
+#[derive(Builder, Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct DatabaseConfig {
     /// The database URL to connect to. If the URL contains the placeholder `${password}`, then either

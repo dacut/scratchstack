@@ -10,11 +10,7 @@ repository.workspace = true
 version.workspace = true
 
 [dependencies]
-bon.workspace = true
 chrono.workspace = true
-clap = { workspace = true, features = ["derive"] }
-env_logger.workspace = true
-form_urlencoded.workspace = true
 log.workspace = true
 scratchstack-arn.path = "../scratchstack-arn"
 scratchstack-aspen.path = "../scratchstack-aspen"
@@ -22,7 +18,6 @@ scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features 
     "unstable",
 ] }
 scratchstack-aws-principal.path = "../scratchstack-aws-principal"
-scratchstack-config.path = "../scratchstack-config"
 scratchstack-core = { path = "../scratchstack-core", features = [
     "form",
     "http1",
@@ -37,9 +32,9 @@ scratchstack-core = { path = "../scratchstack-core", features = [
 ] }
 scratchstack-hakari.path = "../scratchstack-hakari"
 scratchstack-iam-database.path = "../scratchstack-iam-database"
+scratchstack-service-common.path = "../scratchstack-service-common"
 scratchstack-shapes-iam.path = "../scratchstack-shapes-iam"
 scratchstack-shapes-sts.path = "../scratchstack-shapes-sts"
-serde = { workspace = true, features = ["derive"] }
 sqlx = { workspace = true, features = [
     "all-databases",
     "chrono",
@@ -48,8 +43,6 @@ sqlx = { workspace = true, features = [
     "runtime-tokio",
     "tls-rustls",
 ] }
-tokio = { workspace = true, features = ["net", "rt-multi-thread"] }
-tower.workspace = true
 
 [dev-dependencies]
 bytes.workspace = true
@@ -57,3 +50,4 @@ form_urlencoded.workspace = true
 http-body-util.workspace = true
 pretty_assertions.workspace = true
 test-log.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

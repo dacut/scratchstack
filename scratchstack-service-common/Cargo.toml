@@ -1,0 +1,46 @@
+[package]
+name = "scratchstack-service-common"
+description = "Types and helpers shared by the Scratchstack service implementations"
+
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+bon.workspace = true
+form_urlencoded.workspace = true
+log.workspace = true
+scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features = [
+    "unstable",
+] }
+scratchstack-config.path = "../scratchstack-config"
+scratchstack-core = { path = "../scratchstack-core", features = [
+    "form",
+    "http1",
+    "http2",
+    "macros",
+    "original-uri",
+    "query",
+    "tls",
+    "tokio",
+    "tower-log",
+    "tracing",
+] }
+scratchstack-hakari = { path = "../scratchstack-hakari" }
+scratchstack-iam-database.path = "../scratchstack-iam-database"
+sqlx = { workspace = true, features = [
+    "all-databases",
+    "chrono",
+    "macros",
+    "migrate",
+    "runtime-tokio",
+    "tls-rustls",
+] }
+tokio = { workspace = true, features = ["net"] }
+tower.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true

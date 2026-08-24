@@ -22,8 +22,8 @@ pub const DEFAULT_PARTITION: &str = "aws";
 ///     region: Some("us-east-1".to_string()),
 /// };
 /// ```
-#[derive(Builder, Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Builder, Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct ScopeConfig {
     /// The cloud partition this service is running in.

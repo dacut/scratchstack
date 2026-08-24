@@ -12,15 +12,15 @@
 )]
 #![cfg_attr(doc, feature(doc_cfg))]
 
-mod common;
 mod database;
 mod error;
 mod http_listener;
 mod runtime;
 mod scope;
+mod service;
 mod tls;
 
-pub use self::{common::*, database::*, error::*, http_listener::*, runtime::*, scope::*, tls::*};
+pub use self::{database::*, error::*, http_listener::*, runtime::*, scope::*, service::*, tls::*};
 
 use {serde::de::DeserializeOwned, std::path::Path};
 

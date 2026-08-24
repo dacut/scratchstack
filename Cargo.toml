@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "scratchstack",
     "scratchstack-arn",
     "scratchstack-aspen",
     "scratchstack-aws-principal",
@@ -11,6 +12,7 @@ members = [
     "scratchstack-hakari",
     "scratchstack-iam-database",
     "scratchstack-pagination",
+    "scratchstack-service-common",
     "scratchstack-service-iam",
     "scratchstack-service-sts",
     "scratchstack-shapegen",

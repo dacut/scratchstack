@@ -19,8 +19,8 @@ pub const DEFAULT_ADDRESS: IpAddr = IpAddr::V6(Ipv6Addr::LOCALHOST);
 
 /// HTTP listener configuration data for a service. This allows for optional fields and references
 /// to files for the TLS configuration.
-#[derive(Builder, Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Builder, Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HttpListenerConfig {
     /// The IP address to listen on. Defaults to the localhost address (`::1`), which does
     /// not accept external connections.
@@ -83,9 +83,19 @@ impl HttpListenerConfig {
 
     /// Returns the socket address to listen on, combining the resolved IP address and port.
     pub fn socket_addr(&self) -> SocketAddr {
+        self.socket_addr_with_default_port(self.port())
+    }
+
+    /// Returns the socket address to listen on, using `default_port` if this configuration does
+    /// not specify a port.
+    ///
+    /// Services each listen on their own port, so the port a service falls back to is a property
+    /// of the service rather than of the configuration file; this lets the caller supply it.
+    pub fn socket_addr_with_default_port(&self, default_port: u16) -> SocketAddr {
+        let port = self.port.unwrap_or(default_port);
         match self.address() {
-            IpAddr::V4(ipv4) => SocketAddr::V4(SocketAddrV4::new(ipv4, self.port())),
-            IpAddr::V6(ipv6) => SocketAddr::V6(SocketAddrV6::new(ipv6, self.port(), 0, 0)),
+            IpAddr::V4(ipv4) => SocketAddr::V4(SocketAddrV4::new(ipv4, port)),
+            IpAddr::V6(ipv6) => SocketAddr::V6(SocketAddrV6::new(ipv6, port, 0, 0)),
         }
     }
 
@@ -111,6 +121,14 @@ impl HttpListenerConfig {
         if let Some(tls) = &other.tls {
             self.tls = Some(tls.clone());
         }
+    }
+
+    /// Resolve this configuration, using `default_port` if it does not specify a port.
+    pub fn resolve_with_default_port(&self, default_port: u16) -> Result<ResolvedHttpListenerConfig, ConfigError> {
+        Ok(ResolvedHttpListenerConfig {
+            socket_addr: self.socket_addr_with_default_port(default_port),
+            tls: self.tls_config()?,
+        })
     }
 }
 
