@@ -42,7 +42,7 @@ pub(crate) async fn serve_request(
     // Policies may be conditioned on the connection the request arrived on, and a missing
     // aws:SourceIp silently satisfies a NotIpAddress condition; a request whose peer address is
     // unknown cannot be evaluated safely, so fail closed.
-    let Some(request_metadata) = RequestMetadata::from_connection(
+    let Some(request_metadata) = RequestMetadata::from_request(
         svc_state.secure_transport,
         svc_state.forwarded_for.as_deref(),
         connect_info,
@@ -154,8 +154,8 @@ mod tests {
     /// Seed data for the authorization tests: one user whose inline policy allows
     /// `iam:ListUsers`, one user with no policies at all, and users whose grants are gated on
     /// the request-time condition keys (`aws:SecureTransport`, `aws:CurrentTime`,
-    /// `aws:EpochTime`, `aws:SourceIp`) that `check_authorization` injects, and on the
-    /// `aws:TokenIssueTime` the session token carries.
+    /// `aws:EpochTime`, `aws:SourceIp`, `aws:referer`, `aws:UserAgent`) that
+    /// `check_authorization` injects, and on the `aws:TokenIssueTime` the session token carries.
     const AUTHZ_TEST_DATA: &str = r#"
         INSERT INTO iam.partition(partition) VALUES ('aws');
 
@@ -175,7 +175,8 @@ mod tests {
         ('SVCTESTTOKENUSER', '123456789012', 'token-user', 'Token-User', '/'),
         ('SVCTESTREGIONUSR', '123456789012', 'region-user', 'Region-User', '/'),
         ('SVCTESTOTHERRGN1', '123456789012', 'other-region-user', 'Other-Region-User', '/'),
-        ('SVCTESTDIRECTUSR', '123456789012', 'direct-call-user', 'Direct-Call-User', '/');
+        ('SVCTESTDIRECTUSR', '123456789012', 'direct-call-user', 'Direct-Call-User', '/'),
+        ('SVCTESTAGENTUSR1', '123456789012', 'agent-user', 'Agent-User', '/');
 
         INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
         ('SVCTESTALLOWUSER', 'allow-list-users', 'Allow-List-Users',
@@ -198,6 +199,10 @@ mod tests {
         ('SVCTESTIPV6USER1', 'allow-from-ipv6-block', 'Allow-From-Ipv6-Block',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
            "Condition":{"IpAddress":{"aws:SourceIp":"2001:db8::/32"}}}]}'),
+        ('SVCTESTAGENTUSR1', 'allow-known-clients', 'Allow-Known-Clients',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+           "Condition":{"StringLike":{"aws:UserAgent":"aws-cli/*"},
+                        "StringEquals":{"aws:referer":"https://console.example.com/"}}}]}'),
         ('SVCTESTDIRECTUSR', 'allow-direct-calls', 'Allow-Direct-Calls',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
            "Condition":{"Bool":{"aws:ViaAWSService":"false","aws:PrincipalIsAWSService":"false"}}}]}'),
@@ -449,6 +454,30 @@ mod tests {
             .await
     }
 
+    /// Invoke `serve_request` directly for a request carrying the given headers.
+    async fn call_with_headers(
+        svc_state: &ServiceState,
+        principal: Principal,
+        session_data: SessionData,
+        headers: HeaderMap,
+        parameters: &str,
+    ) -> (StatusCode, String) {
+        call_as(svc_state, principal, session_data, SessionPolicies::default(), TEST_SOURCE_IP, headers, parameters)
+            .await
+    }
+
+    /// Build a header map carrying a `Referer`, a `User-Agent`, or both.
+    fn client_headers(referer: Option<&str>, user_agent: Option<&str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        if let Some(referer) = referer {
+            headers.append("referer", referer.parse().expect("invalid header value"));
+        }
+        if let Some(user_agent) = user_agent {
+            headers.append("user-agent", user_agent.parse().expect("invalid header value"));
+        }
+        headers
+    }
+
     /// Invoke `serve_request` directly for a request that arrived from `source_ip` carrying
     /// `forwarded_for` in its `X-Forwarded-For` header.
     async fn call_forwarded(
@@ -658,6 +687,36 @@ mod tests {
         let (status, body) = call(&svc_state, principal, session_data, parameters).await;
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
         assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        // aws:referer and aws:UserAgent carry the headers the caller sent, so a grant gated on
+        // both admits a request that announces itself as expected...
+        let headers = client_headers(Some("https://console.example.com/"), Some("aws-cli/2.15.0"));
+        let (principal, session_data) = user_identity("SVCTESTAGENTUSR1", "Agent-User");
+        let (status, body) = call_with_headers(&svc_state, principal, session_data, headers, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        // ...refuses one whose User-Agent does not match the pattern...
+        let headers = client_headers(Some("https://console.example.com/"), Some("curl/8.4.0"));
+        let (principal, session_data) = user_identity("SVCTESTAGENTUSR1", "Agent-User");
+        let (status, body) = call_with_headers(&svc_state, principal, session_data, headers, parameters).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // ...and refuses one that sends neither header, since a condition on an absent key does
+        // not match.
+        let (principal, session_data) = user_identity("SVCTESTAGENTUSR1", "Agent-User");
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A caller that sends only the User-Agent still fails the Referer half of the grant,
+        // confirming both keys are read rather than one standing in for the other.
+        let headers = client_headers(None, Some("aws-cli/2.15.0"));
+        let (principal, session_data) = user_identity("SVCTESTAGENTUSR1", "Agent-User");
+        let (status, body) = call_with_headers(&svc_state, principal, session_data, headers, parameters).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
 
         // aws:ViaAWSService and aws:PrincipalIsAWSService are both false for a request a
         // principal makes for itself. A plain Bool condition does not match an absent key, so a

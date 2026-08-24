@@ -5,16 +5,20 @@ use {
     scratchstack_config::ResolvedForwardedForConfig,
     scratchstack_core::axum::{
         extract::{ConnectInfo, Extension},
-        http::HeaderMap,
+        http::{
+            HeaderMap,
+            header::{HeaderName, REFERER, USER_AGENT},
+        },
     },
     std::net::{IpAddr, SocketAddr},
 };
 
-/// What the connection a request arrived on says about the request.
+/// What a request says about itself, beyond its parameters: where it came from and what it
+/// announced itself as.
 ///
-/// These describe the request itself rather than the caller or the resources it names, and back
-/// the corresponding condition keys during policy evaluation. They travel together from the
-/// request dispatcher to the authorization check, so a service's operations need not know which
+/// These describe the request rather than the caller or the resources it names, and back the
+/// corresponding condition keys during policy evaluation. They travel together from the request
+/// dispatcher to the authorization check, so a service's operations need not know which
 /// condition keys are derived from them.
 ///
 /// This struct is `#[non_exhaustive]`: outside this crate it must be built with
@@ -29,9 +33,16 @@ use {
 ///     source_ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
 /// };
 /// ```
-#[derive(Builder, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Builder, Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct RequestMetadata {
+    /// The `Referer` header the request carried, if any; supplies the `aws:referer` condition
+    /// key. Both spell "referrer" the way the HTTP specification misspelled it.
+    ///
+    /// The caller chooses this value freely, so a policy must not rely on it to keep anyone out;
+    /// it is a hint about how a request was made, not evidence of who made it.
+    pub referer: Option<String>,
+
     /// Whether the request arrived over TLS; supplies the `aws:SecureTransport` condition key.
     pub secure_transport: bool,
 
@@ -39,20 +50,31 @@ pub struct RequestMetadata {
     /// address of the client a trusted proxy forwarded the request for, when the listener is
     /// configured to believe one, and otherwise the address the connection itself came from.
     pub source_ip: IpAddr,
+
+    /// The `User-Agent` header the request carried, if any; supplies the `aws:UserAgent`
+    /// condition key.
+    ///
+    /// As with [`referer`][Self::referer], the caller chooses this value freely and a policy
+    /// must not rely on it to keep anyone out.
+    pub user_agent: Option<String>,
 }
 
 impl RequestMetadata {
-    /// Derive the metadata for a request from the connection it arrived on: whether the listener
-    /// terminates TLS and which proxies it believes (both carried by
-    /// [`ServiceState`][crate::ServiceState], since the configuration decides them), plus the
-    /// connection information and headers the request itself carries.
+    /// Derive the metadata for a request from how the listener is configured -- whether it
+    /// terminates TLS and which proxies it believes, both carried by
+    /// [`ServiceState`][crate::ServiceState] -- and from the connection information and headers
+    /// the request itself carries.
+    ///
+    /// A header that is absent, or whose value is not text, leaves the corresponding field
+    /// `None`, and the condition key it backs is then absent during evaluation rather than
+    /// present and empty.
     ///
     /// Returns `None` when the request carries no connection information, which happens only if
     /// the service is served without [`serve`][crate::serve]. Callers must fail such a request
     /// closed rather than evaluate policies without `aws:SourceIp`: an absent value silently
     /// satisfies a `NotIpAddress` condition, so an explicit deny outside a CIDR block would not
     /// fire.
-    pub fn from_connection(
+    pub fn from_request(
         secure_transport: bool,
         forwarded_for: Option<&ResolvedForwardedForConfig>,
         connect_info: Option<Extension<ConnectInfo<SocketAddr>>>,
@@ -62,11 +84,22 @@ impl RequestMetadata {
 
         Some(
             Self::builder()
+                .maybe_referer(header_text(headers, REFERER))
                 .secure_transport(secure_transport)
                 .source_ip(source_ip(peer, forwarded_for, headers))
+                .maybe_user_agent(header_text(headers, USER_AGENT))
                 .build(),
         )
     }
+}
+
+/// The value of a header a caller may set, as the condition key it backs reports it.
+///
+/// A header that is absent or carries something other than text has no value to report: the key
+/// is then left out of the session data, so a condition on it does not match rather than
+/// matching an empty string.
+fn header_text(headers: &HeaderMap, name: HeaderName) -> Option<String> {
+    headers.get(&name)?.to_str().ok().map(str::to_string)
 }
 
 /// The address a request came from, as `aws:SourceIp` reports it.
@@ -152,7 +185,7 @@ mod tests {
         scratchstack_config::{ForwardedForConfig, Resolvable as _, ResolvedForwardedForConfig},
         scratchstack_core::axum::{
             extract::{ConnectInfo, Extension},
-            http::HeaderMap,
+            http::{HeaderMap, HeaderValue},
         },
         std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     };
@@ -184,14 +217,14 @@ mod tests {
         headers
     }
 
-    /// The source IP `from_connection` derives for a peer, with no forwarding configured.
+    /// The source IP `from_request` derives for a peer, with no forwarding configured.
     fn source_ip_of(peer: IpAddr, headers: &HeaderMap) -> IpAddr {
-        RequestMetadata::from_connection(true, None, connect_info(peer), headers).expect("no metadata").source_ip
+        RequestMetadata::from_request(true, None, connect_info(peer), headers).expect("no metadata").source_ip
     }
 
-    /// The source IP `from_connection` derives for a peer, believing proxies in `10.0.0.0/8`.
+    /// The source IP `from_request` derives for a peer, believing proxies in `10.0.0.0/8`.
     fn forwarded_source_ip_of(peer: IpAddr, headers: &HeaderMap) -> IpAddr {
-        RequestMetadata::from_connection(true, Some(&forwarded_for()), connect_info(peer), headers)
+        RequestMetadata::from_request(true, Some(&forwarded_for()), connect_info(peer), headers)
             .expect("no metadata")
             .source_ip
     }
@@ -219,17 +252,17 @@ mod tests {
     #[test]
     fn secure_transport_is_carried_through() {
         let peer = connect_info(CLIENT);
-        let metadata = RequestMetadata::from_connection(true, None, peer, &HeaderMap::new()).expect("no metadata");
+        let metadata = RequestMetadata::from_request(true, None, peer, &HeaderMap::new()).expect("no metadata");
         assert!(metadata.secure_transport);
 
         let peer = connect_info(CLIENT);
-        let metadata = RequestMetadata::from_connection(false, None, peer, &HeaderMap::new()).expect("no metadata");
+        let metadata = RequestMetadata::from_request(false, None, peer, &HeaderMap::new()).expect("no metadata");
         assert!(!metadata.secure_transport);
     }
 
     #[test]
     fn a_request_without_connection_information_has_no_metadata() {
-        assert_eq!(RequestMetadata::from_connection(true, None, None, &HeaderMap::new()), None);
+        assert_eq!(RequestMetadata::from_request(true, None, None, &HeaderMap::new()), None);
     }
 
     /// With no forwarding configured, the header is not read at all -- however plausible it
@@ -318,10 +351,47 @@ mod tests {
             .expect("failed to resolve forwarded_for configuration");
         let peer = connect_info(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)));
 
-        let metadata = RequestMetadata::from_connection(true, Some(&trust_all), peer, &headers(&["203.0.113.10"]))
+        let metadata = RequestMetadata::from_request(true, Some(&trust_all), peer, &headers(&["203.0.113.10"]))
             .expect("no metadata");
 
         assert_eq!(metadata.source_ip, CLIENT);
+    }
+
+    /// The Referer and User-Agent headers become condition keys as the caller sent them.
+    #[test]
+    fn referer_and_user_agent_come_from_the_headers() {
+        let mut request_headers = HeaderMap::new();
+        request_headers.append("referer", "https://example.com/console".parse().expect("invalid header value"));
+        request_headers.append("user-agent", "aws-cli/2.15.0".parse().expect("invalid header value"));
+
+        let metadata =
+            RequestMetadata::from_request(true, None, connect_info(CLIENT), &request_headers).expect("no metadata");
+
+        assert_eq!(metadata.referer.as_deref(), Some("https://example.com/console"));
+        assert_eq!(metadata.user_agent.as_deref(), Some("aws-cli/2.15.0"));
+    }
+
+    /// A header the caller did not send has no value to report, so the key it backs stays absent
+    /// rather than becoming an empty string.
+    #[test]
+    fn absent_headers_leave_no_value() {
+        let metadata =
+            RequestMetadata::from_request(true, None, connect_info(CLIENT), &HeaderMap::new()).expect("no metadata");
+
+        assert_eq!(metadata.referer, None);
+        assert_eq!(metadata.user_agent, None);
+    }
+
+    /// Neither does a header whose value is not text.
+    #[test]
+    fn non_text_headers_leave_no_value() {
+        let mut request_headers = HeaderMap::new();
+        request_headers.append("user-agent", HeaderValue::from_bytes(b"caf\xffe").expect("invalid header value"));
+
+        let metadata =
+            RequestMetadata::from_request(true, None, connect_info(CLIENT), &request_headers).expect("no metadata");
+
+        assert_eq!(metadata.user_agent, None);
     }
 
     /// A listener may name a header other than `X-Forwarded-For`.
@@ -339,7 +409,7 @@ mod tests {
         // The conventional header is not the configured one, so it is not read.
         request_headers.append("x-forwarded-for", "192.0.2.99".parse().expect("invalid header value"));
 
-        let metadata = RequestMetadata::from_connection(true, Some(&real_ip), connect_info(PROXY), &request_headers)
+        let metadata = RequestMetadata::from_request(true, Some(&real_ip), connect_info(PROXY), &request_headers)
             .expect("no metadata");
 
         assert_eq!(metadata.source_ip, CLIENT);

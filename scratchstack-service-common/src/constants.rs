@@ -45,6 +45,12 @@ pub const SESSION_KEY_AWS_PRINCIPAL_ACCOUNT: &str = "aws:PrincipalAccount";
 /// Session key for the ARN of the calling principal.
 pub const SESSION_KEY_AWS_PRINCIPAL_ARN: &str = "aws:PrincipalArn";
 
+/// Session key for the `Referer` header the request carried, if any.
+///
+/// "Referer" is a misspelling of "referrer" introduced by the original HTTP specification and
+/// preserved by every version since; AWS spells the condition key to match the header.
+pub const SESSION_KEY_AWS_REFERER: &str = "aws:referer";
+
 /// Session key indicating whether the request arrived over TLS.
 pub const SESSION_KEY_AWS_SECURE_TRANSPORT: &str = "aws:SecureTransport";
 
@@ -53,6 +59,9 @@ pub const SESSION_KEY_AWS_SOURCE_IP: &str = "aws:SourceIp";
 
 /// Session key for the unique id of the calling principal.
 pub const SESSION_KEY_AWS_USERID: &str = "aws:userid";
+
+/// Session key for the `User-Agent` header the request carried, if any.
+pub const SESSION_KEY_AWS_USER_AGENT: &str = "aws:UserAgent";
 
 /// Session key prefix for the tags attached to the resource a request operates on; the tag key
 /// follows the prefix.
