@@ -9,7 +9,8 @@ use {
         RequestId,
         axum::{
             body::{Body, Bytes},
-            extract::{Extension, RawQuery, State},
+            extract::{ConnectInfo, Extension, RawQuery, State},
+            http::HeaderMap,
             response::Response,
         },
         response::Responder as _,
@@ -19,20 +20,38 @@ use {
         action::{Action, VERSION as IAM_VERSION},
         types::error::{InternalFailure, InvalidAction, MalformedInput},
     },
-    std::str::from_utf8,
+    std::{net::SocketAddr, str::from_utf8},
 };
 
-pub(crate) use scratchstack_service_common::ServiceState;
+pub(crate) use scratchstack_service_common::{RequestMetadata, ServiceState};
 
+// A handler's parameters are its extractors: each one pulls a different piece of the request out
+// of the pipeline, so there is nothing to bundle.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn serve_request(
     State(svc_state): State<ServiceState>,
     request_id: RequestId,
+    connect_info: Option<Extension<ConnectInfo<SocketAddr>>>,
+    headers: HeaderMap,
     Extension(principal): Extension<Principal>,
     Extension(session_data): Extension<SessionData>,
     Extension(session_policies): Extension<SessionPolicies>,
     RawQuery(query): RawQuery,
     body: Bytes,
 ) -> Response<Body> {
+    // Policies may be conditioned on the connection the request arrived on, and a missing
+    // aws:SourceIp silently satisfies a NotIpAddress condition; a request whose peer address is
+    // unknown cannot be evaluated safely, so fail closed.
+    let Some(request_metadata) = RequestMetadata::from_connection(
+        svc_state.secure_transport,
+        svc_state.forwarded_for.as_deref(),
+        connect_info,
+        &headers,
+    ) else {
+        log::error!("{request_id}: Request carries no connection information");
+        return internal_failure(request_id);
+    };
+
     let body = match from_utf8(&body) {
         Ok(body) => body,
         Err(e) => {
@@ -50,10 +69,12 @@ pub(crate) async fn serve_request(
 
     match action.parse::<Action>() {
         Ok(Action::GetUser) => {
-            get_user(svc_state, request_id, principal, session_data, session_policies, &parameters).await
+            get_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
+                .await
         }
         Ok(Action::ListUsers) => {
-            list_users(svc_state, request_id, principal, session_data, session_policies, &parameters).await
+            list_users(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
+                .await
         }
         _ => invalid_action(request_id, &action, &version),
     }
@@ -89,21 +110,41 @@ mod tests {
         scratchstack_aspen::Policy as AspenPolicy,
         scratchstack_aws_principal::{AssumedRole, Principal, RootUser, SessionData, SessionValue, User},
         scratchstack_aws_signature::SessionPolicies,
+        scratchstack_config::{ForwardedForConfig, Resolvable as _},
         scratchstack_core::{
             RequestId,
             axum::{
                 body::{Body, Bytes},
-                extract::{Extension, RawQuery, State},
-                http::StatusCode,
+                extract::{ConnectInfo, Extension, RawQuery, State},
+                http::{HeaderMap, StatusCode},
                 response::Response,
             },
         },
         scratchstack_iam_database::{migrate::MIGRATOR, utils::TempDatabase},
         sqlx::raw_sql,
-        std::{str::FromStr as _, sync::Arc},
+        std::{
+            net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+            str::FromStr as _,
+            sync::Arc,
+        },
     };
 
     const TEST_ACCOUNT_ID: &str = "123456789012";
+
+    /// The peer address test requests arrive from unless a test names another, backing the
+    /// `aws:SourceIp` condition key. The addresses used here come from the documentation ranges
+    /// reserved by RFC 5737 and RFC 3849.
+    const TEST_SOURCE_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10));
+
+    /// A peer address outside the CIDR block the source-IP test policies grant.
+    const OUTSIDE_SOURCE_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(198, 51, 100, 7));
+
+    /// A peer address inside the IPv6 CIDR block the source-IP test policies grant.
+    const TEST_SOURCE_IPV6: IpAddr = IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1));
+
+    /// The address of the load balancer in the forwarded-header tests, inside the CIDR block
+    /// [`proxied_state`] trusts.
+    const TEST_PROXY_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
 
     /// Seed data for the authorization tests: one user whose inline policy allows
     /// `iam:ListUsers`, one user with no policies at all, and users whose grants are gated on
@@ -121,7 +162,10 @@ mod tests {
         ('SVCTESTTLSUSER01', '123456789012', 'tls-user', 'Tls-User', '/'),
         ('SVCTESTTIMEUSER1', '123456789012', 'time-user', 'Time-User', '/'),
         ('SVCTESTPASTUSER1', '123456789012', 'past-user', 'Past-User', '/'),
-        ('SVCTESTEPOCHUSR1', '123456789012', 'epoch-user', 'Epoch-User', '/');
+        ('SVCTESTEPOCHUSR1', '123456789012', 'epoch-user', 'Epoch-User', '/'),
+        ('SVCTESTIPV4USER1', '123456789012', 'ipv4-user', 'Ipv4-User', '/'),
+        ('SVCTESTIPV6USER1', '123456789012', 'ipv6-user', 'Ipv6-User', '/'),
+        ('SVCTESTDENYIPUSR', '123456789012', 'deny-ip-user', 'Deny-Ip-User', '/');
 
         INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
         ('SVCTESTALLOWUSER', 'allow-list-users', 'Allow-List-Users',
@@ -137,7 +181,18 @@ mod tests {
            "Condition":{"DateLessThan":{"aws:CurrentTime":"2020-01-01T00:00:00Z"}}}]}'),
         ('SVCTESTEPOCHUSR1', 'allow-after-2020-epoch', 'Allow-After-2020-Epoch',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
-           "Condition":{"NumericGreaterThan":{"aws:EpochTime":"1577836800"}}}]}');
+           "Condition":{"NumericGreaterThan":{"aws:EpochTime":"1577836800"}}}]}'),
+        ('SVCTESTIPV4USER1', 'allow-from-ipv4-block', 'Allow-From-Ipv4-Block',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+           "Condition":{"IpAddress":{"aws:SourceIp":"203.0.113.0/24"}}}]}'),
+        ('SVCTESTIPV6USER1', 'allow-from-ipv6-block', 'Allow-From-Ipv6-Block',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+           "Condition":{"IpAddress":{"aws:SourceIp":"2001:db8::/32"}}}]}'),
+        ('SVCTESTDENYIPUSR', 'deny-outside-ipv4-block', 'Deny-Outside-Ipv4-Block',
+         '{"Version":"2012-10-17","Statement":[
+           {"Effect":"Allow","Action":"iam:ListUsers","Resource":"*"},
+           {"Effect":"Deny","Action":"iam:ListUsers","Resource":"*",
+            "Condition":{"NotIpAddress":{"aws:SourceIp":"203.0.113.0/24"}}}]}');
 
         INSERT INTO iam.roles(role_id, account_id, role_name_lower, role_name_cased, path, assume_role_policy_document) VALUES
         ('SVCTESTROLE00001', '123456789012', 'session-role', 'Session-Role', '/',
@@ -278,6 +333,22 @@ mod tests {
         }
     }
 
+    /// A copy of `svc_state` configured to believe the `X-Forwarded-For` header of proxies in
+    /// `10.0.0.0/8`, standing in for a deployment behind a load balancer.
+    fn proxied_state(svc_state: &ServiceState) -> ServiceState {
+        let forwarded_for = ForwardedForConfig::builder()
+            .trusted_proxies(vec!["10.0.0.0/8".to_string()])
+            .build()
+            .resolve()
+            .expect("failed to resolve forwarded_for configuration");
+
+        ServiceState::builder()
+            .db(svc_state.db.clone())
+            .forwarded_for(Arc::new(forwarded_for))
+            .secure_transport(true)
+            .build()
+    }
+
     /// Invoke `serve_request` directly with the given identity and return the status and body.
     async fn call(
         svc_state: &ServiceState,
@@ -285,7 +356,16 @@ mod tests {
         session_data: SessionData,
         parameters: &str,
     ) -> (StatusCode, String) {
-        call_with_session_policies(svc_state, principal, session_data, SessionPolicies::default(), parameters).await
+        call_as(
+            svc_state,
+            principal,
+            session_data,
+            SessionPolicies::default(),
+            TEST_SOURCE_IP,
+            HeaderMap::new(),
+            parameters,
+        )
+        .await
     }
 
     /// Invoke `serve_request` directly with the given identity and session policies and return
@@ -297,9 +377,56 @@ mod tests {
         session_policies: SessionPolicies,
         parameters: &str,
     ) -> (StatusCode, String) {
+        call_as(svc_state, principal, session_data, session_policies, TEST_SOURCE_IP, HeaderMap::new(), parameters)
+            .await
+    }
+
+    /// Invoke `serve_request` directly with the given identity from the given peer address and
+    /// return the status and body.
+    async fn call_from(
+        svc_state: &ServiceState,
+        principal: Principal,
+        session_data: SessionData,
+        source_ip: IpAddr,
+        parameters: &str,
+    ) -> (StatusCode, String) {
+        call_as(svc_state, principal, session_data, SessionPolicies::default(), source_ip, HeaderMap::new(), parameters)
+            .await
+    }
+
+    /// Invoke `serve_request` directly for a request that arrived from `source_ip` carrying
+    /// `forwarded_for` in its `X-Forwarded-For` header.
+    async fn call_forwarded(
+        svc_state: &ServiceState,
+        principal: Principal,
+        session_data: SessionData,
+        source_ip: IpAddr,
+        forwarded_for: &str,
+        parameters: &str,
+    ) -> (StatusCode, String) {
+        let mut headers = HeaderMap::new();
+        headers.append("x-forwarded-for", forwarded_for.parse().expect("invalid header value"));
+
+        call_as(svc_state, principal, session_data, SessionPolicies::default(), source_ip, headers, parameters).await
+    }
+
+    /// Invoke `serve_request` directly with every facet of the request spelled out, standing in
+    /// for the connection information and identity the pipeline would otherwise supply.
+    #[allow(clippy::too_many_arguments)]
+    async fn call_as(
+        svc_state: &ServiceState,
+        principal: Principal,
+        session_data: SessionData,
+        session_policies: SessionPolicies,
+        source_ip: IpAddr,
+        headers: HeaderMap,
+        parameters: &str,
+    ) -> (StatusCode, String) {
         let response: Response<Body> = serve_request(
             State(svc_state.clone()),
             RequestId::new(),
+            Some(Extension(ConnectInfo(SocketAddr::new(source_ip, 49152)))),
+            headers,
             Extension(principal),
             Extension(session_data),
             Extension(session_policies),
@@ -389,6 +516,74 @@ mod tests {
         let (status, body) = call(&svc_state, principal, session_data, parameters).await;
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
         assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        // aws:SourceIp carries the address the request arrived from: a grant conditioned on a
+        // CIDR block admits a caller inside the block...
+        let (principal, session_data) = user_identity("SVCTESTIPV4USER1", "Ipv4-User");
+        let (status, body) = call_from(&svc_state, principal, session_data, TEST_SOURCE_IP, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        // ...and refuses one outside it.
+        let (principal, session_data) = user_identity("SVCTESTIPV4USER1", "Ipv4-User");
+        let (status, body) = call_from(&svc_state, principal, session_data, OUTSIDE_SOURCE_IP, parameters).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A dual-stack listener reports an IPv4 peer as an IPv4-mapped IPv6 address. The mapping
+        // is unwrapped before evaluation, so an IPv4 grant still matches such a caller.
+        let mapped_source_ip = IpAddr::V6(Ipv4Addr::new(203, 0, 113, 10).to_ipv6_mapped());
+        let (principal, session_data) = user_identity("SVCTESTIPV4USER1", "Ipv4-User");
+        let (status, body) = call_from(&svc_state, principal, session_data, mapped_source_ip, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        // IPv6 CIDR blocks are matched the same way, and do not match an IPv4 caller.
+        let (principal, session_data) = user_identity("SVCTESTIPV6USER1", "Ipv6-User");
+        let (status, body) = call_from(&svc_state, principal, session_data, TEST_SOURCE_IPV6, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        let (principal, session_data) = user_identity("SVCTESTIPV6USER1", "Ipv6-User");
+        let (status, body) = call_from(&svc_state, principal, session_data, TEST_SOURCE_IP, parameters).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A NotIpAddress condition on an explicit Deny statement leaves callers inside the block
+        // alone and stops everyone else.
+        let (principal, session_data) = user_identity("SVCTESTDENYIPUSR", "Deny-Ip-User");
+        let (status, body) = call_from(&svc_state, principal, session_data, TEST_SOURCE_IP, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        let (principal, session_data) = user_identity("SVCTESTDENYIPUSR", "Deny-Ip-User");
+        let (status, body) = call_from(&svc_state, principal, session_data, OUTSIDE_SOURCE_IP, parameters).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("with an explicit deny in an identity-based policy"), "unexpected body: {body}");
+
+        // A listener that trusts no proxy does not read the X-Forwarded-For header, so a caller
+        // outside the granted block cannot talk its way inside one.
+        let (principal, session_data) = user_identity("SVCTESTIPV4USER1", "Ipv4-User");
+        let (status, body) =
+            call_forwarded(&svc_state, principal, session_data, OUTSIDE_SOURCE_IP, "203.0.113.10", parameters).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A listener behind a load balancer takes the address that balancer reports, so the same
+        // grant is evaluated against the client rather than against the balancer...
+        let proxied_state = proxied_state(&svc_state);
+        let (principal, session_data) = user_identity("SVCTESTIPV4USER1", "Ipv4-User");
+        let (status, body) =
+            call_forwarded(&proxied_state, principal, session_data, TEST_PROXY_IP, "203.0.113.10", parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        // ...including when the client the balancer names is outside the block.
+        let (principal, session_data) = user_identity("SVCTESTIPV4USER1", "Ipv4-User");
+        let (status, body) =
+            call_forwarded(&proxied_state, principal, session_data, TEST_PROXY_IP, "198.51.100.7", parameters).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
 
         // An assumed-role session with no session policies is governed by the role's inline
         // policy, which allows iam:ListUsers.

@@ -16,6 +16,16 @@ threads = 20
 partition = "local"
 region = "local"
 
+# Uncomment when the services sit behind a load balancer, so that aws:SourceIp names the client
+# that reached the balancer rather than the balancer itself. Only requests arriving from
+# `trusted_proxies` have their header believed, and only the part of it those proxies appended:
+# a client connecting directly cannot talk its way into another address. Without this section,
+# the address the connection came from is used and no header is read.
+# A service may override either value in its own `[<service>.listener.forwarded_for]` section.
+# [defaults.listener.forwarded_for]
+# header = "x-forwarded-for"          # optional; this is the default
+# trusted_proxies = ["10.0.0.0/8"]    # required: IP addresses or CIDR blocks
+
 # Databases are named. Services referencing the same name share a single connection pool.
 [database.default]
 database = "scratchstack_iam"

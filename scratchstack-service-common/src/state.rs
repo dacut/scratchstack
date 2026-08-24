@@ -1,6 +1,6 @@
 //! Request-handling state shared by every service.
 
-use {bon::Builder, sqlx::postgres::PgPool, std::sync::Arc};
+use {bon::Builder, scratchstack_config::ResolvedForwardedForConfig, sqlx::postgres::PgPool, std::sync::Arc};
 
 /// State made available to every request handler.
 ///
@@ -20,6 +20,12 @@ pub struct ServiceState {
     /// Connection to the IAM database.
     pub db: Arc<PgPool>,
 
-    /// Whether the listener terminates TLS; supplies the `aws:SecureTransport` condition key.
+    /// How to recover the client address of a request a trusted proxy forwarded, if the listener
+    /// is configured to believe one. [`RequestMetadata`][crate::RequestMetadata] applies this;
+    /// without it, the address the connection came from supplies `aws:SourceIp`.
+    pub forwarded_for: Option<Arc<ResolvedForwardedForConfig>>,
+
+    /// Whether the listener terminates TLS. [`RequestMetadata`][crate::RequestMetadata] carries
+    /// this to policy evaluation, where it supplies the `aws:SecureTransport` condition key.
     pub secure_transport: bool,
 }

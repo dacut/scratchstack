@@ -24,8 +24,10 @@
 //! ```
 //!
 //! Service sections inherit `listener` and `scope` settings from `defaults`, overriding
-//! individual values. `runtime` is deliberately not inheritable: one process runs one Tokio
-//! runtime, so a per-service override could not be honored.
+//! individual values; nested listener settings such as `forwarded_for` merge rather than
+//! replace, so a service can override one of their values without restating the section.
+//! `runtime` is deliberately not inheritable: one process runs one Tokio runtime, so a
+//! per-service override could not be honored.
 //!
 //! Two services naming the same database are expected to share a single connection pool; callers
 //! build one pool per distinct [`ResolvedServiceConfig::database_name`] rather than one per
@@ -300,6 +302,9 @@ region = "local"
 [defaults.listener]
 address = "127.0.0.1"
 
+[defaults.listener.forwarded_for]
+trusted_proxies = ["10.0.0.0/8"]
+
 [database.default]
 database = "scratchstack_iam"
 host = "localhost"
@@ -313,6 +318,9 @@ database_ref = "default"
 port = 7401
 
 [sts]
+
+[sts.listener.forwarded_for]
+header = "x-real-ip"
 
 [sts.scope]
 region = "us-east-1"
@@ -382,6 +390,48 @@ region = "us-east-1"
         // Partition inherited, region overridden by the service.
         assert_eq!(sts.scope.partition, "local");
         assert_eq!(sts.scope.region, "us-east-1");
+    }
+
+    /// A service inherits the whole forwarded-header section from the defaults, and overriding
+    /// one of its settings leaves the rest of the inherited section in place.
+    #[test]
+    fn forwarded_for_settings_flow_through_from_the_defaults() {
+        let config = deployment();
+        let trusted_proxy = IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3));
+
+        // Inherited wholesale: the defaults name the proxies, and the header is the conventional
+        // one this service never mentions.
+        let iam = config.resolve_service("iam", 7401).unwrap().expect("iam section missing");
+        let iam = iam.listener.forwarded_for.expect("iam inherited no forwarded_for section");
+        assert_eq!(iam.header.as_str(), "x-forwarded-for");
+        assert!(iam.trusts(trusted_proxy));
+
+        // Overridden in part: this service names its own header but still trusts the inherited
+        // proxies.
+        let sts = config.resolve_service("sts", 7400).unwrap().expect("sts section missing");
+        let sts = sts.listener.forwarded_for.expect("sts inherited no forwarded_for section");
+        assert_eq!(sts.header.as_str(), "x-real-ip");
+        assert!(sts.trusts(trusted_proxy));
+    }
+
+    /// A deployment that says nothing about forwarding reads no header at all.
+    #[test]
+    fn forwarded_for_is_absent_unless_configured() {
+        let config: ScratchstackConfig = toml::from_str(
+            r#"
+[defaults.scope]
+region = "local"
+
+[database.default]
+database = "scratchstack_iam"
+
+[iam]
+"#,
+        )
+        .unwrap();
+
+        let iam = config.resolve_service("iam", 7401).unwrap().expect("iam section missing");
+        assert!(iam.listener.forwarded_for.is_none());
     }
 
     /// Services naming the same database report the same name, so a caller can key one shared

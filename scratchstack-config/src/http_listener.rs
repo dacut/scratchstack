@@ -3,7 +3,7 @@
 
 use {
     super::TlsConfig,
-    crate::{Resolvable, error::ConfigError},
+    crate::{ForwardedForConfig, Resolvable, ResolvedForwardedForConfig, error::ConfigError},
     bon::Builder,
     rustls::ServerConfig as TlsServerConfig,
     serde::Deserialize,
@@ -26,6 +26,11 @@ pub struct HttpListenerConfig {
     /// not accept external connections.
     #[serde(default)]
     address: Option<IpAddr>,
+
+    /// How to recover the client address when this service sits behind a load balancer. If
+    /// unspecified, the address the connection came from is used.
+    #[serde(default)]
+    forwarded_for: Option<ForwardedForConfig>,
 
     /// The port to listen on. Defaults to port 80 if a TLS configuration is not specified, or
     /// port 443 if a TLS configuration is specified.
@@ -53,6 +58,10 @@ pub struct HttpListenerConfig {
 #[derive(Builder, Clone)]
 #[non_exhaustive]
 pub struct ResolvedHttpListenerConfig {
+    /// How to recover the client address of a forwarded request, if this service sits behind a
+    /// load balancer.
+    pub forwarded_for: Option<ResolvedForwardedForConfig>,
+
     /// The socket address to listen on.
     pub socket_addr: SocketAddr,
 
@@ -99,6 +108,12 @@ impl HttpListenerConfig {
         }
     }
 
+    /// Returns the resolved forwarded-header configuration for the service if one was specified.
+    /// This may return an error if the configuration is invalid.
+    pub fn forwarded_for_config(&self) -> Result<Option<ResolvedForwardedForConfig>, ConfigError> {
+        self.forwarded_for.as_ref().map(Resolvable::resolve).transpose()
+    }
+
     /// Returns the TLS server configuration for the service if one was specified. This may return
     /// an error if the TLS configuration is invalid.
     pub fn tls_config(&self) -> Result<Option<TlsServerConfig>, ConfigError> {
@@ -115,6 +130,14 @@ impl HttpListenerConfig {
         if let Some(address) = other.address {
             self.address = Some(address);
         }
+        if let Some(forwarded_for) = &other.forwarded_for {
+            // Merge rather than replace, so a service can override one setting -- the header, or
+            // the trusted proxies -- without restating the section inherited from the defaults.
+            match &mut self.forwarded_for {
+                Some(current) => current.update_from(forwarded_for),
+                None => self.forwarded_for = Some(forwarded_for.clone()),
+            }
+        }
         if let Some(port) = other.port {
             self.port = Some(port);
         }
@@ -126,6 +149,7 @@ impl HttpListenerConfig {
     /// Resolve this configuration, using `default_port` if it does not specify a port.
     pub fn resolve_with_default_port(&self, default_port: u16) -> Result<ResolvedHttpListenerConfig, ConfigError> {
         Ok(ResolvedHttpListenerConfig {
+            forwarded_for: self.forwarded_for_config()?,
             socket_addr: self.socket_addr_with_default_port(default_port),
             tls: self.tls_config()?,
         })
@@ -136,6 +160,7 @@ impl Resolvable for HttpListenerConfig {
     type Resolved = ResolvedHttpListenerConfig;
     fn resolve(&self) -> Result<Self::Resolved, ConfigError> {
         Ok(ResolvedHttpListenerConfig {
+            forwarded_for: self.forwarded_for_config()?,
             socket_addr: self.socket_addr(),
             tls: self.tls_config()?,
         })
@@ -145,6 +170,7 @@ impl Resolvable for HttpListenerConfig {
 impl Debug for ResolvedHttpListenerConfig {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         f.debug_struct("ResolvedHttpListenerConfig")
+            .field("forwarded_for", &self.forwarded_for)
             .field("socket_addr", &self.socket_addr)
             .field("tls", &self.tls.as_ref().map(|_| "<present>").unwrap_or("<absent>"))
             .finish()
@@ -154,6 +180,7 @@ impl Debug for ResolvedHttpListenerConfig {
 impl Default for ResolvedHttpListenerConfig {
     fn default() -> Self {
         Self {
+            forwarded_for: None,
             socket_addr: SocketAddr::new(DEFAULT_ADDRESS, 80),
             tls: None,
         }

@@ -2606,7 +2606,9 @@ name = "scratchstack-config"
 version = "0.12.0"
 dependencies = [
  "bon",
+ "http",
  "humantime-serde",
+ "ipnet",
  "log",
  "pct-str",
  "rustls",
@@ -2805,6 +2807,7 @@ dependencies = [
  "scratchstack-aspen",
  "scratchstack-aws-principal",
  "scratchstack-aws-signature",
+ "scratchstack-config",
  "scratchstack-core",
  "scratchstack-hakari",
  "scratchstack-iam-database",

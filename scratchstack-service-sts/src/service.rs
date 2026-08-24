@@ -8,7 +8,8 @@ use {
         RequestId,
         axum::{
             body::{Body, Bytes},
-            extract::{Extension, RawQuery, State},
+            extract::{ConnectInfo, Extension, RawQuery, State},
+            http::HeaderMap,
             response::Response,
         },
         response::Responder as _,
@@ -18,19 +19,37 @@ use {
         action::{Action, VERSION as STS_VERSION},
         types::error::{InternalFailure, InvalidAction, InvalidClientTokenId, MalformedInput},
     },
-    std::str::from_utf8,
+    std::{net::SocketAddr, str::from_utf8},
 };
 
-pub(crate) use scratchstack_service_common::ServiceState;
+pub(crate) use scratchstack_service_common::{RequestMetadata, ServiceState};
 
+// A handler's parameters are its extractors: each one pulls a different piece of the request out
+// of the pipeline, so there is nothing to bundle.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn serve_request(
     State(svc_state): State<ServiceState>,
     request_id: RequestId,
+    connect_info: Option<Extension<ConnectInfo<SocketAddr>>>,
+    headers: HeaderMap,
     Extension(principal): Extension<Principal>,
     Extension(session_data): Extension<SessionData>,
     RawQuery(query): RawQuery,
     body: Bytes,
 ) -> Response<Body> {
+    // Policies may be conditioned on the connection the request arrived on, and a missing
+    // aws:SourceIp silently satisfies a NotIpAddress condition; a request whose peer address is
+    // unknown cannot be evaluated safely, so fail closed.
+    let Some(request_metadata) = RequestMetadata::from_connection(
+        svc_state.secure_transport,
+        svc_state.forwarded_for.as_deref(),
+        connect_info,
+        &headers,
+    ) else {
+        log::error!("{request_id}: Request carries no connection information");
+        return internal_failure(request_id);
+    };
+
     let body = match from_utf8(&body) {
         Ok(body) => body,
         Err(e) => {
@@ -47,7 +66,9 @@ pub(crate) async fn serve_request(
     }
 
     match action.parse::<Action>() {
-        Ok(Action::AssumeRole) => assume_role(svc_state, request_id, principal, session_data, &parameters).await,
+        Ok(Action::AssumeRole) => {
+            assume_role(svc_state, request_id, principal, session_data, request_metadata, &parameters).await
+        }
         Ok(Action::GetCallerIdentity) => get_caller_identity(request_id, &principal, &session_data),
         _ => invalid_action(request_id, &action, &version),
     }
@@ -90,24 +111,36 @@ mod tests {
             RequestId,
             axum::{
                 body::{Body, Bytes},
-                extract::{Extension, RawQuery, State},
-                http::StatusCode,
+                extract::{ConnectInfo, Extension, RawQuery, State},
+                http::{HeaderMap, StatusCode},
                 response::Response,
             },
         },
         scratchstack_iam_database::{RequestExecutor as _, migrate::MIGRATOR, utils::TempDatabase},
         scratchstack_shapes_iam::operation::CreateSessionTokenEncryptionKeyRequest,
         sqlx::{postgres::PgPoolOptions, raw_sql},
-        std::sync::Arc,
+        std::{
+            net::{IpAddr, Ipv4Addr, SocketAddr},
+            sync::Arc,
+        },
     };
 
     const TEST_ACCOUNT_ID: &str = "123456789012";
     const TEST_USER_ID: &str = "AIDAQXZEAEXAMPLEUSER";
     const TEST_REQUEST_ID: &str = "11111111-2222-3333-4444-555555555555";
 
+    /// The peer address test requests arrive from unless a test names another, backing the
+    /// `aws:SourceIp` condition key. The addresses used here come from the documentation ranges
+    /// reserved by RFC 5737.
+    const TEST_SOURCE_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10));
+
+    /// A peer address outside the CIDR block the source-IP test policies grant.
+    const OUTSIDE_SOURCE_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(198, 51, 100, 7));
+
     /// Seed data for the AssumeRole tests: users whose grants exercise each authorization path,
-    /// three roles (one trusting the whole account, one naming a user directly, one requiring an
-    /// external id), and a managed policy usable as a session policy.
+    /// four roles (one trusting the whole account, one naming a user directly, one requiring an
+    /// external id, one trusting the account only from a CIDR block), and a managed policy
+    /// usable as a session policy.
     const ASSUME_ROLE_TEST_DATA: &str = r#"
         INSERT INTO iam.partition(partition) VALUES ('aws');
 
@@ -118,7 +151,9 @@ mod tests {
         ('STSTESTALLOWUSER', '123456789012', 'allowed-user', 'Allowed-User', '/'),
         ('STSTESTDENYUSER1', '123456789012', 'denied-user', 'Denied-User', '/'),
         ('STSTESTNAMEDUSER', '123456789012', 'named-user', 'Named-User', '/'),
-        ('STSTESTEXTIDUSER', '123456789012', 'extid-user', 'Extid-User', '/');
+        ('STSTESTEXTIDUSER', '123456789012', 'extid-user', 'Extid-User', '/'),
+        ('STSTESTIPUSER001', '123456789012', 'ip-user', 'Ip-User', '/'),
+        ('STSTESTIPIDUSER1', '123456789012', 'ip-identity-user', 'Ip-Identity-User', '/');
 
         INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
         ('STSTESTALLOWUSER', 'allow-assume-role', 'Allow-Assume-Role',
@@ -126,7 +161,14 @@ mod tests {
            "Resource":"arn:aws:iam::123456789012:role/account-trusted-role"}]}'),
         ('STSTESTEXTIDUSER', 'allow-assume-extid', 'Allow-Assume-Extid',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole",
-           "Resource":"arn:aws:iam::123456789012:role/external-id-role"}]}');
+           "Resource":"arn:aws:iam::123456789012:role/external-id-role"}]}'),
+        ('STSTESTIPUSER001', 'allow-assume-ip-role', 'Allow-Assume-Ip-Role',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole",
+           "Resource":"arn:aws:iam::123456789012:role/ip-trusted-role"}]}'),
+        ('STSTESTIPIDUSER1', 'allow-assume-from-block', 'Allow-Assume-From-Block',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole",
+           "Resource":"arn:aws:iam::123456789012:role/account-trusted-role",
+           "Condition":{"IpAddress":{"aws:SourceIp":"203.0.113.0/24"}}}]}');
 
         INSERT INTO iam.roles(role_id, account_id, role_name_lower, role_name_cased, path,
             permissions_boundary_managed_policy_id, assume_role_policy_document) VALUES
@@ -139,7 +181,11 @@ mod tests {
         ('STSTESTEXTIDROLE', '123456789012', 'external-id-role', 'external-id-role', '/', NULL,
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow",
            "Principal":{"AWS":"arn:aws:iam::123456789012:root"},"Action":"sts:AssumeRole",
-           "Condition":{"StringEquals":{"sts:ExternalId":"expected-external-id"}}}]}');
+           "Condition":{"StringEquals":{"sts:ExternalId":"expected-external-id"}}}]}'),
+        ('STSTESTIPROLE001', '123456789012', 'ip-trusted-role', 'ip-trusted-role', '/', NULL,
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow",
+           "Principal":{"AWS":"arn:aws:iam::123456789012:root"},"Action":"sts:AssumeRole",
+           "Condition":{"IpAddress":{"aws:SourceIp":"203.0.113.0/24"}}}]}');
 
         INSERT INTO iam.managed_policies(managed_policy_id, account_id, managed_policy_name_lower,
             managed_policy_name_cased, path, default_version, deprecated, latest_version) VALUES
@@ -210,6 +256,19 @@ mod tests {
         session_data: SessionData,
         parameters: &[(&str, &str)],
     ) -> (StatusCode, String) {
+        call_as_from(svc_state, principal, session_data, TEST_SOURCE_IP, parameters).await
+    }
+
+    /// Invoke `serve_request` with the given identity and parameters from the given peer
+    /// address, standing in for the connection information the pipeline would otherwise supply,
+    /// and return the status and body.
+    async fn call_as_from(
+        svc_state: &ServiceState,
+        principal: Principal,
+        session_data: SessionData,
+        source_ip: IpAddr,
+        parameters: &[(&str, &str)],
+    ) -> (StatusCode, String) {
         let mut body = Vec::new();
 
         for (key, value) in parameters {
@@ -224,6 +283,8 @@ mod tests {
         let response: Response<Body> = serve_request(
             State(svc_state.clone()),
             request_id(),
+            Some(Extension(ConnectInfo(SocketAddr::new(source_ip, 49152)))),
+            HeaderMap::new(),
             Extension(principal),
             Extension(session_data),
             RawQuery(None),
@@ -363,6 +424,7 @@ mod tests {
         const ACCOUNT_TRUSTED_ROLE_ARN: &str = "arn:aws:iam::123456789012:role/account-trusted-role";
         const NAMED_USER_ROLE_ARN: &str = "arn:aws:iam::123456789012:role/named-user-role";
         const EXTERNAL_ID_ROLE_ARN: &str = "arn:aws:iam::123456789012:role/external-id-role";
+        const IP_TRUSTED_ROLE_ARN: &str = "arn:aws:iam::123456789012:role/ip-trusted-role";
 
         // A user whose identity policy allows sts:AssumeRole on a role whose trust policy
         // trusts the whole account receives credentials.
@@ -526,6 +588,78 @@ mod tests {
                 ("Action", "AssumeRole"),
                 ("Version", "2011-06-15"),
                 ("RoleArn", EXTERNAL_ID_ROLE_ARN),
+                ("RoleSessionName", "test-session"),
+            ],
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A trust policy conditioned on aws:SourceIp admits a caller inside the CIDR block...
+        let (principal, session_data) = user_identity("STSTESTIPUSER001", "Ip-User");
+        let (status, body) = call_as_from(
+            &svc_state,
+            principal,
+            session_data,
+            TEST_SOURCE_IP,
+            &[
+                ("Action", "AssumeRole"),
+                ("Version", "2011-06-15"),
+                ("RoleArn", IP_TRUSTED_ROLE_ARN),
+                ("RoleSessionName", "test-session"),
+            ],
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<AssumeRoleResult>"), "unexpected body: {body}");
+
+        // ...and refuses the same caller from outside it.
+        let (principal, session_data) = user_identity("STSTESTIPUSER001", "Ip-User");
+        let (status, body) = call_as_from(
+            &svc_state,
+            principal,
+            session_data,
+            OUTSIDE_SOURCE_IP,
+            &[
+                ("Action", "AssumeRole"),
+                ("Version", "2011-06-15"),
+                ("RoleArn", IP_TRUSTED_ROLE_ARN),
+                ("RoleSessionName", "test-session"),
+            ],
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The identity gate sees aws:SourceIp as well: this caller's own policy grants
+        // sts:AssumeRole only from the CIDR block, against a role that trusts the account.
+        let (principal, session_data) = user_identity("STSTESTIPIDUSER1", "Ip-Identity-User");
+        let (status, body) = call_as_from(
+            &svc_state,
+            principal,
+            session_data,
+            TEST_SOURCE_IP,
+            &[
+                ("Action", "AssumeRole"),
+                ("Version", "2011-06-15"),
+                ("RoleArn", ACCOUNT_TRUSTED_ROLE_ARN),
+                ("RoleSessionName", "test-session"),
+            ],
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<AssumeRoleResult>"), "unexpected body: {body}");
+
+        let (principal, session_data) = user_identity("STSTESTIPIDUSER1", "Ip-Identity-User");
+        let (status, body) = call_as_from(
+            &svc_state,
+            principal,
+            session_data,
+            OUTSIDE_SOURCE_IP,
+            &[
+                ("Action", "AssumeRole"),
+                ("Version", "2011-06-15"),
+                ("RoleArn", ACCOUNT_TRUSTED_ROLE_ARN),
                 ("RoleSessionName", "test-session"),
             ],
         )

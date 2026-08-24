@@ -1,6 +1,9 @@
 //! Authorization support for the IAM service.
 use {
-    crate::{constants::*, service::internal_failure},
+    crate::{
+        constants::*,
+        service::{RequestMetadata, internal_failure},
+    },
     chrono::Utc,
     scratchstack_arn::Arn,
     scratchstack_aspen::{Context, Decision, PolicySource, authorize},
@@ -29,6 +32,9 @@ use {
 /// operations without resource-level permissions (policies must then grant the action with
 /// `Resource: "*"`).
 ///
+/// `request_metadata` describes the connection the request arrived on and supplies the
+/// `aws:SecureTransport` and `aws:SourceIp` condition keys.
+///
 /// `request_context` holds the condition keys derived from the request itself and from the
 /// resources it names -- the tags on those resources, for example. They are layered onto the
 /// session data the authentication layer produced, so a caller cannot supply them.
@@ -36,8 +42,10 @@ use {
 /// Returns `Ok(())` when the request is allowed. Otherwise returns the ready-to-send error
 /// response: an `AccessDeniedException` for policy denials, or an `InternalFailure` when
 /// authorization could not be performed (which always fails closed).
-// Every parameter is a distinct facet of the request being authorized; bundling them into a
-// struct would only move the argument list into a builder call at each call site.
+// What is left after the connection facts are bundled into `request_metadata` are distinct
+// facets of the request being authorized -- the caller, the policies governing it, and what it
+// acts on -- with no further grouping to make; bundling those would only move the argument list
+// into a builder call at each call site.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn check_authorization(
     tx: &mut PgTransaction<'_>,
@@ -45,7 +53,7 @@ pub(crate) async fn check_authorization(
     principal: &Principal,
     session_data: &SessionData,
     session_policies: &SessionPolicies,
-    secure_transport: bool,
+    request_metadata: RequestMetadata,
     action: Action,
     resources: &[Arn],
     request_context: &SessionData,
@@ -131,7 +139,8 @@ pub(crate) async fn check_authorization(
     let now = Utc::now();
     session_data.insert(SESSION_KEY_AWS_CURRENT_TIME, SessionValue::Timestamp(now));
     session_data.insert(SESSION_KEY_AWS_EPOCH_TIME, SessionValue::Integer(now.timestamp()));
-    session_data.insert(SESSION_KEY_AWS_SECURE_TRANSPORT, SessionValue::Bool(secure_transport));
+    session_data.insert(SESSION_KEY_AWS_SECURE_TRANSPORT, SessionValue::Bool(request_metadata.secure_transport));
+    session_data.insert(SESSION_KEY_AWS_SOURCE_IP, SessionValue::IpAddr(request_metadata.source_ip));
 
     let context = match Context::builder()
         .api(action.as_str())
