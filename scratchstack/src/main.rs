@@ -75,7 +75,6 @@ fn main() -> ExitCode {
         }
     };
     info!("Configuration read from {}", config_filename.display());
-    debug!("Configuration: {config:?}");
 
     // Service sections are validated against every service the project implements, not just the
     // ones this binary was built with, so a slimmed binary still accepts a deployment-wide file.
