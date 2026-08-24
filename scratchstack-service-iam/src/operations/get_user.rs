@@ -2,7 +2,7 @@ use {
     crate::{
         authz::{check_authorization, resource_tag_context},
         constants::*,
-        service::{ServiceState, internal_failure, malformed_input},
+        service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
     },
     scratchstack_arn::Arn,
     scratchstack_aws_principal::{Principal, SessionData, SessionValue},
@@ -39,6 +39,7 @@ pub(crate) async fn get_user(
     principal: Principal,
     session_data: SessionData,
     session_policies: SessionPolicies,
+    request_metadata: RequestMetadata,
     parameters: &str,
 ) -> Response<Body> {
     let Some(SessionValue::String(account_id)) = session_data.get(SESSION_KEY_AWS_PRINCIPAL_ACCOUNT) else {
@@ -117,7 +118,7 @@ pub(crate) async fn get_user(
         &principal,
         &session_data,
         &session_policies,
-        svc_state.secure_transport,
+        request_metadata,
         Action::GetUser,
         &[resource_arn],
         &resource_tag_context(resource_tags),

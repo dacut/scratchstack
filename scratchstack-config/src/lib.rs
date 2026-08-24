@@ -14,13 +14,14 @@
 
 mod database;
 mod error;
+mod forwarded_for;
 mod http_listener;
 mod runtime;
 mod scope;
 mod service;
 mod tls;
 
-pub use self::{database::*, error::*, http_listener::*, runtime::*, scope::*, service::*, tls::*};
+pub use self::{database::*, error::*, forwarded_for::*, http_listener::*, runtime::*, scope::*, service::*, tls::*};
 
 use {serde::de::DeserializeOwned, std::path::Path};
 

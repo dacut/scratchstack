@@ -2,7 +2,7 @@ use {
     crate::{
         authz::check_authorization,
         constants::SESSION_KEY_AWS_PRINCIPAL_ACCOUNT,
-        service::{ServiceState, internal_failure, malformed_input},
+        service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
     },
     scratchstack_aws_principal::{Principal, SessionData, SessionValue},
     scratchstack_aws_signature::SessionPolicies,
@@ -31,6 +31,7 @@ pub(crate) async fn list_users(
     principal: Principal,
     session_data: SessionData,
     session_policies: SessionPolicies,
+    request_metadata: RequestMetadata,
     parameters: &str,
 ) -> Response<Body> {
     let Some(account_id) = session_data.get(SESSION_KEY_AWS_PRINCIPAL_ACCOUNT) else {
@@ -80,7 +81,7 @@ pub(crate) async fn list_users(
         &principal,
         &session_data,
         &session_policies,
-        svc_state.secure_transport,
+        request_metadata,
         Action::ListUsers,
         &[],
         &SessionData::new(),

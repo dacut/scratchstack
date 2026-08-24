@@ -2,7 +2,7 @@ use {
     crate::{
         authz::check_assume_role_authorization,
         constants::*,
-        service::{ServiceState, internal_failure, malformed_input, security_token_invalid},
+        service::{RequestMetadata, ServiceState, internal_failure, malformed_input, security_token_invalid},
     },
     scratchstack_arn::IamResourceArn,
     scratchstack_aws_principal::{Principal, SessionData},
@@ -34,6 +34,7 @@ pub(crate) async fn assume_role(
     request_id: RequestId,
     principal: Principal,
     session_data: SessionData,
+    request_metadata: RequestMetadata,
     parameters: &str,
 ) -> Response<Body> {
     // The SigV4 layer rejects unauthenticated requests first, so a principal without an ARN
@@ -77,7 +78,7 @@ pub(crate) async fn assume_role(
         request_id,
         &principal,
         &session_data,
-        svc_state.secure_transport,
+        request_metadata,
         &role_arn,
         request.external_id.as_deref(),
     )

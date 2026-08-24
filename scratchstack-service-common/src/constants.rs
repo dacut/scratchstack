@@ -48,6 +48,9 @@ pub const SESSION_KEY_AWS_PRINCIPAL_ARN: &str = "aws:PrincipalArn";
 /// Session key indicating whether the request arrived over TLS.
 pub const SESSION_KEY_AWS_SECURE_TRANSPORT: &str = "aws:SecureTransport";
 
+/// Session key for the IP address the request was received from.
+pub const SESSION_KEY_AWS_SOURCE_IP: &str = "aws:SourceIp";
+
 /// Session key for the unique id of the calling principal.
 pub const SESSION_KEY_AWS_USERID: &str = "aws:userid";
 

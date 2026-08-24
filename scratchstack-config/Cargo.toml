@@ -11,7 +11,9 @@ version.workspace = true
 
 [dependencies]
 bon.workspace = true
+http.workspace = true
 humantime-serde.workspace = true
+ipnet.workspace = true
 pct-str.workspace = true
 log.workspace = true
 rustls.workspace = true

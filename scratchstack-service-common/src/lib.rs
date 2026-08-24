@@ -24,10 +24,11 @@
 pub mod constants;
 mod descriptor;
 pub mod query;
+mod request_metadata;
 mod serve;
 mod state;
 
-pub use self::{descriptor::*, serve::*, state::*};
+pub use self::{descriptor::*, request_metadata::*, serve::*, state::*};
 
 /// Every service this project implements, whether or not the running binary was built with it.
 ///

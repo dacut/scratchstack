@@ -11,11 +11,12 @@ use {
             self,
             http::Method,
             routing::{get, post, put},
+            serve::ListenerExt as _,
         },
     },
     scratchstack_iam_database::GetSigningKeyFromDatabase,
     sqlx::postgres::PgPool,
-    std::sync::Arc,
+    std::{net::SocketAddr, sync::Arc},
     tokio::net::TcpListener,
     tower::BoxError,
 };
@@ -42,19 +43,28 @@ pub async fn serve<D: ServiceDescriptor>(config: ResolvedServiceConfig, pool: Ar
         .error_mapper(XmlErrorMapper::new(D::XML_NAMESPACE))
         .build();
 
-    let state = ServiceState::builder().db(pool).secure_transport(config.listener.tls.is_some()).build();
+    let state = ServiceState::builder()
+        .db(pool)
+        .maybe_forwarded_for(config.listener.forwarded_for.clone().map(Arc::new))
+        .secure_transport(config.listener.tls.is_some())
+        .build();
     let app = D::router().layer(verifier).with_state(state);
     let listener = TcpListener::bind(&config.listener.socket_addr).await?;
 
+    // The peer address is served to handlers as a `ConnectInfo<SocketAddr>` extension; it backs
+    // the `aws:SourceIp` condition key, so policy evaluation cannot proceed without it.
     match config.listener.tls {
         Some(tls) => {
             info!("{}: listening for HTTPS requests on {}", D::SERVICE, config.listener.socket_addr);
-            let listener = TlsListener::new(listener, Arc::new(tls))?;
-            Ok(axum::serve(listener, app).await?)
+            // Axum supplies connection info for its own `TcpListener` but not for a custom
+            // listener; `tap_io` with a do-nothing tap opts a listener into the blanket
+            // implementation that does, without altering the connection itself.
+            let listener = TlsListener::new(listener, Arc::new(tls))?.tap_io(|_| {});
+            Ok(axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?)
         }
         None => {
             info!("{}: listening for HTTP requests on {}", D::SERVICE, config.listener.socket_addr);
-            Ok(axum::serve(listener, app).await?)
+            Ok(axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?)
         }
     }
 }

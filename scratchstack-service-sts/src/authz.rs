@@ -1,6 +1,9 @@
 //! Authorization support for the STS service.
 use {
-    crate::{constants::*, service::internal_failure},
+    crate::{
+        constants::*,
+        service::{RequestMetadata, internal_failure},
+    },
     chrono::Utc,
     scratchstack_arn::{Arn, IamResourceArn},
     scratchstack_aspen::{
@@ -31,6 +34,9 @@ use {
 ///   ARN directly -- in that case the trust policy alone suffices, just as with any other
 ///   resource-based policy.
 ///
+/// `request_metadata` describes the connection the request arrived on and supplies the
+/// `aws:SecureTransport` and `aws:SourceIp` condition keys to both gates.
+///
 /// The account root user may not assume roles at all, matching AWS. Role chaining (a caller that
 /// is itself an assumed role) is not supported yet: session credentials cannot authenticate, so
 /// such a caller cannot reach this point.
@@ -43,7 +49,7 @@ pub(crate) async fn check_assume_role_authorization(
     request_id: RequestId,
     principal: &Principal,
     session_data: &SessionData,
-    secure_transport: bool,
+    request_metadata: RequestMetadata,
     role_arn: &IamResourceArn,
     external_id: Option<&str>,
 ) -> Result<(), Box<Response<Body>>> {
@@ -102,7 +108,8 @@ pub(crate) async fn check_assume_role_authorization(
     let now = Utc::now();
     session_data.insert(SESSION_KEY_AWS_CURRENT_TIME, SessionValue::Timestamp(now));
     session_data.insert(SESSION_KEY_AWS_EPOCH_TIME, SessionValue::Integer(now.timestamp()));
-    session_data.insert(SESSION_KEY_AWS_SECURE_TRANSPORT, SessionValue::Bool(secure_transport));
+    session_data.insert(SESSION_KEY_AWS_SECURE_TRANSPORT, SessionValue::Bool(request_metadata.secure_transport));
+    session_data.insert(SESSION_KEY_AWS_SOURCE_IP, SessionValue::IpAddr(request_metadata.source_ip));
     if let Some(external_id) = external_id {
         session_data.insert(SESSION_KEY_STS_EXTERNAL_ID, SessionValue::String(external_id.to_string()));
     }

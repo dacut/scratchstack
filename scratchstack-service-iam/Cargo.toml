@@ -47,6 +47,7 @@ sqlx = { workspace = true, features = [
 [dev-dependencies]
 http-body-util.workspace = true
 pretty_assertions.workspace = true
+scratchstack-config.path = "../scratchstack-config"
 scratchstack-iam-database = { path = "../scratchstack-iam-database", features = [
     "utils",
 ] }
