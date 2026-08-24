@@ -359,7 +359,7 @@ mod test {
 
         // The same shapes a policy action accepts, minus the wildcards, are still allowed.
         for (service, api) in [("ec2", "RunInstances"), ("a", "B"), ("aws-marketplace", "Sub_scribe")] {
-            let context = build(service, api).expect("expected {service}:{api} to be accepted");
+            let context = build(service, api).unwrap_or_else(|_| panic!("expected {service}:{api} to be accepted"));
             assert_eq!(context.service(), service);
             assert_eq!(context.api(), api);
         }
