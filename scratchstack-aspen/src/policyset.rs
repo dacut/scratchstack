@@ -609,49 +609,51 @@ mod tests {
         );
         let mut sd = SessionData::new();
         sd.insert("aws:username", SessionValue::from("MyUser"));
-        let mut context_builder = Context::builder();
-        context_builder.api("DescribeSecurityGroups").actor(actor).session_data(sd).service("ec2");
-        let context = context_builder.build().unwrap();
+        // bon's builders are move-based, so each request under test gets a freshly built context.
+        let make_context = |service: &str, api: &str, resources: Vec<Arn>| {
+            Context::builder()
+                .api(api)
+                .actor(actor.clone())
+                .session_data(sd.clone())
+                .service(service)
+                .resources(resources)
+                .build()
+                .unwrap()
+        };
+
+        let context = make_context("ec2", "DescribeSecurityGroups", vec![]);
         let (decision, sources) = ps.evaluate_all(&context).unwrap();
         assert_eq!(decision, Decision::Allow);
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0], &group_attached_policy_source);
         assert_eq!(ps.evaluate(&context).unwrap().0, Decision::Allow);
 
-        context_builder.api("RunInstances");
-        let context = context_builder.build().unwrap();
+        let context = make_context("ec2", "RunInstances", vec![]);
         let (decision, sources) = ps.evaluate_all(&context).unwrap();
         assert_eq!(decision, Decision::Deny);
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0], &group_inline_policy_source);
         assert_eq!(ps.evaluate(&context).unwrap().0, Decision::Deny);
 
-        context_builder
-            .api("DescribeTable")
-            .service("dynamodb")
-            .resources(vec![Arn::from_str("arn:aws:dynamodb:us-west-2:123456789012:table/MyTable").unwrap()]);
-        let context = context_builder.build().unwrap();
+        let context = make_context(
+            "dynamodb",
+            "DescribeTable",
+            vec![Arn::from_str("arn:aws:dynamodb:us-west-2:123456789012:table/MyTable").unwrap()],
+        );
         let (decision, sources) = ps.evaluate_all(&context).unwrap();
         assert_eq!(decision, Decision::Allow);
         assert_eq!(sources, vec![&resource_policy_source,]);
         assert_eq!(ps.evaluate(&context).unwrap().0, Decision::Allow);
 
-        context_builder
-            .service("iam")
-            .api("CreateUser")
-            .resources(vec![Arn::from_str("arn:aws:iam::123456789012:user/MyUser").unwrap()]);
-        let context = context_builder.build().unwrap();
+        let context =
+            make_context("iam", "CreateUser", vec![Arn::from_str("arn:aws:iam::123456789012:user/MyUser").unwrap()]);
         let (decision, sources) = ps.evaluate_all(&context).unwrap();
         assert_eq!(decision, Decision::Deny);
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0], &permission_boundary_policy_source);
         assert_eq!(ps.evaluate(&context).unwrap().0, Decision::Deny);
 
-        context_builder
-            .service("s3")
-            .api("DeleteBucket")
-            .resources(vec![Arn::from_str("arn:aws:s3:::notmybucket").unwrap()]);
-        let context = context_builder.build().unwrap();
+        let context = make_context("s3", "DeleteBucket", vec![Arn::from_str("arn:aws:s3:::notmybucket").unwrap()]);
         let (decision, sources) = ps.evaluate_all(&context).unwrap();
         assert_eq!(decision, Decision::DefaultDeny);
         assert!(sources.is_empty());

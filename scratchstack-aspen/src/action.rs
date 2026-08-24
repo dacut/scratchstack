@@ -1,6 +1,6 @@
 use {
     crate::{AspenError, eval::regex_from_glob, serutil::StringLikeList},
-    derive_builder::Builder,
+    bon::bon,
     log::debug,
     std::{
         fmt::{Display, Formatter, Result as FmtResult},
@@ -29,15 +29,12 @@ pub enum Action {
 /// `SpecificActionDetails` structs are immutable. They are created using the
 /// [`SpecificActionDetailsBuilder`] returned by [`SpecificActionDetails::builder`], which applies
 /// the same validation as [`Action::new`].
-#[derive(Builder, Clone, Debug, Eq, PartialEq)]
-#[builder(build_fn(validate = "Self::validate", error = "AspenError"))]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SpecificActionDetails {
     /// The service the action is for. This may not contain wildcards.
-    #[builder(setter(into))]
     service: String,
 
     /// The api pattern. This may contain wildcards.
-    #[builder(setter(into))]
     api: String,
 }
 
@@ -154,8 +151,19 @@ impl Display for Action {
     }
 }
 
+#[bon]
 impl SpecificActionDetails {
     /// Create a [`SpecificActionDetailsBuilder`] for building a [`SpecificActionDetails`].
+    ///
+    /// # Errors
+    ///
+    /// An [`AspenError::InvalidAction`] error is returned in any of the following cases:
+    /// * `service` or `api` is empty.
+    /// * `service` contains characters other than ASCII alphanumerics, hyphen (`-`), or underscore (`_`).
+    /// * `service` begins or ends with a hyphen or underscore.
+    /// * `api` contains characters other than ASCII alphanumerics, hyphen (`-`), underscore (`_`), asterisk (`*`), or
+    ///   question mark (`?`).
+    /// * `api` begins or ends with a hyphen or underscore.
     ///
     /// # Example
     ///
@@ -165,8 +173,22 @@ impl SpecificActionDetails {
     /// assert_eq!(details.service(), "ec2");
     /// assert_eq!(details.api(), "Describe*");
     /// ```
-    pub fn builder() -> SpecificActionDetailsBuilder {
-        SpecificActionDetailsBuilder::default()
+    #[builder(builder_type = SpecificActionDetailsBuilder, finish_fn = build)]
+    pub fn builder(
+        /// The service the action is for. This may not contain wildcards.
+        #[builder(into)]
+        service: String,
+
+        /// The api pattern. This may contain wildcards.
+        #[builder(into)]
+        api: String,
+    ) -> Result<Self, AspenError> {
+        validate_action_pattern(&service, &api)?;
+
+        Ok(Self {
+            service,
+            api,
+        })
     }
 
     /// The service the action is for.
@@ -182,59 +204,66 @@ impl SpecificActionDetails {
     }
 }
 
-impl SpecificActionDetailsBuilder {
-    /// Validate that the service and API pattern are well-formed.
-    ///
-    /// # Errors
-    ///
-    /// An [`AspenError::InvalidAction`] error is returned in any of the following cases:
-    /// * `service` or `api` is empty.
-    /// * `service` contains characters other than ASCII alphanumerics, hyphen (`-`), or underscore (`_`).
-    /// * `service` begins or ends with a hyphen or underscore.
-    /// * `api` contains characters other than ASCII alphanumerics, hyphen (`-`), underscore (`_`), asterisk (`*`), or
-    ///   question mark (`?`).
-    /// * `api` begins or ends with a hyphen or underscore.
-    fn validate(&self) -> Result<(), AspenError> {
-        // Unset fields are reported by derive_builder's own required-field check.
-        let (Some(service), Some(api)) = (self.service.as_deref(), self.api.as_deref()) else {
-            return Ok(());
-        };
+/// Validate the service and API pattern of an action **as written in a policy**, where the API
+/// may contain wildcards.
+///
+/// # Errors
+///
+/// An [`AspenError::InvalidAction`] error is returned in any of the following cases:
+/// * `service` or `api` is empty.
+/// * `service` contains characters other than ASCII alphanumerics, hyphen (`-`), or underscore (`_`).
+/// * `service` begins or ends with a hyphen or underscore.
+/// * `api` contains characters other than ASCII alphanumerics, hyphen (`-`), underscore (`_`), asterisk (`*`), or
+///   question mark (`?`).
+/// * `api` begins or ends with a hyphen or underscore.
+pub(crate) fn validate_action_pattern(service: &str, api: &str) -> Result<(), AspenError> {
+    validate_action(service, api, true)
+}
 
-        if service.is_empty() {
-            debug!("Action '{service}:{api}' has an empty service.");
-            return Err(AspenError::InvalidAction(format!("{service}:{api}")));
-        }
+/// Validate the service and API of an action **as invoked by a request**, where both are literals.
+///
+/// This applies the same rules as [`validate_action_pattern`], except that the API may not contain
+/// the wildcard characters `*` or `?`. A request-side wildcard is never matched as one -- policy
+/// action patterns are globbed against the request's API as a literal string -- so accepting one
+/// would silently fail to match, which a `NotAction` statement inverts into an unintended allow.
+pub(crate) fn validate_action_literal(service: &str, api: &str) -> Result<(), AspenError> {
+    validate_action(service, api, false)
+}
 
-        if api.is_empty() {
-            debug!("Action '{service}:{api}' has an empty API.");
-            return Err(AspenError::InvalidAction(format!("{service}:{api}")));
-        }
-
-        if !service.is_ascii() || !api.is_ascii() {
-            debug!("Action '{service}:{api}' is not ASCII.");
-            return Err(AspenError::InvalidAction(format!("{service}:{api}")));
-        }
-
-        for (i, c) in service.bytes().enumerate() {
-            if !c.is_ascii_alphanumeric() && !(i > 0 && i < service.len() - 1 && (c == b'-' || c == b'_')) {
-                debug!("Action '{service}:{api}' has an invalid service.");
-                return Err(AspenError::InvalidAction(format!("{service}:{api}")));
-            }
-        }
-
-        for (i, c) in api.bytes().enumerate() {
-            if !c.is_ascii_alphanumeric()
-                && c != b'*'
-                && c != b'?'
-                && !(i > 0 && i < api.len() - 1 && (c == b'-' || c == b'_'))
-            {
-                debug!("Action '{service}:{api}' has an invalid API.");
-                return Err(AspenError::InvalidAction(format!("{service}:{api}")));
-            }
-        }
-
-        Ok(())
+/// Validate the service and API portions of an action, allowing wildcards in the API only when
+/// `allow_wildcards` is set.
+fn validate_action(service: &str, api: &str, allow_wildcards: bool) -> Result<(), AspenError> {
+    if service.is_empty() {
+        debug!("Action '{service}:{api}' has an empty service.");
+        return Err(AspenError::InvalidAction(format!("{service}:{api}")));
     }
+
+    if api.is_empty() {
+        debug!("Action '{service}:{api}' has an empty API.");
+        return Err(AspenError::InvalidAction(format!("{service}:{api}")));
+    }
+
+    if !service.is_ascii() || !api.is_ascii() {
+        debug!("Action '{service}:{api}' is not ASCII.");
+        return Err(AspenError::InvalidAction(format!("{service}:{api}")));
+    }
+
+    for (i, c) in service.bytes().enumerate() {
+        if !c.is_ascii_alphanumeric() && !(i > 0 && i < service.len() - 1 && (c == b'-' || c == b'_')) {
+            debug!("Action '{service}:{api}' has an invalid service.");
+            return Err(AspenError::InvalidAction(format!("{service}:{api}")));
+        }
+    }
+
+    for (i, c) in api.bytes().enumerate() {
+        let wildcard = allow_wildcards && (c == b'*' || c == b'?');
+        if !c.is_ascii_alphanumeric() && !wildcard && !(i > 0 && i < api.len() - 1 && (c == b'-' || c == b'_')) {
+            debug!("Action '{service}:{api}' has an invalid API.");
+            return Err(AspenError::InvalidAction(format!("{service}:{api}")));
+        }
+    }
+
+    Ok(())
 }
 
 impl Display for SpecificActionDetails {
@@ -269,18 +298,6 @@ mod tests {
                 AspenError::InvalidAction(format!("{service}:{api}"))
             );
         }
-    }
-
-    #[test_log::test]
-    fn test_specific_action_details_builder_missing_field() {
-        assert_eq!(
-            SpecificActionDetails::builder().service("ec2").build().unwrap_err(),
-            AspenError::MissingField("api")
-        );
-        assert_eq!(
-            SpecificActionDetails::builder().api("Get*").build().unwrap_err(),
-            AspenError::MissingField("service")
-        );
     }
 
     #[test_log::test]

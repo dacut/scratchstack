@@ -2494,7 +2494,6 @@ dependencies = [
  "base64 0.23.1",
  "bon",
  "chrono",
- "derive_builder",
  "env_logger",
  "indoc",
  "ipnet",

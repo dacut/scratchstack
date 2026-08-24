@@ -3,7 +3,7 @@ mod specified;
 
 pub use {
     aws::AwsPrincipal,
-    specified::{SpecifiedPrincipal, SpecifiedPrincipalBuilder, SpecifiedPrincipalBuilderError},
+    specified::{SpecifiedPrincipal, SpecifiedPrincipalBuilder},
 };
 
 use {
@@ -142,7 +142,7 @@ mod tests {
             AwsPrincipal::from_str("arn:aws:iam::123456789012:role/test").unwrap(),
         ];
         let p1 = Principal::Any;
-        let p2 = Principal::Specified(SpecifiedPrincipal::builder().aws(aws_principal).build().unwrap());
+        let p2 = Principal::Specified(SpecifiedPrincipal::builder().aws(aws_principal).build());
 
         assert_eq!(format!("{p1}"), r#""*""#);
         assert_eq!(
