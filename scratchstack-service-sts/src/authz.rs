@@ -119,6 +119,9 @@ pub(crate) async fn check_assume_role_authorization(
     if let Some(user_agent) = &request_metadata.user_agent {
         session_data.insert(SESSION_KEY_AWS_USER_AGENT, SessionValue::String(user_agent.clone()));
     }
+    // The role being assumed is the resource, so its account owns it -- which is the caller's
+    // own account only when this is not a cross-account AssumeRole.
+    session_data.insert(SESSION_KEY_AWS_RESOURCE_ACCOUNT, SessionValue::String(role_arn.account_id().to_string()));
     if let Some(external_id) = external_id {
         session_data.insert(SESSION_KEY_STS_EXTERNAL_ID, SessionValue::String(external_id.to_string()));
     }

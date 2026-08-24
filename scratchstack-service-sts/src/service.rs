@@ -153,7 +153,9 @@ mod tests {
         ('STSTESTNAMEDUSER', '123456789012', 'named-user', 'Named-User', '/'),
         ('STSTESTEXTIDUSER', '123456789012', 'extid-user', 'Extid-User', '/'),
         ('STSTESTIPUSER001', '123456789012', 'ip-user', 'Ip-User', '/'),
-        ('STSTESTIPIDUSER1', '123456789012', 'ip-identity-user', 'Ip-Identity-User', '/');
+        ('STSTESTIPIDUSER1', '123456789012', 'ip-identity-user', 'Ip-Identity-User', '/'),
+        ('STSTESTRSRCACCT1', '123456789012', 'resource-account-user', 'Resource-Account-User', '/'),
+        ('STSTESTOTHRACCT1', '123456789012', 'other-account-user', 'Other-Account-User', '/');
 
         INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
         ('STSTESTALLOWUSER', 'allow-assume-role', 'Allow-Assume-Role',
@@ -165,6 +167,14 @@ mod tests {
         ('STSTESTIPUSER001', 'allow-assume-ip-role', 'Allow-Assume-Ip-Role',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole",
            "Resource":"arn:aws:iam::123456789012:role/ip-trusted-role"}]}'),
+        ('STSTESTRSRCACCT1', 'allow-assume-in-own-account', 'Allow-Assume-In-Own-Account',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole",
+           "Resource":"arn:aws:iam::123456789012:role/account-trusted-role",
+           "Condition":{"StringEquals":{"aws:ResourceAccount":"123456789012"}}}]}'),
+        ('STSTESTOTHRACCT1', 'allow-assume-in-other-account', 'Allow-Assume-In-Other-Account',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole",
+           "Resource":"arn:aws:iam::123456789012:role/account-trusted-role",
+           "Condition":{"StringEquals":{"aws:ResourceAccount":"210987654321"}}}]}'),
         ('STSTESTIPIDUSER1', 'allow-assume-from-block', 'Allow-Assume-From-Block',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole",
            "Resource":"arn:aws:iam::123456789012:role/account-trusted-role",
@@ -588,6 +598,42 @@ mod tests {
                 ("Action", "AssumeRole"),
                 ("Version", "2011-06-15"),
                 ("RoleArn", EXTERNAL_ID_ROLE_ARN),
+                ("RoleSessionName", "test-session"),
+            ],
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // aws:ResourceAccount names the account that owns the role being assumed, which the role
+        // ARN carries: a grant scoped to that account admits the request...
+        let (principal, session_data) = user_identity("STSTESTRSRCACCT1", "Resource-Account-User");
+        let (status, body) = call_as(
+            &svc_state,
+            principal,
+            session_data,
+            &[
+                ("Action", "AssumeRole"),
+                ("Version", "2011-06-15"),
+                ("RoleArn", ACCOUNT_TRUSTED_ROLE_ARN),
+                ("RoleSessionName", "test-session"),
+            ],
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<AssumeRoleResult>"), "unexpected body: {body}");
+
+        // ...and one scoped to another account does not, even though the caller could otherwise
+        // assume this role.
+        let (principal, session_data) = user_identity("STSTESTOTHRACCT1", "Other-Account-User");
+        let (status, body) = call_as(
+            &svc_state,
+            principal,
+            session_data,
+            &[
+                ("Action", "AssumeRole"),
+                ("Version", "2011-06-15"),
+                ("RoleArn", ACCOUNT_TRUSTED_ROLE_ARN),
                 ("RoleSessionName", "test-session"),
             ],
         )
