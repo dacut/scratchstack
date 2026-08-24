@@ -51,5 +51,9 @@ pub const SESSION_KEY_AWS_SECURE_TRANSPORT: &str = "aws:SecureTransport";
 /// Session key for the unique id of the calling principal.
 pub const SESSION_KEY_AWS_USERID: &str = "aws:userid";
 
+/// Session key prefix for the tags attached to the resource a request operates on; the tag key
+/// follows the prefix.
+pub const SESSION_KEY_PREFIX_AWS_RESOURCE_TAG: &str = "aws:ResourceTag/";
+
 /// XML namespace for AWSFault errors.
 pub const XML_NS_AWSFAULT: &str = "http://webservices.amazon.com/AWSFault/2005-15-09";
