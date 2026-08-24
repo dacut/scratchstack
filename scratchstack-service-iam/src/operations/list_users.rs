@@ -83,6 +83,7 @@ pub(crate) async fn list_users(
         svc_state.secure_transport,
         Action::ListUsers,
         &[],
+        &SessionData::new(),
     )
     .await
     {

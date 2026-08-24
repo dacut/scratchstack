@@ -12,7 +12,10 @@ use {
         response::Responder as _,
     },
     scratchstack_iam_database::authz::{get_policies_by_ids, get_policies_for_role, get_policies_for_user},
-    scratchstack_shapes_iam::{action::Action, types::error::AccessDeniedException},
+    scratchstack_shapes_iam::{
+        action::Action,
+        types::{Tag, error::AccessDeniedException},
+    },
     sqlx::postgres::PgTransaction,
 };
 
@@ -25,6 +28,10 @@ use {
 /// `resources` holds the resource ARNs the request operates on; pass an empty slice for
 /// operations without resource-level permissions (policies must then grant the action with
 /// `Resource: "*"`).
+///
+/// `request_context` holds the condition keys derived from the request itself and from the
+/// resources it names -- the tags on those resources, for example. They are layered onto the
+/// session data the authentication layer produced, so a caller cannot supply them.
 ///
 /// Returns `Ok(())` when the request is allowed. Otherwise returns the ready-to-send error
 /// response: an `AccessDeniedException` for policy denials, or an `InternalFailure` when
@@ -41,6 +48,7 @@ pub(crate) async fn check_authorization(
     secure_transport: bool,
     action: Action,
     resources: &[Arn],
+    request_context: &SessionData,
 ) -> Result<(), Box<Response<Body>>> {
     // The account root user is not constrained by identity-based policies or permissions
     // boundaries (and has no user row to gather policies for). Nothing in the system mints root
@@ -119,6 +127,7 @@ pub(crate) async fn check_authorization(
     // Enrich the session data with request-time condition keys; these must reflect the time of
     // evaluation, not the time of signature verification.
     let mut session_data = session_data.clone();
+    session_data.extend(request_context);
     let now = Utc::now();
     session_data.insert(SESSION_KEY_AWS_CURRENT_TIME, SessionValue::Timestamp(now));
     session_data.insert(SESSION_KEY_AWS_EPOCH_TIME, SessionValue::Integer(now.timestamp()));
@@ -173,6 +182,25 @@ pub(crate) async fn check_authorization(
     }
 
     Err(Box::new(AccessDeniedException::builder().message(message).request_id(request_id).build().respond()))
+}
+
+/// Build the condition keys describing the tags attached to the resource a request operates on,
+/// for the `request_context` argument of [`check_authorization`].
+///
+/// Resource tags are exposed both through the service-agnostic `aws:ResourceTag/${TagKey}`
+/// condition key and, for IAM entities, through IAM's own `iam:ResourceTag/${TagKey}` key. Tag
+/// keys are compared case-insensitively, which [`SessionData`] provides by lower-casing keys as
+/// they are inserted.
+pub(crate) fn resource_tag_context(tags: &[Tag]) -> SessionData {
+    let mut context = SessionData::with_capacity(2 * tags.len());
+
+    for tag in tags {
+        let value = SessionValue::String(tag.value.clone());
+        context.insert(&format!("{SESSION_KEY_PREFIX_AWS_RESOURCE_TAG}{}", tag.key), value.clone());
+        context.insert(&format!("{SESSION_KEY_PREFIX_IAM_RESOURCE_TAG}{}", tag.key), value);
+    }
+
+    context
 }
 
 /// Build the base "not authorized" sentence for an access-denied message, deriving the

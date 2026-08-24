@@ -1,4 +1,4 @@
+mod get_user;
 mod list_users;
 
-#[allow(unused_imports, unused)]
-pub(crate) use list_users::list_users;
+pub(crate) use {get_user::get_user, list_users::list_users};
