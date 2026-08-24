@@ -9,8 +9,8 @@ use {
 const DEFAULT_THREADS: usize = 1;
 
 /// Runtime configuration for a service.
-#[derive(Builder, Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Builder, Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeConfig {
     /// The number of threads to use for the service. If unspecified, defaults to the number of
     /// cores on the machine.

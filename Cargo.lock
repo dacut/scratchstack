@@ -2460,6 +2460,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
+name = "scratchstack"
+version = "0.12.0"
+dependencies = [
+ "clap",
+ "env_logger",
+ "futures",
+ "log",
+ "scratchstack-config",
+ "scratchstack-hakari",
+ "scratchstack-service-common",
+ "scratchstack-service-iam",
+ "scratchstack-service-sts",
+ "sqlx",
+ "tokio",
+ "tower",
+]
+
+[[package]]
 name = "scratchstack-arn"
 version = "0.12.0"
 dependencies = [
@@ -2759,14 +2777,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "scratchstack-service-iam"
+name = "scratchstack-service-common"
 version = "0.12.0"
 dependencies = [
  "bon",
- "chrono",
- "clap",
- "env_logger",
  "form_urlencoded",
+ "log",
+ "pretty_assertions",
+ "scratchstack-aws-signature",
+ "scratchstack-config",
+ "scratchstack-core",
+ "scratchstack-hakari",
+ "scratchstack-iam-database",
+ "sqlx",
+ "tokio",
+ "tower",
+]
+
+[[package]]
+name = "scratchstack-service-iam"
+version = "0.12.0"
+dependencies = [
+ "chrono",
  "http-body-util",
  "log",
  "pretty_assertions",
@@ -2774,28 +2806,23 @@ dependencies = [
  "scratchstack-aspen",
  "scratchstack-aws-principal",
  "scratchstack-aws-signature",
- "scratchstack-config",
  "scratchstack-core",
  "scratchstack-hakari",
  "scratchstack-iam-database",
+ "scratchstack-service-common",
  "scratchstack-shapes-iam",
- "serde",
  "serde_urlencoded",
  "sqlx",
  "test-log",
  "tokio",
- "tower",
 ]
 
 [[package]]
 name = "scratchstack-service-sts"
 version = "0.12.0"
 dependencies = [
- "bon",
  "bytes",
  "chrono",
- "clap",
- "env_logger",
  "form_urlencoded",
  "http-body-util",
  "log",
@@ -2804,17 +2831,15 @@ dependencies = [
  "scratchstack-aspen",
  "scratchstack-aws-principal",
  "scratchstack-aws-signature",
- "scratchstack-config",
  "scratchstack-core",
  "scratchstack-hakari",
  "scratchstack-iam-database",
+ "scratchstack-service-common",
  "scratchstack-shapes-iam",
  "scratchstack-shapes-sts",
- "serde",
  "sqlx",
  "test-log",
  "tokio",
- "tower",
 ]
 
 [[package]]

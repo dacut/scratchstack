@@ -196,13 +196,6 @@ where
             encrypted_payload,
         } = EncryptedSessionTokenData::from_session_token(request.session_token.as_bytes(), request.request_id)?;
 
-        log::info!(
-            "Got encrypted session token: key_id={}, account_id={}, nonce={:?}, encrypted_payload_length={}",
-            key_id,
-            account_id,
-            nonce,
-            encrypted_payload.len()
-        );
         // After decryption, this buffer holds the plaintext token data -- including the raw
         // secret key -- so it must be zeroized on every exit path.
         let mut payload = Zeroizing::new(encrypted_payload);

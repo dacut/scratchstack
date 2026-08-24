@@ -1,0 +1,42 @@
+# Scratchstack deployment configuration.
+#
+# One file describes every service. A binary built with only some of them still reads this file
+# and ignores the sections for services it was not built with, so the same file works for a
+# combined binary and for slimmed, single-service binaries.
+
+# Process-global. Not inheritable: one process runs one Tokio runtime, so this cannot be
+# overridden per service.
+[runtime]
+threads = 20
+
+# Inherited by every service section below. Individual services override these values.
+# Note that a listener port does not belong here: every service would inherit it and all but one
+# would fail to bind.
+[defaults.scope]
+partition = "local"
+region = "local"
+
+# Databases are named. Services referencing the same name share a single connection pool.
+[database.default]
+database = "scratchstack_iam"
+host = "localhost"
+port = 7154
+min_connections = 5
+max_connections = 10
+connection_timeout = "1s"
+max_lifetime = "1h"
+test_before_acquire = true
+
+# Per-service sections. Scalar keys must precede subtables: `database_ref` has to come before
+# `[iam.listener]`, or TOML places it inside the listener table.
+[iam]
+database_ref = "default"
+
+[iam.listener]
+port = 7401
+
+[sts]
+database_ref = "default"
+
+[sts.listener]
+port = 7400

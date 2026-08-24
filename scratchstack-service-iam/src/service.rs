@@ -11,23 +11,15 @@ use {
         },
         response::Responder as _,
     },
+    scratchstack_service_common::query::{join_parameters, scan_action_version},
     scratchstack_shapes_iam::{
         action::{Action, VERSION as IAM_VERSION},
         types::error::{InternalFailure, InvalidAction, MalformedInput},
     },
-    sqlx::postgres::PgPool,
-    std::{borrow::Cow, str::from_utf8, sync::Arc},
+    std::str::from_utf8,
 };
 
-/// Service state for handling requests.
-#[derive(Clone)]
-pub(crate) struct ServiceState {
-    /// Connection to the IAM database.
-    pub(crate) db: Arc<PgPool>,
-
-    /// Whether the listener terminates TLS; supplies the `aws:SecureTransport` condition key.
-    pub(crate) secure_transport: bool,
-}
+pub(crate) use scratchstack_service_common::ServiceState;
 
 pub(crate) async fn serve_request(
     State(svc_state): State<ServiceState>,
@@ -46,27 +38,8 @@ pub(crate) async fn serve_request(
         }
     };
 
-    // The AWS query protocol carries parameters in the query string, in the body, or split across
-    // both; SigV4 signs both, so we join them into a single parameter list. Body parameters are
-    // appended last so they win if a parameter appears in both places. These are left url-encoded
-    // here; each operation deserializes the parameters into its own request type.
-    let query = query.as_deref().unwrap_or_default();
-    let parameters: Cow<'_, str> = match (query, body) {
-        ("", body) => Cow::Borrowed(body),
-        (query, "") => Cow::Borrowed(query),
-        (query, body) => Cow::Owned(format!("{query}&{body}")),
-    };
-
-    let mut action: Cow<'_, str> = Cow::Borrowed(NO_ACTION_SPECIFIED);
-    let mut version: Cow<'_, str> = Cow::Borrowed(NO_VERSION_SPECIFIED);
-
-    for (key, value) in form_urlencoded::parse(parameters.as_bytes()) {
-        match key.as_ref() {
-            QP_ACTION => action = value,
-            QP_VERSION => version = value,
-            _ => (),
-        }
-    }
+    let parameters = join_parameters(query.as_deref().unwrap_or_default(), body);
+    let (action, version) = scan_action_version(&parameters);
 
     if version != IAM_VERSION {
         return invalid_action(request_id, &action, &version);
@@ -274,10 +247,7 @@ mod tests {
         raw_sql(AUTHZ_TEST_DATA).execute(&mut *c).await.expect("Failed to load test data into database");
         drop(c);
 
-        let svc_state = ServiceState {
-            db: Arc::new(pool),
-            secure_transport: true,
-        };
+        let svc_state = ServiceState::builder().db(Arc::new(pool)).secure_transport(true).build();
         let parameters = "Action=ListUsers&Version=2010-05-08";
 
         // A user whose inline policy allows iam:ListUsers gets a successful response.
@@ -320,10 +290,7 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
         assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
 
-        let insecure_state = ServiceState {
-            db: svc_state.db.clone(),
-            secure_transport: false,
-        };
+        let insecure_state = ServiceState::builder().db(svc_state.db.clone()).secure_transport(false).build();
         let (principal, session_data) = user_identity("SVCTESTTLSUSER01", "Tls-User");
         let (status, body) = call(&insecure_state, principal, session_data, parameters).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");

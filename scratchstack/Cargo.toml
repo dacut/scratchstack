@@ -1,0 +1,38 @@
+[package]
+name = "scratchstack"
+description = "AWS-compatible IAM and STS services in a single server"
+
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[features]
+default = ["iam", "sts"]
+# Each service is a separate feature so that a deployment can build a binary containing only the
+# services it runs, keeping the others' request handlers out of the binary entirely.
+iam = ["dep:scratchstack-service-iam"]
+sts = ["dep:scratchstack-service-sts"]
+
+[dependencies]
+clap = { workspace = true, features = ["derive"] }
+env_logger.workspace = true
+futures.workspace = true
+log.workspace = true
+scratchstack-config.path = "../scratchstack-config"
+scratchstack-hakari = { path = "../scratchstack-hakari" }
+scratchstack-service-common.path = "../scratchstack-service-common"
+scratchstack-service-iam = { path = "../scratchstack-service-iam", optional = true }
+scratchstack-service-sts = { path = "../scratchstack-service-sts", optional = true }
+sqlx = { workspace = true, features = [
+    "all-databases",
+    "chrono",
+    "macros",
+    "migrate",
+    "runtime-tokio",
+    "tls-rustls",
+] }
+tokio = { workspace = true, features = ["net", "rt-multi-thread"] }
+tower.workspace = true

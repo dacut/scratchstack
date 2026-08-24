@@ -13,23 +13,15 @@ use {
         },
         response::Responder as _,
     },
+    scratchstack_service_common::query::{join_parameters, scan_action_version},
     scratchstack_shapes_sts::{
         action::{Action, VERSION as STS_VERSION},
         types::error::{InternalFailure, InvalidAction, InvalidClientTokenId, MalformedInput},
     },
-    sqlx::postgres::PgPool,
-    std::{borrow::Cow, str::from_utf8, sync::Arc},
+    std::str::from_utf8,
 };
 
-/// Service state for handling requests.
-#[derive(Clone)]
-pub(crate) struct ServiceState {
-    /// Connection to the IAM database.
-    pub(crate) db: Arc<PgPool>,
-
-    /// Whether the listener terminates TLS; supplies the `aws:SecureTransport` condition key.
-    pub(crate) secure_transport: bool,
-}
+pub(crate) use scratchstack_service_common::ServiceState;
 
 pub(crate) async fn serve_request(
     State(svc_state): State<ServiceState>,
@@ -47,27 +39,8 @@ pub(crate) async fn serve_request(
         }
     };
 
-    // The AWS query protocol carries parameters in the query string, in the body, or split across
-    // both; SigV4 signs both, so we join them into a single parameter list. Body parameters are
-    // appended last so they win if a parameter appears in both places. These are left url-encoded
-    // here; each operation deserializes the parameters into its own request type.
-    let query = query.as_deref().unwrap_or_default();
-    let parameters: Cow<'_, str> = match (query, body) {
-        ("", body) => Cow::Borrowed(body),
-        (query, "") => Cow::Borrowed(query),
-        (query, body) => Cow::Owned(format!("{query}&{body}")),
-    };
-
-    let mut action: Cow<'_, str> = Cow::Borrowed(NO_ACTION_SPECIFIED);
-    let mut version: Cow<'_, str> = Cow::Borrowed(NO_VERSION_SPECIFIED);
-
-    for (key, value) in form_urlencoded::parse(parameters.as_bytes()) {
-        match key.as_ref() {
-            QP_ACTION => action = value,
-            QP_VERSION => version = value,
-            _ => (),
-        }
-    }
+    let parameters = join_parameters(query.as_deref().unwrap_or_default(), body);
+    let (action, version) = scan_action_version(&parameters);
 
     if version != STS_VERSION {
         return invalid_action(request_id, &action, &version);
@@ -203,10 +176,7 @@ mod tests {
         let pool = PgPoolOptions::new()
             .connect_lazy("postgres://localhost/scratchstack-sts-test-unused")
             .expect("failed to build lazy pool");
-        ServiceState {
-            db: Arc::new(pool),
-            secure_transport: true,
-        }
+        ServiceState::builder().db(Arc::new(pool)).secure_transport(true).build()
     }
 
     /// Build the principal and session data the SigV4 layer would produce for a seeded user.
@@ -388,10 +358,7 @@ mod tests {
             .expect("Failed to create session token encryption key");
         tx.commit().await.expect("Failed to commit transaction");
 
-        let svc_state = ServiceState {
-            db: Arc::new(pool),
-            secure_transport: true,
-        };
+        let svc_state = ServiceState::builder().db(Arc::new(pool)).secure_transport(true).build();
 
         const ACCOUNT_TRUSTED_ROLE_ARN: &str = "arn:aws:iam::123456789012:role/account-trusted-role";
         const NAMED_USER_ROLE_ARN: &str = "arn:aws:iam::123456789012:role/named-user-role";
