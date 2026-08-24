@@ -80,12 +80,12 @@ impl Context {
         }
     }
 
-    /// Creates a [Regex] from the given string pattern and policy version.
+    /// Creates a [`Regex`] from the given string pattern and policy version.
     ///
-    /// If `case_insensitive` is `true`, the returned [Regex] will be case insensitive.
+    /// If `case_insensitive` is `true`, the returned [`Regex`] will be case insensitive.
     ///
     /// Wildcards are converted to their regular expression equivalents. If the policy version is
-    /// [PolicyVersion::V2012_10_17] or later, variables are substituted and regex-escaped as necessary. The special
+    /// [`PolicyVersion::V2012_10_17`] or later, variables are substituted and regex-escaped as necessary. The special
     /// variables `${*}`, `${$}`, and `${?}` are converted to literal `*`, `$`, and `?` characters, respectively, then
     /// regex-escaped.
     ///
@@ -100,9 +100,9 @@ impl Context {
         }
     }
 
-    /// Creates a [Regex] from the given string pattern.
+    /// Creates a [`Regex`] from the given string pattern.
     ///
-    /// If `case_insensitive` is `true`, the returned [Regex] will be case insensitive.
+    /// If `case_insensitive` is `true`, the returned [`Regex`] will be case insensitive.
     ///
     /// Wildcards are converted to their regular expression equivalents. Variables are substituted and regex-escaped
     /// as necessary. The special variables `${*}`, `${$}`, and `${?}` are converted to literal `*`, `$`, and `?`
@@ -208,9 +208,9 @@ impl Context {
     }
 }
 
-/// Creates a [Regex] from the given string pattern.
+/// Creates a [`Regex`] from the given string pattern.
 ///
-/// If `case_insensitive` is `true`, the returned [Regex] will be case insensitive.
+/// If `case_insensitive` is `true`, the returned [`Regex`] will be case insensitive.
 ///
 /// Wildcards are converted to their regular expression equivalents. Variables are _not_ substituted here.
 pub(crate) fn regex_from_glob(s: &str, case_insensitive: bool) -> Regex {

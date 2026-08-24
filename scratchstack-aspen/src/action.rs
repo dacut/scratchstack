@@ -54,11 +54,11 @@ impl PartialEq for Action {
 impl Eq for Action {}
 
 impl Action {
-    /// Create a new [Action::Specific] action.
+    /// Create a new [`Action::Specific`] action.
     ///
     /// # Errors
     ///
-    /// An [AspenError::InvalidAction] error is returned in any of the following cases:
+    /// An [`AspenError::InvalidAction`] error is returned in any of the following cases:
     /// * `service` or `api` is empty.
     /// * `service` contains characters other than ASCII alphanumerics, hyphen (`-`), or underscore (`_`).
     /// * `service` begins or ends with a hyphen or underscore.
