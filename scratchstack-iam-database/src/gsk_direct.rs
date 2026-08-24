@@ -282,12 +282,17 @@ async fn get_signing_key_from_database(
             let mut stek_extractor = PostcardSessionTokenExtractor::builder().key_service(get_stek_service).build();
             let token = stek_extractor.extract(ext_req).await?;
 
-            // The session metadata records what was true when the session was minted. The region
-            // a request targets is not: one set of temporary credentials may be presented to any
-            // region afterward, so aws:RequestedRegion is taken from the request being signed and
-            // overrides anything the token carries.
+            // The session metadata records what was true when the session was minted. What the
+            // request determines is not in there: the region it targets, and whether an AWS
+            // service is making it on the session's behalf. Those are taken from the request
+            // being signed and override anything the token carries -- one set of temporary
+            // credentials may be presented to any region afterward. A session token is only ever
+            // issued to a role session, never to a service principal, so aws:PrincipalIsAWSService
+            // is false here just as it is for an IAM user.
             let mut session_data = token.metadata;
+            session_data.insert("aws:PrincipalIsAWSService", SessionValue::Bool(false));
             session_data.insert("aws:RequestedRegion", SessionValue::String(req.region().to_string()));
+            session_data.insert("aws:ViaAWSService", SessionValue::Bool(false));
 
             // Session policies restrict what the session may do; carry them to the service so
             // its authorization step can intersect them with the role's identity-based policies.
