@@ -132,6 +132,10 @@ mod tests {
 
     const TEST_ACCOUNT_ID: &str = "123456789012";
 
+    /// The region test requests are signed for; the signing-key provider records it as
+    /// `aws:RequestedRegion` for both long-term and temporary credentials.
+    const TEST_REGION: &str = "us-east-1";
+
     /// The peer address test requests arrive from unless a test names another, backing the
     /// `aws:SourceIp` condition key. The addresses used here come from the documentation ranges
     /// reserved by RFC 5737 and RFC 3849.
@@ -168,7 +172,9 @@ mod tests {
         ('SVCTESTIPV4USER1', '123456789012', 'ipv4-user', 'Ipv4-User', '/'),
         ('SVCTESTIPV6USER1', '123456789012', 'ipv6-user', 'Ipv6-User', '/'),
         ('SVCTESTDENYIPUSR', '123456789012', 'deny-ip-user', 'Deny-Ip-User', '/'),
-        ('SVCTESTTOKENUSER', '123456789012', 'token-user', 'Token-User', '/');
+        ('SVCTESTTOKENUSER', '123456789012', 'token-user', 'Token-User', '/'),
+        ('SVCTESTREGIONUSR', '123456789012', 'region-user', 'Region-User', '/'),
+        ('SVCTESTOTHERRGN1', '123456789012', 'other-region-user', 'Other-Region-User', '/');
 
         INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
         ('SVCTESTALLOWUSER', 'allow-list-users', 'Allow-List-Users',
@@ -191,6 +197,12 @@ mod tests {
         ('SVCTESTIPV6USER1', 'allow-from-ipv6-block', 'Allow-From-Ipv6-Block',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
            "Condition":{"IpAddress":{"aws:SourceIp":"2001:db8::/32"}}}]}'),
+        ('SVCTESTREGIONUSR', 'allow-in-us-east-1', 'Allow-In-Us-East-1',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+           "Condition":{"StringEquals":{"aws:RequestedRegion":"us-east-1"}}}]}'),
+        ('SVCTESTOTHERRGN1', 'allow-in-eu-west-1', 'Allow-In-Eu-West-1',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+           "Condition":{"StringEquals":{"aws:RequestedRegion":"eu-west-1"}}}]}'),
         ('SVCTESTTOKENUSER', 'allow-recent-sessions', 'Allow-Recent-Sessions',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
            "Condition":{"DateGreaterThan":{"aws:TokenIssueTime":"2020-01-01T00:00:00Z"}}}]}'),
@@ -204,6 +216,8 @@ mod tests {
         ('SVCTESTROLE00001', '123456789012', 'session-role', 'Session-Role', '/',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'),
         ('SVCTESTTOKENROLE', '123456789012', 'token-role', 'Token-Role', '/',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'),
+        ('SVCTESTRGNROLE01', '123456789012', 'region-role', 'Region-Role', '/',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}');
 
         INSERT INTO iam.role_inline_policies(role_id, policy_name_lower, policy_name_cased, policy_document) VALUES
@@ -211,7 +225,10 @@ mod tests {
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*"}]}'),
         ('SVCTESTTOKENROLE', 'allow-recent-sessions', 'Allow-Recent-Sessions',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
-           "Condition":{"DateGreaterThan":{"aws:TokenIssueTime":"2020-01-01T00:00:00Z"}}}]}');
+           "Condition":{"DateGreaterThan":{"aws:TokenIssueTime":"2020-01-01T00:00:00Z"}}}]}'),
+        ('SVCTESTRGNROLE01', 'allow-in-us-east-1', 'Allow-In-Us-East-1',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+           "Condition":{"StringEquals":{"aws:RequestedRegion":"us-east-1"}}}]}');
 
         INSERT INTO iam.managed_policies(managed_policy_id, account_id, managed_policy_name_lower,
             managed_policy_name_cased, path, default_version, deprecated, latest_version) VALUES
@@ -294,6 +311,7 @@ mod tests {
         session_data.insert("aws:userid", SessionValue::String(format!("AIDA{user_id}")));
         session_data.insert("aws:username", SessionValue::String(user_name.to_string()));
         session_data.insert("aws:PrincipalType", SessionValue::String("User".to_string()));
+        session_data.insert("aws:RequestedRegion", SessionValue::String(TEST_REGION.to_string()));
         (principal, session_data)
     }
 
@@ -328,6 +346,7 @@ mod tests {
         session_data.insert("aws:userid", SessionValue::String(format!("AROA{role_id}:test-session")));
         session_data.insert("aws:PrincipalType", SessionValue::String("AssumedRole".to_string()));
         session_data.insert("aws:MultiFactorAuthPresent", SessionValue::Bool(false));
+        session_data.insert("aws:RequestedRegion", SessionValue::String(TEST_REGION.to_string()));
         session_data.insert("aws:TokenIssueTime", SessionValue::Timestamp(issued_at));
         (principal, session_data)
     }
@@ -607,6 +626,25 @@ mod tests {
             call_forwarded(&proxied_state, principal, session_data, TEST_PROXY_IP, "198.51.100.7", parameters).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
         assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // aws:RequestedRegion names the region the request was signed for, so a grant scoped to
+        // one region admits a request in it and a grant scoped to another does not.
+        let (principal, session_data) = user_identity("SVCTESTREGIONUSR", "Region-User");
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        let (principal, session_data) = user_identity("SVCTESTOTHERRGN1", "Other-Region-User");
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A role session carries the key too, now that the signing-key provider records it for
+        // temporary credentials rather than leaving it to the session token.
+        let (principal, session_data) = role_identity("SVCTESTRGNROLE01", "Region-Role");
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
 
         // aws:TokenIssueTime comes from the session token rather than the request, carrying the
         // moment sts:AssumeRole minted the credentials: a grant restricted to sessions issued

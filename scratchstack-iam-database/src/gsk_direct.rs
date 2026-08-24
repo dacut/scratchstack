@@ -281,7 +281,14 @@ async fn get_signing_key_from_database(
 
             let mut stek_extractor = PostcardSessionTokenExtractor::builder().key_service(get_stek_service).build();
             let token = stek_extractor.extract(ext_req).await?;
-            let session_data = token.metadata;
+
+            // The session metadata records what was true when the session was minted. The region
+            // a request targets is not: one set of temporary credentials may be presented to any
+            // region afterward, so aws:RequestedRegion is taken from the request being signed and
+            // overrides anything the token carries.
+            let mut session_data = token.metadata;
+            session_data.insert("aws:RequestedRegion", SessionValue::String(req.region().to_string()));
+
             // Session policies restrict what the session may do; carry them to the service so
             // its authorization step can intersect them with the role's identity-based policies.
             let session_policies = SessionPolicies::builder()

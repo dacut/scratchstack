@@ -2140,6 +2140,43 @@ pub async fn test_assume_role_with_session_policies(pool: &sqlx::PgPool) {
         .expect("Failed to get signing key");
 
     assert!(gsk_response.principal().as_assumed_role().is_some());
+
+    // The session data handed to the service is the token's metadata plus the facts only the
+    // request knows: the session's own keys survive, and aws:RequestedRegion names the region
+    // this request targets rather than anything recorded when the session was minted.
+    let session_data = gsk_response.session_data();
+    assert_eq!(session_data.get("aws:RequestedRegion"), Some(&SessionValue::String("us-east-1".to_string())));
+    assert_eq!(session_data.get("aws:PrincipalType"), Some(&SessionValue::String("AssumedRole".to_string())));
+    assert!(matches!(session_data.get("aws:TokenIssueTime"), Some(&SessionValue::Timestamp(_))));
+
+    // The same credentials presented to another region report that region instead.
+    let mut gsk = GetSigningKeyFromDatabase::builder()
+        .pool(Arc::new(pool.clone()))
+        .partition("aws")
+        .region("us-west-2")
+        .service("iam")
+        .build();
+    let gsk_request = GetSigningKeyRequest::builder()
+        .access_key(credentials.access_key_id.clone())
+        .session_token(credentials.session_token.clone())
+        .request_date(Utc::now().date_naive())
+        .region("us-west-2")
+        .service("iam")
+        .request_id(RequestId::new())
+        .build();
+    let west_response = gsk
+        .ready()
+        .await
+        .expect("GetSigningKeyFromDatabase should be ready")
+        .call(gsk_request)
+        .await
+        .expect("Failed to get signing key");
+
+    assert_eq!(
+        west_response.session_data().get("aws:RequestedRegion"),
+        Some(&SessionValue::String("us-west-2".to_string()))
+    );
+
     let session_policies = gsk_response.session_policies();
     let inline_policy = session_policies.inline_policy().expect("Inline session policy should be present");
     assert!(inline_policy.to_string().contains("s3:ListBucket"));
