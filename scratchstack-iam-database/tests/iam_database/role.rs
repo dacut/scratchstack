@@ -2142,10 +2142,13 @@ pub async fn test_assume_role_with_session_policies(pool: &sqlx::PgPool) {
     assert!(gsk_response.principal().as_assumed_role().is_some());
 
     // The session data handed to the service is the token's metadata plus the facts only the
-    // request knows: the session's own keys survive, and aws:RequestedRegion names the region
-    // this request targets rather than anything recorded when the session was minted.
+    // request knows: the session's own keys survive, aws:RequestedRegion names the region this
+    // request targets rather than anything recorded when the session was minted, and a role
+    // session is neither a service principal nor a service making a call on its behalf.
     let session_data = gsk_response.session_data();
     assert_eq!(session_data.get("aws:RequestedRegion"), Some(&SessionValue::String("us-east-1".to_string())));
+    assert_eq!(session_data.get("aws:PrincipalIsAWSService"), Some(&SessionValue::Bool(false)));
+    assert_eq!(session_data.get("aws:ViaAWSService"), Some(&SessionValue::Bool(false)));
     assert_eq!(session_data.get("aws:PrincipalType"), Some(&SessionValue::String("AssumedRole".to_string())));
     assert!(matches!(session_data.get("aws:TokenIssueTime"), Some(&SessionValue::Timestamp(_))));
 

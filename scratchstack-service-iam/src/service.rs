@@ -174,7 +174,8 @@ mod tests {
         ('SVCTESTDENYIPUSR', '123456789012', 'deny-ip-user', 'Deny-Ip-User', '/'),
         ('SVCTESTTOKENUSER', '123456789012', 'token-user', 'Token-User', '/'),
         ('SVCTESTREGIONUSR', '123456789012', 'region-user', 'Region-User', '/'),
-        ('SVCTESTOTHERRGN1', '123456789012', 'other-region-user', 'Other-Region-User', '/');
+        ('SVCTESTOTHERRGN1', '123456789012', 'other-region-user', 'Other-Region-User', '/'),
+        ('SVCTESTDIRECTUSR', '123456789012', 'direct-call-user', 'Direct-Call-User', '/');
 
         INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
         ('SVCTESTALLOWUSER', 'allow-list-users', 'Allow-List-Users',
@@ -197,6 +198,9 @@ mod tests {
         ('SVCTESTIPV6USER1', 'allow-from-ipv6-block', 'Allow-From-Ipv6-Block',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
            "Condition":{"IpAddress":{"aws:SourceIp":"2001:db8::/32"}}}]}'),
+        ('SVCTESTDIRECTUSR', 'allow-direct-calls', 'Allow-Direct-Calls',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+           "Condition":{"Bool":{"aws:ViaAWSService":"false","aws:PrincipalIsAWSService":"false"}}}]}'),
         ('SVCTESTREGIONUSR', 'allow-in-us-east-1', 'Allow-In-Us-East-1',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
            "Condition":{"StringEquals":{"aws:RequestedRegion":"us-east-1"}}}]}'),
@@ -218,6 +222,8 @@ mod tests {
         ('SVCTESTTOKENROLE', '123456789012', 'token-role', 'Token-Role', '/',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'),
         ('SVCTESTRGNROLE01', '123456789012', 'region-role', 'Region-Role', '/',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'),
+        ('SVCTESTDIRROLE01', '123456789012', 'direct-call-role', 'Direct-Call-Role', '/',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}');
 
         INSERT INTO iam.role_inline_policies(role_id, policy_name_lower, policy_name_cased, policy_document) VALUES
@@ -228,7 +234,10 @@ mod tests {
            "Condition":{"DateGreaterThan":{"aws:TokenIssueTime":"2020-01-01T00:00:00Z"}}}]}'),
         ('SVCTESTRGNROLE01', 'allow-in-us-east-1', 'Allow-In-Us-East-1',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
-           "Condition":{"StringEquals":{"aws:RequestedRegion":"us-east-1"}}}]}');
+           "Condition":{"StringEquals":{"aws:RequestedRegion":"us-east-1"}}}]}'),
+        ('SVCTESTDIRROLE01', 'allow-direct-calls', 'Allow-Direct-Calls',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+           "Condition":{"Bool":{"aws:ViaAWSService":"false","aws:PrincipalIsAWSService":"false"}}}]}');
 
         INSERT INTO iam.managed_policies(managed_policy_id, account_id, managed_policy_name_lower,
             managed_policy_name_cased, path, default_version, deprecated, latest_version) VALUES
@@ -311,7 +320,9 @@ mod tests {
         session_data.insert("aws:userid", SessionValue::String(format!("AIDA{user_id}")));
         session_data.insert("aws:username", SessionValue::String(user_name.to_string()));
         session_data.insert("aws:PrincipalType", SessionValue::String("User".to_string()));
+        session_data.insert("aws:PrincipalIsAWSService", SessionValue::Bool(false));
         session_data.insert("aws:RequestedRegion", SessionValue::String(TEST_REGION.to_string()));
+        session_data.insert("aws:ViaAWSService", SessionValue::Bool(false));
         (principal, session_data)
     }
 
@@ -346,8 +357,10 @@ mod tests {
         session_data.insert("aws:userid", SessionValue::String(format!("AROA{role_id}:test-session")));
         session_data.insert("aws:PrincipalType", SessionValue::String("AssumedRole".to_string()));
         session_data.insert("aws:MultiFactorAuthPresent", SessionValue::Bool(false));
+        session_data.insert("aws:PrincipalIsAWSService", SessionValue::Bool(false));
         session_data.insert("aws:RequestedRegion", SessionValue::String(TEST_REGION.to_string()));
         session_data.insert("aws:TokenIssueTime", SessionValue::Timestamp(issued_at));
+        session_data.insert("aws:ViaAWSService", SessionValue::Bool(false));
         (principal, session_data)
     }
 
@@ -642,6 +655,21 @@ mod tests {
         // A role session carries the key too, now that the signing-key provider records it for
         // temporary credentials rather than leaving it to the session token.
         let (principal, session_data) = role_identity("SVCTESTRGNROLE01", "Region-Role");
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        // aws:ViaAWSService and aws:PrincipalIsAWSService are both false for a request a
+        // principal makes for itself. A plain Bool condition does not match an absent key, so a
+        // grant gated on them proves they reach evaluation -- for user credentials and, now that
+        // the signing-key provider records them for temporary credentials too, for role
+        // sessions.
+        let (principal, session_data) = user_identity("SVCTESTDIRECTUSR", "Direct-Call-User");
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        let (principal, session_data) = role_identity("SVCTESTDIRROLE01", "Direct-Call-Role");
         let (status, body) = call(&svc_state, principal, session_data, parameters).await;
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
         assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
