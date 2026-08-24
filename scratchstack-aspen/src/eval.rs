@@ -1,6 +1,6 @@
 use {
-    crate::{AspenError, PolicyVersion},
-    derive_builder::Builder,
+    crate::{AspenError, PolicyVersion, action::validate_action_literal},
+    bon::bon,
     regex::{Regex, RegexBuilder},
     scratchstack_arn::Arn,
     scratchstack_aws_principal::{Principal, SessionData},
@@ -10,31 +10,68 @@ use {
 /// The request context used when evaluating an Aspen policy.
 ///
 /// Context structures are immutable.
-#[derive(Builder, Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Context {
     /// The API being invoked.
-    #[builder(setter(into))]
     api: String,
 
     /// The [Principal] actor making the request.
     actor: Principal,
 
     /// The resources associated with the request.
-    #[builder(default)]
     resources: Vec<Arn>,
 
     /// The session data associated with the request.
     session_data: SessionData,
 
     /// The service being invoked.
-    #[builder(setter(into))]
     service: String,
 }
 
+#[bon]
 impl Context {
-    /// Returns a new [ContextBuilder] for building a [Context].
-    pub fn builder() -> ContextBuilder {
-        ContextBuilder::default()
+    /// Returns a new [`ContextBuilder`] for building a [`Context`].
+    ///
+    /// `service` and `api` name the operation the request is invoking. Both are validated as
+    /// literals, because policy action patterns are globbed against them rather than the other
+    /// way around. A malformed value would therefore match no action at all, and a `NotAction`
+    /// statement inverts "matched nothing" into "applies", turning a typo into an unintended
+    /// allow. Rejecting it here keeps that failure mode out of the evaluator.
+    ///
+    /// # Errors
+    ///
+    /// An [`AspenError::InvalidAction`] error is returned if `service` or `api` is empty, is not
+    /// ASCII, contains characters outside alphanumerics and interior hyphens/underscores, or (for
+    /// `api`) contains the wildcard characters `*` or `?`.
+    #[builder(builder_type = ContextBuilder, finish_fn = build)]
+    pub fn builder(
+        /// The API being invoked.
+        #[builder(into)]
+        api: String,
+
+        /// The [`Principal`] actor making the request.
+        actor: Principal,
+
+        /// The resources associated with the request.
+        #[builder(default)]
+        resources: Vec<Arn>,
+
+        /// The session data associated with the request.
+        session_data: SessionData,
+
+        /// The service being invoked.
+        #[builder(into)]
+        service: String,
+    ) -> Result<Self, AspenError> {
+        validate_action_literal(&service, &api)?;
+
+        Ok(Self {
+            api,
+            actor,
+            resources,
+            session_data,
+            service,
+        })
     }
 
     /// Returns the API being invoked.
@@ -261,7 +298,8 @@ impl Display for Decision {
 #[cfg(test)]
 mod test {
     use {
-        crate::{Context, Decision},
+        crate::{AspenError, Context, Decision},
+        pretty_assertions::assert_eq,
         scratchstack_aws_principal::{Principal, SessionData, User},
     };
 
@@ -281,6 +319,50 @@ mod test {
 
         // Make sure we can debug print this.
         let _ = format!("{c1:?}");
+    }
+
+    /// The request-side service and API are matched as literals, so a malformed value must be
+    /// rejected at construction: it would match no action at all, which a `NotAction` statement
+    /// inverts into an unintended allow.
+    #[test_log::test]
+    fn test_context_rejects_malformed_action() {
+        let actor = Principal::from(
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("user").build().unwrap(),
+        );
+        let build = |service: &str, api: &str| {
+            Context::builder()
+                .api(api)
+                .actor(actor.clone())
+                .session_data(SessionData::default())
+                .service(service)
+                .build()
+        };
+
+        for (service, api) in
+            [("", "RunInstances"), ("ec2", ""), ("ec2 ", "RunInstances"), ("ec2", "Run Instances"), ("e:c2", "Run")]
+        {
+            assert_eq!(
+                build(service, api).unwrap_err(),
+                AspenError::InvalidAction(format!("{service}:{api}")),
+                "expected {service}:{api} to be rejected"
+            );
+        }
+
+        // Wildcards belong to policy action patterns, never to the request being evaluated.
+        for (service, api) in [("ec2", "*"), ("ec2", "Run*"), ("ec2", "RunInstance?"), ("*", "RunInstances")] {
+            assert_eq!(
+                build(service, api).unwrap_err(),
+                AspenError::InvalidAction(format!("{service}:{api}")),
+                "expected {service}:{api} to be rejected"
+            );
+        }
+
+        // The same shapes a policy action accepts, minus the wildcards, are still allowed.
+        for (service, api) in [("ec2", "RunInstances"), ("a", "B"), ("aws-marketplace", "Sub_scribe")] {
+            let context = build(service, api).expect("expected {service}:{api} to be accepted");
+            assert_eq!(context.service(), service);
+            assert_eq!(context.api(), api);
+        }
     }
 
     #[test_log::test]

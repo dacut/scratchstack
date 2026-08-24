@@ -1,7 +1,7 @@
 use {
     super::AwsPrincipal,
     crate::{display_json, from_str_json, serutil::StringLikeList},
-    derive_builder::Builder,
+    bon::Builder,
     scratchstack_aws_principal::Principal as PrincipalActor,
     serde::{Deserialize, Serialize},
 };
@@ -11,19 +11,20 @@ use {
 /// `SpecifiedPrincipal` structs are immutable. To construct this programmatically, use
 /// [`SpecifiedPrincipalBuilder`].
 #[derive(Builder, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[builder(builder_type = SpecifiedPrincipalBuilder, finish_fn = build)]
 pub struct SpecifiedPrincipal {
     /// AWS principals specified in the statement.
-    #[builder(setter(into, strip_option), default)]
+    #[builder(into)]
     #[serde(rename = "AWS", skip_serializing_if = "Option::is_none")]
     aws: Option<StringLikeList<AwsPrincipal>>,
 
     /// Federated users specified in the statement.
-    #[builder(setter(into, strip_option), default)]
+    #[builder(into)]
     #[serde(rename = "Federated", skip_serializing_if = "Option::is_none")]
     federated: Option<StringLikeList<String>>,
 
     /// Services specified in the statement.
-    #[builder(setter(into, strip_option), default)]
+    #[builder(into)]
     #[serde(rename = "Service", skip_serializing_if = "Option::is_none")]
     service: Option<StringLikeList<String>>,
 }
@@ -32,12 +33,6 @@ display_json!(SpecifiedPrincipal);
 from_str_json!(SpecifiedPrincipal);
 
 impl SpecifiedPrincipal {
-    /// Create a [`SpecifiedPrincipalBuilder`] to programmatically construct a `SpecifiedPrincipal`.
-    #[inline]
-    pub fn builder() -> SpecifiedPrincipalBuilder {
-        SpecifiedPrincipalBuilder::default()
-    }
-
     /// Returns the AWS principals specified in the statement.
     #[inline]
     pub fn aws(&self) -> Option<&StringLikeList<AwsPrincipal>> {
@@ -168,7 +163,7 @@ mod tests {
         let wrong_service = Service::builder().service_name("s3").dns_suffix("amazonaws.com").build().unwrap();
         assert!(!sp.matches(&PrincipalActor::from(wrong_service)));
 
-        let empty = SpecifiedPrincipal::builder().build().unwrap();
+        let empty = SpecifiedPrincipal::builder().build();
         assert!(!empty.matches(&PrincipalActor::from(user)));
         assert!(!empty.matches(&PrincipalActor::from(federated_user)));
         assert!(!empty.matches(&PrincipalActor::from(lambda_regional)));

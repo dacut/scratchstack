@@ -3,7 +3,7 @@ use {
         ActionList, AspenError, Condition, Context, Decision, Effect, PolicyVersion, Principal, ResourceList,
         display_json, from_str_json, serutil::MapList,
     },
-    derive_builder::Builder,
+    bon::bon,
     serde::{
         Deserialize, Serialize,
         de::{Deserializer, MapAccess, Visitor},
@@ -14,12 +14,10 @@ use {
 /// An Aspen policy statement.
 ///
 /// Statement structs are immutable after creation. They can be created using the [`StatementBuilder`].
-#[derive(Builder, Clone, Debug, Eq, PartialEq, Serialize)]
-#[builder(build_fn(validate = "Self::validate"))]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "PascalCase")]
 pub struct Statement {
     /// The user-provided statement id.
-    #[builder(setter(into, strip_option), default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     sid: Option<String>,
 
@@ -27,45 +25,96 @@ pub struct Statement {
     effect: Effect,
 
     /// The list of actions this statement applies to. Exactly one of `action` or `not_action` must be set.
-    #[builder(setter(into, strip_option), default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     action: Option<ActionList>,
 
     /// The list of actions this statement does not apply to. Exactly one of `action` or `not_action` must be set.
-    #[builder(setter(into, strip_option), default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     not_action: Option<ActionList>,
 
     /// The list of resources this statement applies to. This cannot be combined with `not_resource`.
-    #[builder(setter(into, strip_option), default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     resource: Option<ResourceList>,
 
     /// The list of resources this statement does not apply to. This cannot be combined with `resource`.
-    #[builder(setter(into, strip_option), default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     not_resource: Option<ResourceList>,
 
     /// The list of principals this statement applies to. This cannot be combined with `not_principal`.
-    #[builder(setter(into, strip_option), default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     principal: Option<Principal>,
 
     /// The list of principals this statement does not apply to. This cannot be combined with `principal`.
-    #[builder(setter(into, strip_option), default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     not_principal: Option<Principal>,
 
     /// Conditions that must be met for this statement to apply.
-    #[builder(setter(into, strip_option), default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     condition: Option<Condition>,
 }
 
+#[bon]
 impl Statement {
     /// Create a new [`StatementBuilder`] for building a [`Statement`].
-    pub fn builder() -> StatementBuilder {
-        StatementBuilder::default()
+    ///
+    /// # Errors
+    ///
+    /// An [`AspenError::InvalidStatement`] error is returned if any of the following hold:
+    /// * Neither or both of `action` and `not_action` are set.
+    /// * Both `resource` and `not_resource` are set, or neither is set on a statement that
+    ///   carries no principal clause.
+    /// * Both `principal` and `not_principal` are set.
+    #[builder(builder_type = StatementBuilder, finish_fn = build)]
+    pub fn builder(
+        /// The user-provided statement id.
+        #[builder(into)]
+        sid: Option<String>,
+
+        /// The effect of the statement (allow or deny).
+        effect: Effect,
+
+        /// The list of actions this statement applies to. Exactly one of `action` or `not_action` must be set.
+        #[builder(into)]
+        action: Option<ActionList>,
+
+        /// The list of actions this statement does not apply to. Exactly one of `action` or `not_action` must be set.
+        #[builder(into)]
+        not_action: Option<ActionList>,
+
+        /// The list of resources this statement applies to. This cannot be combined with `not_resource`.
+        #[builder(into)]
+        resource: Option<ResourceList>,
+
+        /// The list of resources this statement does not apply to. This cannot be combined with `resource`.
+        #[builder(into)]
+        not_resource: Option<ResourceList>,
+
+        /// The list of principals this statement applies to. This cannot be combined with `not_principal`.
+        #[builder(into)]
+        principal: Option<Principal>,
+
+        /// The list of principals this statement does not apply to. This cannot be combined with `principal`.
+        #[builder(into)]
+        not_principal: Option<Principal>,
+
+        /// Conditions that must be met for this statement to apply.
+        #[builder(into)]
+        condition: Option<Condition>,
+    ) -> Result<Self, AspenError> {
+        let statement = Self {
+            sid,
+            effect,
+            action,
+            not_action,
+            resource,
+            not_resource,
+            principal,
+            not_principal,
+            condition,
+        };
+
+        statement.validate()?;
+        Ok(statement)
     }
 
     /// Returns the user-provided statement id if provided, else `None`.
@@ -326,91 +375,38 @@ impl<'de> Visitor<'de> for StatementVisitor {
     }
 
     fn visit_map<A: MapAccess<'de>>(self, mut access: A) -> Result<Statement, A::Error> {
-        let mut builder = Statement::builder();
-        let mut sid_seen = false;
-        let mut effect_seen = false;
-        let mut action_seen = false;
-        let mut not_action_seen = false;
-        let mut resource_seen = false;
-        let mut not_resource_seen = false;
-        let mut principal_seen = false;
-        let mut not_principal_seen = false;
-        let mut condition_seen = false;
+        let mut sid = None;
+        let mut effect = None;
+        let mut action = None;
+        let mut not_action = None;
+        let mut resource = None;
+        let mut not_resource = None;
+        let mut principal = None;
+        let mut not_principal = None;
+        let mut condition = None;
+
+        // Each clause is accumulated separately so a repeated key is reported as a duplicate
+        // field rather than silently overwriting the earlier value.
+        macro_rules! accept {
+            ($slot:ident, $name:literal, $ty:ty) => {{
+                if $slot.is_some() {
+                    return Err(serde::de::Error::duplicate_field($name));
+                }
+                $slot = Some(access.next_value::<$ty>()?);
+            }};
+        }
 
         while let Some(key) = access.next_key::<&str>()? {
             match key {
-                "Sid" => {
-                    if sid_seen {
-                        return Err(serde::de::Error::duplicate_field("Sid"));
-                    }
-
-                    sid_seen = true;
-                    builder.sid(access.next_value::<&str>()?);
-                }
-                "Effect" => {
-                    if effect_seen {
-                        return Err(serde::de::Error::duplicate_field("Effect"));
-                    }
-
-                    effect_seen = true;
-                    builder.effect(access.next_value::<Effect>()?);
-                }
-                "Action" => {
-                    if action_seen {
-                        return Err(serde::de::Error::duplicate_field("Action"));
-                    }
-
-                    action_seen = true;
-                    builder.action(access.next_value::<ActionList>()?);
-                }
-                "NotAction" => {
-                    if not_action_seen {
-                        return Err(serde::de::Error::duplicate_field("NotAction"));
-                    }
-
-                    not_action_seen = true;
-                    builder.not_action(access.next_value::<ActionList>()?);
-                }
-                "Resource" => {
-                    if resource_seen {
-                        return Err(serde::de::Error::duplicate_field("Resource"));
-                    }
-
-                    resource_seen = true;
-                    builder.resource(access.next_value::<ResourceList>()?);
-                }
-                "NotResource" => {
-                    if not_resource_seen {
-                        return Err(serde::de::Error::duplicate_field("NotResource"));
-                    }
-
-                    not_resource_seen = true;
-                    builder.not_resource(access.next_value::<ResourceList>()?);
-                }
-                "Principal" => {
-                    if principal_seen {
-                        return Err(serde::de::Error::duplicate_field("Principal"));
-                    }
-
-                    principal_seen = true;
-                    builder.principal(access.next_value::<Principal>()?);
-                }
-                "NotPrincipal" => {
-                    if not_principal_seen {
-                        return Err(serde::de::Error::duplicate_field("NotPrincipal"));
-                    }
-
-                    not_principal_seen = true;
-                    builder.not_principal(access.next_value::<Principal>()?);
-                }
-                "Condition" => {
-                    if condition_seen {
-                        return Err(serde::de::Error::duplicate_field("Condition"));
-                    }
-
-                    condition_seen = true;
-                    builder.condition(access.next_value::<Condition>()?);
-                }
+                "Sid" => accept!(sid, "Sid", String),
+                "Effect" => accept!(effect, "Effect", Effect),
+                "Action" => accept!(action, "Action", ActionList),
+                "NotAction" => accept!(not_action, "NotAction", ActionList),
+                "Resource" => accept!(resource, "Resource", ResourceList),
+                "NotResource" => accept!(not_resource, "NotResource", ResourceList),
+                "Principal" => accept!(principal, "Principal", Principal),
+                "NotPrincipal" => accept!(not_principal, "NotPrincipal", Principal),
+                "Condition" => accept!(condition, "Condition", Condition),
                 _ => {
                     return Err(serde::de::Error::unknown_field(
                         key,
@@ -430,22 +426,47 @@ impl<'de> Visitor<'de> for StatementVisitor {
             }
         }
 
-        builder.build().map_err(|e| match e {
-            StatementBuilderError::ValidationError(s) => {
-                let msg2 = s.replace('.', ";").trim_end_matches(';').to_string();
-                serde::de::Error::custom(StatementBuilderError::ValidationError(msg2))
-            }
-            _ => serde::de::Error::custom(e),
-        })
+        // Effect is the statement's only unconditionally required clause, and the builder demands
+        // it at compile time, so it is checked here rather than by Statement::validate.
+        let Some(effect) = effect else {
+            return Err(serde::de::Error::missing_field("Effect"));
+        };
+
+        Statement::builder()
+            .maybe_sid(sid)
+            .effect(effect)
+            .maybe_action(action)
+            .maybe_not_action(not_action)
+            .maybe_resource(resource)
+            .maybe_not_resource(not_resource)
+            .maybe_principal(principal)
+            .maybe_not_principal(not_principal)
+            .maybe_condition(condition)
+            .build()
+            .map_err(|e| match e {
+                // Statement::validate joins its complaints into sentences; serde appends its own
+                // location suffix, so the trailing period is replaced to keep the two readable
+                // together.
+                AspenError::InvalidStatement(message) => {
+                    serde::de::Error::custom(message.replace('.', ";").trim_end_matches(';'))
+                }
+                e => serde::de::Error::custom(e),
+            })
     }
 }
 
-impl StatementBuilder {
-    fn validate(&self) -> Result<(), StatementBuilderError> {
-        let mut errors = Vec::with_capacity(5);
-        if self.effect.is_none() {
-            errors.push("Effect must be set.");
-        }
+impl Statement {
+    /// Validate that this statement's clauses are a legal combination.
+    ///
+    /// # Errors
+    ///
+    /// An [`AspenError::InvalidStatement`] error is returned if any of the following hold:
+    /// * Neither or both of `Action` and `NotAction` are set.
+    /// * Both `Resource` and `NotResource` are set, or neither is set on a statement that carries
+    ///   no principal clause.
+    /// * Both `Principal` and `NotPrincipal` are set.
+    fn validate(&self) -> Result<(), AspenError> {
+        let mut errors = Vec::with_capacity(4);
 
         match (&self.action, &self.not_action) {
             (Some(_), Some(_)) => errors.push("Action and NotAction cannot both be set."),
@@ -457,8 +478,7 @@ impl StatementBuilder {
         // the statement implicitly applies to the resource the policy is attached to. Such
         // statements are recognizable by their principal clause, which identity-based policies
         // must not carry.
-        let has_principal_clause =
-            matches!(self.principal, Some(Some(_))) || matches!(self.not_principal, Some(Some(_)));
+        let has_principal_clause = self.principal.is_some() || self.not_principal.is_some();
         match (&self.resource, &self.not_resource) {
             (Some(_), Some(_)) => errors.push("Resource and NotResource cannot both be set."),
             (None, None) if !has_principal_clause => errors.push("Either Resource or NotResource must be set."),
@@ -472,7 +492,7 @@ impl StatementBuilder {
         if errors.is_empty() {
             Ok(())
         } else {
-            Err(StatementBuilderError::ValidationError(errors.join(" ")))
+            Err(AspenError::InvalidStatement(errors.join(" ")))
         }
     }
 }
@@ -518,12 +538,7 @@ mod tests {
 
     #[test_log::test]
     fn test_builder() {
-        let err = Statement::builder().build().unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "Effect must be set. Either Action or NotAction must be set. Either Resource or NotResource must be set."
-        );
-
+        // A Statement with no Effect no longer compiles: bon requires the member to be set.
         let err = Statement::builder().effect(Effect::Allow).build().unwrap_err();
         assert_eq!(
             err.to_string(),
@@ -541,12 +556,8 @@ mod tests {
             .effect(Effect::Allow)
             .action(Action::from_str("ec2:RunInstances").unwrap())
             .resource(Resource::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-01234567890abcdef").unwrap())
-            .principal(
-                SpecifiedPrincipal::builder().aws(AwsPrincipal::from_str("123456789012").unwrap()).build().unwrap(),
-            )
-            .not_principal(
-                SpecifiedPrincipal::builder().aws(AwsPrincipal::from_str("123456789012").unwrap()).build().unwrap(),
-            )
+            .principal(SpecifiedPrincipal::builder().aws(AwsPrincipal::from_str("123456789012").unwrap()).build())
+            .not_principal(SpecifiedPrincipal::builder().aws(AwsPrincipal::from_str("123456789012").unwrap()).build())
             .build()
             .unwrap_err();
         assert_eq!(err.to_string(), "Principal and NotPrincipal cannot both be set.");
@@ -556,9 +567,7 @@ mod tests {
             .effect(Effect::Allow)
             .action(Action::from_str("ec2:RunInstances").unwrap())
             .resource(Resource::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-01234567890abcdef").unwrap())
-            .principal(
-                SpecifiedPrincipal::builder().aws(AwsPrincipal::from_str("123456789012").unwrap()).build().unwrap(),
-            )
+            .principal(SpecifiedPrincipal::builder().aws(AwsPrincipal::from_str("123456789012").unwrap()).build())
             .build()
             .unwrap();
 
@@ -578,9 +587,7 @@ mod tests {
                 Resource::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-01234567890abcdef").unwrap(),
                 Resource::from_str("arn:aws:ec2:us-west-1:123456789012:instance/i-01234567890abcdef").unwrap(),
             ])
-            .not_principal(
-                SpecifiedPrincipal::builder().aws(AwsPrincipal::from_str("123456789012").unwrap()).build().unwrap(),
-            )
+            .not_principal(SpecifiedPrincipal::builder().aws(AwsPrincipal::from_str("123456789012").unwrap()).build())
             .build()
             .unwrap();
 
@@ -664,12 +671,26 @@ mod tests {
         assert_eq!(err.to_string(), "Either Resource or NotResource must be set.");
     }
 
+    /// `Sid` is deserialized as an owned `String`: a JSON string carrying any escape sequence
+    /// has to be unescaped into a fresh allocation, so it cannot be borrowed out of the input.
+    #[test_log::test]
+    fn test_sid_with_escape_sequence() {
+        let statement: Statement =
+            serde_json::from_str(r#"{"Sid":"Escaped\tSid","Effect":"Allow","Action":"s3:GetObject","Resource":"*"}"#)
+                .expect("a Sid containing an escape sequence should deserialize");
+        assert_eq!(statement.sid(), Some("Escaped\tSid"));
+
+        let statement: Statement =
+            serde_json::from_str(r#"{"Sid":"Quoted\"Sid","Effect":"Allow","Action":"s3:GetObject","Resource":"*"}"#)
+                .expect("a Sid containing an escaped quote should deserialize");
+        assert_eq!(statement.sid(), Some("Quoted\"Sid"));
+    }
+
     #[test_log::test]
     fn test_context_without_resources() {
-        let mut sb = Statement::builder();
-        sb.effect(Effect::Allow).action(Action::Any).resource(Resource::Any);
+        let sb = || Statement::builder().effect(Effect::Allow).action(Action::Any);
 
-        let s = sb.build().unwrap();
+        let s = sb().resource(Resource::Any).build().unwrap();
         let actor = PrincipalActor::from(
             User::builder().partition("aws").account_id("123456789012").path("/").user_name("MyUser").build().unwrap(),
         );
@@ -679,13 +700,13 @@ mod tests {
 
         assert_eq!(s.evaluate(&context, PolicyVersion::None).unwrap(), Decision::Allow);
 
-        sb.resource(Resource::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-01234567890abcdef").unwrap());
-        let s = sb.build().unwrap();
+        let s = sb()
+            .resource(Resource::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-01234567890abcdef").unwrap())
+            .build()
+            .unwrap();
         assert_eq!(s.evaluate(&context, PolicyVersion::None).unwrap(), Decision::DefaultDeny);
 
-        let mut sb = Statement::builder();
-        sb.effect(Effect::Allow).action(Action::Any).not_resource(Resource::Any);
-        let s = sb.build().unwrap();
+        let s = sb().not_resource(Resource::Any).build().unwrap();
         assert_eq!(s.evaluate(&context, PolicyVersion::None).unwrap(), Decision::DefaultDeny);
     }
 

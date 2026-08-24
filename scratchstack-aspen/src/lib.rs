@@ -35,12 +35,10 @@ pub use {
     effect::Effect,
     error::AspenError,
     eval::{Context, ContextBuilder, Decision},
-    policy::{Policy, PolicyBuilder, PolicyBuilderError, PolicyVersion},
+    policy::{Policy, PolicyBuilder, PolicyVersion},
     policyset::{PolicySet, PolicySource},
-    principal::{
-        AwsPrincipal, Principal, SpecifiedPrincipal, SpecifiedPrincipalBuilder, SpecifiedPrincipalBuilderError,
-    },
+    principal::{AwsPrincipal, Principal, SpecifiedPrincipal, SpecifiedPrincipalBuilder},
     resource::{Resource, ResourceArn, ResourceList},
     serutil::{MapList, StringLikeList},
-    statement::{Statement, StatementBuilder, StatementBuilderError, StatementList},
+    statement::{Statement, StatementBuilder, StatementList},
 };

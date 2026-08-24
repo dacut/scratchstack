@@ -1,6 +1,6 @@
 use {
     crate::{AspenError, Context, Decision, StatementList, display_json, from_str_json},
-    derive_builder::Builder,
+    bon::Builder,
     serde::{
         Deserialize, Serialize,
         de::{self, Deserializer, MapAccess, Visitor},
@@ -86,30 +86,25 @@ impl Serialize for PolicyVersion {
 ///
 /// Policy structures are immutable after creation.
 #[derive(Builder, Clone, Debug, Eq, PartialEq)]
+#[builder(builder_type = PolicyBuilder, finish_fn = build)]
 pub struct Policy {
     /// The version of the policy. Currently allowed values are `2008-10-17` and `2012-10-17`. Features such as
     /// policy variables are only available with version `2012-10-17` (or later, should a newer version be published).
     /// If omitted, this is equivalent to `2008-10-17`.
-    #[builder(setter(into, strip_option), default)]
+    #[builder(into, default)]
     version: PolicyVersion,
 
     /// An optional identifier for the policy. Some services may require this element and have uniqueness requirements.
-    #[builder(setter(into, strip_option), default)]
+    #[builder(into)]
     id: Option<String>,
 
     /// One or more statements describing the policy. Aspen allows single statements to be encoded directly as a map
     /// instead of being enclosed in a list.
-    #[builder(setter(into))]
+    #[builder(into)]
     statement: StatementList,
 }
 
 impl Policy {
-    #[inline]
-    /// Returns a builder for a [Policy].
-    pub fn builder() -> PolicyBuilder {
-        PolicyBuilder::default()
-    }
-
     /// Returns the policy version.
     pub fn version(&self) -> PolicyVersion {
         self.version
@@ -144,7 +139,7 @@ impl Policy {
     /// let action = Action::from_str("s3:ListBucket").unwrap();
     /// let resource = Resource::from_str("arn:aws:s3:::examplebucket").unwrap();
     /// let statement = Statement::builder().effect(Effect::Allow).action(action).resource(resource).build().unwrap();
-    /// let policy = Policy::builder().statement(statement).build().unwrap();
+    /// let policy = Policy::builder().statement(statement).build();
     ///
     /// let actor = Principal::from(User::from_str("arn:aws:iam::123456789012:user/exampleuser").unwrap());
     /// let context = Context::builder().service("s3").api("ListBucket").actor(actor)
@@ -174,57 +169,59 @@ impl Policy {
 display_json!(Policy);
 from_str_json!(Policy);
 
-impl<'de> Visitor<'de> for PolicyBuilder {
+/// Deserializes a [`Policy`] from a map of policy properties.
+///
+/// The builder cannot serve as the visitor itself: its typestate changes with every member that
+/// is set, so it has no single type to implement [`Visitor`] on.
+struct PolicyVisitor;
+
+impl<'de> Visitor<'de> for PolicyVisitor {
     type Value = Policy;
 
     fn expecting(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         formatter.write_str("policy")
     }
 
-    fn visit_map<A: MapAccess<'de>>(mut self, mut access: A) -> Result<Self::Value, A::Error> {
-        let builder = &mut self;
-        let mut version_seen = false;
-        let mut id_seen = false;
-        let mut statement_seen = false;
+    fn visit_map<A: MapAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
+        let mut version = None;
+        let mut id = None;
+        let mut statement = None;
 
         while let Some(key) = access.next_key()? {
             match key {
                 "Version" => {
-                    if version_seen {
+                    if version.is_some() {
                         return Err(de::Error::duplicate_field("Version"));
                     }
-                    version_seen = true;
-                    builder.version(access.next_value::<PolicyVersion>()?);
+                    version = Some(access.next_value::<PolicyVersion>()?);
                 }
                 "Id" => {
-                    if id_seen {
+                    if id.is_some() {
                         return Err(de::Error::duplicate_field("Id"));
                     }
-                    id_seen = true;
-                    builder.id(access.next_value::<String>()?);
+                    id = Some(access.next_value::<String>()?);
                 }
                 "Statement" => {
-                    if statement_seen {
+                    if statement.is_some() {
                         return Err(de::Error::duplicate_field("Statement"));
                     }
-                    statement_seen = true;
-                    builder.statement(access.next_value::<StatementList>()?);
+                    statement = Some(access.next_value::<StatementList>()?);
                 }
                 _ => return Err(de::Error::unknown_field(key, &["Version", "Id", "Statement"])),
             }
         }
 
-        if !statement_seen {
+        let Some(statement) = statement else {
             return Err(de::Error::missing_field("Statement"));
-        }
+        };
 
-        self.build().map_err(de::Error::custom)
+        Ok(Policy::builder().maybe_version(version).maybe_id(id).statement(statement).build())
     }
 }
 
 impl<'de> Deserialize<'de> for Policy {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Policy, D::Error> {
-        d.deserialize_map(PolicyBuilder::default())
+        d.deserialize_map(PolicyVisitor)
     }
 }
 
@@ -246,8 +243,8 @@ impl Serialize for Policy {
 mod tests {
     use {
         crate::{
-            Action, AspenError, AwsPrincipal, Context, Decision, Effect, Policy, PolicyBuilderError, PolicyVersion,
-            Principal, Resource, SpecifiedPrincipal, Statement, serutil::JsonRep,
+            Action, AspenError, AwsPrincipal, Context, Decision, Effect, Policy, PolicyVersion, Principal, Resource,
+            SpecifiedPrincipal, Statement, serutil::JsonRep,
         },
         indoc::indoc,
         pretty_assertions::{assert_eq, assert_ne},
@@ -472,7 +469,7 @@ mod tests {
             }
         }"# };
         let e = Policy::from_str(policy_str).unwrap_err();
-        assert_eq!(e.to_string(), "invalid type: integer `1`, expected a borrowed string at line 5 column 16");
+        assert_eq!(e.to_string(), "invalid type: integer `1`, expected a string at line 5 column 16");
 
         let policy_str = indoc! { r#"
         {
@@ -713,26 +710,18 @@ mod tests {
     }
 
     #[test_log::test]
-    #[allow(clippy::redundant_clone)]
     fn test_builder() {
-        let e = Policy::builder().clone().build().unwrap_err();
-        assert_eq!(e.to_string(), "`statement` must be initialized");
-        assert_eq!(format!("{e}"), "`statement` must be initialized");
-        assert_eq!(format!("{e:?}"), r#"UninitializedField("statement")"#);
-        assert_eq!(format!("{}", PolicyBuilderError::from("Oops".to_string())), "Oops");
-
+        // A Policy with no statement no longer compiles: bon requires the member to be set.
         let s = Statement::builder()
             .effect(Effect::Allow)
             .action(Action::from_str("ec2:RunInstances").unwrap())
             .resource(Resource::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-01234567890abcdef").unwrap())
-            .principal(
-                SpecifiedPrincipal::builder().aws(AwsPrincipal::from_str("123456789012").unwrap()).build().unwrap(),
-            )
+            .principal(SpecifiedPrincipal::builder().aws(AwsPrincipal::from_str("123456789012").unwrap()).build())
             .build()
             .unwrap();
-        let p1a = Policy::builder().statement(s.clone()).build().unwrap();
-        let p1b = Policy::builder().statement(s.clone()).build().unwrap();
-        let p2 = Policy::builder().version(PolicyVersion::V2012_10_17).id("test").statement(s).build().unwrap();
+        let p1a = Policy::builder().statement(s.clone()).build();
+        let p1b = Policy::builder().statement(s.clone()).build();
+        let p2 = Policy::builder().version(PolicyVersion::V2012_10_17).id("test").statement(s).build();
 
         assert_eq!(p1a, p1b);
         assert_eq!(p1a, p1a.clone());
@@ -762,14 +751,12 @@ mod tests {
             .effect(Effect::Allow)
             .action(Action::from_str("ec2:RunInstances").unwrap())
             .resource(Resource::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-01234567890abcdef").unwrap())
-            .principal(
-                SpecifiedPrincipal::builder().aws(AwsPrincipal::from_str("123456789012").unwrap()).build().unwrap(),
-            )
+            .principal(SpecifiedPrincipal::builder().aws(AwsPrincipal::from_str("123456789012").unwrap()).build())
             .build()
             .unwrap();
-        let p1a = Policy::builder().statement(s.clone()).build().unwrap();
-        let p1b = Policy::builder().statement(s.clone()).build().unwrap();
-        let p2 = Policy::builder().version(PolicyVersion::None).id("test").statement(s).build().unwrap();
+        let p1a = Policy::builder().statement(s.clone()).build();
+        let p1b = Policy::builder().statement(s.clone()).build();
+        let p2 = Policy::builder().version(PolicyVersion::None).id("test").statement(s).build();
 
         assert_eq!(p1a, p1b);
         assert_eq!(p1a, p1a.clone());
@@ -1327,28 +1314,25 @@ mod tests {
 
         let actor = PrincipalActor::from(User::from_str("arn:aws:iam::123456789012:user/MyUser").unwrap());
         let sd = SessionData::new();
-        let mut context_builder = Context::builder();
-        context_builder.api("TerminateInstances").actor(actor).service("ec2").session_data(sd);
+        // bon's builders are move-based, so the resource list is varied through
+        // Context::with_resources rather than by reusing a partially-applied builder.
+        let base =
+            Context::builder().api("TerminateInstances").actor(actor).service("ec2").session_data(sd).build().unwrap();
 
-        context_builder.resources(vec![matching_instance.clone(), matching_eni.clone()]);
-        let context = context_builder.build().unwrap();
+        let context = base.with_resources(vec![matching_instance.clone(), matching_eni.clone()]);
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::DefaultDeny);
 
-        context_builder.resources(vec![matching_instance, nonmatching_eni.clone()]);
-        let context = context_builder.build().unwrap();
+        let context = base.with_resources(vec![matching_instance, nonmatching_eni.clone()]);
         assert!(!context.resources().is_empty());
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::DefaultDeny);
 
-        context_builder.resources(vec![nonmatching_instance.clone(), matching_eni]);
-        let context = context_builder.build().unwrap();
+        let context = base.with_resources(vec![nonmatching_instance.clone(), matching_eni]);
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::DefaultDeny);
 
-        context_builder.resources(vec![nonmatching_instance, nonmatching_eni]);
-        let context = context_builder.build().unwrap();
+        let context = base.with_resources(vec![nonmatching_instance, nonmatching_eni]);
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::Allow);
 
-        context_builder.resources(vec![]);
-        let context = context_builder.build().unwrap();
+        let context = base.with_resources(vec![]);
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::Allow);
 
         let policy = Policy::from_str(indoc! {r#"
@@ -1370,12 +1354,10 @@ mod tests {
             Arn::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0").unwrap();
         let matching_eni =
             Arn::from_str("arn:aws:ec2:us-east-1:123456789012:network-interface/eni-0123456789abcdef0").unwrap();
-        context_builder.resources(vec![matching_instance, matching_eni]);
-        let context = context_builder.build().unwrap();
+        let context = base.with_resources(vec![matching_instance, matching_eni]);
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::DefaultDeny);
 
-        context_builder.resources(vec![]);
-        let context = context_builder.build().unwrap();
+        let context = base.with_resources(vec![]);
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::DefaultDeny);
     }
 
@@ -1466,14 +1448,24 @@ mod tests {
         let eni = Arn::from_str("arn:aws:ec2:us-east-1:123456789012:network-interface/eni-0123456789abcdef0").unwrap();
 
         let sd = SessionData::new();
-        let mut context_builder = Context::builder();
-        context_builder
-            .api("TerminateInstances")
-            .actor(actor.clone())
-            .service("ec2")
-            .session_data(sd)
-            .resources(vec![instance, eni]);
-        let context = context_builder.build().unwrap();
+        let resources = vec![instance, eni];
+
+        // bon's builders are move-based, so each actor under test gets a freshly built context.
+        let make_context = |actor: PrincipalActor| {
+            Context::builder()
+                .api("TerminateInstances")
+                .actor(actor)
+                .service("ec2")
+                .session_data(sd.clone())
+                .resources(resources.clone())
+                .build()
+                .unwrap()
+        };
+        let ec2_service = || {
+            PrincipalActor::from(Service::builder().service_name("ec2").dns_suffix("amazonaws.com").build().unwrap())
+        };
+
+        let context = make_context(actor.clone());
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::Allow);
 
         let policy_str = indoc! { r#"
@@ -1497,10 +1489,7 @@ mod tests {
         assert_eq!(format!("{}", aws[0]), "arn:aws:iam::123456789012:root");
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::Allow);
 
-        context_builder.actor(PrincipalActor::from(
-            Service::builder().service_name("ec2").dns_suffix("amazonaws.com").build().unwrap(),
-        ));
-        let context = context_builder.build().unwrap();
+        let context = make_context(ec2_service());
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::DefaultDeny);
 
         let policy_str = indoc! { r#"
@@ -1516,14 +1505,10 @@ mod tests {
                 }
             }"# };
         let policy = Policy::from_str(policy_str).unwrap();
-        context_builder.actor(actor.clone());
-        let context = context_builder.build().unwrap();
+        let context = make_context(actor.clone());
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::DefaultDeny);
 
-        context_builder.actor(PrincipalActor::from(
-            Service::builder().service_name("ec2").dns_suffix("amazonaws.com").build().unwrap(),
-        ));
-        let context = context_builder.build().unwrap();
+        let context = make_context(ec2_service());
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::Allow);
 
         let policy_str = indoc! { r#"
@@ -1537,14 +1522,10 @@ mod tests {
                 }
             }"# };
         let policy = Policy::from_str(policy_str).unwrap();
-        context_builder.actor(actor);
-        let context = context_builder.build().unwrap();
+        let context = make_context(actor);
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::Allow);
 
-        context_builder.actor(PrincipalActor::from(
-            Service::builder().service_name("ec2").dns_suffix("amazonaws.com").build().unwrap(),
-        ));
-        let context = context_builder.build().unwrap();
+        let context = make_context(ec2_service());
         assert_eq!(policy.evaluate(&context).unwrap(), Decision::Allow);
     }
 
