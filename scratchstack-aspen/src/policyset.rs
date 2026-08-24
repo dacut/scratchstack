@@ -111,7 +111,7 @@ impl PolicySource {
         )
     }
 
-    /// Create a new [PolicySource::EntityInline] object.
+    /// Create a new [`PolicySource::EntityInline`] object.
     pub fn new_entity_inline<S1, S2, S3>(entity_arn: S1, entity_id: S2, policy_name: S3) -> Self
     where
         S1: Into<String>,
@@ -125,7 +125,7 @@ impl PolicySource {
         }
     }
 
-    /// Create a new [PolicySource::EntityAttachedPolicy] object.
+    /// Create a new [`PolicySource::EntityAttachedPolicy`] object.
     pub fn new_entity_attached_policy<S1, S2, S3>(policy_arn: S1, policy_id: S2, version: S3) -> Self
     where
         S1: Into<String>,
@@ -139,7 +139,7 @@ impl PolicySource {
         }
     }
 
-    /// Create a new [PolicySource::GroupInline] object.
+    /// Create a new [`PolicySource::GroupInline`] object.
     pub fn new_group_inline<S1, S2, S3>(group_arn: S1, group_id: S2, policy_name: S3) -> Self
     where
         S1: Into<String>,
@@ -153,7 +153,7 @@ impl PolicySource {
         }
     }
 
-    /// Create a new [PolicySource::GroupAttachedPolicy] object.
+    /// Create a new [`PolicySource::GroupAttachedPolicy`] object.
     pub fn new_group_attached_policy<S1, S2, S3, S4, S5>(
         group_arn: S1,
         group_id: S2,
@@ -177,7 +177,7 @@ impl PolicySource {
         }
     }
 
-    /// Create a new [PolicySource::Resource] object.
+    /// Create a new [`PolicySource::Resource`] object.
     pub fn new_resource<S1, S2>(resource_arn: S1, policy_name: Option<S2>) -> Self
     where
         S1: Into<String>,
@@ -189,7 +189,7 @@ impl PolicySource {
         }
     }
 
-    /// Create a new [PolicySource::PermissionBoundary] object.
+    /// Create a new [`PolicySource::PermissionBoundary`] object.
     pub fn new_permission_boundary<S1, S2, S3>(policy_arn: S1, policy_id: S2, version: S3) -> Self
     where
         S1: Into<String>,
@@ -203,7 +203,7 @@ impl PolicySource {
         }
     }
 
-    /// Create a new [PolicySource::OrgServiceControl] object.
+    /// Create a new [`PolicySource::OrgServiceControl`] object.
     pub fn new_org_service_control<S1, S2, S3>(policy_arn: S1, policy_name: S2, applied_arn: S3) -> Self
     where
         S1: Into<String>,
@@ -217,7 +217,7 @@ impl PolicySource {
         }
     }
 
-    /// Create a new [PolicySource::Session] object.
+    /// Create a new [`PolicySource::Session`] object.
     pub fn new_session() -> Self {
         Self::Session
     }
@@ -261,9 +261,9 @@ impl PolicySet {
         &self.policies
     }
 
-    /// Evaluate the policy set. If a denial is found, return a Deny and the source immediately. Otherwise, if one or
-    /// more approvals are found, return Allow and the relevant sources. Otherwise, return a DefaultDeny with no
-    /// sources.
+    /// Evaluate the policy set. If a denial is found, return a [`Decision::Deny`] and the source
+    /// immediately. Otherwise, if one or more approvals are found, return [`Decision::Allow`] and
+    /// the relevant sources. Otherwise, return a [`Decision::DefaultDeny`] with no sources.
     pub fn evaluate<'a>(&'a self, context: &'_ Context) -> Result<(Decision, Vec<&'a PolicySource>), AspenError> {
         self.evaluate_core(context, false)
     }
@@ -275,7 +275,7 @@ impl PolicySet {
     /// When the context contains multiple resources, statement matching is conservative: a single Allow statement
     /// must cover every resource in the context, while a Deny statement applies if it matches any of them. For
     /// exact AWS semantics — where each resource must be allowed individually, possibly by different statements —
-    /// use [crate::authorize], which evaluates one resource at a time.
+    /// use [`authorize`][crate::authorize], which evaluates one resource at a time.
     pub fn evaluate_all<'a>(&'a self, context: &'_ Context) -> Result<(Decision, Vec<&'a PolicySource>), AspenError> {
         self.evaluate_core(context, true)
     }

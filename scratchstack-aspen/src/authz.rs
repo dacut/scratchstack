@@ -3,13 +3,13 @@ use {
     log::debug,
 };
 
-/// The result of an [authorize] call: the final decision and the policy sources that determined
+/// The result of an [`authorize`] call: the final decision and the policy sources that determined
 /// it.
 ///
-/// For an [Allow](Decision::Allow) decision, the sources are the policies that granted access.
-/// For a [Deny](Decision::Deny) decision, the sources are the policies that denied access
+/// For an [`Allow`](Decision::Allow) decision, the sources are the policies that granted access.
+/// For a [`Deny`](Decision::Deny) decision, the sources are the policies that denied access
 /// (including permissions boundaries that failed to allow the request). A
-/// [DefaultDeny](Decision::DefaultDeny) decision has no sources.
+/// [`DefaultDeny`](Decision::DefaultDeny) decision has no sources.
 #[derive(Clone, Debug)]
 pub struct AuthorizationResult<'a> {
     /// The final decision for the request.
@@ -49,11 +49,11 @@ impl<'a> AuthorizationResult<'a> {
 /// * Otherwise, the policy set is evaluated once per resource. Each resource must be allowed by
 ///   some policy and denied by none; a single denied resource denies the entire request.
 /// * An explicit deny always overrides an allow, and permissions boundaries must allow the
-///   request for it to be granted (see [PolicySource::is_boundary]).
+///   request for it to be granted (see [`PolicySource::is_boundary`]).
 ///
 /// # Errors
 ///
-/// Returns an [AspenError] if a policy in the set fails to evaluate (e.g. a malformed variable
+/// Returns an [`AspenError`] if a policy in the set fails to evaluate (e.g. a malformed variable
 /// substitution). Callers performing access control should treat this as a denial.
 pub fn authorize<'a>(context: &Context, policy_set: &'a PolicySet) -> Result<AuthorizationResult<'a>, AspenError> {
     if context.actor().as_root_user().is_some() {

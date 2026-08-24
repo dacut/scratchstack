@@ -13,7 +13,7 @@ use {
 
 /// An Aspen policy statement.
 ///
-/// Statement structs are immutable after creation. They can be created using the [StatementBuilder].
+/// Statement structs are immutable after creation. They can be created using the [`StatementBuilder`].
 #[derive(Builder, Clone, Debug, Eq, PartialEq, Serialize)]
 #[builder(build_fn(validate = "Self::validate"))]
 #[serde(deny_unknown_fields, rename_all = "PascalCase")]
@@ -63,7 +63,7 @@ pub struct Statement {
 }
 
 impl Statement {
-    /// Create a new [StatementBuilder] for building a [Statement].
+    /// Create a new [`StatementBuilder`] for building a [`Statement`].
     pub fn builder() -> StatementBuilder {
         StatementBuilder::default()
     }
