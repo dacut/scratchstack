@@ -126,6 +126,11 @@ mod tests {
     };
 
     const TEST_ACCOUNT_ID: &str = "123456789012";
+
+    /// A second account, for the cross-account AssumeRole cases: its users assume roles that
+    /// [`TEST_ACCOUNT_ID`] owns.
+    const OTHER_ACCOUNT_ID: &str = "210987654321";
+
     const TEST_USER_ID: &str = "AIDAQXZEAEXAMPLEUSER";
     const TEST_REQUEST_ID: &str = "11111111-2222-3333-4444-555555555555";
 
@@ -138,14 +143,15 @@ mod tests {
     const OUTSIDE_SOURCE_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(198, 51, 100, 7));
 
     /// Seed data for the AssumeRole tests: users whose grants exercise each authorization path,
-    /// four roles (one trusting the whole account, one naming a user directly, one requiring an
-    /// external id, one trusting the account only from a CIDR block), and a managed policy
-    /// usable as a session policy.
+    /// five roles (one trusting the whole account, one naming a user directly, one requiring an
+    /// external id, one trusting the account only from a CIDR block, one trusting a second
+    /// account), and a managed policy usable as a session policy.
     const ASSUME_ROLE_TEST_DATA: &str = r#"
         INSERT INTO iam.partition(partition) VALUES ('aws');
 
         INSERT INTO iam.accounts(account_id, email, alias) VALUES
-        ('123456789012', 'sts-test@example.com', 'sts-test');
+        ('123456789012', 'sts-test@example.com', 'sts-test'),
+        ('210987654321', 'sts-test-partner@example.com', 'sts-test-partner');
 
         INSERT INTO iam.users(user_id, account_id, user_name_lower, user_name_cased, path) VALUES
         ('STSTESTALLOWUSER', '123456789012', 'allowed-user', 'Allowed-User', '/'),
@@ -155,7 +161,9 @@ mod tests {
         ('STSTESTIPUSER001', '123456789012', 'ip-user', 'Ip-User', '/'),
         ('STSTESTIPIDUSER1', '123456789012', 'ip-identity-user', 'Ip-Identity-User', '/'),
         ('STSTESTRSRCACCT1', '123456789012', 'resource-account-user', 'Resource-Account-User', '/'),
-        ('STSTESTOTHRACCT1', '123456789012', 'other-account-user', 'Other-Account-User', '/');
+        ('STSTESTOTHRACCT1', '123456789012', 'other-account-user', 'Other-Account-User', '/'),
+        ('STSTESTXACCTUSR1', '210987654321', 'cross-account-user', 'Cross-Account-User', '/'),
+        ('STSTESTXACCTUSR2', '210987654321', 'own-account-user', 'Own-Account-User', '/');
 
         INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
         ('STSTESTALLOWUSER', 'allow-assume-role', 'Allow-Assume-Role',
@@ -167,6 +175,14 @@ mod tests {
         ('STSTESTIPUSER001', 'allow-assume-ip-role', 'Allow-Assume-Ip-Role',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole",
            "Resource":"arn:aws:iam::123456789012:role/ip-trusted-role"}]}'),
+        ('STSTESTXACCTUSR1', 'allow-assume-role-account', 'Allow-Assume-Role-Account',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole",
+           "Resource":"arn:aws:iam::123456789012:role/cross-account-role",
+           "Condition":{"StringEquals":{"aws:ResourceAccount":"123456789012"}}}]}'),
+        ('STSTESTXACCTUSR2', 'allow-assume-caller-account', 'Allow-Assume-Caller-Account',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole",
+           "Resource":"arn:aws:iam::123456789012:role/cross-account-role",
+           "Condition":{"StringEquals":{"aws:ResourceAccount":"210987654321"}}}]}'),
         ('STSTESTRSRCACCT1', 'allow-assume-in-own-account', 'Allow-Assume-In-Own-Account',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole",
            "Resource":"arn:aws:iam::123456789012:role/account-trusted-role",
@@ -192,6 +208,9 @@ mod tests {
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow",
            "Principal":{"AWS":"arn:aws:iam::123456789012:root"},"Action":"sts:AssumeRole",
            "Condition":{"StringEquals":{"sts:ExternalId":"expected-external-id"}}}]}'),
+        ('STSTESTXACCTROLE', '123456789012', 'cross-account-role', 'cross-account-role', '/', NULL,
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow",
+           "Principal":{"AWS":"arn:aws:iam::210987654321:root"},"Action":"sts:AssumeRole"}]}'),
         ('STSTESTIPROLE001', '123456789012', 'ip-trusted-role', 'ip-trusted-role', '/', NULL,
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow",
            "Principal":{"AWS":"arn:aws:iam::123456789012:root"},"Action":"sts:AssumeRole",
@@ -237,21 +256,25 @@ mod tests {
 
     /// Build the principal and session data the SigV4 layer would produce for a seeded user.
     fn user_identity(user_id: &str, user_name: &str) -> (Principal, SessionData) {
+        user_identity_in_account(TEST_ACCOUNT_ID, user_id, user_name)
+    }
+
+    /// Build the principal and session data the SigV4 layer would produce for a seeded user in
+    /// `account_id`, for the cases where the caller's account is not the role's.
+    fn user_identity_in_account(account_id: &str, user_id: &str, user_name: &str) -> (Principal, SessionData) {
         let principal = Principal::from(
             User::builder()
                 .partition("aws")
-                .account_id(TEST_ACCOUNT_ID)
+                .account_id(account_id)
                 .path("/")
                 .user_name(user_name)
                 .build()
                 .expect("failed to build user"),
         );
         let mut session_data = SessionData::new();
-        session_data.insert("aws:PrincipalAccount", SessionValue::String(TEST_ACCOUNT_ID.to_string()));
-        session_data.insert(
-            "aws:PrincipalArn",
-            SessionValue::String(format!("arn:aws:iam::{TEST_ACCOUNT_ID}:user/{user_name}")),
-        );
+        session_data.insert("aws:PrincipalAccount", SessionValue::String(account_id.to_string()));
+        session_data
+            .insert("aws:PrincipalArn", SessionValue::String(format!("arn:aws:iam::{account_id}:user/{user_name}")));
         session_data.insert("aws:userid", SessionValue::String(format!("AIDA{user_id}")));
         session_data.insert("aws:username", SessionValue::String(user_name.to_string()));
         session_data.insert("aws:PrincipalType", SessionValue::String("User".to_string()));
@@ -435,6 +458,7 @@ mod tests {
         const NAMED_USER_ROLE_ARN: &str = "arn:aws:iam::123456789012:role/named-user-role";
         const EXTERNAL_ID_ROLE_ARN: &str = "arn:aws:iam::123456789012:role/external-id-role";
         const IP_TRUSTED_ROLE_ARN: &str = "arn:aws:iam::123456789012:role/ip-trusted-role";
+        const CROSS_ACCOUNT_ROLE_ARN: &str = "arn:aws:iam::123456789012:role/cross-account-role";
 
         // A user whose identity policy allows sts:AssumeRole on a role whose trust policy
         // trusts the whole account receives credentials.
@@ -634,6 +658,52 @@ mod tests {
                 ("Action", "AssumeRole"),
                 ("Version", "2011-06-15"),
                 ("RoleArn", ACCOUNT_TRUSTED_ROLE_ARN),
+                ("RoleSessionName", "test-session"),
+            ],
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // Same account throughout, so the cases above cannot tell the resource's account from the
+        // caller's. A cross-account AssumeRole can: the caller is in one account and the role it
+        // assumes is in another, and aws:ResourceAccount must name the role's.
+        let (principal, session_data) =
+            user_identity_in_account(OTHER_ACCOUNT_ID, "STSTESTXACCTUSR1", "Cross-Account-User");
+        let (status, body) = call_as(
+            &svc_state,
+            principal,
+            session_data,
+            &[
+                ("Action", "AssumeRole"),
+                ("Version", "2011-06-15"),
+                ("RoleArn", CROSS_ACCOUNT_ROLE_ARN),
+                ("RoleSessionName", "test-session"),
+            ],
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<AssumeRoleResult>"), "unexpected body: {body}");
+        assert!(
+            body.contains(&format!(
+                "<Arn>arn:aws:sts::{TEST_ACCOUNT_ID}:assumed-role/cross-account-role/test-session</Arn>"
+            )),
+            "unexpected body: {body}"
+        );
+
+        // The same request under a grant naming the caller's own account is refused. Populating
+        // aws:ResourceAccount from the principal rather than the resource would wrongly admit
+        // this one, so it is the case that pins down which account the key reports.
+        let (principal, session_data) =
+            user_identity_in_account(OTHER_ACCOUNT_ID, "STSTESTXACCTUSR2", "Own-Account-User");
+        let (status, body) = call_as(
+            &svc_state,
+            principal,
+            session_data,
+            &[
+                ("Action", "AssumeRole"),
+                ("Version", "2011-06-15"),
+                ("RoleArn", CROSS_ACCOUNT_ROLE_ARN),
                 ("RoleSessionName", "test-session"),
             ],
         )
