@@ -105,6 +105,7 @@ pub(crate) fn malformed_input(request_id: RequestId) -> Response<Body> {
 mod tests {
     use {
         super::{ServiceState, serve_request},
+        chrono::{DateTime, Utc},
         http_body_util::BodyExt as _,
         pretty_assertions::assert_eq,
         scratchstack_aspen::Policy as AspenPolicy,
@@ -149,7 +150,8 @@ mod tests {
     /// Seed data for the authorization tests: one user whose inline policy allows
     /// `iam:ListUsers`, one user with no policies at all, and users whose grants are gated on
     /// the request-time condition keys (`aws:SecureTransport`, `aws:CurrentTime`,
-    /// `aws:EpochTime`) that `check_authorization` injects.
+    /// `aws:EpochTime`, `aws:SourceIp`) that `check_authorization` injects, and on the
+    /// `aws:TokenIssueTime` the session token carries.
     const AUTHZ_TEST_DATA: &str = r#"
         INSERT INTO iam.partition(partition) VALUES ('aws');
 
@@ -165,7 +167,8 @@ mod tests {
         ('SVCTESTEPOCHUSR1', '123456789012', 'epoch-user', 'Epoch-User', '/'),
         ('SVCTESTIPV4USER1', '123456789012', 'ipv4-user', 'Ipv4-User', '/'),
         ('SVCTESTIPV6USER1', '123456789012', 'ipv6-user', 'Ipv6-User', '/'),
-        ('SVCTESTDENYIPUSR', '123456789012', 'deny-ip-user', 'Deny-Ip-User', '/');
+        ('SVCTESTDENYIPUSR', '123456789012', 'deny-ip-user', 'Deny-Ip-User', '/'),
+        ('SVCTESTTOKENUSER', '123456789012', 'token-user', 'Token-User', '/');
 
         INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
         ('SVCTESTALLOWUSER', 'allow-list-users', 'Allow-List-Users',
@@ -188,6 +191,9 @@ mod tests {
         ('SVCTESTIPV6USER1', 'allow-from-ipv6-block', 'Allow-From-Ipv6-Block',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
            "Condition":{"IpAddress":{"aws:SourceIp":"2001:db8::/32"}}}]}'),
+        ('SVCTESTTOKENUSER', 'allow-recent-sessions', 'Allow-Recent-Sessions',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+           "Condition":{"DateGreaterThan":{"aws:TokenIssueTime":"2020-01-01T00:00:00Z"}}}]}'),
         ('SVCTESTDENYIPUSR', 'deny-outside-ipv4-block', 'Deny-Outside-Ipv4-Block',
          '{"Version":"2012-10-17","Statement":[
            {"Effect":"Allow","Action":"iam:ListUsers","Resource":"*"},
@@ -196,11 +202,16 @@ mod tests {
 
         INSERT INTO iam.roles(role_id, account_id, role_name_lower, role_name_cased, path, assume_role_policy_document) VALUES
         ('SVCTESTROLE00001', '123456789012', 'session-role', 'Session-Role', '/',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'),
+        ('SVCTESTTOKENROLE', '123456789012', 'token-role', 'Token-Role', '/',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}');
 
         INSERT INTO iam.role_inline_policies(role_id, policy_name_lower, policy_name_cased, policy_document) VALUES
         ('SVCTESTROLE00001', 'allow-list-users', 'Allow-List-Users',
-         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*"}]}');
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*"}]}'),
+        ('SVCTESTTOKENROLE', 'allow-recent-sessions', 'Allow-Recent-Sessions',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+           "Condition":{"DateGreaterThan":{"aws:TokenIssueTime":"2020-01-01T00:00:00Z"}}}]}');
 
         INSERT INTO iam.managed_policies(managed_policy_id, account_id, managed_policy_name_lower,
             managed_policy_name_cased, path, default_version, deprecated, latest_version) VALUES
@@ -287,8 +298,18 @@ mod tests {
     }
 
     /// Build the principal and session data the SigV4 layer would produce for a session on the
-    /// seeded role.
+    /// seeded role, issued just now.
     fn role_identity(role_id: &str, role_name: &str) -> (Principal, SessionData) {
+        role_identity_issued_at(role_id, role_name, Utc::now())
+    }
+
+    /// Build the principal and session data the SigV4 layer would produce for a session on the
+    /// seeded role that `sts:AssumeRole` minted at `issued_at`.
+    ///
+    /// The keys here mirror the session metadata `AssumeRole` records in the session token, which
+    /// the signing-key provider hands back verbatim as the session data for a request signed with
+    /// the resulting temporary credentials.
+    fn role_identity_issued_at(role_id: &str, role_name: &str, issued_at: DateTime<Utc>) -> (Principal, SessionData) {
         let principal = Principal::from(
             AssumedRole::builder()
                 .partition("aws")
@@ -306,6 +327,8 @@ mod tests {
         );
         session_data.insert("aws:userid", SessionValue::String(format!("AROA{role_id}:test-session")));
         session_data.insert("aws:PrincipalType", SessionValue::String("AssumedRole".to_string()));
+        session_data.insert("aws:MultiFactorAuthPresent", SessionValue::Bool(false));
+        session_data.insert("aws:TokenIssueTime", SessionValue::Timestamp(issued_at));
         (principal, session_data)
     }
 
@@ -582,6 +605,29 @@ mod tests {
         let (principal, session_data) = user_identity("SVCTESTIPV4USER1", "Ipv4-User");
         let (status, body) =
             call_forwarded(&proxied_state, principal, session_data, TEST_PROXY_IP, "198.51.100.7", parameters).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // aws:TokenIssueTime comes from the session token rather than the request, carrying the
+        // moment sts:AssumeRole minted the credentials: a grant restricted to sessions issued
+        // after a cutoff admits a session minted now...
+        let (principal, session_data) = role_identity("SVCTESTTOKENROLE", "Token-Role");
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        // ...and refuses one minted before it.
+        let issued_at =
+            DateTime::parse_from_rfc3339("2019-06-01T00:00:00Z").expect("bad timestamp").with_timezone(&Utc);
+        let (principal, session_data) = role_identity_issued_at("SVCTESTTOKENROLE", "Token-Role", issued_at);
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // Long-term IAM user credentials are not a session and carry no aws:TokenIssueTime at
+        // all, so the same condition never matches for them -- as on AWS.
+        let (principal, session_data) = user_identity("SVCTESTTOKENUSER", "Token-User");
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
         assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
 
