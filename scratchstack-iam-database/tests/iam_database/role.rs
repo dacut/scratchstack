@@ -3,6 +3,7 @@ use {
     base64::{Engine as _, engine::general_purpose::URL_SAFE},
     chrono::Utc,
     pretty_assertions::assert_eq,
+    scratchstack_aws_principal::SessionValue,
     scratchstack_aws_signature::{
         ExtractSessionTokenRequest, GetSigningKeyRequest, PostcardSessionTokenExtractor,
         SessionTokenEncryptionAlgorithm as SigSessionTokenEncryptionAlgorithm, SessionTokenEncryptionKeyInfo,
@@ -2062,6 +2063,23 @@ pub async fn test_assume_role(pool: &sqlx::PgPool) {
     assert_eq!(token_data.expires_at, credentials.expiration);
     assert!(token_data.inline_policy.is_none());
     assert!(token_data.managed_policy_ids.is_empty());
+
+    // The session metadata travels in the token and becomes the session data the service
+    // evaluates policies against, so the condition keys describing the session have to survive
+    // the round trip through it. aws:TokenIssueTime carries the moment the session was minted,
+    // as a timestamp a Date* condition can be compared against.
+    let metadata = token_data.metadata;
+    assert_eq!(metadata.get("aws:TokenIssueTime"), Some(&SessionValue::Timestamp(token_data.issued_at)));
+    assert_eq!(
+        metadata.get("aws:PrincipalArn"),
+        Some(&SessionValue::String("arn:aws:sts::123456789012:assumed-role/example-role-1/test-session".to_string()))
+    );
+    assert_eq!(
+        metadata.get("aws:userid"),
+        Some(&SessionValue::String("AROAEXAMPLEROLEID123:test-session".to_string()))
+    );
+    assert_eq!(metadata.get("aws:PrincipalType"), Some(&SessionValue::String("AssumedRole".to_string())));
+    assert_eq!(metadata.get("aws:PrincipalAccount"), Some(&SessionValue::String("123456789012".to_string())));
 }
 
 /// AssumeRole with session policies records them in the session token, and the direct-database
