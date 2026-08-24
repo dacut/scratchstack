@@ -32,8 +32,9 @@ use {
 /// operations without resource-level permissions (policies must then grant the action with
 /// `Resource: "*"`).
 ///
-/// `request_metadata` describes the connection the request arrived on and supplies the
-/// `aws:SecureTransport` and `aws:SourceIp` condition keys.
+/// `request_metadata` describes the request itself -- the connection it arrived on and the
+/// headers it announced itself with -- and supplies the `aws:SecureTransport`, `aws:SourceIp`,
+/// `aws:referer`, and `aws:UserAgent` condition keys.
 ///
 /// `request_context` holds the condition keys derived from the request itself and from the
 /// resources it names -- the tags on those resources, for example. They are layered onto the
@@ -141,6 +142,14 @@ pub(crate) async fn check_authorization(
     session_data.insert(SESSION_KEY_AWS_EPOCH_TIME, SessionValue::Integer(now.timestamp()));
     session_data.insert(SESSION_KEY_AWS_SECURE_TRANSPORT, SessionValue::Bool(request_metadata.secure_transport));
     session_data.insert(SESSION_KEY_AWS_SOURCE_IP, SessionValue::IpAddr(request_metadata.source_ip));
+    // A header the caller did not send leaves its key out of the session data entirely, so a
+    // condition on it does not match rather than matching an empty string.
+    if let Some(referer) = &request_metadata.referer {
+        session_data.insert(SESSION_KEY_AWS_REFERER, SessionValue::String(referer.clone()));
+    }
+    if let Some(user_agent) = &request_metadata.user_agent {
+        session_data.insert(SESSION_KEY_AWS_USER_AGENT, SessionValue::String(user_agent.clone()));
+    }
 
     let context = match Context::builder()
         .api(action.as_str())

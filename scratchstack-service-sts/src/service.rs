@@ -40,7 +40,7 @@ pub(crate) async fn serve_request(
     // Policies may be conditioned on the connection the request arrived on, and a missing
     // aws:SourceIp silently satisfies a NotIpAddress condition; a request whose peer address is
     // unknown cannot be evaluated safely, so fail closed.
-    let Some(request_metadata) = RequestMetadata::from_connection(
+    let Some(request_metadata) = RequestMetadata::from_request(
         svc_state.secure_transport,
         svc_state.forwarded_for.as_deref(),
         connect_info,

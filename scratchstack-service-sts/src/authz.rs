@@ -34,8 +34,9 @@ use {
 ///   ARN directly -- in that case the trust policy alone suffices, just as with any other
 ///   resource-based policy.
 ///
-/// `request_metadata` describes the connection the request arrived on and supplies the
-/// `aws:SecureTransport` and `aws:SourceIp` condition keys to both gates.
+/// `request_metadata` describes the request itself -- the connection it arrived on and the
+/// headers it announced itself with -- and supplies the `aws:SecureTransport`, `aws:SourceIp`,
+/// `aws:referer`, and `aws:UserAgent` condition keys to both gates.
 ///
 /// The account root user may not assume roles at all, matching AWS. Role chaining (a caller that
 /// is itself an assumed role) is not supported yet: session credentials cannot authenticate, so
@@ -110,6 +111,14 @@ pub(crate) async fn check_assume_role_authorization(
     session_data.insert(SESSION_KEY_AWS_EPOCH_TIME, SessionValue::Integer(now.timestamp()));
     session_data.insert(SESSION_KEY_AWS_SECURE_TRANSPORT, SessionValue::Bool(request_metadata.secure_transport));
     session_data.insert(SESSION_KEY_AWS_SOURCE_IP, SessionValue::IpAddr(request_metadata.source_ip));
+    // A header the caller did not send leaves its key out of the session data entirely, so a
+    // condition on it does not match rather than matching an empty string.
+    if let Some(referer) = &request_metadata.referer {
+        session_data.insert(SESSION_KEY_AWS_REFERER, SessionValue::String(referer.clone()));
+    }
+    if let Some(user_agent) = &request_metadata.user_agent {
+        session_data.insert(SESSION_KEY_AWS_USER_AGENT, SessionValue::String(user_agent.clone()));
+    }
     if let Some(external_id) = external_id {
         session_data.insert(SESSION_KEY_STS_EXTERNAL_ID, SessionValue::String(external_id.to_string()));
     }
