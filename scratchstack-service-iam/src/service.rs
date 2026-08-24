@@ -176,7 +176,9 @@ mod tests {
         ('SVCTESTREGIONUSR', '123456789012', 'region-user', 'Region-User', '/'),
         ('SVCTESTOTHERRGN1', '123456789012', 'other-region-user', 'Other-Region-User', '/'),
         ('SVCTESTDIRECTUSR', '123456789012', 'direct-call-user', 'Direct-Call-User', '/'),
-        ('SVCTESTAGENTUSR1', '123456789012', 'agent-user', 'Agent-User', '/');
+        ('SVCTESTAGENTUSR1', '123456789012', 'agent-user', 'Agent-User', '/'),
+        ('SVCTESTACCTUSER1', '123456789012', 'account-user', 'Account-User', '/'),
+        ('SVCTESTOTHRACCT1', '123456789012', 'other-account-user', 'Other-Account-User', '/');
 
         INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
         ('SVCTESTALLOWUSER', 'allow-list-users', 'Allow-List-Users',
@@ -199,6 +201,12 @@ mod tests {
         ('SVCTESTIPV6USER1', 'allow-from-ipv6-block', 'Allow-From-Ipv6-Block',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
            "Condition":{"IpAddress":{"aws:SourceIp":"2001:db8::/32"}}}]}'),
+        ('SVCTESTACCTUSER1', 'allow-own-account', 'Allow-Own-Account',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+           "Condition":{"StringEquals":{"aws:ResourceAccount":"123456789012"}}}]}'),
+        ('SVCTESTOTHRACCT1', 'allow-other-account', 'Allow-Other-Account',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+           "Condition":{"StringEquals":{"aws:ResourceAccount":"210987654321"}}}]}'),
         ('SVCTESTAGENTUSR1', 'allow-known-clients', 'Allow-Known-Clients',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
            "Condition":{"StringLike":{"aws:UserAgent":"aws-cli/*"},
@@ -271,7 +279,9 @@ mod tests {
         ('SVCGETUSERNARROW', '123456789012', 'narrow-user', 'Narrow-User', '/'),
         ('SVCGETUSERDIVSN1', '123456789012', 'division-user', 'Division-User', '/division/'),
         ('SVCGETUSERENGNR1', '123456789012', 'engineering-user', 'Engineering-User', '/'),
-        ('SVCGETUSERSALES1', '123456789012', 'sales-user', 'Sales-User', '/');
+        ('SVCGETUSERSALES1', '123456789012', 'sales-user', 'Sales-User', '/'),
+        ('SVCGETUSRACCT001', '123456789012', 'account-user', 'Account-User', '/'),
+        ('SVCGETUSRACCT002', '123456789012', 'other-account-user', 'Other-Account-User', '/');
 
         INSERT INTO iam.user_tags(user_id, key_lower, key_cased, value) VALUES
         ('SVCGETUSERENGNR1', 'department', 'Department', 'Engineering'),
@@ -292,6 +302,12 @@ mod tests {
            "Condition":{"StringEquals":{"iam:ResourceTag/Department":"Engineering"}}}]}'),
         ('SVCGETUSERBROAD1', 'allow-get-any', 'Allow-Get-Any',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:GetUser","Resource":"*"}]}'),
+        ('SVCGETUSRACCT001', 'allow-get-in-own-account', 'Allow-Get-In-Own-Account',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:GetUser","Resource":"*",
+           "Condition":{"StringEquals":{"aws:ResourceAccount":"123456789012"}}}]}'),
+        ('SVCGETUSRACCT002', 'allow-get-in-other-account', 'Allow-Get-In-Other-Account',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:GetUser","Resource":"*",
+           "Condition":{"StringEquals":{"aws:ResourceAccount":"210987654321"}}}]}'),
         ('SVCGETUSERNARROW', 'allow-get-broad-user', 'Allow-Get-Broad-User',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:GetUser",
            "Resource":"arn:aws:iam::123456789012:user/Broad-User"}]}');
@@ -688,6 +704,19 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
         assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
 
+        // iam:ListUsers names no resource ARN, so the account it lists supplies
+        // aws:ResourceAccount: a grant scoped to that account admits the request, and one scoped
+        // to another account does not.
+        let (principal, session_data) = user_identity("SVCTESTACCTUSER1", "Account-User");
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUsersResult>"), "unexpected body: {body}");
+
+        let (principal, session_data) = user_identity("SVCTESTOTHRACCT1", "Other-Account-User");
+        let (status, body) = call(&svc_state, principal, session_data, parameters).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
         // aws:referer and aws:UserAgent carry the headers the caller sent, so a grant gated on
         // both admits a request that announces itself as expected...
         let headers = client_headers(Some("https://console.example.com/"), Some("aws-cli/2.15.0"));
@@ -910,6 +939,22 @@ mod tests {
             body.contains(&format!("<Arn>arn:aws:iam::{TEST_ACCOUNT_ID}:user/Engineering-User</Arn>")),
             "unexpected body: {body}"
         );
+
+        // The resource ARN carries the account that owns the user being read, which supplies
+        // aws:ResourceAccount: a grant scoped to that account reaches the user...
+        let (principal, session_data) = user_identity("SVCGETUSRACCT001", "Account-User");
+        let (status, body) = call(&svc_state, principal, session_data, &get_user_parameters(Some("Broad-User"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(
+            body.contains(&format!("<Arn>arn:aws:iam::{TEST_ACCOUNT_ID}:user/Broad-User</Arn>")),
+            "unexpected body: {body}"
+        );
+
+        // ...and one scoped to a different account does not.
+        let (principal, session_data) = user_identity("SVCGETUSRACCT002", "Other-Account-User");
+        let (status, body) = call(&svc_state, principal, session_data, &get_user_parameters(Some("Broad-User"))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
 
         // A user that does not exist is still authorized against the ARN the request names, so a
         // caller allowed iam:GetUser on any user is told the user is missing...

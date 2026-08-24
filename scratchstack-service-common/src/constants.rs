@@ -51,6 +51,9 @@ pub const SESSION_KEY_AWS_PRINCIPAL_ARN: &str = "aws:PrincipalArn";
 /// preserved by every version since; AWS spells the condition key to match the header.
 pub const SESSION_KEY_AWS_REFERER: &str = "aws:referer";
 
+/// Session key for the account that owns the resource a request operates on.
+pub const SESSION_KEY_AWS_RESOURCE_ACCOUNT: &str = "aws:ResourceAccount";
+
 /// Session key indicating whether the request arrived over TLS.
 pub const SESSION_KEY_AWS_SECURE_TRANSPORT: &str = "aws:SecureTransport";
 

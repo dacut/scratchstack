@@ -40,6 +40,10 @@ use {
 /// resources it names -- the tags on those resources, for example. They are layered onto the
 /// session data the authentication layer produced, so a caller cannot supply them.
 ///
+/// `aws:ResourceAccount` is derived from `resources` here; an operation without resource-level
+/// permissions supplies it through `request_context` instead, with
+/// [`resource_account_context`].
+///
 /// Returns `Ok(())` when the request is allowed. Otherwise returns the ready-to-send error
 /// response: an `AccessDeniedException` for policy denials, or an `InternalFailure` when
 /// authorization could not be performed (which always fails closed).
@@ -150,6 +154,17 @@ pub(crate) async fn check_authorization(
     if let Some(user_agent) = &request_metadata.user_agent {
         session_data.insert(SESSION_KEY_AWS_USER_AGENT, SessionValue::String(user_agent.clone()));
     }
+    // The account owning the resources the request names, taken from their ARNs so that every
+    // operation supplies it without having to remember to. Operations with no resource ARN name
+    // the account another way and pass it in `request_context`, which is why this does not
+    // overwrite an existing value unless a resource actually says otherwise. Resources within one
+    // request belong to the same account; if they somehow disagree, no single account describes
+    // the request, so the key is left as the request context had it rather than guessed at.
+    if let Some((first, rest)) = resources.split_first()
+        && rest.iter().all(|arn| arn.account_id() == first.account_id())
+    {
+        session_data.insert(SESSION_KEY_AWS_RESOURCE_ACCOUNT, SessionValue::String(first.account_id().to_string()));
+    }
 
     let context = match Context::builder()
         .api(action.as_str())
@@ -218,6 +233,18 @@ pub(crate) fn resource_tag_context(tags: &[Tag]) -> SessionData {
         context.insert(&format!("{SESSION_KEY_PREFIX_IAM_RESOURCE_TAG}{}", tag.key), value);
     }
 
+    context
+}
+
+/// Build the condition keys describing the account an operation acts on when it names no
+/// resource ARN, for the `request_context` argument of [`check_authorization`].
+///
+/// An operation with resource-level permissions has its `aws:ResourceAccount` derived from the
+/// resource ARNs it passes; one without has no ARN to derive it from and knows the account only
+/// from the request itself.
+pub(crate) fn resource_account_context(account_id: &str) -> SessionData {
+    let mut context = SessionData::with_capacity(1);
+    context.insert(SESSION_KEY_AWS_RESOURCE_ACCOUNT, SessionValue::String(account_id.to_string()));
     context
 }
 

@@ -1,6 +1,6 @@
 use {
     crate::{
-        authz::check_authorization,
+        authz::{check_authorization, resource_account_context},
         constants::SESSION_KEY_AWS_PRINCIPAL_ACCOUNT,
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
     },
@@ -84,7 +84,7 @@ pub(crate) async fn list_users(
         request_metadata,
         Action::ListUsers,
         &[],
-        &SessionData::new(),
+        &resource_account_context(account_id),
     )
     .await
     {
