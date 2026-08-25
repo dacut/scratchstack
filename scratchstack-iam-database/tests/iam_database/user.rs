@@ -109,19 +109,38 @@ pub async fn test_create_user_with_permissions_boundary(pool: &sqlx::PgPool) {
     assert_eq!(pb_arn, "arn:aws:iam::123456789012:policy/Example-Managed-Policy-1");
 }
 
-/// Attempting to create a user whose (lowercased) name already exists in the account must fail.
+/// Attempting to create a user whose (lowercased) name already exists in the account must fail
+/// with EntityAlreadyExists.
 pub async fn test_create_user_duplicate_name(pool: &sqlx::PgPool) {
     // "alice" was committed by test_create_user_simple; re-inserting it must fail.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
-    let result = CreateUserInternalRequest::builder()
+    let err = CreateUserInternalRequest::builder()
         .user_name("alice")
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreateUserRequestInternal")
         .execute(&mut tx, RequestId::new())
-        .await;
+        .await
+        .expect_err("Creating a duplicate user name must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
-    assert!(result.is_err(), "Creating a duplicate user name must fail");
+    assert!(matches!(err, IamError::EntityAlreadyExistsException(_)), "Expected EntityAlreadyExists, got: {err:?}");
+}
+
+/// User names are compared case-insensitively, so a name differing only in case collides with an
+/// existing user just as an identical one does.
+pub async fn test_create_user_duplicate_name_different_case(pool: &sqlx::PgPool) {
+    // "alice" was committed by test_create_user_simple.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = CreateUserInternalRequest::builder()
+        .user_name("Alice")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build CreateUserRequestInternal")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("Creating a user differing only in case must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::EntityAlreadyExistsException(_)), "Expected EntityAlreadyExists, got: {err:?}");
 }
 
 /// Building a request with an invalid user name must fail before touching the database.
