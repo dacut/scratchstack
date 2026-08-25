@@ -2,7 +2,7 @@ use {
     crate::{
         authz::{check_authorization, resource_tag_context},
         constants::*,
-        operations::user_resource,
+        operations::{encode_policy_document, user_resource},
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
     },
     scratchstack_aws_principal::{Principal, SessionData, SessionValue},
@@ -16,23 +16,26 @@ use {
     scratchstack_iam_database::RequestExecutor as _,
     scratchstack_shapes_iam::{
         action::Action,
-        operation::{DeleteUserInternalRequest, DeleteUserRequest, DeleteUserResponseEnvelope},
+        operation::{GetUserPolicyInternalRequest, GetUserPolicyRequest, GetUserPolicyResponseEnvelope},
     },
 };
 
-/// Handle a `DeleteUser` request.
+/// Handle a `GetUserPolicy` request.
 ///
 /// The caller has already been authenticated by the SigV4 layer. The caller's identity-based
 /// policies (including group-inherited policies and any permissions boundary), intersected with
-/// any session policies, must allow `iam:DeleteUser` on the user being deleted; the account root
-/// user is implicitly allowed.
+/// any session policies, must allow `iam:GetUserPolicy` on the user the policy is embedded in;
+/// the account root user is implicitly allowed.
 ///
-/// `UserName` is required: unlike `GetUser`, an omitted name does not default to the calling
-/// user, so that a caller cannot delete itself by leaving the name off.
+/// An inline policy is not a resource of its own -- it is part of the user carrying it -- so the
+/// action is authorized against the user's ARN, and `PolicyName` narrows nothing. A caller
+/// allowed to read one inline policy on a user is allowed to read every one of them.
 ///
-/// A user that still owns dependent resources -- access keys, inline or attached policies, group
-/// memberships -- cannot be deleted, and the attempt is reported as a `DeleteConflict`.
-pub(crate) async fn delete_user(
+/// `UserName` and `PolicyName` are both required; neither defaults.
+///
+/// The policy document is reported percent-encoded rather than as the JSON it is stored as, which
+/// is what IAM does; a client URL-decodes it to read the policy back.
+pub(crate) async fn get_user_policy(
     svc_state: ServiceState,
     request_id: RequestId,
     principal: Principal,
@@ -47,17 +50,20 @@ pub(crate) async fn delete_user(
     };
     let account_id = account_id.clone();
 
-    let request: DeleteUserRequest = match from_query_str(parameters) {
+    let request: GetUserPolicyRequest = match from_query_str(parameters) {
         Ok(request) => request,
         Err(e) => {
-            log::debug!("{request_id}: Could not parse DeleteUser parameters: {e}");
+            log::debug!("{request_id}: Could not parse GetUserPolicy parameters: {e}");
             return malformed_input(request_id);
         }
     };
     let user_name = request.user_name;
 
-    let request = match DeleteUserInternalRequest::builder()
+    // Building the internal request validates the user name and the policy name, so a malformed
+    // request is rejected before it is authorized.
+    let request = match GetUserPolicyInternalRequest::builder()
         .account_id(account_id.clone())
+        .policy_name(request.policy_name)
         .user_name(user_name.clone())
         .build()
     {
@@ -88,7 +94,7 @@ pub(crate) async fn delete_user(
         &session_data,
         &session_policies,
         &request_metadata,
-        Action::DeleteUser,
+        Action::GetUserPolicy,
         &[resource_arn],
         &resource_tag_context(&resource_tags),
     )
@@ -98,11 +104,14 @@ pub(crate) async fn delete_user(
         return *response;
     }
 
-    // The delete reports a user that does not exist as `NoSuchEntity` itself, so the missing case
-    // needs no separate handling here.
+    // The read reports a user or a policy that does not exist as `NoSuchEntity` itself, so the
+    // missing cases need no separate handling here.
     let response = match request.execute(&mut tx, request_id).await {
-        Ok(()) => DeleteUserResponseEnvelope::builder().request_id(request_id).build().respond(),
-        // Dropping the transaction rolls back a partial delete.
+        Ok(mut response) => {
+            // The database returns the document as it was stored; IAM reports it percent-encoded.
+            response.policy_document = encode_policy_document(&response.policy_document);
+            GetUserPolicyResponseEnvelope::builder().result(response).request_id(request_id).build().respond()
+        }
         Err(e) => return e.respond(),
     };
 
