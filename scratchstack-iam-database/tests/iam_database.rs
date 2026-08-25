@@ -73,6 +73,7 @@ async fn test_database() {
     subtest_create_user(&pool).await;
     subtest_tag_untag_user(&pool).await;
     subtest_get_user(&pool).await;
+    subtest_list_users(&pool).await;
     subtest_delete_user_permissions_boundary(&pool).await;
     subtest_put_user_permissions_boundary(&pool).await;
     subtest_put_user_policy(&pool).await;
@@ -226,6 +227,12 @@ async fn subtest_get_user(pool: &PgPool) {
     user::test_get_user_with_tags(pool).await;
     user::test_get_user_nonexistent(pool).await;
     user::test_get_user_no_user_name(pool).await;
+    user::test_user_aws_managed_permissions_boundary(pool).await;
+}
+
+/// ListUsersInternalRequest
+async fn subtest_list_users(pool: &PgPool) {
+    user::test_list_users_reports_path_in_arn(pool).await;
 }
 
 /// DeleteUserPermissionsBoundaryInternalRequest
@@ -651,6 +658,7 @@ async fn subtest_get_role(pool: &PgPool) {
     role::test_get_role_with_path(pool).await;
     role::test_get_role_with_tags(pool).await;
     role::test_get_role_with_permissions_boundary(pool).await;
+    role::test_role_aws_managed_permissions_boundary(pool).await;
     role::test_get_role_nonexistent(pool).await;
     role::test_get_role_invalid_name();
 }

@@ -9,11 +9,11 @@ use {
             CreateAccessKeyInternalRequest, CreateUserInternalRequest, DeleteAccessKeyInternalRequest,
             DeleteUserInternalRequest, DeleteUserPermissionsBoundaryInternalRequest, DeleteUserPolicyInternalRequest,
             GetUserInternalRequest, GetUserPolicyInternalRequest, ListAccessKeysInternalRequest,
-            ListUserPoliciesInternalRequest, ListUserTagsInternalRequest, PutUserPermissionsBoundaryInternalRequest,
-            PutUserPolicyInternalRequest, TagUserInternalRequest, UntagUserInternalRequest,
-            UpdateAccessKeyInternalRequest,
+            ListUserPoliciesInternalRequest, ListUserTagsInternalRequest, ListUsersInternalRequest,
+            PutUserPermissionsBoundaryInternalRequest, PutUserPolicyInternalRequest, TagUserInternalRequest,
+            UntagUserInternalRequest, UpdateAccessKeyInternalRequest,
         },
-        types::{StatusType, Tag},
+        types::{PermissionsBoundaryAttachmentType, StatusType, Tag},
     },
 };
 
@@ -1823,4 +1823,134 @@ pub async fn test_delete_access_key_bad_prefix(pool: &sqlx::PgPool) {
         .expect_err("DeleteAccessKey for a non-AKIA prefix must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(matches!(err, IamError::ValidationError(_)), "Expected ValidationError, got: {err:?}");
+}
+
+/// A permissions boundary served by an AWS-managed policy must be reported under the account that
+/// owns the policy -- the AWS account, which this implementation stores under the numeric account
+/// its `aws` alias stands for -- rather than under the account that owns the user, and under the
+/// policy's own path and name. `GetUser` and `ListUsers` both report a boundary, so both are
+/// checked here.
+pub async fn test_user_aws_managed_permissions_boundary(pool: &sqlx::PgPool) {
+    const PB_ARN: &str = "arn:test-partition:iam::000000000000:policy/boundaries/Aws-Boundary-Policy";
+
+    // There is no API for creating an AWS-owned policy, so it is seeded directly.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    sqlx::query(
+        "INSERT INTO iam.managed_policies(managed_policy_id, account_id, managed_policy_name_lower,
+             managed_policy_name_cased, path, default_version, deprecated, latest_version)
+         VALUES ('AWSUSERBOUNDPOL1', '000000000000', 'aws-boundary-policy', 'Aws-Boundary-Policy',
+             '/boundaries/', 1, false, 1)",
+    )
+    .execute(&mut *tx)
+    .await
+    .expect("Failed to seed AWS-managed boundary policy");
+    sqlx::query(
+        r#"INSERT INTO iam.managed_policy_versions(managed_policy_id, managed_policy_version, policy_document)
+         VALUES ('AWSUSERBOUNDPOL1', 1,
+             '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}')"#,
+    )
+    .execute(&mut *tx)
+    .await
+    .expect("Failed to seed AWS-managed boundary policy version");
+
+    // The boundary is named through the aws alias here, as IAM spells an AWS-owned policy.
+    CreateUserInternalRequest::builder()
+        .user_name("AwsPbUser")
+        .account_id("123456789012")
+        .path("/awspb/")
+        .permissions_boundary("arn:test-partition:iam::aws:policy/boundaries/Aws-Boundary-Policy")
+        .build()
+        .expect("Failed to build CreateUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to create AwsPbUser with an AWS-managed permissions boundary");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetUserInternalRequest::builder()
+        .user_name("AwsPbUser")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build GetUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to get AwsPbUser");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let pb = resp.user.permissions_boundary.expect("User should have a permissions boundary");
+    assert_eq!(pb.permissions_boundary_type, Some(PermissionsBoundaryAttachmentType::Policy));
+    assert_eq!(pb.permissions_boundary_arn.as_deref(), Some(PB_ARN));
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListUsersInternalRequest::builder()
+        .account_id("123456789012")
+        .path_prefix("/awspb/")
+        .build()
+        .expect("Failed to build ListUsersInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to list users under /awspb/");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.users.len(), 1, "Expected exactly 1 user under /awspb/, got {:?}", resp.users);
+    let pb = resp.users[0].permissions_boundary.clone().expect("Listed user should have a permissions boundary");
+    assert_eq!(pb.permissions_boundary_type, Some(PermissionsBoundaryAttachmentType::Policy));
+    assert_eq!(pb.permissions_boundary_arn.as_deref(), Some(PB_ARN));
+
+    // Clean up: the user references the policy, so it goes first.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeleteUserInternalRequest::builder()
+        .user_name("AwsPbUser")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build DeleteUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to delete AwsPbUser");
+    sqlx::query("DELETE FROM iam.managed_policy_versions WHERE managed_policy_id = 'AWSUSERBOUNDPOL1'")
+        .execute(&mut *tx)
+        .await
+        .expect("Failed to delete AWS-managed boundary policy version");
+    sqlx::query("DELETE FROM iam.managed_policies WHERE managed_policy_id = 'AWSUSERBOUNDPOL1'")
+        .execute(&mut *tx)
+        .await
+        .expect("Failed to delete AWS-managed boundary policy");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// A user's ARN carries its path, so `ListUsers` must report the same ARN `GetUser` does for a
+/// user under a path -- `user/a/b/c/Name`, not `user/Name`. The two disagreeing matters beyond
+/// cosmetics: a resource ARN is what a policy is matched against.
+pub async fn test_list_users_reports_path_in_arn(pool: &sqlx::PgPool) {
+    const USER_ARN: &str = "arn:test-partition:iam::210987654321:user/a/b/c/Example-User-2";
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListUsersInternalRequest::builder()
+        .account_id("210987654321")
+        .path_prefix("/a/b/c/")
+        .build()
+        .expect("Failed to build ListUsersInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to list users under /a/b/c/");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.users.len(), 1, "Expected exactly 1 user under /a/b/c/, got {:?}", resp.users);
+    assert_eq!(resp.users[0].user_name, "Example-User-2");
+    assert_eq!(resp.users[0].path, "/a/b/c/");
+    assert_eq!(resp.users[0].arn, USER_ARN);
+
+    // The same user read through GetUser must be named the same way.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetUserInternalRequest::builder()
+        .user_name("Example-User-2")
+        .account_id("210987654321")
+        .build()
+        .expect("Failed to build GetUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to get Example-User-2");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.user.arn, USER_ARN);
 }
