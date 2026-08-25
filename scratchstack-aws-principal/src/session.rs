@@ -388,7 +388,7 @@ impl SessionValue {
         Self::List(values.into_iter().map(Into::into).collect())
     }
 
-    /// Returns the session value as a variable subtitution in an Aspen policy.
+    /// Returns the session value as a variable substitution in an Aspen policy.
     ///
     /// A multivalued key has no single value to substitute, so it yields the empty string, as a
     /// null value does. (AWS likewise disallows multivalued context keys in policy variables.)
