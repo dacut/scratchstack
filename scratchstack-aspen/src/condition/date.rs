@@ -9,6 +9,9 @@ use {
     std::str::FromStr,
 };
 
+/// A comparison between the timestamp a request carries and one the policy lists.
+type DateOp = fn(DateTime<Utc>, DateTime<Utc>) -> bool;
+
 /// Date operation names.
 pub(super) const DATE_DISPLAY_NAMES: [OperatorNames; 12] = display_names![
     "DateEquals",
@@ -72,14 +75,20 @@ fn date_match_datetime(
     cmp: DateCmp,
     variant: Variant,
 ) -> Result<bool, AspenError> {
-    let fn_op = match (cmp, variant.negated()) {
-        (DateCmp::Equals, false) => |a: DateTime<Utc>, b: DateTime<Utc>| a == b,
-        (DateCmp::Equals, true) => |a: DateTime<Utc>, b: DateTime<Utc>| a != b,
-        (DateCmp::LessThan, false) => |a: DateTime<Utc>, b: DateTime<Utc>| a < b,
-        (DateCmp::LessThan, true) => |a: DateTime<Utc>, b: DateTime<Utc>| a >= b,
-        (DateCmp::LessThanEquals, false) => |a: DateTime<Utc>, b: DateTime<Utc>| a <= b,
-        (DateCmp::LessThanEquals, true) => |a: DateTime<Utc>, b: DateTime<Utc>| a > b,
+    // Negation means two different things here. With Equals it is the DateNotEquals operator,
+    // whose negation covers the whole clause: the value has to differ from every value the policy
+    // lists. With the ordering comparisons it names an operator of its own -- GreaterThanEquals is
+    // not "less than" negated across the clause -- and its values are OR-ed like any other's.
+    let (fn_op, negated_clause): (DateOp, bool) = match (cmp, variant.negated()) {
+        (DateCmp::Equals, false) => (|a, b| a == b, false),
+        (DateCmp::Equals, true) => (|a, b| a == b, true),
+        (DateCmp::LessThan, false) => (|a, b| a < b, false),
+        (DateCmp::LessThan, true) => (|a, b| a >= b, false),
+        (DateCmp::LessThanEquals, false) => (|a, b| a <= b, false),
+        (DateCmp::LessThanEquals, true) => (|a, b| a > b, false),
     };
+
+    let mut matched = false;
 
     for el in allowed.iter() {
         let el = match pv {
@@ -101,11 +110,12 @@ fn date_match_datetime(
         if let Some(parsed) = parsed
             && fn_op(value, parsed)
         {
-            return Ok(true);
+            matched = true;
+            break;
         }
     }
 
-    Ok(false)
+    Ok(matched != negated_clause)
 }
 
 #[cfg(test)]

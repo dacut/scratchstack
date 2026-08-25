@@ -8,6 +8,9 @@ use {
     std::str::FromStr,
 };
 
+/// A comparison between the number a request carries and one the policy lists.
+type NumericOp = fn(i64, i64) -> bool;
+
 /// Numeric operation names.
 pub(super) const NUMERIC_DISPLAY_NAMES: [OperatorNames; 12] = display_names![
     "NumericEquals",
@@ -48,63 +51,53 @@ pub(super) fn numeric_match(
 ) -> Result<bool, AspenError> {
     match value {
         SessionValue::Null => Ok(variant.if_exists()),
-        SessionValue::Integer(value) => {
-            let fn_op = match (cmp, variant.negated()) {
-                (NumericCmp::Equals, false) => |a: i64, b: i64| a == b,
-                (NumericCmp::Equals, true) => |a: i64, b: i64| a != b,
-                (NumericCmp::LessThan, false) => |a: i64, b: i64| a < b,
-                (NumericCmp::LessThan, true) => |a: i64, b: i64| a >= b,
-                (NumericCmp::LessThanEquals, false) => |a: i64, b: i64| a <= b,
-                (NumericCmp::LessThanEquals, true) => |a: i64, b: i64| a > b,
-            };
-
-            for el in allowed.iter() {
-                let el = match pv {
-                    PolicyVersion::None | PolicyVersion::V2008_10_17 => el.clone(),
-                    PolicyVersion::V2012_10_17 => context.subst_vars_plain(el)?,
-                };
-
-                if let Ok(parsed) = i64::from_str(&el)
-                    && fn_op(*value, parsed)
-                {
-                    return Ok(true);
-                }
-            }
-
-            Ok(false)
-        }
-        SessionValue::String(value) => {
-            let value = match i64::from_str(value) {
-                Ok(value) => value,
-                Err(_) => return Ok(false),
-            };
-
-            let fn_op = match (cmp, variant.negated()) {
-                (NumericCmp::Equals, false) => |a: i64, b: i64| a == b,
-                (NumericCmp::Equals, true) => |a: i64, b: i64| a != b,
-                (NumericCmp::LessThan, false) => |a: i64, b: i64| a < b,
-                (NumericCmp::LessThan, true) => |a: i64, b: i64| a >= b,
-                (NumericCmp::LessThanEquals, false) => |a: i64, b: i64| a <= b,
-                (NumericCmp::LessThanEquals, true) => |a: i64, b: i64| a > b,
-            };
-
-            for el in allowed.iter() {
-                let el = match pv {
-                    PolicyVersion::None | PolicyVersion::V2008_10_17 => el.clone(),
-                    PolicyVersion::V2012_10_17 => context.subst_vars_plain(el)?,
-                };
-
-                if let Ok(parsed) = i64::from_str(&el)
-                    && fn_op(value, parsed)
-                {
-                    return Ok(true);
-                }
-            }
-
-            Ok(false)
-        }
+        SessionValue::Integer(value) => numeric_match_i64(context, pv, allowed, *value, cmp, variant),
+        SessionValue::String(value) => match i64::from_str(value) {
+            Ok(value) => numeric_match_i64(context, pv, allowed, value, cmp, variant),
+            Err(_) => Ok(false),
+        },
         _ => Ok(false),
     }
+}
+
+fn numeric_match_i64(
+    context: &Context,
+    pv: PolicyVersion,
+    allowed: &StringLikeList<String>,
+    value: i64,
+    cmp: NumericCmp,
+    variant: Variant,
+) -> Result<bool, AspenError> {
+    // Negation means two different things here. With Equals it is the NumericNotEquals operator,
+    // whose negation covers the whole clause: the value has to differ from every value the policy
+    // lists. With the ordering comparisons it names an operator of its own -- GreaterThanEquals is
+    // not "less than" negated across the clause -- and its values are OR-ed like any other's.
+    let (fn_op, negated_clause): (NumericOp, bool) = match (cmp, variant.negated()) {
+        (NumericCmp::Equals, false) => (|a, b| a == b, false),
+        (NumericCmp::Equals, true) => (|a, b| a == b, true),
+        (NumericCmp::LessThan, false) => (|a, b| a < b, false),
+        (NumericCmp::LessThan, true) => (|a, b| a >= b, false),
+        (NumericCmp::LessThanEquals, false) => (|a, b| a <= b, false),
+        (NumericCmp::LessThanEquals, true) => (|a, b| a > b, false),
+    };
+
+    let mut matched = false;
+
+    for el in allowed.iter() {
+        let el = match pv {
+            PolicyVersion::None | PolicyVersion::V2008_10_17 => el.clone(),
+            PolicyVersion::V2012_10_17 => context.subst_vars_plain(el)?,
+        };
+
+        if let Ok(parsed) = i64::from_str(&el)
+            && fn_op(value, parsed)
+        {
+            matched = true;
+            break;
+        }
+    }
+
+    Ok(matched != negated_clause)
 }
 
 #[cfg(test)]
