@@ -60,6 +60,13 @@ pub const SESSION_KEY_AWS_SECURE_TRANSPORT: &str = "aws:SecureTransport";
 /// Session key for the IP address the request was received from.
 pub const SESSION_KEY_AWS_SOURCE_IP: &str = "aws:SourceIp";
 
+/// Session key for the set of tag keys a request asks to attach to the resource it creates or
+/// modifies.
+///
+/// This is multivalued: policies compare it against the `ForAllValues:`/`ForAnyValue:` set
+/// operators.
+pub const SESSION_KEY_AWS_TAG_KEYS: &str = "aws:TagKeys";
+
 /// Session key for the unique id of the calling principal.
 pub const SESSION_KEY_AWS_USERID: &str = "aws:userid";
 

@@ -278,18 +278,28 @@ pub fn resource_account_context(account_id: &str) -> SessionData {
 /// [`resource_tag_context`] describes. Tag keys are compared case-insensitively, which
 /// [`SessionData`] provides by lower-casing keys as they are inserted.
 ///
-/// A request that names no tags supplies no keys, so a policy conditioned on a tag it does not
-/// carry does not match rather than matching an empty string.
+/// The tag keys are also reported together, as the multivalued `aws:TagKeys` condition key that
+/// the `ForAllValues:`/`ForAnyValue:` set operators compare against; a policy uses it to limit
+/// which tags a request may name at all, rather than what any one of them holds. The keys are
+/// reported as the request spelled them, since the set operators compare them the way the
+/// operator they qualify does -- case-sensitively for `StringEquals`.
 ///
-/// Note that AWS also exposes the set of tag keys through the multi-valued `aws:TagKeys`
-/// condition key, used with the `ForAllValues:`/`ForAnyValue:` set operators. Aspen implements
-/// neither the operators nor multi-valued session values, so that key is not supplied here.
+/// A request that names no tags supplies no keys, so a policy conditioned on a tag it does not
+/// carry does not match rather than matching an empty string. It supplies no `aws:TagKeys` either:
+/// an empty set of tag keys says no more than an absent one, and a `Null` condition reports both
+/// alike.
 pub fn request_tag_context<'a>(tags: impl IntoIterator<Item = (&'a str, &'a str)>) -> SessionData {
     let tags = tags.into_iter();
-    let mut context = SessionData::with_capacity(tags.size_hint().0);
+    let mut context = SessionData::with_capacity(tags.size_hint().0 + 1);
+    let mut tag_keys = Vec::with_capacity(tags.size_hint().0);
 
     for (key, value) in tags {
         context.insert(&format!("{SESSION_KEY_PREFIX_AWS_REQUEST_TAG}{key}"), SessionValue::String(value.to_string()));
+        tag_keys.push(SessionValue::String(key.to_string()));
+    }
+
+    if !tag_keys.is_empty() {
+        context.insert(SESSION_KEY_AWS_TAG_KEYS, SessionValue::List(tag_keys));
     }
 
     context
@@ -569,6 +579,24 @@ mod tests {
         assert_eq!(context.get(&format!("{SESSION_KEY_PREFIX_AWS_RESOURCE_TAG}Department")), None);
     }
 
+    /// The tag keys a request names are reported together as the multivalued `aws:TagKeys`, which
+    /// a policy compares with the `ForAllValues:`/`ForAnyValue:` set operators to limit which tags
+    /// the request may name at all.
+    #[test]
+    fn request_tag_keys_become_a_multivalued_condition_key() {
+        let context = request_tag_context([("Department", "Engineering"), ("Project", "Scratchstack")]);
+
+        // The keys are reported as the request spelled them: the set operators compare them the
+        // way the operator they qualify does.
+        assert_eq!(
+            context.get(SESSION_KEY_AWS_TAG_KEYS),
+            Some(&SessionValue::List(vec![
+                SessionValue::String("Department".to_string()),
+                SessionValue::String("Project".to_string()),
+            ]))
+        );
+    }
+
     /// A request naming no tags supplies no keys, so a policy conditioned on a tag it does not
     /// carry does not match rather than matching an empty string.
     #[test]
@@ -576,6 +604,9 @@ mod tests {
         let context = request_tag_context([]);
 
         assert_eq!(context.get(&format!("{SESSION_KEY_PREFIX_AWS_REQUEST_TAG}Department")), None);
+
+        // Nor an empty set of tag keys, which says no more than an absent one.
+        assert_eq!(context.get(SESSION_KEY_AWS_TAG_KEYS), None);
     }
 
     /// The denial names the caller by the ARN the session reports, and the resource it asked
