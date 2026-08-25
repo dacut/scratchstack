@@ -94,7 +94,7 @@ pub async fn get_role(
 
     let permissions_boundary = if let Some(pb_id) = permissions_boundary_id {
         let pb_row = query(indoc! {"
-                SELECT path, managed_policy_name_cased
+                SELECT account_id, path, managed_policy_name_cased
                 FROM iam.managed_policies
                 WHERE managed_policy_id = $1
             "})
@@ -111,9 +111,13 @@ pub async fn get_role(
             internal_failure(request_id)
         })?;
 
-        let pb_path: String = pb_row.get(0);
-        let pb_name_cased: String = pb_row.get(1);
-        let pb_arn = build_policy_arn(&partition, account_id, &pb_path, &pb_name_cased, request_id)?;
+        // The boundary is named by the account owning the policy, not by the account owning the
+        // role: an AWS-managed policy serving as a boundary belongs to the AWS account, and
+        // reporting it under the role's account would name a policy that does not exist.
+        let pb_account_id: String = pb_row.get(0);
+        let pb_path: String = pb_row.get(1);
+        let pb_name_cased: String = pb_row.get(2);
+        let pb_arn = build_policy_arn(&partition, &pb_account_id, &pb_path, &pb_name_cased, request_id)?;
 
         Some(
             AttachedPermissionsBoundary::builder()

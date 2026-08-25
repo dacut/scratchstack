@@ -2235,3 +2235,97 @@ pub async fn test_assume_role_malformed_policy(pool: &sqlx::PgPool) {
         "Expected MalformedPolicyDocument, got: {err:?}"
     );
 }
+
+/// A permissions boundary served by an AWS-managed policy must be reported under the account that
+/// owns the policy -- the AWS account, which this implementation stores under the numeric account
+/// its `aws` alias stands for -- rather than under the account that owns the role, and under the
+/// policy's own path and name. `GetRole` and `ListRoles` both report a boundary, so both are
+/// checked here.
+pub async fn test_role_aws_managed_permissions_boundary(pool: &sqlx::PgPool) {
+    const PB_ARN: &str = "arn:test-partition:iam::000000000000:policy/boundaries/Aws-Role-Boundary";
+
+    // There is no API for creating an AWS-owned policy, so it is seeded directly.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    sqlx::query(
+        "INSERT INTO iam.managed_policies(managed_policy_id, account_id, managed_policy_name_lower,
+             managed_policy_name_cased, path, default_version, deprecated, latest_version)
+         VALUES ('AWSROLEBOUNDPOL1', '000000000000', 'aws-role-boundary', 'Aws-Role-Boundary',
+             '/boundaries/', 1, false, 1)",
+    )
+    .execute(&mut *tx)
+    .await
+    .expect("Failed to seed AWS-managed boundary policy");
+    sqlx::query(
+        r#"INSERT INTO iam.managed_policy_versions(managed_policy_id, managed_policy_version, policy_document)
+         VALUES ('AWSROLEBOUNDPOL1', 1,
+             '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}')"#,
+    )
+    .execute(&mut *tx)
+    .await
+    .expect("Failed to seed AWS-managed boundary policy version");
+
+    // The boundary is named through the aws alias here, as IAM spells an AWS-owned policy.
+    CreateRoleInternalRequest::builder()
+        .role_name("AwsPbRole")
+        .account_id("123456789012")
+        .path("/awspb/")
+        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .permissions_boundary("arn:test-partition:iam::aws:policy/boundaries/Aws-Role-Boundary")
+        .build()
+        .expect("Failed to build CreateRoleInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to create AwsPbRole with an AWS-managed permissions boundary");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetRoleInternalRequest::builder()
+        .role_name("AwsPbRole")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build GetRoleInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to get AwsPbRole");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let pb = resp.role.permissions_boundary.expect("Role should have a permissions boundary");
+    assert_eq!(pb.permissions_boundary_type, Some(PermissionsBoundaryAttachmentType::Policy));
+    assert_eq!(pb.permissions_boundary_arn.as_deref(), Some(PB_ARN));
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = ListRolesInternalRequest::builder()
+        .account_id("123456789012")
+        .path_prefix("/awspb/")
+        .build()
+        .expect("Failed to build ListRolesInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to list roles under /awspb/");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.roles.len(), 1, "Expected exactly 1 role under /awspb/, got {:?}", resp.roles);
+    let pb = resp.roles[0].permissions_boundary.clone().expect("Listed role should have a permissions boundary");
+    assert_eq!(pb.permissions_boundary_type, Some(PermissionsBoundaryAttachmentType::Policy));
+    assert_eq!(pb.permissions_boundary_arn.as_deref(), Some(PB_ARN));
+
+    // Clean up: the role references the policy, so it goes first.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeleteRoleInternalRequest::builder()
+        .role_name("AwsPbRole")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build DeleteRoleInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to delete AwsPbRole");
+    sqlx::query("DELETE FROM iam.managed_policy_versions WHERE managed_policy_id = 'AWSROLEBOUNDPOL1'")
+        .execute(&mut *tx)
+        .await
+        .expect("Failed to delete AWS-managed boundary policy version");
+    sqlx::query("DELETE FROM iam.managed_policies WHERE managed_policy_id = 'AWSROLEBOUNDPOL1'")
+        .execute(&mut *tx)
+        .await
+        .expect("Failed to delete AWS-managed boundary policy");
+    tx.commit().await.expect("Failed to commit transaction");
+}

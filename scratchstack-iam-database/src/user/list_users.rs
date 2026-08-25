@@ -3,6 +3,7 @@ use {
     crate::{
         RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, decrypt_pagination_token,
         internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, path::validate_path_prefix,
+        policy::build_policy_arn, user::user_arn_resource,
     },
     chrono::{DateTime, Utc},
     scratchstack_arn::Arn,
@@ -40,7 +41,9 @@ struct ListUsersMarker {
     next_user_name: String,
 }
 
-/// The rows returned by the ListUsers query.
+/// The rows returned by the ListUsers query. The `pb_*` columns come from a LEFT JOIN against
+/// iam.managed_policies on permissions_boundary_managed_policy_id, so the join keeps the row even
+/// when a user has no PB and the projection avoids the N+1 lookup per user.
 #[derive(FromRow)]
 struct ListUsersRow {
     user_id: String,
@@ -49,6 +52,9 @@ struct ListUsersRow {
     path: String,
     permissions_boundary_managed_policy_id: Option<String>,
     created_at: DateTime<Utc>,
+    pb_account_id: Option<String>,
+    pb_path: Option<String>,
+    pb_name_cased: Option<String>,
 }
 
 /// List users on the database.
@@ -75,27 +81,31 @@ pub async fn list_users(
 
     let mut sql = QueryBuilder::new(
         r#"
-        SELECT user_id, user_name_lower, user_name_cased, path,
-        permissions_boundary_managed_policy_id, created_at
-        FROM iam.users
-        WHERE account_id =
+        SELECT u.user_id, u.user_name_lower, u.user_name_cased, u.path,
+            u.permissions_boundary_managed_policy_id, u.created_at,
+            pb.account_id AS pb_account_id, pb.path AS pb_path,
+            pb.managed_policy_name_cased AS pb_name_cased
+        FROM iam.users u
+        LEFT JOIN iam.managed_policies pb
+            ON pb.managed_policy_id = u.permissions_boundary_managed_policy_id
+        WHERE u.account_id =
     "#,
     );
     sql.push_bind(account_id);
 
     if let Some(path_prefix) = path_prefix {
-        sql.push(" AND PATH LIKE ");
+        sql.push(" AND u.path LIKE ");
         sql.push_bind(format!("{}%", path_prefix.replace('%', "\\%").replace('_', "\\_")));
     }
 
     if let Some(marker) = marker {
         let info: ListUsersMarker = decrypt_pagination_token(&paginator, marker, OP_LIST_USERS, request_id).await?;
-        sql.push(" AND user_name_lower >= ");
+        sql.push(" AND u.user_name_lower >= ");
         sql.push_bind(info.next_user_name);
     }
 
     // Request one more than max_items so we can determine if there are more results.
-    sql.push(" ORDER BY user_name_lower ASC LIMIT ");
+    sql.push(" ORDER BY u.user_name_lower ASC LIMIT ");
     sql.push_bind(max_items as i32 + 1);
 
     let rows = sql.build_query_as::<ListUsersRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
@@ -123,25 +133,36 @@ pub async fn list_users(
 
         let arn = Arn::builder()
             .partition(partition.clone())
-            .service("iam")
+            .service(SERVICE_KEY_IAM)
             .account_id(account_id)
-            .resource(format!("user/{}", row.user_name_cased))
+            .resource(user_arn_resource(&row.path, &row.user_name_cased))
             .build()
             .map_err(|e| {
                 log::error!("Failed to construct ARN for user: {e}");
                 internal_failure(request_id)
             })?;
 
-        let permissions_boundary = if let Some(pb_id) = row.permissions_boundary_managed_policy_id {
-            // FIXME: The ARN here is incorrect; we need to translate the managed policy ID back into
-            // its path and name.
-            log::warn!(
-                "Permissions boundary ARN for user is incorrect because we don't have the policy name and path available"
-            );
-            let arn = format!("arn:{partition}:{SERVICE_KEY_IAM}::{account_id}:{ARN_RESOURCE_TYPE_POLICY}/{pb_id}");
+        let permissions_boundary = if let Some(pb_id) = row.permissions_boundary_managed_policy_id.as_deref() {
+            // The FK on permissions_boundary_managed_policy_id guarantees the joined row exists,
+            // so a missing pb_account_id/pb_path/pb_name_cased here indicates DB corruption.
+            let (pb_account_id, pb_path, pb_name_cased) =
+                match (row.pb_account_id.as_deref(), row.pb_path.as_deref(), row.pb_name_cased.as_deref()) {
+                    (Some(pb_account_id), Some(pb_path), Some(pb_name_cased)) => {
+                        (pb_account_id, pb_path, pb_name_cased)
+                    }
+                    _ => {
+                        log::error!("User references missing permissions boundary managed policy ID: {pb_id}");
+                        return Err(internal_failure(request_id).into());
+                    }
+                };
+
+            // The boundary is named by the account owning the policy, not by the account owning
+            // the user: an AWS-managed policy serving as a boundary belongs to the AWS account.
+            let pb_arn = build_policy_arn(&partition, pb_account_id, pb_path, pb_name_cased, request_id)?;
+
             Some(
                 AttachedPermissionsBoundary::builder()
-                    .permissions_boundary_arn(arn)
+                    .permissions_boundary_arn(pb_arn.to_string())
                     .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                     .build()
                     .map_err(|e| {

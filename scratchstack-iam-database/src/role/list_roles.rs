@@ -55,6 +55,7 @@ struct ListRolesRow {
     assume_role_policy_document: String,
     max_session_duration: Option<i32>,
     created_at: DateTime<Utc>,
+    pb_account_id: Option<String>,
     pb_path: Option<String>,
     pb_name_cased: Option<String>,
 }
@@ -87,7 +88,8 @@ pub async fn list_roles(
         SELECT r.role_id, r.role_name_lower, r.role_name_cased, r.path,
             r.permissions_boundary_managed_policy_id, r.description, r.assume_role_policy_document,
             r.max_session_duration, r.created_at,
-            pb.path AS pb_path, pb.managed_policy_name_cased AS pb_name_cased
+            pb.account_id AS pb_account_id, pb.path AS pb_path,
+            pb.managed_policy_name_cased AS pb_name_cased
         FROM iam.roles r
         LEFT JOIN iam.managed_policies pb
             ON pb.managed_policy_id = r.permissions_boundary_managed_policy_id
@@ -148,15 +150,21 @@ pub async fn list_roles(
 
         let permissions_boundary = if let Some(pb_id) = row.permissions_boundary_managed_policy_id.as_deref() {
             // The FK on permissions_boundary_managed_policy_id guarantees the joined row exists,
-            // so a missing pb_path/pb_name_cased here indicates DB corruption.
-            let (pb_path, pb_name_cased) = match (row.pb_path.as_deref(), row.pb_name_cased.as_deref()) {
-                (Some(pb_path), Some(pb_name_cased)) => (pb_path, pb_name_cased),
-                _ => {
-                    log::error!("Role references missing permissions boundary managed policy ID: {pb_id}");
-                    return Err(internal_failure(request_id).into());
-                }
-            };
-            let pb_arn = build_policy_arn(&partition, account_id, pb_path, pb_name_cased, request_id)?;
+            // so a missing pb_account_id/pb_path/pb_name_cased here indicates DB corruption.
+            let (pb_account_id, pb_path, pb_name_cased) =
+                match (row.pb_account_id.as_deref(), row.pb_path.as_deref(), row.pb_name_cased.as_deref()) {
+                    (Some(pb_account_id), Some(pb_path), Some(pb_name_cased)) => {
+                        (pb_account_id, pb_path, pb_name_cased)
+                    }
+                    _ => {
+                        log::error!("Role references missing permissions boundary managed policy ID: {pb_id}");
+                        return Err(internal_failure(request_id).into());
+                    }
+                };
+
+            // The boundary is named by the account owning the policy, not by the account owning
+            // the role: an AWS-managed policy serving as a boundary belongs to the AWS account.
+            let pb_arn = build_policy_arn(&partition, pb_account_id, pb_path, pb_name_cased, request_id)?;
 
             Some(
                 AttachedPermissionsBoundary::builder()
