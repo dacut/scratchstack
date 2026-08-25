@@ -9,7 +9,7 @@ use {
         partition::get_current_partition_or_fail,
         path::validate_path,
         policy::get_permissions_boundary_id,
-        tag::{validate_tag_key, validate_tag_value},
+        tag::{validate_tag_key, validate_tag_keys_unique, validate_tag_value},
         user::{is_user_name_unique_violation, user_arn_resource, validate_user_name},
     },
     chrono::{DateTime, Utc},
@@ -69,6 +69,11 @@ pub async fn create_user(
         validate_tag_key(&tag.key, request_id)?;
         validate_tag_value(&tag.value, request_id)?;
     }
+
+    // Two tags with the same key would collide on the user_tags primary key, which is keyed on the
+    // lower-cased key. That is the caller asking for two values for one tag, so reject it here
+    // rather than letting the insert below fail as though something had gone wrong on our side.
+    validate_tag_keys_unique(tags.iter().map(|tag| tag.key.as_str()), request_id)?;
 
     // Generate a new user id for this user.
     let user_id = IamId::new(IamResourceType::User, account_id.parse().unwrap()).to_string();

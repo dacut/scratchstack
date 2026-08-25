@@ -199,6 +199,9 @@ async fn subtest_create_user(pool: &PgPool) {
     user::test_create_user_duplicate_name(pool).await;
     user::test_create_user_duplicate_name_different_case(pool).await;
     user::test_create_user_id_collision_reports_a_different_constraint(pool).await;
+    user::test_create_user_duplicate_tag_keys(pool).await;
+    user::test_create_user_duplicate_tag_keys_different_case(pool).await;
+    user::test_create_user_distinct_tag_keys_are_accepted(pool).await;
     user::test_create_user_invalid_name();
     user::test_create_user_nonexistent_account(pool).await;
     user::test_create_user_nonexistent_permissions_boundary(pool).await;
