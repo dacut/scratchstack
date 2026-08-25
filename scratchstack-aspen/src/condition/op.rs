@@ -19,7 +19,6 @@ use {
         ser::Serializer,
     },
     std::{
-        borrow::Borrow,
         collections::BTreeMap,
         fmt::{Debug, Display, Formatter, Result as FmtResult},
         slice,
@@ -273,21 +272,15 @@ pub const StringNotLike: ConditionOp = ConditionOp::plain(ConditionCmp::String(S
 pub const StringNotLikeIfExists: ConditionOp =
     ConditionOp::plain(ConditionCmp::String(StringCmp::Like, Variant::IfExistsNegated));
 
-impl Borrow<str> for ConditionOp {
-    fn borrow(&self) -> &str {
-        self.comparison.display_name(self.set_op)
-    }
-}
-
 impl PartialEq<str> for ConditionOp {
     fn eq(&self, other: &str) -> bool {
-        self.to_string().as_str() == other
+        self.as_str() == other
     }
 }
 
 impl Display for ConditionOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.write_str(self.borrow())
+        f.write_str(self.as_str())
     }
 }
 
@@ -332,6 +325,20 @@ impl ConditionOp {
     #[inline]
     pub const fn set_operator(&self) -> SetOperator {
         self.set_op
+    }
+
+    /// Returns the name this operator is written with in a policy document.
+    ///
+    /// The name carries the set operator's prefix, if any: `ForAllValues:StringEquals`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the operator pairs a comparison with a variant it has no name for --
+    /// [`ConditionCmp::Binary`] or [`ConditionCmp::Bool`] with a negated [`Variant`], neither of
+    /// which AWS defines. [`ConditionOp::from_str`] never produces one.
+    #[inline]
+    pub const fn as_str(&self) -> &'static str {
+        self.comparison.display_name(self.set_op)
     }
 
     /// Returns this operator qualified by [`SetOperator::ForAllValues`]: it matches only if every
@@ -445,7 +452,7 @@ fn values_of(value: &SessionValue) -> &[SessionValue] {
 
 impl ConditionCmp {
     /// Returns the name of this comparison under the given set operator.
-    fn display_name(&self, set_op: SetOperator) -> &'static str {
+    const fn display_name(&self, set_op: SetOperator) -> &'static str {
         match self {
             Self::Arn(cmp, variant) => cmp.display_name(set_op, variant),
             Self::Binary(variant) => BINARY_DISPLAY_NAMES[variant.as_usize()].name(set_op),

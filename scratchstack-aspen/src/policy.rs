@@ -244,7 +244,7 @@ mod tests {
     use {
         crate::{
             Action, AspenError, AwsPrincipal, Context, Decision, Effect, Policy, PolicyVersion, Principal, Resource,
-            SpecifiedPrincipal, Statement, serutil::JsonRep,
+            SpecifiedPrincipal, Statement, condop, serutil::JsonRep,
         },
         indoc::indoc,
         pretty_assertions::{assert_eq, assert_ne},
@@ -316,7 +316,7 @@ mod tests {
         }
         assert!(s.condition().is_some());
         let c = s.condition().unwrap();
-        let se = c.get("StringEquals");
+        let se = c.get(&condop::StringEquals);
         assert!(se.is_some());
 
         let new_policy_str = policy.to_string();

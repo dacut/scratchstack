@@ -33,7 +33,7 @@ pub enum NumericCmp {
 }
 
 impl NumericCmp {
-    pub(super) fn display_name(&self, set_op: SetOperator, variant: &Variant) -> &'static str {
+    pub(super) const fn display_name(&self, set_op: SetOperator, variant: &Variant) -> &'static str {
         NUMERIC_DISPLAY_NAMES[*self as usize | variant.as_usize()].name(set_op)
     }
 }

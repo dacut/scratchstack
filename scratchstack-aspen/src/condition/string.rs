@@ -32,7 +32,7 @@ pub enum StringCmp {
 }
 
 impl StringCmp {
-    pub(super) fn display_name(&self, set_op: SetOperator, variant: &Variant) -> &'static str {
+    pub(super) const fn display_name(&self, set_op: SetOperator, variant: &Variant) -> &'static str {
         STRING_DISPLAY_NAMES[*self as usize | variant.as_usize()].name(set_op)
     }
 }
