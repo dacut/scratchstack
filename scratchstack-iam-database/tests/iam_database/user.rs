@@ -143,6 +143,53 @@ pub async fn test_create_user_duplicate_name_different_case(pool: &sqlx::PgPool)
     assert!(matches!(err, IamError::EntityAlreadyExistsException(_)), "Expected EntityAlreadyExists, got: {err:?}");
 }
 
+/// The users table can raise a unique violation on either the user-name constraint or the
+/// `user_id` primary key, and `create_user` tells them apart by constraint name so that a
+/// generated-id collision is not reported as a duplicate user name. That distinction only works
+/// if the two constraints actually report different names, which is what this pins down.
+pub async fn test_create_user_id_collision_reports_a_different_constraint(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+
+    // alice was committed by test_create_user_simple.
+    let alice_id: String =
+        sqlx::query_scalar("SELECT user_id FROM iam.users WHERE account_id = $1 AND user_name_lower = $2")
+            .bind("123456789012")
+            .bind("alice")
+            .fetch_one(tx.as_mut())
+            .await
+            .expect("Failed to fetch alice's user_id");
+
+    // Reuse alice's user_id under a name no user holds, so only the primary key collides.
+    let err = sqlx::query(
+        "INSERT INTO iam.users(user_id, account_id, user_name_lower, user_name_cased, path)
+         VALUES($1, $2, $3, $4, '/')",
+    )
+    .bind(&alice_id)
+    .bind("123456789012")
+    .bind("not-alice")
+    .bind("Not-Alice")
+    .execute(tx.as_mut())
+    .await
+    .expect_err("Reusing an existing user_id must violate the primary key");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let sqlx::Error::Database(db_err) = &err else {
+        panic!("Expected a database error, got: {err:?}");
+    };
+    assert_eq!(db_err.code().as_deref(), Some("23505"), "Expected a unique violation, got: {db_err:?}");
+
+    // The driver must say which constraint was violated, or create_user has nothing to tell the
+    // two apart by.
+    let constraint = db_err.constraint();
+    assert!(constraint.is_some(), "Expected the violated constraint to be reported, got: {db_err:?}");
+    assert_ne!(
+        constraint,
+        Some("uk_iu_acctid_uname"),
+        "A user_id collision must not report the user-name constraint, or create_user would report it as a \
+         duplicate user name"
+    );
+}
+
 /// Building a request with an invalid user name must fail before touching the database.
 pub fn test_create_user_invalid_name() {
     // Spaces and `!` are not in the allowed character set.

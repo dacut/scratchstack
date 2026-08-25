@@ -34,6 +34,26 @@ use {
     scratchstack_shapes_iam::types::error::ValidationError,
 };
 
+/// Name of the unique constraint that enforces user-name uniqueness on
+/// `iam.users(account_id, user_name_lower)`. Used to distinguish a name collision from the other
+/// unique violation the table can raise -- a primary-key collision on `user_id`, whose generated
+/// ids [`crate::id::IamId::new`] does not guarantee to be unique.
+pub(crate) const USER_NAME_UNIQUE_CONSTRAINT: &str = "uk_iu_acctid_uname";
+
+/// Returns true if `e` is a Postgres unique-violation error specifically against the unique
+/// constraint on `iam.users(account_id, user_name_lower)`.
+///
+/// A unique violation on any other constraint of the table -- notably a `user_id` primary-key
+/// collision -- is not a name collision and must not be reported as one.
+pub(crate) fn is_user_name_unique_violation(e: &sqlx::Error) -> bool {
+    if let sqlx::Error::Database(db_err) = e {
+        db_err.code().as_deref() == Some(SQLSTATE_UNIQUE_VIOLATION)
+            && db_err.constraint() == Some(USER_NAME_UNIQUE_CONSTRAINT)
+    } else {
+        false
+    }
+}
+
 /// Return an ARN resource string for a user with the given path and name.
 ///
 /// The path is expected to start and end with a slash, but this function will trim extra slashes

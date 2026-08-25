@@ -10,7 +10,7 @@ use {
         path::validate_path,
         policy::get_permissions_boundary_id,
         tag::{validate_tag_key, validate_tag_value},
-        user::{user_arn_resource, validate_user_name},
+        user::{is_user_name_unique_violation, user_arn_resource, validate_user_name},
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
@@ -100,12 +100,13 @@ pub async fn create_user(
     {
         Ok(result) => result,
         Err(e) => {
-            // A unique violation on uk_iu_acctid_uname means the account already has a user with
-            // this name; names are compared case-insensitively, so the collision is on the
-            // lower-cased name rather than the one the caller spelled.
-            if let sqlx::Error::Database(db_err) = &e
-                && db_err.code().as_deref() == Some(SQLSTATE_UNIQUE_VIOLATION)
-            {
+            // Only a violation of the user-name constraint means the account already has a user
+            // with this name; names are compared case-insensitively, so the collision is on the
+            // lower-cased name rather than the one the caller spelled. The table can also raise a
+            // unique violation on the user_id primary key, which is a generated-id collision
+            // rather than anything the caller did, and falls through to the internal failure
+            // below.
+            if is_user_name_unique_violation(&e) {
                 let message = format!("User with name {user_name} already exists.");
                 return Err(EntityAlreadyExistsException::builder()
                     .message(message)
