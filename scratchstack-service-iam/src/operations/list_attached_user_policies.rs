@@ -40,7 +40,7 @@ use {
 /// grant cannot be confined to a prefix by way of it, and a caller that omits it sees no less
 /// than one that supplies it.
 ///
-/// Only the name and ARN of each attached policy is reported, never a document: the documents are
+/// Only the name and ARN of each attached policy are reported, never a document: the documents are
 /// read with `GetPolicy` and `GetPolicyVersion`, which are granted separately.
 ///
 /// `UserName` is required; it does not default to the calling user.
