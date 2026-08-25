@@ -19,7 +19,8 @@ pub(crate) const ACCOUNT_ALIAS_UNIQUE_INDEX: &str = "uk_iam_accounts_alias";
 /// on `iam.accounts(alias)`.
 pub(crate) fn is_alias_unique_violation(e: &sqlx::Error) -> bool {
     if let sqlx::Error::Database(db_err) = e {
-        db_err.code().as_deref() == Some("23505") && db_err.constraint() == Some(ACCOUNT_ALIAS_UNIQUE_INDEX)
+        db_err.code().as_deref() == Some(SQLSTATE_UNIQUE_VIOLATION)
+            && db_err.constraint() == Some(ACCOUNT_ALIAS_UNIQUE_INDEX)
     } else {
         false
     }
