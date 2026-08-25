@@ -3,6 +3,7 @@ use {
         constants::*,
         operations::{
             create_user, delete_user, delete_user_policy, get_user, get_user_policy, list_users, put_user_policy,
+            tag_user, untag_user,
         },
     },
     scratchstack_aws_principal::{Principal, SessionData},
@@ -121,6 +122,14 @@ pub(crate) async fn serve_request(
                 &parameters,
             )
             .await
+        }
+        Ok(Action::TagUser) => {
+            tag_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
+                .await
+        }
+        Ok(Action::UntagUser) => {
+            untag_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
+                .await
         }
         _ => invalid_action(request_id, &action, &version),
     }
@@ -627,6 +636,113 @@ mod tests {
            "Resource":"*"}]}');
     "#;
 
+    /// Seed data for the `TagUser` authorization tests. `Tag-Target` already carries a tag, so
+    /// replacing one can be told apart from adding one; the other targets carry the paths and tags
+    /// the resource ARN and the `aws:ResourceTag` condition keys are derived from. `Broad-Tagger`
+    /// is also allowed `iam:GetUser`, so the tests can read back what a request did or did not
+    /// leave on a user. The remaining callers carry grants scoped by the target's path, by the
+    /// tags the request asks to apply, by the tag keys it may name at all, and by the tags the
+    /// target already carries.
+    const TAG_USER_TEST_DATA: &str = r#"
+        INSERT INTO iam.partition(partition) VALUES ('aws');
+
+        INSERT INTO iam.accounts(account_id, email, alias) VALUES
+        ('123456789012', 'tag-user-test@example.com', 'tag-user-test');
+
+        INSERT INTO iam.users(user_id, account_id, user_name_lower, user_name_cased, path) VALUES
+        ('SVCTUSBROADTAG01', '123456789012', 'broad-tagger', 'Broad-Tagger', '/'),
+        ('SVCTUSPATHTAG001', '123456789012', 'path-tagger', 'Path-Tagger', '/'),
+        ('SVCTUSREQTAG0001', '123456789012', 'request-tag-tagger', 'Request-Tag-Tagger', '/'),
+        ('SVCTUSKEYSTAG001', '123456789012', 'tag-key-tagger', 'Tag-Key-Tagger', '/'),
+        ('SVCTUSRESTAG0001', '123456789012', 'resource-tag-tagger', 'Resource-Tag-Tagger', '/'),
+        ('SVCTUSNARROWTAG1', '123456789012', 'narrow-tagger', 'Narrow-Tagger', '/'),
+        ('SVCTUSNOGRANTTG1', '123456789012', 'no-grant-tagger', 'No-Grant-Tagger', '/'),
+        ('SVCTUSTGTPLAIN01', '123456789012', 'tag-target', 'Tag-Target', '/'),
+        ('SVCTUSTGTREQST01', '123456789012', 'request-target', 'Request-Target', '/'),
+        ('SVCTUSTGTKEYS001', '123456789012', 'keys-target', 'Keys-Target', '/'),
+        ('SVCTUSTGTDIVSN01', '123456789012', 'division-target', 'Division-Target', '/division/'),
+        ('SVCTUSTGTENGNR01', '123456789012', 'engineering-target', 'Engineering-Target', '/'),
+        ('SVCTUSTGTSALES01', '123456789012', 'sales-target', 'Sales-Target', '/'),
+        ('SVCTUSTGTROOT001', '123456789012', 'root-target', 'Root-Target', '/');
+
+        INSERT INTO iam.user_tags(user_id, key_lower, key_cased, value) VALUES
+        ('SVCTUSTGTPLAIN01', 'env', 'Env', 'Staging'),
+        ('SVCTUSTGTENGNR01', 'department', 'Department', 'Engineering'),
+        ('SVCTUSTGTSALES01', 'department', 'Department', 'Sales');
+
+        INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+        ('SVCTUSBROADTAG01', 'allow-tag-any-user', 'Allow-Tag-Any-User',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:TagUser","iam:GetUser"],
+           "Resource":"*"}]}'),
+        ('SVCTUSPATHTAG001', 'allow-tag-division-user', 'Allow-Tag-Division-User',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:TagUser",
+           "Resource":"arn:aws:iam::123456789012:user/division/*"}]}'),
+        ('SVCTUSREQTAG0001', 'allow-tag-engineering', 'Allow-Tag-Engineering',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:TagUser","Resource":"*",
+           "Condition":{"StringEquals":{"aws:RequestTag/department":"Engineering"}}}]}'),
+        ('SVCTUSKEYSTAG001', 'allow-tag-with-known-keys', 'Allow-Tag-With-Known-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:TagUser","Resource":"*",
+           "Condition":{"ForAllValues:StringEquals":{"aws:TagKeys":["Department","Project"]}}}]}'),
+        ('SVCTUSRESTAG0001', 'allow-tag-engineering-user', 'Allow-Tag-Engineering-User',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:TagUser","Resource":"*",
+           "Condition":{"StringEquals":{"aws:ResourceTag/department":"Engineering"}}}]}'),
+        ('SVCTUSNARROWTAG1', 'allow-tag-target-user', 'Allow-Tag-Target-User',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:TagUser",
+           "Resource":"arn:aws:iam::123456789012:user/Tag-Target"}]}');
+    "#;
+
+    /// Seed data for the `UntagUser` authorization tests. Every target carries the tags a request
+    /// asks to remove, and `Broad-Untagger` is also allowed `iam:GetUser`, so the tests can read
+    /// back what a request did or did not remove. The remaining callers carry grants scoped by the
+    /// target's path, by the tag keys the request may name at all, and by the tags the target
+    /// already carries -- the last of which governs a request that removes that very tag.
+    const UNTAG_USER_TEST_DATA: &str = r#"
+        INSERT INTO iam.partition(partition) VALUES ('aws');
+
+        INSERT INTO iam.accounts(account_id, email, alias) VALUES
+        ('123456789012', 'untag-user-test@example.com', 'untag-user-test');
+
+        INSERT INTO iam.users(user_id, account_id, user_name_lower, user_name_cased, path) VALUES
+        ('SVCUTSBROADUTG01', '123456789012', 'broad-untagger', 'Broad-Untagger', '/'),
+        ('SVCUTSPATHUTG001', '123456789012', 'path-untagger', 'Path-Untagger', '/'),
+        ('SVCUTSKEYSUTG001', '123456789012', 'tag-key-untagger', 'Tag-Key-Untagger', '/'),
+        ('SVCUTSRESUTG0001', '123456789012', 'resource-tag-untagger', 'Resource-Tag-Untagger', '/'),
+        ('SVCUTSNARROWUTG1', '123456789012', 'narrow-untagger', 'Narrow-Untagger', '/'),
+        ('SVCUTSNOGRANTUT1', '123456789012', 'no-grant-untagger', 'No-Grant-Untagger', '/'),
+        ('SVCUTSTGTPLAIN01', '123456789012', 'untag-target', 'Untag-Target', '/'),
+        ('SVCUTSTGTDIVSN01', '123456789012', 'division-target', 'Division-Target', '/division/'),
+        ('SVCUTSTGTENGNR01', '123456789012', 'engineering-target', 'Engineering-Target', '/'),
+        ('SVCUTSTGTSALES01', '123456789012', 'sales-target', 'Sales-Target', '/'),
+        ('SVCUTSTGTROOT001', '123456789012', 'root-target', 'Root-Target', '/');
+
+        INSERT INTO iam.user_tags(user_id, key_lower, key_cased, value) VALUES
+        ('SVCUTSTGTPLAIN01', 'department', 'Department', 'Engineering'),
+        ('SVCUTSTGTPLAIN01', 'project', 'Project', 'Scratchstack'),
+        ('SVCUTSTGTPLAIN01', 'keep', 'Keep', 'Yes'),
+        ('SVCUTSTGTDIVSN01', 'project', 'Project', 'Division'),
+        ('SVCUTSTGTENGNR01', 'department', 'Department', 'Engineering'),
+        ('SVCUTSTGTENGNR01', 'costcenter', 'CostCenter', '1234'),
+        ('SVCUTSTGTSALES01', 'department', 'Department', 'Sales'),
+        ('SVCUTSTGTROOT001', 'root', 'Root', 'Tag');
+
+        INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+        ('SVCUTSBROADUTG01', 'allow-untag-any-user', 'Allow-Untag-Any-User',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:UntagUser","iam:GetUser"],
+           "Resource":"*"}]}'),
+        ('SVCUTSPATHUTG001', 'allow-untag-division-user', 'Allow-Untag-Division-User',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:UntagUser",
+           "Resource":"arn:aws:iam::123456789012:user/division/*"}]}'),
+        ('SVCUTSKEYSUTG001', 'allow-untag-known-keys', 'Allow-Untag-Known-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:UntagUser","Resource":"*",
+           "Condition":{"ForAllValues:StringEquals":{"aws:TagKeys":["Project"]}}}]}'),
+        ('SVCUTSRESUTG0001', 'allow-untag-engineering-user', 'Allow-Untag-Engineering-User',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:UntagUser","Resource":"*",
+           "Condition":{"StringEquals":{"aws:ResourceTag/department":"Engineering"}}}]}'),
+        ('SVCUTSNARROWUTG1', 'allow-untag-target-user', 'Allow-Untag-Target-User',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:UntagUser",
+           "Resource":"arn:aws:iam::123456789012:user/Untag-Target"}]}');
+    "#;
+
     /// Build the principal and session data the SigV4 layer would produce for a seeded user.
     fn user_identity(user_id: &str, user_name: &str) -> (Principal, SessionData) {
         let principal = Principal::from(
@@ -729,12 +845,7 @@ mod tests {
             parameters.push_str(&format!("&Path={}", path.replace('/', "%2F")));
         }
 
-        // Lists arrive in the query string indexed under a `member` segment, one parameter per
-        // field, as the AWS query protocol spells them.
-        for (index, (key, value)) in tags.iter().enumerate() {
-            let index = index + 1;
-            parameters.push_str(&format!("&Tags.member.{index}.Key={key}&Tags.member.{index}.Value={value}"));
-        }
+        append_tag_parameters(&mut parameters, tags);
 
         if let Some(permissions_boundary) = permissions_boundary {
             parameters.push_str(&format!("&PermissionsBoundary={}", permissions_boundary.replace('/', "%2F")));
@@ -814,6 +925,49 @@ mod tests {
         }
 
         serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+    }
+
+    /// Build the query parameters for a `TagUser` request, naming a user or leaving `UserName`
+    /// off, and carrying the tags to apply.
+    fn tag_user_parameters(user_name: Option<&str>, tags: &[(&str, &str)]) -> String {
+        let mut parameters = "Action=TagUser&Version=2010-05-08".to_string();
+
+        if let Some(user_name) = user_name {
+            parameters.push_str(&format!("&UserName={user_name}"));
+        }
+
+        append_tag_parameters(&mut parameters, tags);
+        parameters
+    }
+
+    /// Build the query parameters for an `UntagUser` request, naming a user or leaving `UserName`
+    /// off, and carrying the tag keys to remove.
+    fn untag_user_parameters(user_name: Option<&str>, tag_keys: &[&str]) -> String {
+        let mut parameters = "Action=UntagUser&Version=2010-05-08".to_string();
+
+        if let Some(user_name) = user_name {
+            parameters.push_str(&format!("&UserName={user_name}"));
+        }
+
+        // A list of scalars is indexed the same way a list of structures is, with no field name
+        // after the index.
+        for (index, key) in tag_keys.iter().enumerate() {
+            let index = index + 1;
+            parameters.push_str(&format!("&TagKeys.member.{index}={key}"));
+        }
+
+        parameters
+    }
+
+    /// Append the parameters naming `tags` to a query string being built.
+    ///
+    /// Lists arrive in the query string indexed under a `member` segment, one parameter per
+    /// field, as the AWS query protocol spells them.
+    fn append_tag_parameters(parameters: &mut String, tags: &[(&str, &str)]) {
+        for (index, (key, value)) in tags.iter().enumerate() {
+            let index = index + 1;
+            parameters.push_str(&format!("&Tags.member.{index}.Key={key}&Tags.member.{index}.Value={value}"));
+        }
     }
 
     /// A copy of `svc_state` configured to believe the `X-Forwarded-For` header of proxies in
@@ -2558,6 +2712,485 @@ mod tests {
             &delete_user_policy_parameters(Some("Root-Target"), Some("Root-Access")),
         )
         .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+    }
+
+    /// End-to-end authorization checks for `TagUser` through `serve_request` against an embedded
+    /// PostgreSQL database. A single test function is used because the database is stateful and
+    /// expensive to start.
+    #[test_log::test(tokio::test)]
+    async fn test_tag_user_authorization() {
+        let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
+        database.bootstrap().await.expect("Failed to set up, start, and bootstrap PostgreSQL database");
+        let pool = database
+            .get_scratchstack_pool()
+            .await
+            .expect("Failed to get PostgreSQL connection pool for scratchstack user");
+
+        let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
+        MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
+        raw_sql(TAG_USER_TEST_DATA).execute(&mut *c).await.expect("Failed to load test data into database");
+        drop(c);
+
+        let svc_state = ServiceState::builder().db(Arc::new(pool)).secure_transport(true).build();
+
+        // A caller allowed iam:TagUser on any user adds a tag to one.
+        let (principal, session_data) = user_identity("SVCTUSBROADTAG01", "Broad-Tagger");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &tag_user_parameters(Some("Tag-Target"), &[("Team", "Platform")]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<TagUserResponse"), "unexpected body: {body}");
+
+        // The write was committed rather than rolled back, and it added the tag alongside the one
+        // the user was already carrying rather than replacing the lot.
+        let (principal, session_data) = user_identity("SVCTUSBROADTAG01", "Broad-Tagger");
+        let (status, body) = call(&svc_state, principal, session_data, &get_user_parameters(Some("Tag-Target"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<Key>Team</Key><Value>Platform</Value>"), "unexpected body: {body}");
+        assert!(body.contains("<Key>Env</Key><Value>Staging</Value>"), "unexpected body: {body}");
+
+        // A tag whose key is already on the user replaces that tag's value.
+        let (principal, session_data) = user_identity("SVCTUSBROADTAG01", "Broad-Tagger");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &tag_user_parameters(Some("Tag-Target"), &[("Env", "Production")]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        let (principal, session_data) = user_identity("SVCTUSBROADTAG01", "Broad-Tagger");
+        let (status, body) = call(&svc_state, principal, session_data, &get_user_parameters(Some("Tag-Target"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<Key>Env</Key><Value>Production</Value>"), "unexpected body: {body}");
+        assert!(!body.contains("<Value>Staging</Value>"), "unexpected body: {body}");
+
+        // A caller with no grant at all is denied, and is told what it was denied.
+        let (principal, session_data) = user_identity("SVCTUSNOGRANTTG1", "No-Grant-Tagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &tag_user_parameters(Some("Tag-Target"), &[("Denied", "Yes")]))
+                .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(
+            body.contains(&format!(
+                "User: arn:aws:iam::{TEST_ACCOUNT_ID}:user/No-Grant-Tagger is not authorized to perform: \
+                 iam:TagUser on resource: arn:aws:iam::{TEST_ACCOUNT_ID}:user/Tag-Target"
+            )),
+            "unexpected body: {body}"
+        );
+
+        // The denial rolled the transaction back, so the tag was not applied.
+        let (principal, session_data) = user_identity("SVCTUSBROADTAG01", "Broad-Tagger");
+        let (status, body) = call(&svc_state, principal, session_data, &get_user_parameters(Some("Tag-Target"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(!body.contains("<Key>Denied</Key>"), "unexpected body: {body}");
+
+        // The resource ARN carries the target user's path, so a grant scoped to a path prefix
+        // reaches users under that path...
+        let (principal, session_data) = user_identity("SVCTUSPATHTAG001", "Path-Tagger");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &tag_user_parameters(Some("Division-Target"), &[("Team", "Division")]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // ...and no further.
+        let (principal, session_data) = user_identity("SVCTUSPATHTAG001", "Path-Tagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &tag_user_parameters(Some("Tag-Target"), &[("Team", "Other")]))
+                .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The tags the request asks to apply back the aws:RequestTag condition keys. The policy
+        // spells the tag key in lower case while the request spells it "Department", confirming
+        // that tag keys are matched case-insensitively.
+        let (principal, session_data) = user_identity("SVCTUSREQTAG0001", "Request-Tag-Tagger");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &tag_user_parameters(Some("Request-Target"), &[("Department", "Engineering")]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // A request asking for the tag with a different value does not satisfy the condition.
+        let (principal, session_data) = user_identity("SVCTUSREQTAG0001", "Request-Tag-Tagger");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &tag_user_parameters(Some("Request-Target"), &[("Department", "Sales")]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // Neither does a request naming some other tag entirely: the condition key is absent, so
+        // the grant does not apply rather than matching an empty value. The tag the user is
+        // already carrying is a different condition key and does not stand in for it.
+        let (principal, session_data) = user_identity("SVCTUSREQTAG0001", "Request-Tag-Tagger");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &tag_user_parameters(Some("Request-Target"), &[("Team", "Platform")]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A grant conditioned on aws:TagKeys limits which tags the request may name at all,
+        // whatever values it asks to give them.
+        let (principal, session_data) = user_identity("SVCTUSKEYSTAG001", "Tag-Key-Tagger");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &tag_user_parameters(Some("Keys-Target"), &[("Department", "Engineering"), ("Project", "Scratchstack")]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // One tag key outside the set the policy lists is enough to fail, even alongside keys
+        // that are in it.
+        let (principal, session_data) = user_identity("SVCTUSKEYSTAG001", "Tag-Key-Tagger");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &tag_user_parameters(Some("Keys-Target"), &[("Department", "Engineering"), ("CostCenter", "1234")]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The tags the target user already carries back the aws:ResourceTag condition keys, which
+        // is a different question from what the request asks to apply: this grant limits which
+        // users may be tagged rather than what they may be tagged with.
+        let (principal, session_data) = user_identity("SVCTUSRESTAG0001", "Resource-Tag-Tagger");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &tag_user_parameters(Some("Engineering-Target"), &[("Team", "Platform")]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // A user carrying the tag with a different value does not satisfy the condition, and
+        // neither does one carrying no such tag at all.
+        for user_name in ["Sales-Target", "Tag-Target"] {
+            let (principal, session_data) = user_identity("SVCTUSRESTAG0001", "Resource-Tag-Tagger");
+            let (status, body) =
+                call(&svc_state, principal, session_data, &tag_user_parameters(Some(user_name), &[("Team", "Other")]))
+                    .await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+            assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+        }
+
+        // Being allowed to tag a user carries being allowed to overwrite the tags that grant is
+        // conditioned on: the request is authorized against the tags as they stand, so the caller
+        // can move the user out of its own grant's reach...
+        let (principal, session_data) = user_identity("SVCTUSRESTAG0001", "Resource-Tag-Tagger");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &tag_user_parameters(Some("Engineering-Target"), &[("Department", "Sales")]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // ...and cannot reach it afterwards.
+        let (principal, session_data) = user_identity("SVCTUSRESTAG0001", "Resource-Tag-Tagger");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &tag_user_parameters(Some("Engineering-Target"), &[("Team", "Other")]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A grant naming a single user reaches every tag on it: the tag key narrows nothing.
+        let (principal, session_data) = user_identity("SVCTUSNARROWTAG1", "Narrow-Tagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &tag_user_parameters(Some("Tag-Target"), &[("Narrow", "Yes")]))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // A user that does not exist is still authorized against the ARN the request names, so a
+        // caller allowed iam:TagUser on any user is told the user is missing...
+        let (principal, session_data) = user_identity("SVCTUSBROADTAG01", "Broad-Tagger");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &tag_user_parameters(Some("No-Such-User"), &[("Team", "Platform")]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
+        assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
+
+        // ...while a caller allowed it only on a specific user learns nothing about it.
+        let (principal, session_data) = user_identity("SVCTUSNARROWTAG1", "Narrow-Tagger");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &tag_user_parameters(Some("No-Such-User"), &[("Team", "Platform")]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // Two tags with the same key ask for two values for one tag, which is the caller's error
+        // rather than a silent last-one-wins. The keys here differ only in case, which IAM treats
+        // as the same key.
+        let (principal, session_data) = user_identity("SVCTUSBROADTAG01", "Broad-Tagger");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &tag_user_parameters(Some("Tag-Target"), &[("Department", "Engineering"), ("department", "Sales")]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+        assert!(
+            body.contains(
+                "<Code>InvalidInput</Code><Message>Duplicate tag keys found. \
+                 Please note that Tag keys are case insensitive.</Message>"
+            ),
+            "unexpected body: {body}"
+        );
+
+        // A request naming no tags at all has nothing to apply and is rejected rather than
+        // succeeding silently.
+        let (principal, session_data) = user_identity("SVCTUSBROADTAG01", "Broad-Tagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &tag_user_parameters(Some("Tag-Target"), &[])).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+        assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
+
+        // UserName is required; it does not default to the calling user.
+        let (principal, session_data) = user_identity("SVCTUSBROADTAG01", "Broad-Tagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &tag_user_parameters(None, &[("Team", "Platform")])).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+        assert!(body.contains("<Code>MalformedInput</Code>"), "unexpected body: {body}");
+
+        // The account root user is implicitly allowed.
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &tag_user_parameters(Some("Root-Target"), &[("Root", "Tag")]))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+    }
+
+    /// End-to-end authorization checks for `UntagUser` through `serve_request` against an embedded
+    /// PostgreSQL database. A single test function is used because the database is stateful and
+    /// expensive to start.
+    #[test_log::test(tokio::test)]
+    async fn test_untag_user_authorization() {
+        let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
+        database.bootstrap().await.expect("Failed to set up, start, and bootstrap PostgreSQL database");
+        let pool = database
+            .get_scratchstack_pool()
+            .await
+            .expect("Failed to get PostgreSQL connection pool for scratchstack user");
+
+        let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
+        MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
+        raw_sql(UNTAG_USER_TEST_DATA).execute(&mut *c).await.expect("Failed to load test data into database");
+        drop(c);
+
+        let svc_state = ServiceState::builder().db(Arc::new(pool)).secure_transport(true).build();
+
+        // A caller allowed iam:UntagUser on any user removes a tag from one.
+        let (principal, session_data) = user_identity("SVCUTSBROADUTG01", "Broad-Untagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &untag_user_parameters(Some("Untag-Target"), &["Department"]))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<UntagUserResponse"), "unexpected body: {body}");
+
+        // The delete was committed rather than rolled back, and it removed the tag the request
+        // named and no others.
+        let (principal, session_data) = user_identity("SVCUTSBROADUTG01", "Broad-Untagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &get_user_parameters(Some("Untag-Target"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(!body.contains("<Key>Department</Key>"), "unexpected body: {body}");
+        assert!(body.contains("<Key>Project</Key><Value>Scratchstack</Value>"), "unexpected body: {body}");
+        assert!(body.contains("<Key>Keep</Key><Value>Yes</Value>"), "unexpected body: {body}");
+
+        // A key the user is not carrying is not an error: the request asks for the user to be left
+        // without that tag, and it already is.
+        let (principal, session_data) = user_identity("SVCUTSBROADUTG01", "Broad-Untagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &untag_user_parameters(Some("Untag-Target"), &["No-Such-Tag"]))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // A caller with no grant at all is denied, and is told what it was denied.
+        let (principal, session_data) = user_identity("SVCUTSNOGRANTUT1", "No-Grant-Untagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &untag_user_parameters(Some("Untag-Target"), &["Keep"])).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(
+            body.contains(&format!(
+                "User: arn:aws:iam::{TEST_ACCOUNT_ID}:user/No-Grant-Untagger is not authorized to perform: \
+                 iam:UntagUser on resource: arn:aws:iam::{TEST_ACCOUNT_ID}:user/Untag-Target"
+            )),
+            "unexpected body: {body}"
+        );
+
+        // The denial rolled the transaction back, so the tag is still there.
+        let (principal, session_data) = user_identity("SVCUTSBROADUTG01", "Broad-Untagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &get_user_parameters(Some("Untag-Target"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<Key>Keep</Key><Value>Yes</Value>"), "unexpected body: {body}");
+
+        // The resource ARN carries the target user's path, so a grant scoped to a path prefix
+        // reaches users under that path...
+        let (principal, session_data) = user_identity("SVCUTSPATHUTG001", "Path-Untagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &untag_user_parameters(Some("Division-Target"), &["Project"]))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // ...and no further.
+        let (principal, session_data) = user_identity("SVCUTSPATHUTG001", "Path-Untagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &untag_user_parameters(Some("Untag-Target"), &["Keep"])).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The request names tag keys and no values, so aws:TagKeys is the condition key that
+        // governs which tags a caller may remove.
+        let (principal, session_data) = user_identity("SVCUTSKEYSUTG001", "Tag-Key-Untagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &untag_user_parameters(Some("Untag-Target"), &["Project"])).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        let (principal, session_data) = user_identity("SVCUTSBROADUTG01", "Broad-Untagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &get_user_parameters(Some("Untag-Target"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(!body.contains("<Key>Project</Key>"), "unexpected body: {body}");
+
+        // One tag key outside the set the policy lists is enough to fail, even alongside keys
+        // that are in it.
+        let (principal, session_data) = user_identity("SVCUTSKEYSUTG001", "Tag-Key-Untagger");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &untag_user_parameters(Some("Engineering-Target"), &["Project", "CostCenter"]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The tags the target user carries back the aws:ResourceTag condition keys, which limits
+        // which users a caller may untag rather than which tags it may take off them.
+        let (principal, session_data) = user_identity("SVCUTSRESUTG0001", "Resource-Tag-Untagger");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &untag_user_parameters(Some("Engineering-Target"), &["CostCenter"]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // A user carrying the tag with a different value does not satisfy the condition.
+        let (principal, session_data) = user_identity("SVCUTSRESUTG0001", "Resource-Tag-Untagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &untag_user_parameters(Some("Sales-Target"), &["Department"]))
+                .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The tags are the ones the user carries before the removal, so a grant conditioned on a
+        // tag reaches the request that takes that very tag off...
+        let (principal, session_data) = user_identity("SVCUTSRESUTG0001", "Resource-Tag-Untagger");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &untag_user_parameters(Some("Engineering-Target"), &["Department"]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // ...and does not reach the user afterwards.
+        let (principal, session_data) = user_identity("SVCUTSRESUTG0001", "Resource-Tag-Untagger");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &untag_user_parameters(Some("Engineering-Target"), &["No-Such-Tag"]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A grant naming a single user reaches every tag on it: the tag key narrows nothing.
+        let (principal, session_data) = user_identity("SVCUTSNARROWUTG1", "Narrow-Untagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &untag_user_parameters(Some("Untag-Target"), &["Keep"])).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // A user that does not exist is still authorized against the ARN the request names, so a
+        // caller allowed iam:UntagUser on any user is told the user is missing...
+        let (principal, session_data) = user_identity("SVCUTSBROADUTG01", "Broad-Untagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &untag_user_parameters(Some("No-Such-User"), &["Department"]))
+                .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
+        assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
+
+        // ...while a caller allowed it only on a specific user learns nothing about it.
+        let (principal, session_data) = user_identity("SVCUTSNARROWUTG1", "Narrow-Untagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &untag_user_parameters(Some("No-Such-User"), &["Department"]))
+                .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A request naming no tag keys at all has nothing to remove and is rejected rather than
+        // succeeding silently.
+        let (principal, session_data) = user_identity("SVCUTSBROADUTG01", "Broad-Untagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &untag_user_parameters(Some("Untag-Target"), &[])).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+        assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
+
+        // UserName is required; it does not default to the calling user.
+        let (principal, session_data) = user_identity("SVCUTSBROADUTG01", "Broad-Untagger");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &untag_user_parameters(None, &["Department"])).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+        assert!(body.contains("<Code>MalformedInput</Code>"), "unexpected body: {body}");
+
+        // The account root user is implicitly allowed.
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &untag_user_parameters(Some("Root-Target"), &["Root"])).await;
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
     }
 }

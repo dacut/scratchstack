@@ -213,6 +213,7 @@ async fn subtest_tag_untag_user(pool: &PgPool) {
     user::test_tag_user_upsert(pool).await;
     user::test_tag_user_empty_tags(pool).await;
     user::test_tag_user_nonexistent_user(pool).await;
+    user::test_tag_user_duplicate_keys(pool).await;
     user::test_untag_user(pool).await;
     user::test_untag_user_empty_keys(pool).await;
     user::test_untag_user_nonexistent_key(pool).await;
