@@ -12,7 +12,7 @@
 //! field rather than an empty one. A map fares worse still, rendering each pair as an element
 //! named for its key, which is not a form the protocol describes at all.
 //!
-//! [`QuerySerializer`] adapts any serializer so that collections come out in the protocol's form.
+//! `QuerySerializer` adapts any serializer so that collections come out in the protocol's form.
 //! It wraps the XML serializer at the point a response is rendered, which leaves the shapes
 //! themselves serializing as what they are -- the same types serialize to JSON for the bootstrap
 //! CLI, and nothing about the XML wire form reaches that.
