@@ -122,7 +122,7 @@ pub(crate) async fn get_user(
         &principal,
         &session_data,
         &session_policies,
-        request_metadata,
+        &request_metadata,
         Action::GetUser,
         &[resource_arn],
         &resource_tag_context(resource_tags),

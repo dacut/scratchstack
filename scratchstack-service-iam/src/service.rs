@@ -332,7 +332,9 @@ mod tests {
     /// Seed data for the `CreateUser` authorization tests. The callers carry grants scoped by the
     /// path the new user is created under, by the tags the request asks to apply, and by the
     /// permissions boundary it asks to attach; `Boundary-Policy` is the managed policy the
-    /// boundary-scoped grant names.
+    /// boundary-scoped grant names. `Create-Only-Creator` is allowed `iam:CreateUser` and nothing
+    /// else, so it shows that tagging a user at creation is gated separately while attaching a
+    /// permissions boundary is not.
     const CREATE_USER_TEST_DATA: &str = r#"
         INSERT INTO iam.partition(partition) VALUES ('aws');
 
@@ -345,6 +347,7 @@ mod tests {
         ('SVCCREUSERTAG01', '123456789012', 'tag-creator', 'Tag-Creator', '/'),
         ('SVCCREUSERPB001', '123456789012', 'boundary-creator', 'Boundary-Creator', '/'),
         ('SVCCREUSERNONE1', '123456789012', 'no-grant-creator', 'No-Grant-Creator', '/'),
+        ('SVCCREUSERONLY1', '123456789012', 'create-only-creator', 'Create-Only-Creator', '/'),
         ('SVCCREUSEREXIST', '123456789012', 'existing-user', 'Existing-User', '/');
 
         INSERT INTO iam.managed_policies(managed_policy_id, account_id, managed_policy_name_lower,
@@ -357,17 +360,20 @@ mod tests {
 
         INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
         ('SVCCREUSERBROAD', 'allow-create-any', 'Allow-Create-Any',
-         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateUser","Resource":"*"}]}'),
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:CreateUser","iam:TagUser"],
+           "Resource":"*"}]}'),
         ('SVCCREUSERPATH1', 'allow-create-in-division', 'Allow-Create-In-Division',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateUser",
            "Resource":"arn:aws:iam::123456789012:user/division/*"}]}'),
         ('SVCCREUSERTAG01', 'allow-create-engineering', 'Allow-Create-Engineering',
-         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateUser","Resource":"*",
-           "Condition":{"StringEquals":{"aws:RequestTag/department":"Engineering"}}}]}'),
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:CreateUser","iam:TagUser"],
+           "Resource":"*","Condition":{"StringEquals":{"aws:RequestTag/department":"Engineering"}}}]}'),
         ('SVCCREUSERPB001', 'allow-create-with-boundary', 'Allow-Create-With-Boundary',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateUser","Resource":"*",
            "Condition":{"StringEquals":
-             {"iam:PermissionsBoundary":"arn:aws:iam::123456789012:policy/Boundary-Policy"}}}]}');
+             {"iam:PermissionsBoundary":"arn:aws:iam::123456789012:policy/Boundary-Policy"}}}]}'),
+        ('SVCCREUSERONLY1', 'allow-create-only', 'Allow-Create-Only',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateUser","Resource":"*"}]}');
     "#;
 
     /// Seed data for the `DeleteUser` authorization tests. The users being deleted carry the paths
@@ -1327,6 +1333,58 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
         assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // Tagging a user is a separate action from creating one, so a caller allowed only
+        // iam:CreateUser can create a user...
+        let (principal, session_data) = user_identity("SVCCREUSERONLY1", "Create-Only-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_user_parameters("Plain-User", None, &[], None)).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // ...but not a tagged one, and the denial names the action actually missing.
+        let (principal, session_data) = user_identity("SVCCREUSERONLY1", "Create-Only-Creator");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &create_user_parameters("Tagged-Denied-User", None, &[("Department", "Engineering")], None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(
+            body.contains(&format!(
+                "User: arn:aws:iam::{TEST_ACCOUNT_ID}:user/Create-Only-Creator is not authorized to perform: \
+                 iam:TagUser on resource: arn:aws:iam::{TEST_ACCOUNT_ID}:user/Tagged-Denied-User"
+            )),
+            "unexpected body: {body}"
+        );
+
+        // A permissions boundary, by contrast, needs no second action: the same caller can attach
+        // one under iam:CreateUser alone, as the service allows.
+        let (principal, session_data) = user_identity("SVCCREUSERONLY1", "Create-Only-Creator");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &create_user_parameters("Plain-Bounded-User", None, &[], Some(&boundary)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(
+            body.contains(&format!("<PermissionsBoundaryArn>{boundary}</PermissionsBoundaryArn>")),
+            "unexpected body: {body}"
+        );
+
+        // The denials rolled their transactions back, so neither user was created.
+        let (principal, session_data) = user_identity("SVCCREUSERBROAD", "Broad-Creator");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &create_user_parameters("Tagged-Denied-User", None, &[("Department", "Engineering")], None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
 
         // A caller with no grant at all is refused.
         let (principal, session_data) = user_identity("SVCCREUSERNONE1", "No-Grant-Creator");
