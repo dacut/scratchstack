@@ -20,10 +20,13 @@ use {
     },
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
-        types::error::{InternalFailure as IamInternalFailure, ValidationError as IamValidationError},
+        types::error::{
+            InternalFailure as IamInternalFailure, InvalidInputException as IamInvalidInput,
+            ValidationError as IamValidationError,
+        },
     },
     scratchstack_shapes_sts::error_meta::Error as StsError,
-    serde::Serialize,
+    serde::{Serialize, de::DeserializeOwned},
     sqlx::postgres::PgTransaction,
 };
 
@@ -191,6 +194,35 @@ pub(crate) fn constrain_max_items(max_items: Option<i32>, request_id: RequestId)
     } else {
         Ok(100)
     }
+}
+
+/// Decrypt the pagination token `token` a request asks to continue from, as the marker type `T`
+/// describing where the previous page stopped.
+///
+/// A token that will not decrypt is the caller's to fix rather than ours: it is one this service
+/// never issued, one issued for a different operation, or one altered on its way back. Most often
+/// it is a client-side pagination token -- several SDKs and the AWS CLI hand out a token of their
+/// own that wraps the marker, and passing that back in place of the marker lands here. None of
+/// that is a server fault, so it is reported as invalid input rather than as an internal failure,
+/// which tells the caller what it can do about it and keeps a routine client mistake out of the
+/// error log.
+///
+/// What actually went wrong with the token goes to the log at debug level and no further: a caller
+/// learns that the token is not one it may continue from, and nothing about the key or the
+/// operation metadata it failed against.
+pub(crate) async fn decrypt_pagination_token<T: DeserializeOwned>(
+    paginator: &OperationPaginator<FixedKeyService, FixedKeyService>,
+    token: &str,
+    operation_name: &'static str,
+    request_id: RequestId,
+) -> Result<T, IamInvalidInput> {
+    paginator.decrypt_token(token).await.map_err(|e| {
+        log::debug!("Failed to decrypt pagination token for {operation_name}: {e}");
+        IamInvalidInput::builder()
+            .message(format!("The pagination marker is not valid for {operation_name}."))
+            .request_id(request_id)
+            .build()
+    })
 }
 
 /// Construct a generic `InternalFailure` with the standard internal-failure message. Use

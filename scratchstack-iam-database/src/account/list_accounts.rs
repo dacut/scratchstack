@@ -1,8 +1,8 @@
 //! ListAccounts database operation
 use {
     crate::{
-        RequestExecutor, constants::*, constrain_max_items, internal_failure, make_iam_paginator,
-        partition::get_current_partition_or_fail,
+        RequestExecutor, constants::*, constrain_max_items, decrypt_pagination_token, internal_failure,
+        make_iam_paginator, partition::get_current_partition_or_fail,
     },
     scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
@@ -68,10 +68,8 @@ pub async fn list_accounts(
     }
 
     if let Some(marker) = marker {
-        let info: ListAccountsMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListAccounts: {e}");
-            internal_failure(request_id)
-        })?;
+        let info: ListAccountsMarker =
+            decrypt_pagination_token(&paginator, marker, OP_LIST_ACCOUNTS, request_id).await?;
         sql.push(" AND account_id > ");
         sql.push_bind(info.next_account_id);
     }

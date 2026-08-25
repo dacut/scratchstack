@@ -1,8 +1,8 @@
 //! ListAccessKeys database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, internal_failure,
-        make_iam_paginator, partition::get_current_partition_or_fail, user::validate_user_name,
+        RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, decrypt_pagination_token,
+        internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, user::validate_user_name,
     },
     indoc::indoc,
     scratchstack_core::RequestId,
@@ -116,10 +116,8 @@ pub async fn list_access_keys(
     sql.push_bind(user_id);
 
     if let Some(marker) = marker {
-        let m: ListAccessKeysMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListAccessKeys: {e}");
-            internal_failure(request_id)
-        })?;
+        let m: ListAccessKeysMarker =
+            decrypt_pagination_token(&paginator, marker, OP_LIST_ACCESS_KEYS, request_id).await?;
         sql.push("\nAND access_key_id >= ");
         sql.push_bind(m.next_access_key_id);
     }

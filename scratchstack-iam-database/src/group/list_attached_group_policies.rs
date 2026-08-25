@@ -1,9 +1,9 @@
 //! ListAttachedGroupPolicies database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, group::validate_group_name,
-        internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, path::validate_path_prefix,
-        policy::build_policy_arn,
+        RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, decrypt_pagination_token,
+        group::validate_group_name, internal_failure, make_iam_paginator, partition::get_current_partition_or_fail,
+        path::validate_path_prefix, policy::build_policy_arn,
     },
     indoc::indoc,
     scratchstack_core::RequestId,
@@ -117,10 +117,8 @@ pub async fn list_attached_group_policies(
     }
 
     if let Some(marker) = marker {
-        let info: ListAttachedGroupPoliciesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListAttachedGroupPolicies: {e}");
-            internal_failure(request_id)
-        })?;
+        let info: ListAttachedGroupPoliciesMarker =
+            decrypt_pagination_token(&paginator, marker, OP_LIST_ATTACHED_GROUP_POLICIES, request_id).await?;
         sql.push(" AND (mp.managed_policy_name_lower, mp.managed_policy_id) >= (");
         sql.push_bind(info.next_policy_name_lower);
         sql.push(", ");

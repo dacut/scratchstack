@@ -1,8 +1,8 @@
 //! ListRoles database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, internal_failure,
-        make_iam_paginator, partition::get_current_partition_or_fail, path::validate_path_prefix,
+        RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, decrypt_pagination_token,
+        internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, path::validate_path_prefix,
         policy::build_policy_arn, role::role_arn_resource,
     },
     chrono::{DateTime, Utc},
@@ -102,10 +102,7 @@ pub async fn list_roles(
     }
 
     if let Some(marker) = marker {
-        let info: ListRolesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListRoles: {e}");
-            internal_failure(request_id)
-        })?;
+        let info: ListRolesMarker = decrypt_pagination_token(&paginator, marker, OP_LIST_ROLES, request_id).await?;
         sql.push(" AND r.role_name_lower >= ");
         sql.push_bind(info.next_role_name_lower);
     }

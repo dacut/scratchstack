@@ -1,8 +1,8 @@
 //! ListAttachedUserPolicies database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, internal_failure,
-        make_iam_paginator, partition::get_current_partition_or_fail, path::validate_path_prefix,
+        RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, decrypt_pagination_token,
+        internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, path::validate_path_prefix,
         policy::build_policy_arn, user::validate_user_name,
     },
     indoc::indoc,
@@ -117,10 +117,8 @@ pub async fn list_attached_user_policies(
     }
 
     if let Some(marker) = marker {
-        let info: ListAttachedUserPoliciesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListAttachedUserPolicies: {e}");
-            internal_failure(request_id)
-        })?;
+        let info: ListAttachedUserPoliciesMarker =
+            decrypt_pagination_token(&paginator, marker, OP_LIST_ATTACHED_USER_POLICIES, request_id).await?;
         sql.push(" AND (mp.managed_policy_name_lower, mp.managed_policy_id) >= (");
         sql.push_bind(info.next_policy_name_lower);
         sql.push(", ");
