@@ -346,6 +346,14 @@ pub enum SessionValue {
     /// IP address value
     IpAddr(IpAddr),
 
+    /// Multivalued key: a set of values under a single key.
+    ///
+    /// AWS exposes a handful of context keys this way -- `aws:TagKeys` and `aws:CalledVia`, for
+    /// instance -- which policies compare against using the `ForAllValues:`/`ForAnyValue:` set
+    /// operators. A set with no values carries no more information than an absent key, so
+    /// [`SessionValue::is_null`] reports it as null.
+    List(Vec<SessionValue>),
+
     /// String value
     String(String),
 
@@ -355,15 +363,38 @@ pub enum SessionValue {
 
 impl SessionValue {
     /// Indicates whether this is a null value.
+    ///
+    /// A multivalued key holding no values is null as well: a request that supplies a key with an
+    /// empty set of values says nothing more than one that omits the key entirely.
     #[inline]
     pub fn is_null(&self) -> bool {
-        matches!(self, Self::Null)
+        match self {
+            Self::Null => true,
+            Self::List(values) => values.is_empty(),
+            _ => false,
+        }
+    }
+
+    /// Returns a multivalued session value holding the given values.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scratchstack_aws_principal::SessionValue;
+    /// let tag_keys = SessionValue::list(["Department", "Project"]);
+    /// assert_eq!(tag_keys, SessionValue::List(vec![SessionValue::from("Department"), SessionValue::from("Project")]));
+    /// ```
+    pub fn list<T: Into<SessionValue>>(values: impl IntoIterator<Item = T>) -> Self {
+        Self::List(values.into_iter().map(Into::into).collect())
     }
 
     /// Returns the session value as a variable subtitution in an Aspen policy.
+    ///
+    /// A multivalued key has no single value to substitute, so it yields the empty string, as a
+    /// null value does. (AWS likewise disallows multivalued context keys in policy variables.)
     pub fn as_variable_value(&self) -> String {
         match self {
-            Self::Null => "".to_string(),
+            Self::Null | Self::List(_) => "".to_string(),
             Self::Binary(value) => BASE64_ENGINE.encode(value),
             Self::Bool(b) => if *b {
                 "true"
@@ -409,6 +440,12 @@ impl From<Ipv6Addr> for SessionValue {
     }
 }
 
+impl From<Vec<SessionValue>> for SessionValue {
+    fn from(values: Vec<SessionValue>) -> Self {
+        Self::List(values)
+    }
+}
+
 impl From<&str> for SessionValue {
     fn from(value: &str) -> Self {
         Self::String(value.to_string())
@@ -441,6 +478,16 @@ impl Display for SessionValue {
             Self::Bool(b) => Display::fmt(b, f),
             Self::Integer(i) => Display::fmt(i, f),
             Self::IpAddr(ip) => Display::fmt(ip, f),
+            Self::List(values) => {
+                f.write_str("[")?;
+                for (i, value) in values.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    Display::fmt(value, f)?;
+                }
+                f.write_str("]")
+            }
             Self::String(s) => f.write_str(s),
             Self::Timestamp(t) => write!(f, "{}", t.format("%Y-%m-%dT%H:%M:%SZ")),
         }
@@ -475,10 +522,13 @@ mod tests {
             SessionValue::Integer(1),
             SessionValue::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
             SessionValue::IpAddr(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))),
+            SessionValue::List(vec![]),
+            SessionValue::List(vec![SessionValue::from("test1"), SessionValue::from("test2")]),
             SessionValue::String("test1".to_string()),
             SessionValue::String("test2".to_string()),
         ];
-        let display = ["null", "false", "true", "-1", "0", "1", "127.0.0.1", "::1", "test1", "test2"];
+        let display =
+            ["null", "false", "true", "-1", "0", "1", "127.0.0.1", "::1", "[]", "[test1, test2]", "test1", "test2"];
         assert_eq!(sv1a, sv1b);
         assert_ne!(sv1a, sv2);
         assert_eq!(sv1a, sv1a.clone());
@@ -518,6 +568,27 @@ mod tests {
         for i in 0..values.len() {
             assert_eq!(values[i].to_string(), display[i]);
         }
+    }
+
+    /// A multivalued key holds a set of values; an empty set says no more than an absent key,
+    /// and neither has a single value a policy variable could substitute.
+    #[test]
+    fn check_multivalued_session_values() {
+        let tag_keys = SessionValue::list(["Department", "Project"]);
+        assert_eq!(tag_keys, SessionValue::List(vec![SessionValue::from("Department"), SessionValue::from("Project")]));
+        assert_eq!(tag_keys, SessionValue::from(vec![SessionValue::from("Department"), SessionValue::from("Project")]));
+        assert!(!tag_keys.is_null());
+        assert_eq!(tag_keys.to_string(), "[Department, Project]");
+
+        // A key supplied with no values is indistinguishable from one that was never supplied.
+        let empty = SessionValue::list(Vec::<String>::new());
+        assert_eq!(empty, SessionValue::List(vec![]));
+        assert!(empty.is_null());
+
+        // Multivalued keys cannot be used in policy variables, so they substitute as nothing at
+        // all, the same as a null value.
+        assert_eq!(tag_keys.as_variable_value(), "");
+        assert_eq!(empty.as_variable_value(), "");
     }
 
     #[test]
