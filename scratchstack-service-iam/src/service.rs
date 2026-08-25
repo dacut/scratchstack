@@ -330,11 +330,11 @@ mod tests {
     "#;
 
     /// Seed data for the `CreateUser` authorization tests. The callers carry grants scoped by the
-    /// path the new user is created under, by the tags the request asks to apply, and by the
-    /// permissions boundary it asks to attach; `Boundary-Policy` is the managed policy the
-    /// boundary-scoped grant names. `Create-Only-Creator` is allowed `iam:CreateUser` and nothing
-    /// else, so it shows that tagging a user at creation is gated separately while attaching a
-    /// permissions boundary is not.
+    /// path the new user is created under, by the tags the request asks to apply, by the tag keys
+    /// it may name at all, and by the permissions boundary it asks to attach; `Boundary-Policy` is
+    /// the managed policy the boundary-scoped grant names. `Create-Only-Creator` is allowed
+    /// `iam:CreateUser` and nothing else, so it shows that tagging a user at creation is gated
+    /// separately while attaching a permissions boundary is not.
     const CREATE_USER_TEST_DATA: &str = r#"
         INSERT INTO iam.partition(partition) VALUES ('aws');
 
@@ -345,6 +345,7 @@ mod tests {
         ('SVCCREUSERBROAD', '123456789012', 'broad-creator', 'Broad-Creator', '/'),
         ('SVCCREUSERPATH1', '123456789012', 'path-creator', 'Path-Creator', '/'),
         ('SVCCREUSERTAG01', '123456789012', 'tag-creator', 'Tag-Creator', '/'),
+        ('SVCCREUSERKEYS1', '123456789012', 'tag-key-creator', 'Tag-Key-Creator', '/'),
         ('SVCCREUSERPB001', '123456789012', 'boundary-creator', 'Boundary-Creator', '/'),
         ('SVCCREUSERNONE1', '123456789012', 'no-grant-creator', 'No-Grant-Creator', '/'),
         ('SVCCREUSERONLY1', '123456789012', 'create-only-creator', 'Create-Only-Creator', '/'),
@@ -369,6 +370,10 @@ mod tests {
         ('SVCCREUSERTAG01', 'allow-create-engineering', 'Allow-Create-Engineering',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:CreateUser","iam:TagUser"],
            "Resource":"*","Condition":{"StringEquals":{"aws:RequestTag/department":"Engineering"}}}]}'),
+        ('SVCCREUSERKEYS1', 'allow-create-with-known-tags', 'Allow-Create-With-Known-Tags',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:CreateUser","iam:TagUser"],
+           "Resource":"*","Condition":{"ForAllValues:StringEquals":
+             {"aws:TagKeys":["Department","Project"]}}}]}'),
         ('SVCCREUSERPB001', 'allow-create-with-boundary', 'Allow-Create-With-Boundary',
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateUser","Resource":"*",
            "Condition":{"StringEquals":
@@ -1263,6 +1268,50 @@ mod tests {
             call(&svc_state, principal, session_data, &create_user_parameters("Bare-User", None, &[], None)).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
         assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A grant conditioned on aws:TagKeys limits which tags the request may name at all,
+        // whatever values it asks to give them: every tag key the request carries has to be one
+        // the policy lists.
+        let (principal, session_data) = user_identity("SVCCREUSERKEYS1", "Tag-Key-Creator");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &create_user_parameters(
+                "Known-Tags-User",
+                None,
+                &[("Department", "Engineering"), ("Project", "Scratchstack")],
+                None,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<Key>Project</Key>"), "unexpected body: {body}");
+
+        // One tag key outside the set the policy lists is enough to fail, even alongside keys
+        // that are in it.
+        let (principal, session_data) = user_identity("SVCCREUSERKEYS1", "Tag-Key-Creator");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &create_user_parameters(
+                "Extra-Tag-User",
+                None,
+                &[("Department", "Engineering"), ("Cost-Center", "1234")],
+                None,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A request naming no tags at all satisfies ForAllValues vacuously: there is no tag key
+        // the policy would have to allow.
+        let (principal, session_data) = user_identity("SVCCREUSERKEYS1", "Tag-Key-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_user_parameters("Untagged-User", None, &[], None)).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
 
         // Two tags with the same key ask for two values for one tag. That is the caller's error,
         // not ours, so it is reported as invalid input rather than an internal failure. The keys
