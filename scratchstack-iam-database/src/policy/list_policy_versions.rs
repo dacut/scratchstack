@@ -1,8 +1,8 @@
 //! ListPolicyVersions database operation
 use {
     crate::{
-        RequestExecutor, constants::*, constrain_max_items, internal_failure, make_iam_paginator,
-        partition::get_current_partition_or_fail, policy::parse_policy_arn,
+        RequestExecutor, constants::*, constrain_max_items, decrypt_pagination_token, internal_failure,
+        make_iam_paginator, partition::get_current_partition_or_fail, policy::parse_policy_arn,
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
@@ -96,10 +96,8 @@ pub async fn list_policy_versions(
     sql.push_bind(&policy_row.managed_policy_id);
 
     if let Some(marker) = marker {
-        let info: ListPolicyVersionsMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListPolicyVersions: {e}");
-            internal_failure(request_id)
-        })?;
+        let info: ListPolicyVersionsMarker =
+            decrypt_pagination_token(&paginator, marker, OP_LIST_POLICY_VERSIONS, request_id).await?;
         sql.push(" AND managed_policy_version <= ");
         sql.push_bind(info.next_version);
     }

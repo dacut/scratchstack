@@ -1,8 +1,8 @@
 //! ListRolePolicies database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, internal_failure,
-        make_iam_paginator, partition::get_current_partition_or_fail, role::validate_role_name,
+        RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, decrypt_pagination_token,
+        internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, role::validate_role_name,
     },
     indoc::indoc,
     scratchstack_core::RequestId,
@@ -90,10 +90,8 @@ pub async fn list_role_policies(
     sql.push_bind(role_id);
 
     if let Some(marker) = marker {
-        let m: ListRolePoliciesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListRolePolicies: {e}");
-            internal_failure(request_id)
-        })?;
+        let m: ListRolePoliciesMarker =
+            decrypt_pagination_token(&paginator, marker, OP_LIST_ROLE_POLICIES, request_id).await?;
         sql.push("\nAND policy_name_lower >= ");
         sql.push_bind(m.next_policy_name_lower);
     }

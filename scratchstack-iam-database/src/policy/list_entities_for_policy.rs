@@ -1,8 +1,9 @@
 //! ListEntitiesForPolicy database operation
 use {
     crate::{
-        RequestExecutor, constants::*, constrain_max_items, internal_failure, make_iam_paginator,
-        partition::get_current_partition_or_fail, path::validate_path_prefix, policy::parse_policy_arn,
+        RequestExecutor, constants::*, constrain_max_items, decrypt_pagination_token, internal_failure,
+        make_iam_paginator, partition::get_current_partition_or_fail, path::validate_path_prefix,
+        policy::parse_policy_arn,
     },
     indoc::{formatdoc, indoc},
     scratchstack_aws_principal::IamResourceType,
@@ -157,10 +158,7 @@ pub async fn list_entities_for_policy(
     };
 
     let resume: Option<ListEntitiesForPolicyMarker> = if let Some(marker) = marker {
-        Some(paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListEntitiesForPolicy: {e}");
-            internal_failure(request_id)
-        })?)
+        Some(decrypt_pagination_token(&paginator, marker, OP_LIST_ENTITIES_FOR_POLICY, request_id).await?)
     } else {
         None
     };

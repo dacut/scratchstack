@@ -1,8 +1,8 @@
 //! ListGroupsForUser database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, internal_failure,
-        make_iam_paginator, partition::get_current_partition_or_fail, user::validate_user_name,
+        RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, decrypt_pagination_token,
+        internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, user::validate_user_name,
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
@@ -102,10 +102,8 @@ pub async fn list_groups_for_user(
     sql.push_bind(user_name_lower);
 
     if let Some(marker) = marker {
-        let info: ListGroupsForUserMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListGroupsForUser: {e}");
-            internal_failure(request_id)
-        })?;
+        let info: ListGroupsForUserMarker =
+            decrypt_pagination_token(&paginator, marker, OP_LIST_GROUPS_FOR_USER, request_id).await?;
         sql.push(" AND g.group_name_lower >= ");
         sql.push_bind(info.next_group_name);
     }

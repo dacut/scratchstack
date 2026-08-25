@@ -1160,6 +1160,26 @@ pub async fn test_list_user_policies_nonexistent_user(pool: &sqlx::PgPool) {
     assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
 }
 
+/// ListUserPolicies with a marker this service did not issue must be reported as invalid input.
+///
+/// A token that will not decrypt is the caller's to fix -- most often a client-side pagination
+/// token handed back in place of the marker it wraps, which is what the base64-encoded JSON used
+/// here stands in for -- so it must not be reported as an internal failure.
+pub async fn test_list_user_policies_foreign_marker(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = ListUserPoliciesInternalRequest::builder()
+        .user_name("bob")
+        .account_id("123456789012")
+        .marker("eyJNYXJrZXIiOiAiMGFiYyIsICJib3RvX3RydW5jYXRlX2Ftb3VudCI6IDJ9")
+        .build()
+        .expect("Failed to build ListUserPoliciesInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("ListUserPolicies with a marker from another issuer must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::InvalidInputException(_)), "Expected InvalidInput, got: {err:?}");
+}
+
 /// Building a ListUserPolicies request with an invalid user name must fail before touching the
 /// database.
 pub fn test_list_user_policies_invalid_name() {

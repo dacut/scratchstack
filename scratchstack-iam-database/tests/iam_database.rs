@@ -271,6 +271,7 @@ async fn subtest_list_user_policies(pool: &PgPool) {
     user::test_list_user_policies_empty(pool).await;
     user::test_list_user_policies_pagination(pool).await;
     user::test_list_user_policies_nonexistent_user(pool).await;
+    user::test_list_user_policies_foreign_marker(pool).await;
     user::test_list_user_policies_invalid_name();
 }
 

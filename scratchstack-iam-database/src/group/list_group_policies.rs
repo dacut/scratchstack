@@ -1,8 +1,8 @@
 //! ListGroupPolicies database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, group::validate_group_name,
-        internal_failure, make_iam_paginator, partition::get_current_partition_or_fail,
+        RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, decrypt_pagination_token,
+        group::validate_group_name, internal_failure, make_iam_paginator, partition::get_current_partition_or_fail,
     },
     indoc::indoc,
     scratchstack_core::RequestId,
@@ -90,10 +90,8 @@ pub async fn list_group_policies(
     sql.push_bind(group_id);
 
     if let Some(marker) = marker {
-        let m: ListGroupPoliciesMarker = paginator.decrypt_token(marker).await.map_err(|e| {
-            log::error!("Failed to decrypt pagination token for ListGroupPolicies: {e}");
-            internal_failure(request_id)
-        })?;
+        let m: ListGroupPoliciesMarker =
+            decrypt_pagination_token(&paginator, marker, OP_LIST_GROUP_POLICIES, request_id).await?;
         sql.push("\nAND policy_name_lower >= ");
         sql.push_bind(m.next_policy_name_lower);
     }

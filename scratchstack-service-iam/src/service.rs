@@ -221,6 +221,12 @@ mod tests {
     /// reserved by RFC 5737 and RFC 3849.
     const TEST_SOURCE_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10));
 
+    /// A pagination marker this service did not issue: base64-encoded JSON, which is the shape of
+    /// the client-side pagination token the AWS CLI and several SDKs hand out in place of the
+    /// marker they wrap. It is well-formed enough to reach the token itself, which is where a
+    /// caller passing the wrong one back finds out.
+    const FOREIGN_PAGINATION_TOKEN: &str = "eyJNYXJrZXIiOiAiMGFiYyIsICJib3RvX3RydW5jYXRlX2Ftb3VudCI6IDJ9";
+
     /// A peer address outside the CIDR block the source-IP test policies grant.
     const OUTSIDE_SOURCE_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(198, 51, 100, 7));
 
@@ -3611,6 +3617,20 @@ mod tests {
             assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
         }
 
+        // A marker this service did not issue is the caller's to fix rather than ours, so it is
+        // reported as invalid input rather than as an internal failure -- a client-side pagination
+        // token passed back in place of the marker it wraps lands here.
+        let (principal, session_data) = user_identity("SVCLUPBROADLST01", "Broad-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_user_policies_parameters(Some("Policy-Holder"), None, Some(FOREIGN_PAGINATION_TOKEN)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+        assert!(body.contains("<Code>InvalidInput</Code>"), "unexpected body: {body}");
+
         // A MaxItems that is not a number at all never becomes a value the request can carry, so
         // it is reported as malformed input rather than as a validation failure.
         let (principal, session_data) = user_identity("SVCLUPBROADLST01", "Broad-Lister");
@@ -3826,6 +3846,19 @@ mod tests {
             assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
             assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
         }
+
+        // A marker this service did not issue is the caller's to fix rather than ours, so it is
+        // reported as invalid input rather than as an internal failure.
+        let (principal, session_data) = user_identity("SVCLUTBROADLST01", "Broad-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_user_tags_parameters(Some("Tag-Target"), None, Some(FOREIGN_PAGINATION_TOKEN)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+        assert!(body.contains("<Code>InvalidInput</Code>"), "unexpected body: {body}");
 
         // An assumed-role session is governed by the role's own policy.
         let (principal, session_data) = role_identity("SVCLUTROLE000001", "List-User-Tags-Role");
