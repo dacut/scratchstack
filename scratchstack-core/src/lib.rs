@@ -36,6 +36,9 @@ pub mod response;
 #[cfg(feature = "tls")]
 pub mod tls;
 
+/// Serialization of values as the AWS query protocol's XML.
+pub mod xml;
+
 /// The underlying `http` crate used by this crate.
 pub use http;
 

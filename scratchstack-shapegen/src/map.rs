@@ -29,7 +29,7 @@ impl ShapeInfo for Map {
     }
 
     fn rust_typename(&self) -> String {
-        format!("::std::collections::HashMap<{}, {}>", self.key.rust_typename(), self.value.rust_typename())
+        format!("::std::collections::BTreeMap<{}, {}>", self.key.rust_typename(), self.value.rust_typename())
     }
 
     fn resolve(&mut self, shape_name: &str, model: &SmithyModel) {
@@ -52,7 +52,7 @@ impl Map {
             self.base.traits.write_docs(w, "")?;
             writeln!(
                 w,
-                "pub type {rust_typename} = ::std::collections::HashMap<{}, {}>;",
+                "pub type {rust_typename} = ::std::collections::BTreeMap<{}, {}>;",
                 self.key.rust_typename(),
                 self.value.rust_typename()
             )?;

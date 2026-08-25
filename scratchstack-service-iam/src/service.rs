@@ -3426,8 +3426,8 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
         assert!(
             body.contains(
-                "<PolicyNames>App-Access</PolicyNames><PolicyNames>Db-Access</PolicyNames>\
-                 <PolicyNames>Zz-Access</PolicyNames>"
+                "<PolicyNames><member>App-Access</member><member>Db-Access</member>\
+                 <member>Zz-Access</member></PolicyNames>"
             ),
             "unexpected body: {body}"
         );
@@ -3444,7 +3444,10 @@ mod tests {
             call(&svc_state, principal, session_data, &list_user_policies_parameters(Some("Empty-Target"), None, None))
                 .await;
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
-        assert!(body.contains("<ListUserPoliciesResult/>"), "unexpected body: {body}");
+        assert!(
+            body.contains("<ListUserPoliciesResult><PolicyNames/></ListUserPoliciesResult>"),
+            "unexpected body: {body}"
+        );
 
         // MaxItems bounds a page, and a bounded page reports the marker the next one continues
         // from...
@@ -3459,7 +3462,7 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
         assert!(body.contains("<IsTruncated>true</IsTruncated>"), "unexpected body: {body}");
         assert!(
-            body.contains("<PolicyNames>App-Access</PolicyNames><PolicyNames>Db-Access</PolicyNames>"),
+            body.contains("<PolicyNames><member>App-Access</member><member>Db-Access</member></PolicyNames>"),
             "unexpected body: {body}"
         );
         assert!(!body.contains("Zz-Access"), "unexpected body: {body}");
@@ -3475,7 +3478,7 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
-        assert!(body.contains("<PolicyNames>Zz-Access</PolicyNames>"), "unexpected body: {body}");
+        assert!(body.contains("<member>Zz-Access</member>"), "unexpected body: {body}");
         assert!(!body.contains("App-Access"), "unexpected body: {body}");
         assert!(!body.contains("<IsTruncated>"), "unexpected body: {body}");
 
@@ -3490,7 +3493,7 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
-        assert!(body.contains("<PolicyNames>Division-Access</PolicyNames>"), "unexpected body: {body}");
+        assert!(body.contains("<member>Division-Access</member>"), "unexpected body: {body}");
 
         // ...and no further.
         let (principal, session_data) = user_identity("SVCLUPPATHLST001", "Path-Lister");
@@ -3514,7 +3517,7 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
-        assert!(body.contains("<PolicyNames>Eng-Access</PolicyNames>"), "unexpected body: {body}");
+        assert!(body.contains("<member>Eng-Access</member>"), "unexpected body: {body}");
 
         // A user carrying the tag with a different value does not satisfy the condition.
         let (principal, session_data) = user_identity("SVCLUPTAGLST0001", "Tag-Lister");
@@ -3547,9 +3550,9 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
-        assert!(body.contains("<PolicyNames>App-Access</PolicyNames>"), "unexpected body: {body}");
-        assert!(body.contains("<PolicyNames>Db-Access</PolicyNames>"), "unexpected body: {body}");
-        assert!(body.contains("<PolicyNames>Zz-Access</PolicyNames>"), "unexpected body: {body}");
+        assert!(body.contains("<member>App-Access</member>"), "unexpected body: {body}");
+        assert!(body.contains("<member>Db-Access</member>"), "unexpected body: {body}");
+        assert!(body.contains("<member>Zz-Access</member>"), "unexpected body: {body}");
 
         let (principal, session_data) = user_identity("SVCLUPNARROWLS01", "Narrow-Lister");
         let (status, body) = call(
@@ -3654,7 +3657,7 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
-        assert!(body.contains("<PolicyNames>App-Access</PolicyNames>"), "unexpected body: {body}");
+        assert!(body.contains("<member>App-Access</member>"), "unexpected body: {body}");
 
         // The account root user is implicitly allowed.
         let (principal, session_data) = root_identity();
@@ -3662,7 +3665,7 @@ mod tests {
             call(&svc_state, principal, session_data, &list_user_policies_parameters(Some("Root-Target"), None, None))
                 .await;
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
-        assert!(body.contains("<PolicyNames>Root-Access</PolicyNames>"), "unexpected body: {body}");
+        assert!(body.contains("<member>Root-Access</member>"), "unexpected body: {body}");
     }
 
     /// End-to-end authorization checks for `ListUserTags` through `serve_request` against an
@@ -3692,9 +3695,9 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
         assert!(
             body.contains(
-                "<Tags><Key>CostCenter</Key><Value>1234</Value></Tags>\
-                 <Tags><Key>Project</Key><Value>Scratchstack</Value></Tags>\
-                 <Tags><Key>Zone</Key><Value>West</Value></Tags>"
+                "<Tags><member><Key>CostCenter</Key><Value>1234</Value></member>\
+                 <member><Key>Project</Key><Value>Scratchstack</Value></member>\
+                 <member><Key>Zone</Key><Value>West</Value></member></Tags>"
             ),
             "unexpected body: {body}"
         );
@@ -3705,7 +3708,7 @@ mod tests {
             call(&svc_state, principal, session_data, &list_user_tags_parameters(Some("Empty-Target"), None, None))
                 .await;
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
-        assert!(body.contains("<ListUserTagsResult/>"), "unexpected body: {body}");
+        assert!(body.contains("<ListUserTagsResult><Tags/></ListUserTagsResult>"), "unexpected body: {body}");
 
         // MaxItems bounds a page, and a bounded page reports the marker the next one continues
         // from...
