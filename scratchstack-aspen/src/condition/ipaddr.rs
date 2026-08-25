@@ -23,11 +23,7 @@ pub(super) fn ip_address_match(
     match value {
         SessionValue::Null => Ok(variant.if_exists()),
         SessionValue::IpAddr(value) => {
-            let fn_op = if !variant.negated() {
-                |a: &IpAddr, b: IpNet| b.contains(a)
-            } else {
-                |a: &IpAddr, b: IpNet| !b.contains(a)
-            };
+            let mut matched = false;
 
             for el in allowed.iter() {
                 let el = match pv {
@@ -43,13 +39,16 @@ pub(super) fn ip_address_match(
                     },
                 };
                 if let Some(parsed) = parsed
-                    && fn_op(value, parsed)
+                    && parsed.contains(value)
                 {
-                    return Ok(true);
+                    matched = true;
+                    break;
                 }
             }
 
-            Ok(false)
+            // NotIpAddress negates the whole clause: the address has to fall outside every range
+            // the policy lists, rather than outside any one of them.
+            Ok(matched != variant.negated())
         }
         _ => Ok(false),
     }

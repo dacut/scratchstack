@@ -48,41 +48,50 @@ pub(super) fn arn_match(
     match value {
         SessionValue::Null => Ok(variant.if_exists()),
         SessionValue::String(value) => {
-            match Arn::from_str(value) {
-                Err(_) => {
-                    // Failed to convert, so this won't match anything. If not-equals (negated), return true;
-                    // otherwise, false.
-                    Ok(variant.negated())
-                }
-                Ok(value) => {
-                    for el in allowed.iter() {
-                        let parts = el.splitn(6, ':').collect::<Vec<&str>>();
-                        if parts.len() != 6 || parts[0] != "arn" {
-                            continue;
-                        }
+            let matched = match Arn::from_str(value) {
+                // A value that is not an ARN at all matches none of the ARNs the policy lists.
+                Err(_) => false,
+                Ok(value) => arn_matches_any(context, pv, allowed, &value)?,
+            };
 
-                        let partition = regex_from_glob(parts[1], false);
-                        let service = regex_from_glob(parts[2], false);
-                        let region = regex_from_glob(parts[3], false);
-                        let account_id = regex_from_glob(parts[4], false);
-                        let resource = context.matcher(parts[5], pv, false)?;
-
-                        let is_match = partition.is_match(value.partition())
-                            && service.is_match(value.service())
-                            && region.is_match(value.region())
-                            && account_id.is_match(value.account_id())
-                            && resource.is_match(value.resource());
-                        if is_match != variant.negated() {
-                            return Ok(true);
-                        }
-                    }
-
-                    Ok(false)
-                }
-            }
+            // ArnNotEquals and ArnNotLike negate the whole clause: the value has to match none of
+            // the ARNs the policy lists, rather than differ from any one of them.
+            Ok(matched != variant.negated())
         }
         _ => Ok(false),
     }
+}
+
+/// Indicates whether `value` matches any of the ARN patterns the policy lists.
+fn arn_matches_any(
+    context: &Context,
+    pv: PolicyVersion,
+    allowed: &StringLikeList<String>,
+    value: &Arn,
+) -> Result<bool, AspenError> {
+    for el in allowed.iter() {
+        let parts = el.splitn(6, ':').collect::<Vec<&str>>();
+        if parts.len() != 6 || parts[0] != "arn" {
+            continue;
+        }
+
+        let partition = regex_from_glob(parts[1], false);
+        let service = regex_from_glob(parts[2], false);
+        let region = regex_from_glob(parts[3], false);
+        let account_id = regex_from_glob(parts[4], false);
+        let resource = context.matcher(parts[5], pv, false)?;
+
+        let is_match = partition.is_match(value.partition())
+            && service.is_match(value.service())
+            && region.is_match(value.region())
+            && account_id.is_match(value.account_id())
+            && resource.is_match(value.resource());
+        if is_match {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 #[cfg(test)]

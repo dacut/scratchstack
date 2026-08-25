@@ -1946,30 +1946,35 @@ fn test_set_operators_if_exists() {
     assert!(!session_matches(&cmap, &session_data));
 }
 
-/// A negated comparison is applied to each value in turn, so `ForAllValues:` requires every value
-/// to differ and `ForAnyValue:` requires only one to.
+/// A negated comparison is applied to each value of the key in turn, so `ForAllValues:` requires
+/// every value to match none of the policy's values and `ForAnyValue:` requires only one to.
 #[test_log::test]
 fn test_set_operators_negated() {
-    let cmap = Condition::from_str(r#"{"ForAllValues:StringNotEquals": {"hello": ["red"]}}"#).unwrap();
+    let cmap = Condition::from_str(r#"{"ForAllValues:StringNotEquals": {"hello": ["red", "green"]}}"#).unwrap();
 
     let mut session_data = SessionData::new();
     assert!(session_matches(&cmap, &session_data));
 
-    session_data.insert("hello", SessionValue::list(["green", "blue"]));
+    session_data.insert("hello", SessionValue::list(["blue", "purple"]));
     assert!(session_matches(&cmap, &session_data));
 
-    session_data.insert("hello", SessionValue::list(["green", "red"]));
+    // "red" is one of the values the policy lists, so it does not differ from all of them just
+    // because it differs from "green".
+    session_data.insert("hello", SessionValue::list(["blue", "red"]));
     assert!(!session_matches(&cmap, &session_data));
-
-    let cmap = Condition::from_str(r#"{"ForAnyValue:StringNotEquals": {"hello": ["red"]}}"#).unwrap();
-
-    let mut session_data = SessionData::new();
-    assert!(!session_matches(&cmap, &session_data));
-
-    session_data.insert("hello", SessionValue::list(["green", "red"]));
-    assert!(session_matches(&cmap, &session_data));
 
     session_data.insert("hello", SessionValue::list(["red"]));
+    assert!(!session_matches(&cmap, &session_data));
+
+    let cmap = Condition::from_str(r#"{"ForAnyValue:StringNotEquals": {"hello": ["red", "green"]}}"#).unwrap();
+
+    let mut session_data = SessionData::new();
+    assert!(!session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::list(["blue", "red"]));
+    assert!(session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::list(["red", "green"]));
     assert!(!session_matches(&cmap, &session_data));
 }
 
@@ -2082,4 +2087,120 @@ fn test_set_operator_serialization() {
     assert!(cmap.contains_key(&condop::StringLike.for_any_value()));
     assert!(!cmap.contains_key(&condop::StringLike));
     assert_eq!(serde_json::to_string(&cmap).unwrap(), source);
+}
+
+/// A negated operator with several values in the policy requires the request value to match none
+/// of them. AWS evaluates multiple values with a logical OR, which negation turns into a logical
+/// AND over the clause -- not into a per-value test that any one of them differs.
+#[test_log::test]
+fn test_negated_operators_require_no_value_to_match() {
+    let cmap = Condition::from_str(r#"{"StringNotEquals": {"hello": ["red", "green"]}}"#).unwrap();
+
+    let mut session_data = SessionData::new();
+    session_data.insert("hello", SessionValue::from("red"));
+    assert!(!session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::from("green"));
+    assert!(!session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::from("blue"));
+    assert!(session_matches(&cmap, &session_data));
+
+    let cmap = Condition::from_str(r#"{"StringNotEqualsIgnoreCase": {"hello": ["Red", "Green"]}}"#).unwrap();
+    session_data.insert("hello", SessionValue::from("RED"));
+    assert!(!session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::from("blue"));
+    assert!(session_matches(&cmap, &session_data));
+
+    let cmap = Condition::from_str(r#"{"StringNotLike": {"hello": ["re*", "gr*"]}}"#).unwrap();
+    session_data.insert("hello", SessionValue::from("green"));
+    assert!(!session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::from("blue"));
+    assert!(session_matches(&cmap, &session_data));
+
+    let cmap = Condition::from_str(r#"{"NumericNotEquals": {"hello": ["1000", "2000"]}}"#).unwrap();
+    session_data.insert("hello", SessionValue::from(2000));
+    assert!(!session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::from(1500));
+    assert!(session_matches(&cmap, &session_data));
+
+    // The same holds for a numeric value the request supplies as a string.
+    session_data.insert("hello", SessionValue::from("2000"));
+    assert!(!session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::from("1500"));
+    assert!(session_matches(&cmap, &session_data));
+
+    let cmap =
+        Condition::from_str(r#"{"ArnNotEquals": {"hello": ["arn:aws:s3:::example/*", "arn:aws:s3:::other/*"]}}"#)
+            .unwrap();
+    session_data.insert("hello", SessionValue::from("arn:aws:s3:::other/file"));
+    assert!(!session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::from("arn:aws:s3:::third/file"));
+    assert!(session_matches(&cmap, &session_data));
+
+    let cmap = Condition::from_str(r#"{"ArnNotLike": {"hello": ["arn:aws:s3:::example/*", "arn:aws:s3:::other/*"]}}"#)
+        .unwrap();
+    session_data.insert("hello", SessionValue::from("arn:aws:s3:::example/file"));
+    assert!(!session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::from("arn:aws:s3:::third/file"));
+    assert!(session_matches(&cmap, &session_data));
+
+    let cmap = Condition::from_str(r#"{"NotIpAddress": {"aws:SourceIp": ["10.0.0.0/8", "192.168.0.0/16"]}}"#).unwrap();
+    session_data.insert("aws:SourceIp", SessionValue::from(Ipv4Addr::new(192, 168, 1, 1)));
+    assert!(!session_matches(&cmap, &session_data));
+
+    session_data.insert("aws:SourceIp", SessionValue::from(Ipv4Addr::new(172, 16, 1, 1)));
+    assert!(session_matches(&cmap, &session_data));
+
+    let cmap = Condition::from_str(
+        r#"{"DateNotEquals": {"aws:CurrentDate": ["2012-10-17T00:00:00Z", "2012-10-18T00:00:00Z"]}}"#,
+    )
+    .unwrap();
+    session_data
+        .insert("aws:CurrentDate", SessionValue::from(DateTime::parse_from_rfc3339("2012-10-18T00:00:00Z").unwrap()));
+    assert!(!session_matches(&cmap, &session_data));
+
+    session_data
+        .insert("aws:CurrentDate", SessionValue::from(DateTime::parse_from_rfc3339("2012-10-19T00:00:00Z").unwrap()));
+    assert!(session_matches(&cmap, &session_data));
+}
+
+/// The ordering operators are spelled with a negated variant internally -- GreaterThanEquals is
+/// LessThan negated -- but they are operators in their own right, not negated clauses. Several
+/// values are OR-ed like any other operator's, so matching the loosest of them is enough.
+#[test_log::test]
+fn test_ordering_operators_or_their_values() {
+    let cmap = Condition::from_str(r#"{"NumericGreaterThanEquals": {"hello": ["10", "20"]}}"#).unwrap();
+
+    let mut session_data = SessionData::new();
+    session_data.insert("hello", SessionValue::from(15));
+    assert!(session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::from(5));
+    assert!(!session_matches(&cmap, &session_data));
+
+    let cmap = Condition::from_str(r#"{"NumericGreaterThan": {"hello": ["10", "20"]}}"#).unwrap();
+    session_data.insert("hello", SessionValue::from(15));
+    assert!(session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::from(10));
+    assert!(!session_matches(&cmap, &session_data));
+
+    let cmap = Condition::from_str(
+        r#"{"DateGreaterThanEquals": {"aws:CurrentDate": ["2012-10-17T00:00:00Z", "2012-10-19T00:00:00Z"]}}"#,
+    )
+    .unwrap();
+    session_data
+        .insert("aws:CurrentDate", SessionValue::from(DateTime::parse_from_rfc3339("2012-10-18T00:00:00Z").unwrap()));
+    assert!(session_matches(&cmap, &session_data));
+
+    session_data
+        .insert("aws:CurrentDate", SessionValue::from(DateTime::parse_from_rfc3339("2012-10-16T00:00:00Z").unwrap()));
+    assert!(!session_matches(&cmap, &session_data));
 }
