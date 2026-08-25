@@ -1253,6 +1253,44 @@ mod tests {
         assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
         assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
 
+        // Two tags with the same key ask for two values for one tag. That is the caller's error,
+        // not ours, so it is reported as invalid input rather than an internal failure. The keys
+        // here differ only in case, which IAM treats as the same key.
+        let (principal, session_data) = user_identity("SVCCREUSERBROAD", "Broad-Creator");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &create_user_parameters(
+                "Dupe-Tag-User",
+                None,
+                &[("Department", "Engineering"), ("department", "Sales")],
+                None,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+
+        // Verified against the live service: this is the error element AWS returns, verbatim.
+        assert!(
+            body.contains(
+                "<Error><Type>Sender</Type><Code>InvalidInput</Code><Message>Duplicate tag keys found. \
+                 Please note that Tag keys are case insensitive.</Message></Error>"
+            ),
+            "unexpected body: {body}"
+        );
+
+        // The rejection rolled the transaction back, so the name is still free.
+        let (principal, session_data) = user_identity("SVCCREUSERBROAD", "Broad-Creator");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &create_user_parameters("Dupe-Tag-User", None, &[("Department", "Engineering")], None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
         // The permissions boundary the request asks for backs iam:PermissionsBoundary, which is
         // what lets a policy require that users be created only under a boundary.
         let boundary = format!("arn:aws:iam::{TEST_ACCOUNT_ID}:policy/Boundary-Policy");

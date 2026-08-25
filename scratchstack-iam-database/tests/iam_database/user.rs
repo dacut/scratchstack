@@ -197,6 +197,63 @@ pub fn test_create_user_invalid_name() {
     assert!(result.is_err(), "Building a request with an invalid user name must fail");
 }
 
+/// Two tags with the same key are the caller asking for two values for one tag, and must be
+/// reported as invalid input rather than failing the insert as an internal error.
+pub async fn test_create_user_duplicate_tag_keys(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = CreateUserInternalRequest::builder()
+        .user_name("dupetaguser")
+        .account_id("123456789012")
+        .set_tags(vec![
+            Tag::builder().key("Department").value("Engineering").build().expect("Failed to build Tag"),
+            Tag::builder().key("Department").value("Sales").build().expect("Failed to build Tag"),
+        ])
+        .build()
+        .expect("Failed to build CreateUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("Creating a user with duplicate tag keys must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::InvalidInputException(_)), "Expected InvalidInput, got: {err:?}");
+}
+
+/// Tag keys are compared case-insensitively, so keys differing only in case are duplicates.
+pub async fn test_create_user_duplicate_tag_keys_different_case(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = CreateUserInternalRequest::builder()
+        .user_name("dupetaguser2")
+        .account_id("123456789012")
+        .set_tags(vec![
+            Tag::builder().key("Department").value("Engineering").build().expect("Failed to build Tag"),
+            Tag::builder().key("department").value("Sales").build().expect("Failed to build Tag"),
+        ])
+        .build()
+        .expect("Failed to build CreateUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("Creating a user with tag keys differing only in case must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::InvalidInputException(_)), "Expected InvalidInput, got: {err:?}");
+}
+
+/// Distinct tag keys are not duplicates, however similar they look.
+pub async fn test_create_user_distinct_tag_keys_are_accepted(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateUserInternalRequest::builder()
+        .user_name("multitaguser")
+        .account_id("123456789012")
+        .set_tags(vec![
+            Tag::builder().key("Department").value("Engineering").build().expect("Failed to build Tag"),
+            Tag::builder().key("Department2").value("Sales").build().expect("Failed to build Tag"),
+        ])
+        .build()
+        .expect("Failed to build CreateUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Creating a user with distinct tag keys must succeed");
+    tx.rollback().await.expect("Failed to rollback transaction");
+}
+
 /// Creating a user in an account that does not exist must fail with a FK violation.
 pub async fn test_create_user_nonexistent_account(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
