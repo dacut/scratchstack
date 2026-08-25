@@ -24,7 +24,9 @@ use {
     sqlx::postgres::PgTransaction,
 };
 
-pub(crate) use scratchstack_service_common::authz::{request_tag_context, resource_account_context};
+pub(crate) use scratchstack_service_common::authz::{
+    request_tag_context, request_tag_keys_context, resource_account_context,
+};
 
 /// Authorize `action` for the calling principal, gathering the principal's identity-based
 /// policies inside `tx`. An IAM user caller is governed by the user's policies (including

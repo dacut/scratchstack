@@ -384,6 +384,25 @@ pub async fn test_tag_user_empty_tags(pool: &sqlx::PgPool) {
     assert!(result.is_err(), "Tagging with an empty tag list must fail");
 }
 
+/// Tagging with two tags whose keys differ only in case asks for two values for one tag, which
+/// IAM rejects rather than silently keeping the last.
+pub async fn test_tag_user_duplicate_keys(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = TagUserInternalRequest::builder()
+        .user_name("alice")
+        .account_id("123456789012")
+        .set_tags(vec![
+            Tag::builder().key("Dept").value("Engineering").build().expect("Failed to build tag"),
+            Tag::builder().key("dept").value("Finance").build().expect("Failed to build tag"),
+        ])
+        .build()
+        .expect("Failed to build TagUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(result.is_err(), "Tagging with duplicate tag keys must fail");
+}
+
 /// Untag an existing user and verify the tag is removed.
 pub async fn test_untag_user(pool: &sqlx::PgPool) {
     // alice currently has CostCenter and Dept tags from previous tests.

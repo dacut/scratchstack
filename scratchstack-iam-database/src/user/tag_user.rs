@@ -5,7 +5,7 @@ use {
         account::validate_account_id,
         constants::*,
         internal_failure,
-        tag::{validate_tag_key, validate_tag_value},
+        tag::{validate_tag_key, validate_tag_keys_unique, validate_tag_value},
         user::validate_user_name,
     },
     indoc::indoc,
@@ -57,6 +57,11 @@ pub async fn tag_user(
         validate_tag_key(&tag.key, request_id)?;
         validate_tag_value(&tag.value, request_id)?;
     }
+
+    // Two tags with the same key ask for two values for one tag. The upsert below would take the
+    // last one and report success, which is not what the caller asked for, so the request is
+    // rejected as CreateUser rejects it.
+    validate_tag_keys_unique(tags.iter().map(|tag| tag.key.as_str()), request_id)?;
 
     // Verify the user exists and get the user_id.
     let user_id: String = match query(indoc! {"
