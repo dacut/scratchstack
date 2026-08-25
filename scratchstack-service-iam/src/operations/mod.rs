@@ -8,6 +8,7 @@
 mod attach_user_policy;
 mod create_user;
 mod delete_user;
+mod delete_user_permissions_boundary;
 mod delete_user_policy;
 mod detach_user_policy;
 mod get_user;
@@ -16,16 +17,19 @@ mod list_attached_user_policies;
 mod list_user_policies;
 mod list_user_tags;
 mod list_users;
+mod put_user_permissions_boundary;
 mod put_user_policy;
 mod tag_user;
 mod untag_user;
 
 pub(crate) use {
     attach_user_policy::attach_user_policy, create_user::create_user, delete_user::delete_user,
-    delete_user_policy::delete_user_policy, detach_user_policy::detach_user_policy, get_user::get_user,
-    get_user_policy::get_user_policy, list_attached_user_policies::list_attached_user_policies,
-    list_user_policies::list_user_policies, list_user_tags::list_user_tags, list_users::list_users,
-    put_user_policy::put_user_policy, tag_user::tag_user, untag_user::untag_user,
+    delete_user_permissions_boundary::delete_user_permissions_boundary, delete_user_policy::delete_user_policy,
+    detach_user_policy::detach_user_policy, get_user::get_user, get_user_policy::get_user_policy,
+    list_attached_user_policies::list_attached_user_policies, list_user_policies::list_user_policies,
+    list_user_tags::list_user_tags, list_users::list_users,
+    put_user_permissions_boundary::put_user_permissions_boundary, put_user_policy::put_user_policy, tag_user::tag_user,
+    untag_user::untag_user,
 };
 
 use {
