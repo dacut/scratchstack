@@ -1252,10 +1252,13 @@ mod tests {
     /// Build the query parameters for a `GetUser` request, naming a user or leaving `UserName`
     /// off so it defaults to the caller.
     fn get_user_parameters(user_name: Option<&str>) -> String {
-        match user_name {
-            Some(user_name) => format!("Action=GetUser&Version=2010-05-08&UserName={user_name}"),
-            None => "Action=GetUser&Version=2010-05-08".to_string(),
+        let mut parameters = vec![("Action", "GetUser"), ("Version", "2010-05-08")];
+
+        if let Some(user_name) = user_name {
+            parameters.push(("UserName", user_name));
         }
+
+        serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
     }
 
     /// Build the query parameters for a `CreateUser` request naming `user_name`, optionally
@@ -1266,28 +1269,32 @@ mod tests {
         tags: &[(&str, &str)],
         permissions_boundary: Option<&str>,
     ) -> String {
-        let mut parameters = format!("Action=CreateUser&Version=2010-05-08&UserName={user_name}");
+        let mut parameters = action_parameters("CreateUser");
+        parameters.push(("UserName".to_string(), user_name.to_string()));
 
         if let Some(path) = path {
-            parameters.push_str(&format!("&Path={}", path.replace('/', "%2F")));
+            parameters.push(("Path".to_string(), path.to_string()));
         }
 
         append_tag_parameters(&mut parameters, tags);
 
         if let Some(permissions_boundary) = permissions_boundary {
-            parameters.push_str(&format!("&PermissionsBoundary={}", permissions_boundary.replace('/', "%2F")));
+            parameters.push(("PermissionsBoundary".to_string(), permissions_boundary.to_string()));
         }
 
-        parameters
+        serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
     }
 
     /// Build the query parameters for a `DeleteUser` request, naming a user or leaving `UserName`
     /// off entirely.
     fn delete_user_parameters(user_name: Option<&str>) -> String {
-        match user_name {
-            Some(user_name) => format!("Action=DeleteUser&Version=2010-05-08&UserName={user_name}"),
-            None => "Action=DeleteUser&Version=2010-05-08".to_string(),
+        let mut parameters = vec![("Action", "DeleteUser"), ("Version", "2010-05-08")];
+
+        if let Some(user_name) = user_name {
+            parameters.push(("UserName", user_name));
         }
+
+        serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
     }
 
     /// Extract the `PolicyDocument` from a policy response and percent-decode it, standing in for
@@ -1388,43 +1395,58 @@ mod tests {
     /// Build the query parameters for a `TagUser` request, naming a user or leaving `UserName`
     /// off, and carrying the tags to apply.
     fn tag_user_parameters(user_name: Option<&str>, tags: &[(&str, &str)]) -> String {
-        let mut parameters = "Action=TagUser&Version=2010-05-08".to_string();
+        let mut parameters = action_parameters("TagUser");
 
         if let Some(user_name) = user_name {
-            parameters.push_str(&format!("&UserName={user_name}"));
+            parameters.push(("UserName".to_string(), user_name.to_string()));
         }
 
         append_tag_parameters(&mut parameters, tags);
-        parameters
+        serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
     }
 
     /// Build the query parameters for an `UntagUser` request, naming a user or leaving `UserName`
     /// off, and carrying the tag keys to remove.
     fn untag_user_parameters(user_name: Option<&str>, tag_keys: &[&str]) -> String {
-        let mut parameters = "Action=UntagUser&Version=2010-05-08".to_string();
+        let mut parameters = action_parameters("UntagUser");
 
         if let Some(user_name) = user_name {
-            parameters.push_str(&format!("&UserName={user_name}"));
+            parameters.push(("UserName".to_string(), user_name.to_string()));
         }
 
         // A list of scalars is indexed the same way a list of structures is, with no field name
         // after the index.
         for (index, key) in tag_keys.iter().enumerate() {
             let index = index + 1;
-            parameters.push_str(&format!("&TagKeys.member.{index}={key}"));
+            parameters.push((format!("TagKeys.member.{index}"), key.to_string()));
         }
 
-        parameters
+        serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
     }
 
-    /// Append the parameters naming `tags` to a query string being built.
+    /// Start the parameter list for a request invoking `action`, for the builders whose
+    /// parameters carry indexed names and so cannot borrow them.
+    ///
+    /// Every builder here finishes by form-encoding the pairs it collected rather than
+    /// interpolating them into a query string. Interpolating is wrong for more inputs than it
+    /// looks: the service decodes its parameters with form decoding, so a `+` -- legal in a user
+    /// name, a path, a tag key, and a tag value alike -- arrives as a space, and an `&` in a tag
+    /// value ends the value early and starts a parameter of its own. A request built that way
+    /// names something other than what the test asked for, and the assertion that follows is
+    /// measuring the wrong request.
+    fn action_parameters(action: &str) -> Vec<(String, String)> {
+        vec![("Action".to_string(), action.to_string()), ("Version".to_string(), "2010-05-08".to_string())]
+    }
+
+    /// Append the parameters naming `tags` to a parameter list being built.
     ///
     /// Lists arrive in the query string indexed under a `member` segment, one parameter per
     /// field, as the AWS query protocol spells them.
-    fn append_tag_parameters(parameters: &mut String, tags: &[(&str, &str)]) {
+    fn append_tag_parameters(parameters: &mut Vec<(String, String)>, tags: &[(&str, &str)]) {
         for (index, (key, value)) in tags.iter().enumerate() {
             let index = index + 1;
-            parameters.push_str(&format!("&Tags.member.{index}.Key={key}&Tags.member.{index}.Value={value}"));
+            parameters.push((format!("Tags.member.{index}.Key"), key.to_string()));
+            parameters.push((format!("Tags.member.{index}.Value"), value.to_string()));
         }
     }
 
@@ -1437,38 +1459,44 @@ mod tests {
         max_items: Option<i32>,
         marker: Option<&str>,
     ) -> String {
-        let mut parameters = list_parameters("ListAttachedUserPolicies", user_name, max_items, marker);
-
-        if let Some(path_prefix) = path_prefix {
-            parameters.push_str(&format!("&PathPrefix={}", path_prefix.replace('/', "%2F")));
-        }
-
-        parameters
+        list_parameters("ListAttachedUserPolicies", user_name, path_prefix, max_items, marker)
     }
 
     /// Build the query parameters for a `ListUserPolicies` request, naming a user or leaving
     /// `UserName` off, and carrying the pagination arguments the caller supplies.
     fn list_user_policies_parameters(user_name: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
-        list_parameters("ListUserPolicies", user_name, max_items, marker)
+        list_parameters("ListUserPolicies", user_name, None, max_items, marker)
     }
 
     /// Build the query parameters for a `ListUserTags` request, naming a user or leaving
     /// `UserName` off, and carrying the pagination arguments the caller supplies.
     fn list_user_tags_parameters(user_name: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
-        list_parameters("ListUserTags", user_name, max_items, marker)
+        list_parameters("ListUserTags", user_name, None, max_items, marker)
     }
 
     /// Build the query parameters for a paginated listing request, leaving off the parameters the
-    /// caller does not supply so that a request missing a required one can be exercised.
+    /// caller does not supply so that a request missing a required one can be exercised. A listing
+    /// that takes no path prefix passes `None`.
     ///
-    /// The parameters are form-encoded rather than interpolated: a pagination token is opaque, and
-    /// nothing here relies on what it happens to be made of.
-    fn list_parameters(action: &str, user_name: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
+    /// Every parameter is form-encoded rather than interpolated. A pagination token is opaque and
+    /// nothing here relies on what it happens to be made of; a path carries slashes, and may carry
+    /// a `+`, which the service decodes as a space rather than as itself -- a request built by
+    /// interpolation would arrive naming something other than what the test asked for.
+    fn list_parameters(
+        action: &str,
+        user_name: Option<&str>,
+        path_prefix: Option<&str>,
+        max_items: Option<i32>,
+        marker: Option<&str>,
+    ) -> String {
         let max_items = max_items.map(|max_items| max_items.to_string());
         let mut parameters = vec![("Action", action), ("Version", "2010-05-08")];
 
         if let Some(user_name) = user_name {
             parameters.push(("UserName", user_name));
+        }
+        if let Some(path_prefix) = path_prefix {
+            parameters.push(("PathPrefix", path_prefix));
         }
         if let Some(max_items) = max_items.as_deref() {
             parameters.push(("MaxItems", max_items));
