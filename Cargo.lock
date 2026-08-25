@@ -2807,6 +2807,7 @@ dependencies = [
  "chrono",
  "http-body-util",
  "log",
+ "pct-str",
  "pretty_assertions",
  "scratchstack-arn",
  "scratchstack-aspen",

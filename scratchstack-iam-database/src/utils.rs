@@ -177,6 +177,15 @@ pub const DB_VERSION: &str = "18.3";
 /// The initial username to use for connecting to the database before creating a scratchstack user.
 pub const BOOTSTRAP_USER: &str = "postgres";
 
+/// How long a `postgresql_embedded` command -- `initdb`, `pg_ctl start` -- is given to finish.
+///
+/// The crate's own default is five seconds, which is ample for one database but not for the
+/// several a package's tests stand up at once: each test owns its own instance, and `cargo test`
+/// runs them in parallel, so they contend for the machine while starting. Exceeding the timeout
+/// fails the test outright, so this is set well above what any single command needs rather than
+/// close to it.
+const DB_COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
+
 /// Generates a random password of the given length using characters from [`PASSWORD_CHARSET`].
 pub fn generate_password(length: usize) -> String {
     let mut result = String::with_capacity(length);
@@ -203,6 +212,7 @@ impl TempDatabase {
             .temporary(true)
             .port(port)
             .password(&bootstrap_password)
+            .timeout(Some(DB_COMMAND_TIMEOUT))
             .build();
 
         let database = PostgreSQL::new(settings);
