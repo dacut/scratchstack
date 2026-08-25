@@ -10,7 +10,6 @@ repository.workspace = true
 version.workspace = true
 
 [dependencies]
-chrono.workspace = true
 log.workspace = true
 scratchstack-arn.path = "../scratchstack-arn"
 scratchstack-aspen.path = "../scratchstack-aspen"
@@ -46,6 +45,7 @@ sqlx = { workspace = true, features = [
 
 [dev-dependencies]
 bytes.workspace = true
+chrono.workspace = true
 form_urlencoded.workspace = true
 http-body-util.workspace = true
 pretty_assertions.workspace = true
