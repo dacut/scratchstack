@@ -1,5 +1,8 @@
 use {
-    super::variant::Variant,
+    super::{
+        setop::{OperatorNames, display_names},
+        variant::Variant,
+    },
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
     ipnet::IpNet,
     scratchstack_aws_principal::SessionValue,
@@ -7,8 +10,8 @@ use {
 };
 
 /// IP address operation names.
-pub(super) const IP_ADDRESS_DISPLAY_NAMES: [&str; 4] =
-    ["IpAddress", "IpAddressIfExists", "NotIpAddress", "NotIpAddressIfExists"];
+pub(super) const IP_ADDRESS_DISPLAY_NAMES: [OperatorNames; 4] =
+    display_names!["IpAddress", "IpAddressIfExists", "NotIpAddress", "NotIpAddressIfExists"];
 
 pub(super) fn ip_address_match(
     context: &Context,

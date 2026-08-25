@@ -1,5 +1,8 @@
 use {
-    super::variant::Variant,
+    super::{
+        setop::{OperatorNames, SetOperator, display_names},
+        variant::Variant,
+    },
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
     chrono::{DateTime, Utc},
     scratchstack_aws_principal::SessionValue,
@@ -7,7 +10,7 @@ use {
 };
 
 /// Date operation names.
-pub(super) const DATE_DISPLAY_NAMES: [&str; 12] = [
+pub(super) const DATE_DISPLAY_NAMES: [OperatorNames; 12] = display_names![
     "DateEquals",
     "DateEqualsIfExists",
     "DateNotEquals",
@@ -31,8 +34,8 @@ pub enum DateCmp {
 }
 
 impl DateCmp {
-    pub(super) fn display_name(&self, variant: &Variant) -> &'static str {
-        DATE_DISPLAY_NAMES[*self as usize | variant.as_usize()]
+    pub(super) fn display_name(&self, set_op: SetOperator, variant: &Variant) -> &'static str {
+        DATE_DISPLAY_NAMES[*self as usize | variant.as_usize()].name(set_op)
     }
 }
 

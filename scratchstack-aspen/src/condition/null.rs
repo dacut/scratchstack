@@ -1,10 +1,15 @@
 use {
+    super::setop::{OperatorNames, display_names},
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
     scratchstack_aws_principal::SessionValue,
 };
 
-/// Null operation name.
-pub(super) const NULL_DISPLAY_NAME: &str = "Null";
+/// Null operation names.
+///
+/// `Null` has no variants of its own -- it asks whether the key is present, which neither
+/// `IfExists` nor negation has anything to add to -- so it is a single operator rather than a
+/// family of them.
+pub(super) const NULL_DISPLAY_NAMES: OperatorNames = display_names!["Null"];
 
 pub(super) fn null_match(
     context: &Context,

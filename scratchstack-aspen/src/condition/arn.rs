@@ -1,5 +1,8 @@
 use {
-    super::variant::Variant,
+    super::{
+        setop::{OperatorNames, SetOperator, display_names},
+        variant::Variant,
+    },
     crate::{AspenError, Context, PolicyVersion, eval::regex_from_glob, serutil::StringLikeList},
     scratchstack_arn::Arn,
     scratchstack_aws_principal::SessionValue,
@@ -14,8 +17,8 @@ pub enum ArnCmp {
 }
 
 impl ArnCmp {
-    pub(super) fn display_name(&self, variant: &Variant) -> &'static str {
-        ARN_DISPLAY_NAMES[*self as usize | variant.as_usize()]
+    pub(super) fn display_name(&self, set_op: SetOperator, variant: &Variant) -> &'static str {
+        ARN_DISPLAY_NAMES[*self as usize | variant.as_usize()].name(set_op)
     }
 }
 
@@ -23,7 +26,7 @@ impl ArnCmp {
 // then the negated if-exists variant.
 
 /// ARN operation names.
-const ARN_DISPLAY_NAMES: [&str; 8] = [
+const ARN_DISPLAY_NAMES: [OperatorNames; 8] = display_names![
     "ArnEquals",
     "ArnEqualsIfExists",
     "ArnNotEquals",

@@ -31,7 +31,10 @@ pub(crate) mod serutil;
 pub use {
     action::{Action, ActionList, SpecificActionDetails, SpecificActionDetailsBuilder},
     authz::{AuthorizationResult, authorize},
-    condition::{Condition, ConditionMap, ConditionOp, Variant as ConditionVariant, op as condop},
+    condition::{
+        Condition, ConditionCmp, ConditionMap, ConditionOp, SetOperator as ConditionSetOperator,
+        Variant as ConditionVariant, op as condop,
+    },
     effect::Effect,
     error::AspenError,
     eval::{Context, ContextBuilder, Decision},

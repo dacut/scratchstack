@@ -1,12 +1,15 @@
 use {
-    super::variant::Variant,
+    super::{
+        setop::{OperatorNames, display_names},
+        variant::Variant,
+    },
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
     base64::{Engine, engine::general_purpose::STANDARD},
     scratchstack_aws_principal::SessionValue,
 };
 
 /// Binary operation names.
-pub(super) const BINARY_DISPLAY_NAMES: [&str; 2] = ["BinaryEquals", "BinaryEqualsIfExists"];
+pub(super) const BINARY_DISPLAY_NAMES: [OperatorNames; 2] = display_names!["BinaryEquals", "BinaryEqualsIfExists"];
 
 pub(super) fn binary_match(
     _context: &Context,

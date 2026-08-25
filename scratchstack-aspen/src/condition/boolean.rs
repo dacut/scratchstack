@@ -1,11 +1,14 @@
 use {
-    super::variant::Variant,
+    super::{
+        setop::{OperatorNames, display_names},
+        variant::Variant,
+    },
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
     scratchstack_aws_principal::SessionValue,
 };
 
 /// Boolean operation names.
-pub(super) const BOOL_DISPLAY_NAMES: [&str; 2] = ["Bool", "BoolIfExists"];
+pub(super) const BOOL_DISPLAY_NAMES: [OperatorNames; 2] = display_names!["Bool", "BoolIfExists"];
 
 pub(super) fn bool_match(
     context: &Context,

@@ -1,12 +1,15 @@
 use {
-    super::variant::Variant,
+    super::{
+        setop::{OperatorNames, SetOperator, display_names},
+        variant::Variant,
+    },
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
     scratchstack_aws_principal::SessionValue,
     std::str::FromStr,
 };
 
 /// Numeric operation names.
-pub(super) const NUMERIC_DISPLAY_NAMES: [&str; 12] = [
+pub(super) const NUMERIC_DISPLAY_NAMES: [OperatorNames; 12] = display_names![
     "NumericEquals",
     "NumericEqualsIfExists",
     "NumericNotEquals",
@@ -30,8 +33,8 @@ pub enum NumericCmp {
 }
 
 impl NumericCmp {
-    pub(super) fn display_name(&self, variant: &Variant) -> &'static str {
-        NUMERIC_DISPLAY_NAMES[*self as usize | variant.as_usize()]
+    pub(super) fn display_name(&self, set_op: SetOperator, variant: &Variant) -> &'static str {
+        NUMERIC_DISPLAY_NAMES[*self as usize | variant.as_usize()].name(set_op)
     }
 }
 
