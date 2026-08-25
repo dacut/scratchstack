@@ -270,6 +270,31 @@ pub fn resource_account_context(account_id: &str) -> SessionData {
     context
 }
 
+/// Build the condition keys describing the tags a request asks to attach to the resource it
+/// creates or modifies, for the `request_context` argument of [`request_session_data`].
+///
+/// `tags` names each tag as a key/value pair, exactly as the request supplied them. These are the
+/// tags being applied, as opposed to the ones already on the resource, which
+/// [`resource_tag_context`] describes. Tag keys are compared case-insensitively, which
+/// [`SessionData`] provides by lower-casing keys as they are inserted.
+///
+/// A request that names no tags supplies no keys, so a policy conditioned on a tag it does not
+/// carry does not match rather than matching an empty string.
+///
+/// Note that AWS also exposes the set of tag keys through the multi-valued `aws:TagKeys`
+/// condition key, used with the `ForAllValues:`/`ForAnyValue:` set operators. Aspen implements
+/// neither the operators nor multi-valued session values, so that key is not supplied here.
+pub fn request_tag_context<'a>(tags: impl IntoIterator<Item = (&'a str, &'a str)>) -> SessionData {
+    let tags = tags.into_iter();
+    let mut context = SessionData::with_capacity(tags.size_hint().0);
+
+    for (key, value) in tags {
+        context.insert(&format!("{SESSION_KEY_PREFIX_AWS_REQUEST_TAG}{key}"), SessionValue::String(value.to_string()));
+    }
+
+    context
+}
+
 /// Build the service-agnostic condition keys describing the tags attached to the resource a
 /// request operates on, for the `request_context` argument of [`request_session_data`].
 ///
@@ -376,7 +401,10 @@ async fn identity_policy_set(
 #[cfg(test)]
 mod tests {
     use {
-        super::{access_denied_message, request_session_data, resource_account_context, resource_tag_context},
+        super::{
+            access_denied_message, request_session_data, request_tag_context, resource_account_context,
+            resource_tag_context,
+        },
         crate::{RequestMetadata, constants::*},
         pretty_assertions::assert_eq,
         scratchstack_arn::Arn,
@@ -519,6 +547,35 @@ mod tests {
             context.get(&format!("{SESSION_KEY_PREFIX_AWS_RESOURCE_TAG}Project")),
             Some(&SessionValue::String("Scratchstack".to_string()))
         );
+    }
+
+    /// The tags a request asks to apply are reported separately from the ones already on the
+    /// resource, so a policy can distinguish "tagged Engineering" from "being tagged
+    /// Engineering".
+    #[test]
+    fn request_tags_become_their_own_condition_keys() {
+        let context = request_tag_context([("Department", "Engineering")]);
+
+        assert_eq!(
+            context.get(&format!("{SESSION_KEY_PREFIX_AWS_REQUEST_TAG}Department")),
+            Some(&SessionValue::String("Engineering".to_string()))
+        );
+
+        // Tag keys are compared case-insensitively, as `SessionData` provides by lower-casing
+        // keys as they are inserted.
+        assert_eq!(context.get("aws:requesttag/department"), Some(&SessionValue::String("Engineering".to_string())));
+
+        // The resource's own tags are a different key, and this request names none.
+        assert_eq!(context.get(&format!("{SESSION_KEY_PREFIX_AWS_RESOURCE_TAG}Department")), None);
+    }
+
+    /// A request naming no tags supplies no keys, so a policy conditioned on a tag it does not
+    /// carry does not match rather than matching an empty string.
+    #[test]
+    fn a_request_without_tags_supplies_no_request_tags() {
+        let context = request_tag_context([]);
+
+        assert_eq!(context.get(&format!("{SESSION_KEY_PREFIX_AWS_REQUEST_TAG}Department")), None);
     }
 
     /// The denial names the caller by the ARN the session reports, and the resource it asked

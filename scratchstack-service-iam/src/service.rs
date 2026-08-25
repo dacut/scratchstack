@@ -1,7 +1,7 @@
 use {
     crate::{
         constants::*,
-        operations::{get_user, list_users},
+        operations::{create_user, delete_user, get_user, list_users},
     },
     scratchstack_aws_principal::{Principal, SessionData},
     scratchstack_aws_signature::SessionPolicies,
@@ -68,6 +68,14 @@ pub(crate) async fn serve_request(
     }
 
     match action.parse::<Action>() {
+        Ok(Action::CreateUser) => {
+            create_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
+                .await
+        }
+        Ok(Action::DeleteUser) => {
+            delete_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
+                .await
+        }
         Ok(Action::GetUser) => {
             get_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
                 .await
@@ -321,6 +329,90 @@ mod tests {
          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:GetUser","Resource":"*"}]}');
     "#;
 
+    /// Seed data for the `CreateUser` authorization tests. The callers carry grants scoped by the
+    /// path the new user is created under, by the tags the request asks to apply, and by the
+    /// permissions boundary it asks to attach; `Boundary-Policy` is the managed policy the
+    /// boundary-scoped grant names.
+    const CREATE_USER_TEST_DATA: &str = r#"
+        INSERT INTO iam.partition(partition) VALUES ('aws');
+
+        INSERT INTO iam.accounts(account_id, email, alias) VALUES
+        ('123456789012', 'create-user-test@example.com', 'create-user-test');
+
+        INSERT INTO iam.users(user_id, account_id, user_name_lower, user_name_cased, path) VALUES
+        ('SVCCREUSERBROAD', '123456789012', 'broad-creator', 'Broad-Creator', '/'),
+        ('SVCCREUSERPATH1', '123456789012', 'path-creator', 'Path-Creator', '/'),
+        ('SVCCREUSERTAG01', '123456789012', 'tag-creator', 'Tag-Creator', '/'),
+        ('SVCCREUSERPB001', '123456789012', 'boundary-creator', 'Boundary-Creator', '/'),
+        ('SVCCREUSERNONE1', '123456789012', 'no-grant-creator', 'No-Grant-Creator', '/'),
+        ('SVCCREUSEREXIST', '123456789012', 'existing-user', 'Existing-User', '/');
+
+        INSERT INTO iam.managed_policies(managed_policy_id, account_id, managed_policy_name_lower,
+            managed_policy_name_cased, path, default_version, deprecated, latest_version) VALUES
+        ('SVCCREUSERBND01', '123456789012', 'boundary-policy', 'Boundary-Policy', '/', 1, false, 1);
+
+        INSERT INTO iam.managed_policy_versions(managed_policy_id, managed_policy_version, policy_document) VALUES
+        ('SVCCREUSERBND01', 1,
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}');
+
+        INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+        ('SVCCREUSERBROAD', 'allow-create-any', 'Allow-Create-Any',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateUser","Resource":"*"}]}'),
+        ('SVCCREUSERPATH1', 'allow-create-in-division', 'Allow-Create-In-Division',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateUser",
+           "Resource":"arn:aws:iam::123456789012:user/division/*"}]}'),
+        ('SVCCREUSERTAG01', 'allow-create-engineering', 'Allow-Create-Engineering',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateUser","Resource":"*",
+           "Condition":{"StringEquals":{"aws:RequestTag/department":"Engineering"}}}]}'),
+        ('SVCCREUSERPB001', 'allow-create-with-boundary', 'Allow-Create-With-Boundary',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateUser","Resource":"*",
+           "Condition":{"StringEquals":
+             {"iam:PermissionsBoundary":"arn:aws:iam::123456789012:policy/Boundary-Policy"}}}]}');
+    "#;
+
+    /// Seed data for the `DeleteUser` authorization tests. The users being deleted carry the paths
+    /// and tags the resource ARN and the `aws:ResourceTag` condition keys are derived from, and
+    /// `Policy-Holder` owns an inline policy that blocks its deletion.
+    const DELETE_USER_TEST_DATA: &str = r#"
+        INSERT INTO iam.partition(partition) VALUES ('aws');
+
+        INSERT INTO iam.accounts(account_id, email, alias) VALUES
+        ('123456789012', 'delete-user-test@example.com', 'delete-user-test');
+
+        INSERT INTO iam.users(user_id, account_id, user_name_lower, user_name_cased, path) VALUES
+        ('SVCDELUSERBROAD', '123456789012', 'broad-deleter', 'Broad-Deleter', '/'),
+        ('SVCDELUSERPATH1', '123456789012', 'path-deleter', 'Path-Deleter', '/'),
+        ('SVCDELUSERTAG01', '123456789012', 'tag-deleter', 'Tag-Deleter', '/'),
+        ('SVCDELUSERNARRW', '123456789012', 'narrow-deleter', 'Narrow-Deleter', '/'),
+        ('SVCDELUSERTGT01', '123456789012', 'delete-me', 'Delete-Me', '/'),
+        ('SVCDELUSERTGT02', '123456789012', 'delete-me-too', 'Delete-Me-Too', '/'),
+        ('SVCDELUSERTGT03', '123456789012', 'division-target', 'Division-Target', '/division/'),
+        ('SVCDELUSERTGT04', '123456789012', 'engineering-target', 'Engineering-Target', '/'),
+        ('SVCDELUSERTGT05', '123456789012', 'sales-target', 'Sales-Target', '/'),
+        ('SVCDELUSERTGT06', '123456789012', 'policy-holder', 'Policy-Holder', '/'),
+        ('SVCDELUSERTGT07', '123456789012', 'root-target', 'Root-Target', '/');
+
+        INSERT INTO iam.user_tags(user_id, key_lower, key_cased, value) VALUES
+        ('SVCDELUSERTGT04', 'department', 'Department', 'Engineering'),
+        ('SVCDELUSERTGT05', 'department', 'Department', 'Sales');
+
+        INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+        ('SVCDELUSERBROAD', 'allow-delete-any', 'Allow-Delete-Any',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:DeleteUser","iam:GetUser"],
+           "Resource":"*"}]}'),
+        ('SVCDELUSERPATH1', 'allow-delete-in-division', 'Allow-Delete-In-Division',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:DeleteUser",
+           "Resource":"arn:aws:iam::123456789012:user/division/*"}]}'),
+        ('SVCDELUSERTAG01', 'allow-delete-engineering', 'Allow-Delete-Engineering',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:DeleteUser","Resource":"*",
+           "Condition":{"StringEquals":{"aws:ResourceTag/department":"Engineering"}}}]}'),
+        ('SVCDELUSERNARRW', 'allow-delete-one-user', 'Allow-Delete-One-User',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:DeleteUser",
+           "Resource":"arn:aws:iam::123456789012:user/Delete-Me-Too"}]}'),
+        ('SVCDELUSERTGT06', 'keep-me', 'Keep-Me',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}');
+    "#;
+
     /// Build the principal and session data the SigV4 layer would produce for a seeded user.
     fn user_identity(user_id: &str, user_name: &str) -> (Principal, SessionData) {
         let principal = Principal::from(
@@ -406,6 +498,43 @@ mod tests {
         match user_name {
             Some(user_name) => format!("Action=GetUser&Version=2010-05-08&UserName={user_name}"),
             None => "Action=GetUser&Version=2010-05-08".to_string(),
+        }
+    }
+
+    /// Build the query parameters for a `CreateUser` request naming `user_name`, optionally
+    /// under a path, carrying tags, and asking for a permissions boundary.
+    fn create_user_parameters(
+        user_name: &str,
+        path: Option<&str>,
+        tags: &[(&str, &str)],
+        permissions_boundary: Option<&str>,
+    ) -> String {
+        let mut parameters = format!("Action=CreateUser&Version=2010-05-08&UserName={user_name}");
+
+        if let Some(path) = path {
+            parameters.push_str(&format!("&Path={}", path.replace('/', "%2F")));
+        }
+
+        // Lists arrive in the query string indexed under a `member` segment, one parameter per
+        // field, as the AWS query protocol spells them.
+        for (index, (key, value)) in tags.iter().enumerate() {
+            let index = index + 1;
+            parameters.push_str(&format!("&Tags.member.{index}.Key={key}&Tags.member.{index}.Value={value}"));
+        }
+
+        if let Some(permissions_boundary) = permissions_boundary {
+            parameters.push_str(&format!("&PermissionsBoundary={}", permissions_boundary.replace('/', "%2F")));
+        }
+
+        parameters
+    }
+
+    /// Build the query parameters for a `DeleteUser` request, naming a user or leaving `UserName`
+    /// off entirely.
+    fn delete_user_parameters(user_name: Option<&str>) -> String {
+        match user_name {
+            Some(user_name) => format!("Action=DeleteUser&Version=2010-05-08&UserName={user_name}"),
+            None => "Action=DeleteUser&Version=2010-05-08".to_string(),
         }
     }
 
@@ -1004,5 +1133,317 @@ mod tests {
             body.contains(&format!("<Arn>arn:aws:iam::{TEST_ACCOUNT_ID}:user/Sales-User</Arn>")),
             "unexpected body: {body}"
         );
+    }
+
+    /// End-to-end authorization checks for `CreateUser` through `serve_request` against an
+    /// embedded PostgreSQL database. A single test function is used because the database is
+    /// stateful and expensive to start.
+    #[test_log::test(tokio::test)]
+    async fn test_create_user_authorization() {
+        let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
+        database.bootstrap().await.expect("Failed to set up, start, and bootstrap PostgreSQL database");
+        let pool = database
+            .get_scratchstack_pool()
+            .await
+            .expect("Failed to get PostgreSQL connection pool for scratchstack user");
+
+        let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
+        MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
+        raw_sql(CREATE_USER_TEST_DATA).execute(&mut *c).await.expect("Failed to load test data into database");
+        drop(c);
+
+        let svc_state = ServiceState::builder().db(Arc::new(pool)).secure_transport(true).build();
+
+        // A caller allowed iam:CreateUser on any user creates one at the root path.
+        let (principal, session_data) = user_identity("SVCCREUSERBROAD", "Broad-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_user_parameters("New-User", None, &[], None)).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(
+            body.contains(&format!("<Arn>arn:aws:iam::{TEST_ACCOUNT_ID}:user/New-User</Arn>")),
+            "unexpected body: {body}"
+        );
+        assert!(body.contains("<Path>/</Path>"), "unexpected body: {body}");
+        assert!(body.contains("<UserName>New-User</UserName>"), "unexpected body: {body}");
+
+        // The user is now readable, so the create was committed rather than rolled back.
+        let (principal, session_data) = user_identity("SVCCREUSERBROAD", "Broad-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_user_parameters("New-User", None, &[], None)).await;
+        assert_eq!(status, StatusCode::CONFLICT, "unexpected response: {body}");
+        assert!(body.contains("<Code>EntityAlreadyExists</Code>"), "unexpected body: {body}");
+
+        // User names are compared case-insensitively, so a name differing only in case collides
+        // with the user just created.
+        let (principal, session_data) = user_identity("SVCCREUSERBROAD", "Broad-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_user_parameters("NEW-USER", None, &[], None)).await;
+        assert_eq!(status, StatusCode::CONFLICT, "unexpected response: {body}");
+        assert!(body.contains("<Code>EntityAlreadyExists</Code>"), "unexpected body: {body}");
+
+        // The path the request asks for is part of the ARN being authorized, so a grant scoped to
+        // a path prefix reaches users created under that path...
+        let (principal, session_data) = user_identity("SVCCREUSERPATH1", "Path-Creator");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &create_user_parameters("Division-User", Some("/division/"), &[], None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(
+            body.contains(&format!("<Arn>arn:aws:iam::{TEST_ACCOUNT_ID}:user/division/Division-User</Arn>")),
+            "unexpected body: {body}"
+        );
+        assert!(body.contains("<Path>/division/</Path>"), "unexpected body: {body}");
+
+        // ...and no further: the same caller cannot create a user at the root path.
+        let (principal, session_data) = user_identity("SVCCREUSERPATH1", "Path-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_user_parameters("Root-User", None, &[], None)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+        assert!(
+            body.contains(&format!(
+                "User: arn:aws:iam::{TEST_ACCOUNT_ID}:user/Path-Creator is not authorized to perform: \
+                 iam:CreateUser on resource: arn:aws:iam::{TEST_ACCOUNT_ID}:user/Root-User"
+            )),
+            "unexpected body: {body}"
+        );
+
+        // A denial rolls the transaction back, so nothing was created.
+        let (principal, session_data) = user_identity("SVCCREUSERBROAD", "Broad-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_user_parameters("Root-User", None, &[], None)).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // The tags the request asks to apply back the aws:RequestTag condition keys. The policy
+        // spells the tag key in lower case while the request spells it "Department", confirming
+        // that tag keys are matched case-insensitively.
+        let (principal, session_data) = user_identity("SVCCREUSERTAG01", "Tag-Creator");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &create_user_parameters("Tagged-User", None, &[("Department", "Engineering")], None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<Key>Department</Key>"), "unexpected body: {body}");
+        assert!(body.contains("<Value>Engineering</Value>"), "unexpected body: {body}");
+
+        // A request asking for the tag with a different value does not satisfy the condition.
+        let (principal, session_data) = user_identity("SVCCREUSERTAG01", "Tag-Creator");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &create_user_parameters("Sales-User", None, &[("Department", "Sales")], None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // Neither does a request asking for no tags at all: the condition key is absent, so the
+        // grant does not apply rather than matching an empty value.
+        let (principal, session_data) = user_identity("SVCCREUSERTAG01", "Tag-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_user_parameters("Bare-User", None, &[], None)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The permissions boundary the request asks for backs iam:PermissionsBoundary, which is
+        // what lets a policy require that users be created only under a boundary.
+        let boundary = format!("arn:aws:iam::{TEST_ACCOUNT_ID}:policy/Boundary-Policy");
+        let (principal, session_data) = user_identity("SVCCREUSERPB001", "Boundary-Creator");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &create_user_parameters("Bounded-User", None, &[], Some(&boundary)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(
+            body.contains(&format!("<PermissionsBoundaryArn>{boundary}</PermissionsBoundaryArn>")),
+            "unexpected body: {body}"
+        );
+
+        // Omitting the boundary leaves the condition key absent, so the grant does not apply.
+        let (principal, session_data) = user_identity("SVCCREUSERPB001", "Boundary-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_user_parameters("Unbounded-User", None, &[], None)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // Naming a different boundary does not satisfy the condition either.
+        let other_boundary = format!("arn:aws:iam::{TEST_ACCOUNT_ID}:policy/Other-Policy");
+        let (principal, session_data) = user_identity("SVCCREUSERPB001", "Boundary-Creator");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &create_user_parameters("Other-Bounded-User", None, &[], Some(&other_boundary)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A caller with no grant at all is refused.
+        let (principal, session_data) = user_identity("SVCCREUSERNONE1", "No-Grant-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_user_parameters("Denied-User", None, &[], None)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A malformed user name is rejected before the request is authorized, so the caller
+        // learns the request was invalid rather than that it was denied.
+        let (principal, session_data) = user_identity("SVCCREUSERNONE1", "No-Grant-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_user_parameters("bad%20name%21", None, &[], None)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+        assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
+
+        // A permissions boundary naming a policy that does not exist is reported as such.
+        let missing_boundary = format!("arn:aws:iam::{TEST_ACCOUNT_ID}:policy/No-Such-Policy");
+        let (principal, session_data) = user_identity("SVCCREUSERBROAD", "Broad-Creator");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &create_user_parameters("Missing-Boundary-User", None, &[], Some(&missing_boundary)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
+        assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
+
+        // The account root user is implicitly allowed.
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_user_parameters("Root-Made-User", None, &[], None)).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(
+            body.contains(&format!("<Arn>arn:aws:iam::{TEST_ACCOUNT_ID}:user/Root-Made-User</Arn>")),
+            "unexpected body: {body}"
+        );
+    }
+
+    /// End-to-end authorization checks for `DeleteUser` through `serve_request` against an
+    /// embedded PostgreSQL database. A single test function is used because the database is
+    /// stateful and expensive to start.
+    #[test_log::test(tokio::test)]
+    async fn test_delete_user_authorization() {
+        let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
+        database.bootstrap().await.expect("Failed to set up, start, and bootstrap PostgreSQL database");
+        let pool = database
+            .get_scratchstack_pool()
+            .await
+            .expect("Failed to get PostgreSQL connection pool for scratchstack user");
+
+        let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
+        MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
+        raw_sql(DELETE_USER_TEST_DATA).execute(&mut *c).await.expect("Failed to load test data into database");
+        drop(c);
+
+        let svc_state = ServiceState::builder().db(Arc::new(pool)).secure_transport(true).build();
+
+        // A caller allowed iam:DeleteUser on any user deletes one.
+        let (principal, session_data) = user_identity("SVCDELUSERBROAD", "Broad-Deleter");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &delete_user_parameters(Some("Delete-Me"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<DeleteUserResponse"), "unexpected body: {body}");
+
+        // The delete was committed rather than rolled back, so the user is gone. The same caller
+        // is allowed iam:GetUser, so it is told the user no longer exists.
+        let (principal, session_data) = user_identity("SVCDELUSERBROAD", "Broad-Deleter");
+        let (status, body) = call(&svc_state, principal, session_data, &get_user_parameters(Some("Delete-Me"))).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
+        assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
+
+        // Deleting it a second time reports that it no longer exists.
+        let (principal, session_data) = user_identity("SVCDELUSERBROAD", "Broad-Deleter");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &delete_user_parameters(Some("Delete-Me"))).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
+        assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
+
+        // The resource ARN carries the target user's path, so a grant scoped to a path prefix
+        // reaches users under that path...
+        let (principal, session_data) = user_identity("SVCDELUSERPATH1", "Path-Deleter");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &delete_user_parameters(Some("Division-Target"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // ...and no further.
+        let (principal, session_data) = user_identity("SVCDELUSERPATH1", "Path-Deleter");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &delete_user_parameters(Some("Delete-Me-Too"))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The target user's own tags back the aws:ResourceTag condition keys, unlike CreateUser
+        // where the tags come from the request.
+        let (principal, session_data) = user_identity("SVCDELUSERTAG01", "Tag-Deleter");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &delete_user_parameters(Some("Engineering-Target"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // A user carrying the tag with a different value does not satisfy the condition.
+        let (principal, session_data) = user_identity("SVCDELUSERTAG01", "Tag-Deleter");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &delete_user_parameters(Some("Sales-Target"))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The denial rolled the transaction back, so the user is still there to be deleted by a
+        // caller that is allowed to.
+        let (principal, session_data) = user_identity("SVCDELUSERBROAD", "Broad-Deleter");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &delete_user_parameters(Some("Sales-Target"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // A user that still owns dependent resources cannot be deleted; the caller is allowed the
+        // action, so it learns the delete conflicts rather than that it was denied.
+        let (principal, session_data) = user_identity("SVCDELUSERBROAD", "Broad-Deleter");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &delete_user_parameters(Some("Policy-Holder"))).await;
+        assert_eq!(status, StatusCode::CONFLICT, "unexpected response: {body}");
+        assert!(body.contains("<Code>DeleteConflict</Code>"), "unexpected body: {body}");
+
+        // A user that does not exist is still authorized against the ARN the request names, so a
+        // caller allowed iam:DeleteUser on any user is told the user is missing...
+        let (principal, session_data) = user_identity("SVCDELUSERBROAD", "Broad-Deleter");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &delete_user_parameters(Some("No-Such-User"))).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
+        assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
+
+        // ...while a caller allowed it only on a specific user learns nothing about it.
+        let (principal, session_data) = user_identity("SVCDELUSERNARRW", "Narrow-Deleter");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &delete_user_parameters(Some("No-Such-User"))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // Unlike GetUser, an omitted UserName does not default to the calling user: DeleteUser
+        // requires the name, so a caller cannot delete itself by leaving it off.
+        let (principal, session_data) = user_identity("SVCDELUSERBROAD", "Broad-Deleter");
+        let (status, body) = call(&svc_state, principal, session_data, &delete_user_parameters(None)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+        assert!(body.contains("<Code>MalformedInput</Code>"), "unexpected body: {body}");
+
+        // The narrow grant reaches exactly the user it names.
+        let (principal, session_data) = user_identity("SVCDELUSERNARRW", "Narrow-Deleter");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &delete_user_parameters(Some("Delete-Me-Too"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // The account root user is implicitly allowed.
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &delete_user_parameters(Some("Root-Target"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
     }
 }

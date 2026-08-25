@@ -66,6 +66,10 @@ pub const SESSION_KEY_AWS_USERID: &str = "aws:userid";
 /// Session key for the `User-Agent` header the request carried, if any.
 pub const SESSION_KEY_AWS_USER_AGENT: &str = "aws:UserAgent";
 
+/// Session key prefix for the tags a request asks to attach to the resource it creates or
+/// modifies; the tag key follows the prefix.
+pub const SESSION_KEY_PREFIX_AWS_REQUEST_TAG: &str = "aws:RequestTag/";
+
 /// Session key prefix for the tags attached to the resource a request operates on; the tag key
 /// follows the prefix.
 pub const SESSION_KEY_PREFIX_AWS_RESOURCE_TAG: &str = "aws:ResourceTag/";

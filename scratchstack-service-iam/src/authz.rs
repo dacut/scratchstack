@@ -24,7 +24,7 @@ use {
     sqlx::postgres::PgTransaction,
 };
 
-pub(crate) use scratchstack_service_common::authz::resource_account_context;
+pub(crate) use scratchstack_service_common::authz::{request_tag_context, resource_account_context};
 
 /// Authorize `action` for the calling principal, gathering the principal's identity-based
 /// policies inside `tx`. An IAM user caller is governed by the user's policies (including
@@ -100,6 +100,26 @@ pub(crate) fn resource_tag_context(tags: &[Tag]) -> SessionData {
             &format!("{SESSION_KEY_PREFIX_IAM_RESOURCE_TAG}{}", tag.key),
             SessionValue::String(tag.value.clone()),
         );
+    }
+
+    context
+}
+
+/// Build the condition keys describing the permissions boundary a request asks to attach to the
+/// entity it creates or modifies, for the `request_context` argument of [`check_authorization`].
+///
+/// The boundary is named by the ARN of the managed policy serving as it, which IAM exposes
+/// through the `iam:PermissionsBoundary` condition key. This is what lets a policy require that
+/// entities be created only with a particular boundary, so that a caller cannot create an entity
+/// more privileged than itself.
+///
+/// A request asking for no boundary supplies no key, so such a condition does not match rather
+/// than matching an empty string.
+pub(crate) fn permissions_boundary_context(permissions_boundary: Option<&str>) -> SessionData {
+    let mut context = SessionData::with_capacity(1);
+
+    if let Some(permissions_boundary) = permissions_boundary {
+        context.insert(SESSION_KEY_IAM_PERMISSIONS_BOUNDARY, SessionValue::String(permissions_boundary.to_string()));
     }
 
     context

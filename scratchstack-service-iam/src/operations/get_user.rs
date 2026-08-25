@@ -2,6 +2,7 @@ use {
     crate::{
         authz::{check_authorization, resource_tag_context},
         constants::*,
+        operations::user_arn,
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
     },
     scratchstack_arn::Arn,
@@ -13,14 +14,13 @@ use {
         query::from_query_str,
         response::Responder as _,
     },
-    scratchstack_iam_database::{RequestExecutor as _, partition::get_current_partition_or_fail},
+    scratchstack_iam_database::RequestExecutor as _,
     scratchstack_shapes_iam::{
         action::Action,
         error_meta::Error as IamError,
         operation::{GetUserInternalRequest, GetUserRequest, GetUserResponseEnvelope},
         types::error::ValidationError,
     },
-    sqlx::postgres::PgTransaction,
     std::str::FromStr as _,
 };
 
@@ -106,7 +106,11 @@ pub(crate) async fn get_user(
                 return internal_failure(request_id);
             }
         },
-        Err(_) => match missing_user_arn(&mut tx, request_id, &account_id, &user_name).await {
+        // Authorization is still evaluated when no such user exists, so that a caller allowed
+        // `iam:GetUser` broadly is told the user does not exist while one allowed it only on
+        // specific users learns nothing at all. There is no user to read a path from, so the
+        // root path is assumed.
+        Err(_) => match user_arn(&mut tx, request_id, &account_id, "/", &user_name).await {
             Ok(arn) => (arn, [].as_slice()),
             Err(response) => return *response,
         },
@@ -140,32 +144,4 @@ pub(crate) async fn get_user(
     }
 
     response
-}
-
-/// Build the ARN a `GetUser` request names when no such user exists.
-///
-/// Authorization is still evaluated in that case, so that a caller allowed `iam:GetUser` broadly
-/// is told the user does not exist while one allowed it only on specific users learns nothing at
-/// all. There is no user to read a path from, so the root path is assumed.
-async fn missing_user_arn(
-    tx: &mut PgTransaction<'_>,
-    request_id: RequestId,
-    account_id: &str,
-    user_name: &str,
-) -> Result<Arn, Box<Response<Body>>> {
-    let partition = match get_current_partition_or_fail(tx, request_id).await {
-        Ok(partition) => partition,
-        Err(e) => return Err(Box::new(e.respond())),
-    };
-
-    Arn::builder()
-        .partition(partition)
-        .service(SERVICE_IAM)
-        .account_id(account_id)
-        .resource(format!("{ARN_RESOURCE_TYPE_USER}/{user_name}"))
-        .build()
-        .map_err(|e| {
-            log::error!("{request_id}: Could not construct ARN for user {user_name}: {e}");
-            Box::new(internal_failure(request_id))
-        })
 }

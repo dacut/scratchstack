@@ -20,7 +20,10 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{CreateUserInternalRequest, CreateUserResponse},
-        types::{AttachedPermissionsBoundary, PermissionsBoundaryAttachmentType, Tag, User},
+        types::{
+            AttachedPermissionsBoundary, PermissionsBoundaryAttachmentType, Tag, User,
+            error::EntityAlreadyExistsException,
+        },
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
 };
@@ -97,6 +100,19 @@ pub async fn create_user(
     {
         Ok(result) => result,
         Err(e) => {
+            // A unique violation on uk_iu_acctid_uname means the account already has a user with
+            // this name; names are compared case-insensitively, so the collision is on the
+            // lower-cased name rather than the one the caller spelled.
+            if let sqlx::Error::Database(db_err) = &e
+                && db_err.code().as_deref() == Some(SQLSTATE_UNIQUE_VIOLATION)
+            {
+                let message = format!("User with name {user_name} already exists.");
+                return Err(EntityAlreadyExistsException::builder()
+                    .message(message)
+                    .request_id(request_id)
+                    .build()
+                    .into());
+            }
             log::error!("Failed to insert user into database: {e}");
             return Err(internal_failure(request_id).into());
         }

@@ -146,6 +146,14 @@ pub(crate) const SERVICE_KEY_IAM: &str = "iam";
 #[allow(unused)]
 pub(crate) const SERVICE_KEY_STS: &str = "sts";
 
+/// The PostgreSQL SQLSTATE reported for a foreign-key violation, raised when a row still
+/// referenced by another table is deleted.
+pub(crate) const SQLSTATE_FOREIGN_KEY_VIOLATION: &str = "23503";
+
+/// The PostgreSQL SQLSTATE reported for a unique-constraint violation, raised when a row
+/// duplicates one that already exists.
+pub(crate) const SQLSTATE_UNIQUE_VIOLATION: &str = "23505";
+
 /// A fixed key for STS pagination operations. We really don't care if this is exposed since the
 /// user has raw access to the database anyway.
 pub(crate) const STS_PAGINATION_KEY: &[u8; PAGINATION_KEY_SIZE] = b"\xb2\xa5\xac\x4c\x41\x9e\x8a\x62\x01\xf4\x18\x53\xde\x61\x63\x86\x14\x4a\xd1\x20\xf1\xbb\xe0\x93\x62\x5e\xf4\xc6\x6a\x7d\x80\xd8";

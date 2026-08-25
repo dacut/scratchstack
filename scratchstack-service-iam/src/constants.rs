@@ -18,6 +18,13 @@ pub(crate) const MSG_USER_NAME_REQUIRED: &str = "Must specify userName when call
 /// The service name used in SigV4 credential scopes.
 pub(crate) const SERVICE_IAM: &str = "iam";
 
+/// Session key for the permissions boundary a request asks to attach to the entity it creates or
+/// modifies, named by the ARN of the managed policy serving as the boundary.
+///
+/// A request that asks for no boundary supplies no value, so a policy requiring a particular
+/// boundary does not match rather than matching an empty string.
+pub(crate) const SESSION_KEY_IAM_PERMISSIONS_BOUNDARY: &str = "iam:PermissionsBoundary";
+
 /// Session key prefix for the tags attached to the IAM entity a request operates on; the tag key
 /// follows the prefix.
 ///
