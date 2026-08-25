@@ -348,6 +348,7 @@ mod tests {
         ('SVCCREUSERPB001', '123456789012', 'boundary-creator', 'Boundary-Creator', '/'),
         ('SVCCREUSERNONE1', '123456789012', 'no-grant-creator', 'No-Grant-Creator', '/'),
         ('SVCCREUSERONLY1', '123456789012', 'create-only-creator', 'Create-Only-Creator', '/'),
+        ('SVCCREUSERARN01', '123456789012', 'arn-boundary-creator', 'Arn-Boundary-Creator', '/'),
         ('SVCCREUSEREXIST', '123456789012', 'existing-user', 'Existing-User', '/');
 
         INSERT INTO iam.managed_policies(managed_policy_id, account_id, managed_policy_name_lower,
@@ -373,7 +374,11 @@ mod tests {
            "Condition":{"StringEquals":
              {"iam:PermissionsBoundary":"arn:aws:iam::123456789012:policy/Boundary-Policy"}}}]}'),
         ('SVCCREUSERONLY1', 'allow-create-only', 'Allow-Create-Only',
-         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateUser","Resource":"*"}]}');
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateUser","Resource":"*"}]}'),
+        ('SVCCREUSERARN01', 'allow-create-with-arn-boundary', 'Allow-Create-With-Arn-Boundary',
+         '{"Version":"2012-10-17","Statement":[{"Sid":"VisualEditor0","Effect":"Allow","Action":"iam:CreateUser",
+           "Resource":"*","Condition":{"ArnEquals":
+             {"iam:PermissionsBoundary":"arn:aws:iam::123456789012:policy/Boundary-Policy"}}}]}');
     "#;
 
     /// Seed data for the `DeleteUser` authorization tests. The users being deleted carry the paths
@@ -1385,6 +1390,45 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // The boundary condition works with the ArnEquals operator as well as StringEquals, which
+        // is what the console's policy editor emits for an ARN-valued key. Aspen treats ArnEquals
+        // and ArnLike identically, as AWS documents them to be.
+        let (principal, session_data) = user_identity("SVCCREUSERARN01", "Arn-Boundary-Creator");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &create_user_parameters("Arn-Bounded-User", None, &[], Some(&boundary)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(
+            body.contains(&format!("<PermissionsBoundaryArn>{boundary}</PermissionsBoundaryArn>")),
+            "unexpected body: {body}"
+        );
+
+        // A different boundary does not satisfy it.
+        let (principal, session_data) = user_identity("SVCCREUSERARN01", "Arn-Boundary-Creator");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &create_user_parameters("Arn-Other-Bounded-User", None, &[], Some(&other_boundary)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // Nor does omitting the boundary: the condition key is absent, which an ARN operator
+        // treats as a null that only its IfExists variant would accept. This is the case that
+        // matters, since a policy written this way exists to stop unbounded users being created.
+        let (principal, session_data) = user_identity("SVCCREUSERARN01", "Arn-Boundary-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_user_parameters("Arn-Unbounded-User", None, &[], None))
+                .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
 
         // A caller with no grant at all is refused.
         let (principal, session_data) = user_identity("SVCCREUSERNONE1", "No-Grant-Creator");
