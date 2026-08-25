@@ -20,7 +20,7 @@ pub enum Variant {
 impl Variant {
     /// Return the index into the operation names for this variant.
     #[inline]
-    pub(super) fn as_usize(self) -> usize {
+    pub(super) const fn as_usize(self) -> usize {
         self as usize
     }
 
