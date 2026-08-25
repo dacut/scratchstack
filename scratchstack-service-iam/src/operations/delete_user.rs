@@ -119,7 +119,7 @@ pub(crate) async fn delete_user(
         &principal,
         &session_data,
         &session_policies,
-        request_metadata,
+        &request_metadata,
         Action::DeleteUser,
         &[resource_arn],
         &resource_tag_context(resource_tags),

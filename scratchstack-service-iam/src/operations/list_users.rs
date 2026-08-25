@@ -81,7 +81,7 @@ pub(crate) async fn list_users(
         &principal,
         &session_data,
         &session_policies,
-        request_metadata,
+        &request_metadata,
         Action::ListUsers,
         &[],
         &resource_account_context(account_id),

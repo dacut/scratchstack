@@ -38,7 +38,8 @@ pub(crate) use scratchstack_service_common::authz::{request_tag_context, resourc
 ///
 /// `request_metadata` describes the request itself -- the connection it arrived on and the
 /// headers it announced itself with -- and supplies the `aws:SecureTransport`, `aws:SourceIp`,
-/// `aws:referer`, and `aws:UserAgent` condition keys.
+/// `aws:referer`, and `aws:UserAgent` condition keys. It is borrowed rather than consumed, since
+/// one request may need several actions authorized against the same connection facts.
 ///
 /// `request_context` holds the condition keys derived from the request itself and from the
 /// resources it names -- the tags on those resources, for example. They are layered onto the
@@ -62,12 +63,12 @@ pub(crate) async fn check_authorization(
     principal: &Principal,
     session_data: &SessionData,
     session_policies: &SessionPolicies,
-    request_metadata: RequestMetadata,
+    request_metadata: &RequestMetadata,
     action: Action,
     resources: &[Arn],
     request_context: &SessionData,
 ) -> Result<(), Box<Response<Body>>> {
-    let session_data = request_session_data(session_data, &request_metadata, resources, request_context);
+    let session_data = request_session_data(session_data, request_metadata, resources, request_context);
 
     scratchstack_service_common::authz::check_authorization(
         tx,

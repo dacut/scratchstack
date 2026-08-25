@@ -27,6 +27,10 @@ use {
 /// any session policies, must allow `iam:CreateUser` on the user being created; the account root
 /// user is implicitly allowed.
 ///
+/// A request that asks for tags must also be allowed `iam:TagUser`: creating a user does not
+/// carry permission to tag one. A permissions boundary needs no second action, and is governed by
+/// the `iam:PermissionsBoundary` condition key on `iam:CreateUser` itself.
+///
 /// The user is created in the caller's own account. `UserName` is required; `Path` defaults to
 /// the root path, and the user carries the tags and permissions boundary the request names.
 pub(crate) async fn create_user(
@@ -97,21 +101,40 @@ pub(crate) async fn create_user(
         request_tag_context(request.tags.iter().map(|tag| (tag.key.as_str(), tag.value.as_str())));
     request_context.extend(&permissions_boundary_context(request.permissions_boundary.as_deref()));
 
-    if let Err(response) = check_authorization(
-        &mut tx,
-        request_id,
-        &principal,
-        &session_data,
-        &session_policies,
-        request_metadata,
-        Action::CreateUser,
-        &[resource_arn],
-        &request_context,
-    )
-    .await
-    {
-        // Dropping the transaction rolls it back.
-        return *response;
+    // Tagging a user is a separately authorized action, and doing it as part of creating the user
+    // does not change that: a caller allowed to create users is not thereby allowed to tag them.
+    // So a request that asks for tags must be allowed iam:TagUser as well, against the same user
+    // and the same request context.
+    //
+    // Attaching a permissions boundary is not treated this way. The service allows it under
+    // iam:CreateUser alone -- confirmed against it -- with the boundary governed by the
+    // iam:PermissionsBoundary condition key above rather than by iam:PutUserPermissionsBoundary,
+    // which covers only changing the boundary on a user that already exists.
+    let mut actions = Vec::with_capacity(2);
+    actions.push(Action::CreateUser);
+    if !request.tags.is_empty() {
+        actions.push(Action::TagUser);
+    }
+
+    let resources = [resource_arn];
+
+    for action in actions {
+        if let Err(response) = check_authorization(
+            &mut tx,
+            request_id,
+            &principal,
+            &session_data,
+            &session_policies,
+            &request_metadata,
+            action,
+            &resources,
+            &request_context,
+        )
+        .await
+        {
+            // Dropping the transaction rolls it back.
+            return *response;
+        }
     }
 
     let response = match request.execute(&mut tx, request_id).await {
