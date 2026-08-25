@@ -1,5 +1,5 @@
 use {
-    crate::{Condition, Context, PolicyVersion},
+    crate::{Condition, Context, PolicyVersion, condop},
     chrono::DateTime,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::{Principal, Service, SessionData, SessionValue},
@@ -1843,4 +1843,243 @@ fn test_string_equals_ignore_case_bad_variables() {
     let context = make_context(&session_data);
     let e = cmap.matches(&context, PolicyVersion::V2012_10_17).unwrap_err();
     assert_eq!(e.to_string(), "Invalid variable substitution: $!");
+}
+
+/// `ForAllValues:` matches when every value a multivalued key holds matches one of the values the
+/// policy lists. A key holding no values matches vacuously.
+#[test_log::test]
+fn test_for_all_values() {
+    let cmap = Condition::from_str(r#"{"ForAllValues:StringEquals": {"hello": ["red", "green", "blue"]}}"#).unwrap();
+
+    // An absent key holds no values, so every one of them matches.
+    let mut session_data = SessionData::new();
+    assert!(session_matches(&cmap, &session_data));
+
+    // So does a key supplied with an empty set of values.
+    session_data.insert("hello", SessionValue::list(Vec::<String>::new()));
+    assert!(session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::list(["red"]));
+    assert!(session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::list(["blue", "red"]));
+    assert!(session_matches(&cmap, &session_data));
+
+    // One value outside the policy's set is enough to fail.
+    session_data.insert("hello", SessionValue::list(["red", "purple"]));
+    assert!(!session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::list(["purple"]));
+    assert!(!session_matches(&cmap, &session_data));
+
+    // A single-valued key is a set of one.
+    session_data.insert("hello", SessionValue::from("green"));
+    assert!(session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::from("purple"));
+    assert!(!session_matches(&cmap, &session_data));
+
+    // A value of a type the comparison cannot compare matches nothing.
+    session_data.insert("hello", SessionValue::list([SessionValue::from("red"), SessionValue::from(3)]));
+    assert!(!session_matches(&cmap, &session_data));
+}
+
+/// `ForAnyValue:` matches when at least one value a multivalued key holds matches one of the
+/// values the policy lists. A key holding no values has nothing to match.
+#[test_log::test]
+fn test_for_any_value() {
+    let cmap = Condition::from_str(r#"{"ForAnyValue:StringEquals": {"hello": ["red", "green", "blue"]}}"#).unwrap();
+
+    // An absent key holds no value that could match.
+    let mut session_data = SessionData::new();
+    assert!(!session_matches(&cmap, &session_data));
+
+    // Neither does a key supplied with an empty set of values.
+    session_data.insert("hello", SessionValue::list(Vec::<String>::new()));
+    assert!(!session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::list(["red"]));
+    assert!(session_matches(&cmap, &session_data));
+
+    // One value inside the policy's set is enough to match, whatever the others are.
+    session_data.insert("hello", SessionValue::list(["purple", "green"]));
+    assert!(session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::list(["purple", "orange"]));
+    assert!(!session_matches(&cmap, &session_data));
+
+    // A single-valued key is a set of one.
+    session_data.insert("hello", SessionValue::from("blue"));
+    assert!(session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::from("purple"));
+    assert!(!session_matches(&cmap, &session_data));
+}
+
+/// The `IfExists` variant passes over a key the request did not supply, which for `ForAnyValue:`
+/// is the only case its answer differs in. (`ForAllValues:` already matches such a key.)
+#[test_log::test]
+fn test_set_operators_if_exists() {
+    let cmap =
+        Condition::from_str(r#"{"ForAnyValue:StringEqualsIfExists": {"hello": ["red", "green", "blue"]}}"#).unwrap();
+
+    let mut session_data = SessionData::new();
+    assert!(session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::list(Vec::<String>::new()));
+    assert!(session_matches(&cmap, &session_data));
+
+    // Once the key holds values, they are compared like any others.
+    session_data.insert("hello", SessionValue::list(["purple"]));
+    assert!(!session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::list(["purple", "red"]));
+    assert!(session_matches(&cmap, &session_data));
+
+    let cmap =
+        Condition::from_str(r#"{"ForAllValues:StringEqualsIfExists": {"hello": ["red", "green", "blue"]}}"#).unwrap();
+
+    let mut session_data = SessionData::new();
+    assert!(session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::list(["red", "purple"]));
+    assert!(!session_matches(&cmap, &session_data));
+}
+
+/// A negated comparison is applied to each value in turn, so `ForAllValues:` requires every value
+/// to differ and `ForAnyValue:` requires only one to.
+#[test_log::test]
+fn test_set_operators_negated() {
+    let cmap = Condition::from_str(r#"{"ForAllValues:StringNotEquals": {"hello": ["red"]}}"#).unwrap();
+
+    let mut session_data = SessionData::new();
+    assert!(session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::list(["green", "blue"]));
+    assert!(session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::list(["green", "red"]));
+    assert!(!session_matches(&cmap, &session_data));
+
+    let cmap = Condition::from_str(r#"{"ForAnyValue:StringNotEquals": {"hello": ["red"]}}"#).unwrap();
+
+    let mut session_data = SessionData::new();
+    assert!(!session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::list(["green", "red"]));
+    assert!(session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::list(["red"]));
+    assert!(!session_matches(&cmap, &session_data));
+}
+
+/// The set operators are not tied to string comparisons: they distribute any comparison over the
+/// values a key holds.
+#[test_log::test]
+fn test_set_operators_over_other_comparisons() {
+    let cmap = Condition::from_str(r#"{"ForAllValues:NumericLessThan": {"hello": ["10"]}}"#).unwrap();
+
+    let mut session_data = SessionData::new();
+    session_data.insert("hello", SessionValue::list([SessionValue::from(1), SessionValue::from(9)]));
+    assert!(session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::list([SessionValue::from(1), SessionValue::from(10)]));
+    assert!(!session_matches(&cmap, &session_data));
+
+    let cmap = Condition::from_str(r#"{"ForAnyValue:ArnLike": {"hello": ["arn:aws:s3:::example/*"]}}"#).unwrap();
+
+    let mut session_data = SessionData::new();
+    session_data.insert("hello", SessionValue::list(["arn:aws:s3:::other/file", "arn:aws:s3:::example/file"]));
+    assert!(session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::list(["arn:aws:s3:::other/file"]));
+    assert!(!session_matches(&cmap, &session_data));
+
+    // Variables are substituted in the values the policy lists, as they are without a set
+    // operator.
+    let cmap = Condition::from_str(r#"{"ForAllValues:StringLike": {"hello": ["${prefix}-*"]}}"#).unwrap();
+
+    let mut session_data = SessionData::new();
+    session_data.insert("prefix", SessionValue::from("team"));
+    session_data.insert("hello", SessionValue::list(["team-a", "team-b"]));
+    assert!(session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::list(["team-a", "other-b"]));
+    assert!(!session_matches(&cmap, &session_data));
+}
+
+/// A multivalued key compared without a set operator matches nothing: the comparison has no
+/// notion of a set of values to compare against.
+#[test_log::test]
+fn test_multivalued_key_without_set_operator() {
+    let cmap = Condition::from_str(r#"{"StringEquals": {"hello": ["red"]}}"#).unwrap();
+
+    let mut session_data = SessionData::new();
+    session_data.insert("hello", SessionValue::list(["red"]));
+    assert!(!session_matches(&cmap, &session_data));
+
+    // The key is present, so the IfExists variant has nothing to pass over.
+    let cmap = Condition::from_str(r#"{"StringEqualsIfExists": {"hello": ["red"]}}"#).unwrap();
+    assert!(!session_matches(&cmap, &session_data));
+
+    // A key holding no values is the same as an absent key, which IfExists does pass over.
+    session_data.insert("hello", SessionValue::list(Vec::<String>::new()));
+    assert!(session_matches(&cmap, &session_data));
+}
+
+/// `Null` asks whether the key is present rather than comparing the values it holds, so a set
+/// operator has nothing to distribute over and the answer is the same with or without one. A key
+/// holding no values counts as absent.
+#[test_log::test]
+fn test_null_with_multivalued_key() {
+    for op in ["Null", "ForAllValues:Null", "ForAnyValue:Null"] {
+        let present = Condition::from_str(&format!(r#"{{"{op}": {{"hello": ["false"]}}}}"#)).unwrap();
+        let absent = Condition::from_str(&format!(r#"{{"{op}": {{"hello": ["true"]}}}}"#)).unwrap();
+
+        let mut session_data = SessionData::new();
+        assert!(!session_matches(&present, &session_data), "{op} with an absent key");
+        assert!(session_matches(&absent, &session_data), "{op} with an absent key");
+
+        session_data.insert("hello", SessionValue::list(["red", "green"]));
+        assert!(session_matches(&present, &session_data), "{op} with a multivalued key");
+        assert!(!session_matches(&absent, &session_data), "{op} with a multivalued key");
+
+        session_data.insert("hello", SessionValue::list(Vec::<String>::new()));
+        assert!(!session_matches(&present, &session_data), "{op} with an empty multivalued key");
+        assert!(session_matches(&absent, &session_data), "{op} with an empty multivalued key");
+    }
+}
+
+/// A condition clause naming several operators requires all of them to match, set operators
+/// included.
+#[test_log::test]
+fn test_set_operators_alongside_other_operators() {
+    let cmap = Condition::from_str(
+        r#"{"ForAllValues:StringEquals": {"tags": ["red", "green"]}, "StringEquals": {"hello": ["world"]}}"#,
+    )
+    .unwrap();
+
+    let mut session_data = SessionData::new();
+    session_data.insert("tags", SessionValue::list(["red"]));
+    session_data.insert("hello", SessionValue::from("world"));
+    assert!(session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::from("mars"));
+    assert!(!session_matches(&cmap, &session_data));
+
+    session_data.insert("hello", SessionValue::from("world"));
+    session_data.insert("tags", SessionValue::list(["red", "purple"]));
+    assert!(!session_matches(&cmap, &session_data));
+}
+
+/// An operator written with a set operator prefix survives a round trip through the policy
+/// document it was read from.
+#[test_log::test]
+fn test_set_operator_serialization() {
+    let source = r#"{"ForAnyValue:StringLike":{"hello":["w*ld"]}}"#;
+    let cmap = Condition::from_str(source).unwrap();
+
+    assert!(cmap.contains_key(&condop::StringLike.for_any_value()));
+    assert!(!cmap.contains_key(&condop::StringLike));
+    assert_eq!(serde_json::to_string(&cmap).unwrap(), source);
 }

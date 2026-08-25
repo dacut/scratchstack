@@ -1,11 +1,14 @@
 use {
-    super::variant::Variant,
+    super::{
+        setop::{OperatorNames, SetOperator, display_names},
+        variant::Variant,
+    },
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
     scratchstack_aws_principal::SessionValue,
 };
 
 /// String operation names.
-const STRING_DISPLAY_NAMES: [&str; 12] = [
+const STRING_DISPLAY_NAMES: [OperatorNames; 12] = display_names![
     "StringEquals",
     "StringEqualsIfExists",
     "StringNotEquals",
@@ -29,8 +32,8 @@ pub enum StringCmp {
 }
 
 impl StringCmp {
-    pub(super) fn display_name(&self, variant: &Variant) -> &'static str {
-        STRING_DISPLAY_NAMES[*self as usize | variant.as_usize()]
+    pub(super) fn display_name(&self, set_op: SetOperator, variant: &Variant) -> &'static str {
+        STRING_DISPLAY_NAMES[*self as usize | variant.as_usize()].name(set_op)
     }
 }
 

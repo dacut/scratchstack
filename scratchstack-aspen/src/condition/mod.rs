@@ -14,10 +14,15 @@ pub mod op;
 
 #[cfg(test)]
 mod op_tests;
+mod setop;
 mod string;
 mod variant;
 
-pub use {op::ConditionOp, variant::Variant};
+pub use {
+    op::{ConditionCmp, ConditionOp},
+    setop::SetOperator,
+    variant::Variant,
+};
 
 use {
     crate::{AspenError, Context, PolicyVersion, from_str_json, serutil::StringLikeList},
@@ -44,6 +49,10 @@ pub type ConditionMap = BTreeMap<String, StringLikeList<String>>;
 /// This is (logically and physically) a two-level map. The first level (this structure) maps [`ConditionOp`] operators
 /// to a [`ConditionMap`]. The second level, the [`ConditionMap`] itself, maps condition variable names to a list of
 /// allowed values.
+///
+/// An operator may carry a [`SetOperator`] prefix -- `ForAllValues:StringEquals` -- naming how the
+/// comparison applies to a condition key holding more than one value. The clause as a whole
+/// matches only if every operator in it does.
 #[derive(Builder, Clone, Debug, Eq, PartialEq)]
 pub struct Condition {
     #[builder(default, with = |entries: impl IntoIterator<Item = (ConditionOp, ConditionMap)>| entries.into_iter().collect())]
