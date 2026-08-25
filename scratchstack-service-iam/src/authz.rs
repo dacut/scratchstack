@@ -128,6 +128,28 @@ pub(crate) fn permissions_boundary_context(permissions_boundary: Option<&str>) -
     context
 }
 
+/// Build the condition keys describing the managed policy a request asks to attach to or detach
+/// from an IAM entity, for the `request_context` argument of [`check_authorization`].
+///
+/// The policy is named by its ARN, which IAM exposes through the `iam:PolicyARN` condition key.
+/// This is what lets a policy say which managed policies a caller may hand out or take away,
+/// separately from which entities it may hand them to; without it, a grant of
+/// `iam:AttachUserPolicy` on a user reaches every policy in the account.
+///
+/// The ARN is reported as the request spelled it, since that is what the request acts on. A
+/// request naming something that is not an ARN at all matches none of the ARNs a policy lists, so
+/// such a condition denies rather than being skipped.
+///
+/// An AWS-owned policy can be named either through the `aws` account alias, as IAM spells it, or
+/// through the numeric account this implementation stores it under, and the two spellings are
+/// different strings to compare against. A condition meant to cover AWS-owned policies should
+/// cover both.
+pub(crate) fn policy_arn_context(policy_arn: &str) -> SessionData {
+    let mut context = SessionData::with_capacity(1);
+    context.insert(SESSION_KEY_IAM_POLICY_ARN, SessionValue::String(policy_arn.to_string()));
+    context
+}
+
 /// Render an authorization failure as the error response IAM reports it with.
 fn error_response(request_id: RequestId, error: AuthorizationError) -> Response<Body> {
     match error {
