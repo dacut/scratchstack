@@ -25,6 +25,14 @@ pub(crate) const SERVICE_IAM: &str = "iam";
 /// boundary does not match rather than matching an empty string.
 pub(crate) const SESSION_KEY_IAM_PERMISSIONS_BOUNDARY: &str = "iam:PermissionsBoundary";
 
+/// Session key for the managed policy a request asks to attach to or detach from an IAM entity,
+/// named by its ARN.
+///
+/// This is what confines a grant of `iam:AttachUserPolicy` (or its detaching counterpart) to
+/// particular policies, so that a caller able to attach policies cannot attach an arbitrarily
+/// privileged one.
+pub(crate) const SESSION_KEY_IAM_POLICY_ARN: &str = "iam:PolicyARN";
+
 /// Session key prefix for the tags attached to the IAM entity a request operates on; the tag key
 /// follows the prefix.
 ///
