@@ -494,19 +494,25 @@ impl Structure {
 
         // Serialize impl. This renders the inner `<Error>` element; the request id belongs to the
         // surrounding envelope and is deliberately not emitted here.
+        //
+        // The fields are named as a structure's rather than entered as a map's. An XML response is
+        // rendered through a serializer that gives a map the query protocol's form -- `<entry>`
+        // wrapping a `<key>` and a `<value>` -- and it cannot tell a structure spelled as a map
+        // from a map of data, so an error spelled that way would go out as entry pairs.
         writeln!(w, "impl ::serde::Serialize for {rust_typename} {{")?;
         writeln!(
             w,
             "    fn serialize<S: ::serde::ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {{"
         )?;
-        writeln!(w, "        use ::serde::ser::SerializeMap as _;")?;
-        writeln!(w, "        let mut m = serializer.serialize_map(::std::option::Option::None)?;")?;
-        writeln!(w, "        m.serialize_entry(\"Type\", \"{error_type}\")?;")?;
-        writeln!(w, "        m.serialize_entry(\"Code\", \"{code}\")?;")?;
-        writeln!(w, "        if let ::std::option::Option::Some(message) = self.message.as_ref() {{")?;
-        writeln!(w, "            m.serialize_entry(\"Message\", message)?;")?;
+        writeln!(w, "        use ::serde::ser::SerializeStruct as _;")?;
+        writeln!(w, "        let mut e = serializer.serialize_struct(\"Error\", 3)?;")?;
+        writeln!(w, "        e.serialize_field(\"Type\", \"{error_type}\")?;")?;
+        writeln!(w, "        e.serialize_field(\"Code\", \"{code}\")?;")?;
+        writeln!(w, "        match self.message.as_ref() {{")?;
+        writeln!(w, "            ::std::option::Option::Some(message) => e.serialize_field(\"Message\", message)?,")?;
+        writeln!(w, "            ::std::option::Option::None => e.skip_field(\"Message\")?,")?;
         writeln!(w, "        }}")?;
-        writeln!(w, "        m.end()")?;
+        writeln!(w, "        e.end()")?;
         writeln!(w, "    }}")?;
         writeln!(w, "}}")?;
         writeln!(w)?;

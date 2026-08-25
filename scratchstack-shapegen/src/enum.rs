@@ -64,7 +64,7 @@ impl Enum {
         writeln!(w, "#[derive(::serde::Deserialize, ::serde::Serialize)]")?;
         writeln!(
             w,
-            "#[derive(::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::PartialEq, ::std::fmt::Debug, ::std::hash::Hash, ::std::marker::Copy)]"
+            "#[derive(::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash, ::std::marker::Copy)]"
         )?;
         writeln!(w, "#[non_exhaustive]")?;
         writeln!(w, "pub enum {rust_typename} {{")?;
