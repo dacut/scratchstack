@@ -10,6 +10,8 @@ mod delete_user;
 mod delete_user_policy;
 mod get_user;
 mod get_user_policy;
+mod list_user_policies;
+mod list_user_tags;
 mod list_users;
 mod put_user_policy;
 mod tag_user;
@@ -17,8 +19,8 @@ mod untag_user;
 
 pub(crate) use {
     create_user::create_user, delete_user::delete_user, delete_user_policy::delete_user_policy, get_user::get_user,
-    get_user_policy::get_user_policy, list_users::list_users, put_user_policy::put_user_policy, tag_user::tag_user,
-    untag_user::untag_user,
+    get_user_policy::get_user_policy, list_user_policies::list_user_policies, list_user_tags::list_user_tags,
+    list_users::list_users, put_user_policy::put_user_policy, tag_user::tag_user, untag_user::untag_user,
 };
 
 use {

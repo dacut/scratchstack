@@ -2,8 +2,8 @@ use {
     crate::{
         constants::*,
         operations::{
-            create_user, delete_user, delete_user_policy, get_user, get_user_policy, list_users, put_user_policy,
-            tag_user, untag_user,
+            create_user, delete_user, delete_user_policy, get_user, get_user_policy, list_user_policies,
+            list_user_tags, list_users, put_user_policy, tag_user, untag_user,
         },
     },
     scratchstack_aws_principal::{Principal, SessionData},
@@ -97,6 +97,30 @@ pub(crate) async fn serve_request(
         }
         Ok(Action::GetUserPolicy) => {
             get_user_policy(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
+        Ok(Action::ListUserPolicies) => {
+            list_user_policies(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
+        Ok(Action::ListUserTags) => {
+            list_user_tags(
                 svc_state,
                 request_id,
                 principal,
@@ -743,6 +767,127 @@ mod tests {
            "Resource":"arn:aws:iam::123456789012:user/Untag-Target"}]}');
     "#;
 
+    /// Seed data for the `ListUserPolicies` authorization tests. `Policy-Holder` carries several
+    /// inline policies, so a listing can be paged through and shown to report names and nothing
+    /// else; `Empty-Target` carries none, so a user without inline policies can be told apart from
+    /// one that does not exist. The remaining targets carry the paths and tags the resource ARN and
+    /// the `aws:ResourceTag` condition keys are derived from.
+    const LIST_USER_POLICIES_TEST_DATA: &str = r#"
+        INSERT INTO iam.partition(partition) VALUES ('aws');
+
+        INSERT INTO iam.accounts(account_id, email, alias) VALUES
+        ('123456789012', 'list-user-policies-test@example.com', 'list-user-policies-test');
+
+        INSERT INTO iam.users(user_id, account_id, user_name_lower, user_name_cased, path) VALUES
+        ('SVCLUPBROADLST01', '123456789012', 'broad-lister', 'Broad-Lister', '/'),
+        ('SVCLUPPATHLST001', '123456789012', 'path-lister', 'Path-Lister', '/'),
+        ('SVCLUPTAGLST0001', '123456789012', 'tag-lister', 'Tag-Lister', '/'),
+        ('SVCLUPNARROWLS01', '123456789012', 'narrow-lister', 'Narrow-Lister', '/'),
+        ('SVCLUPNOGRANTL01', '123456789012', 'no-grant-lister', 'No-Grant-Lister', '/'),
+        ('SVCLUPTGTHOLDER1', '123456789012', 'policy-holder', 'Policy-Holder', '/'),
+        ('SVCLUPTGTEMPTY01', '123456789012', 'empty-target', 'Empty-Target', '/'),
+        ('SVCLUPTGTDIVSN01', '123456789012', 'division-target', 'Division-Target', '/division/'),
+        ('SVCLUPTGTENGNR01', '123456789012', 'engineering-target', 'Engineering-Target', '/'),
+        ('SVCLUPTGTSALES01', '123456789012', 'sales-target', 'Sales-Target', '/'),
+        ('SVCLUPTGTROOT001', '123456789012', 'root-target', 'Root-Target', '/');
+
+        INSERT INTO iam.user_tags(user_id, key_lower, key_cased, value) VALUES
+        ('SVCLUPTGTENGNR01', 'department', 'Department', 'Engineering'),
+        ('SVCLUPTGTSALES01', 'department', 'Department', 'Sales');
+
+        INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+        ('SVCLUPBROADLST01', 'allow-list-any-policies', 'Allow-List-Any-Policies',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUserPolicies","Resource":"*"}]}'),
+        ('SVCLUPPATHLST001', 'allow-list-division-policies', 'Allow-List-Division-Policies',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUserPolicies",
+           "Resource":"arn:aws:iam::123456789012:user/division/*"}]}'),
+        ('SVCLUPTAGLST0001', 'allow-list-engineering-policies', 'Allow-List-Engineering-Policies',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUserPolicies","Resource":"*",
+           "Condition":{"StringEquals":{"aws:ResourceTag/department":"Engineering"}}}]}'),
+        ('SVCLUPNARROWLS01', 'allow-list-holder-policies', 'Allow-List-Holder-Policies',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUserPolicies",
+           "Resource":"arn:aws:iam::123456789012:user/Policy-Holder"}]}'),
+        ('SVCLUPTGTHOLDER1', 'app-access', 'App-Access',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}'),
+        ('SVCLUPTGTHOLDER1', 'db-access', 'Db-Access',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"dynamodb:GetItem","Resource":"*"}]}'),
+        ('SVCLUPTGTHOLDER1', 'zz-access', 'Zz-Access',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sns:Publish","Resource":"*"}]}'),
+        ('SVCLUPTGTDIVSN01', 'division-access', 'Division-Access',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sqs:SendMessage","Resource":"*"}]}'),
+        ('SVCLUPTGTENGNR01', 'eng-access', 'Eng-Access',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"ec2:DescribeInstances","Resource":"*"}]}'),
+        ('SVCLUPTGTSALES01', 'sales-access', 'Sales-Access',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"ses:SendEmail","Resource":"*"}]}'),
+        ('SVCLUPTGTROOT001', 'root-access', 'Root-Access',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"cloudwatch:PutMetricData",
+           "Resource":"*"}]}');
+
+        INSERT INTO iam.roles(role_id, account_id, role_name_lower, role_name_cased, path, assume_role_policy_document) VALUES
+        ('SVCLUPROLE000001', '123456789012', 'list-user-policies-role', 'List-User-Policies-Role', '/',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}');
+
+        INSERT INTO iam.role_inline_policies(role_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+        ('SVCLUPROLE000001', 'allow-list-any-policies', 'Allow-List-Any-Policies',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUserPolicies","Resource":"*"}]}');
+    "#;
+
+    /// Seed data for the `ListUserTags` authorization tests. `Tag-Target` carries several tags, so
+    /// a listing can be paged through; `Empty-Target` carries none, so a user without tags can be
+    /// told apart from one that does not exist. The remaining targets carry the paths and tags the
+    /// resource ARN and the `aws:ResourceTag` condition keys are derived from -- and here the tags
+    /// governing the listing are the very tags being listed.
+    const LIST_USER_TAGS_TEST_DATA: &str = r#"
+        INSERT INTO iam.partition(partition) VALUES ('aws');
+
+        INSERT INTO iam.accounts(account_id, email, alias) VALUES
+        ('123456789012', 'list-user-tags-test@example.com', 'list-user-tags-test');
+
+        INSERT INTO iam.users(user_id, account_id, user_name_lower, user_name_cased, path) VALUES
+        ('SVCLUTBROADLST01', '123456789012', 'broad-lister', 'Broad-Lister', '/'),
+        ('SVCLUTPATHLST001', '123456789012', 'path-lister', 'Path-Lister', '/'),
+        ('SVCLUTRESLST0001', '123456789012', 'resource-tag-lister', 'Resource-Tag-Lister', '/'),
+        ('SVCLUTNARROWLS01', '123456789012', 'narrow-lister', 'Narrow-Lister', '/'),
+        ('SVCLUTNOGRANTL01', '123456789012', 'no-grant-lister', 'No-Grant-Lister', '/'),
+        ('SVCLUTTGTPLAIN01', '123456789012', 'tag-target', 'Tag-Target', '/'),
+        ('SVCLUTTGTEMPTY01', '123456789012', 'empty-target', 'Empty-Target', '/'),
+        ('SVCLUTTGTDIVSN01', '123456789012', 'division-target', 'Division-Target', '/division/'),
+        ('SVCLUTTGTENGNR01', '123456789012', 'engineering-target', 'Engineering-Target', '/'),
+        ('SVCLUTTGTSALES01', '123456789012', 'sales-target', 'Sales-Target', '/'),
+        ('SVCLUTTGTROOT001', '123456789012', 'root-target', 'Root-Target', '/');
+
+        INSERT INTO iam.user_tags(user_id, key_lower, key_cased, value) VALUES
+        ('SVCLUTTGTPLAIN01', 'costcenter', 'CostCenter', '1234'),
+        ('SVCLUTTGTPLAIN01', 'project', 'Project', 'Scratchstack'),
+        ('SVCLUTTGTPLAIN01', 'zone', 'Zone', 'West'),
+        ('SVCLUTTGTDIVSN01', 'project', 'Project', 'Division'),
+        ('SVCLUTTGTENGNR01', 'department', 'Department', 'Engineering'),
+        ('SVCLUTTGTENGNR01', 'costcenter', 'CostCenter', '5678'),
+        ('SVCLUTTGTSALES01', 'department', 'Department', 'Sales'),
+        ('SVCLUTTGTROOT001', 'root', 'Root', 'Tag');
+
+        INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+        ('SVCLUTBROADLST01', 'allow-list-any-tags', 'Allow-List-Any-Tags',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUserTags","Resource":"*"}]}'),
+        ('SVCLUTPATHLST001', 'allow-list-division-tags', 'Allow-List-Division-Tags',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUserTags",
+           "Resource":"arn:aws:iam::123456789012:user/division/*"}]}'),
+        ('SVCLUTRESLST0001', 'allow-list-engineering-tags', 'Allow-List-Engineering-Tags',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUserTags","Resource":"*",
+           "Condition":{"StringEquals":{"aws:ResourceTag/department":"Engineering"}}}]}'),
+        ('SVCLUTNARROWLS01', 'allow-list-target-tags', 'Allow-List-Target-Tags',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUserTags",
+           "Resource":"arn:aws:iam::123456789012:user/Tag-Target"}]}');
+
+        INSERT INTO iam.roles(role_id, account_id, role_name_lower, role_name_cased, path, assume_role_policy_document) VALUES
+        ('SVCLUTROLE000001', '123456789012', 'list-user-tags-role', 'List-User-Tags-Role', '/',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}');
+
+        INSERT INTO iam.role_inline_policies(role_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+        ('SVCLUTROLE000001', 'allow-list-any-tags', 'Allow-List-Any-Tags',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUserTags","Resource":"*"}]}');
+    "#;
+
     /// Build the principal and session data the SigV4 layer would produce for a seeded user.
     fn user_identity(user_id: &str, user_name: &str) -> (Principal, SessionData) {
         let principal = Principal::from(
@@ -968,6 +1113,55 @@ mod tests {
             let index = index + 1;
             parameters.push_str(&format!("&Tags.member.{index}.Key={key}&Tags.member.{index}.Value={value}"));
         }
+    }
+
+    /// Build the query parameters for a `ListUserPolicies` request, naming a user or leaving
+    /// `UserName` off, and carrying the pagination arguments the caller supplies.
+    fn list_user_policies_parameters(user_name: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
+        list_parameters("ListUserPolicies", user_name, max_items, marker)
+    }
+
+    /// Build the query parameters for a `ListUserTags` request, naming a user or leaving
+    /// `UserName` off, and carrying the pagination arguments the caller supplies.
+    fn list_user_tags_parameters(user_name: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
+        list_parameters("ListUserTags", user_name, max_items, marker)
+    }
+
+    /// Build the query parameters for a paginated listing request, leaving off the parameters the
+    /// caller does not supply so that a request missing a required one can be exercised.
+    ///
+    /// The parameters are form-encoded rather than interpolated: a pagination token is opaque, and
+    /// nothing here relies on what it happens to be made of.
+    fn list_parameters(action: &str, user_name: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
+        let max_items = max_items.map(|max_items| max_items.to_string());
+        let mut parameters = vec![("Action", action), ("Version", "2010-05-08")];
+
+        if let Some(user_name) = user_name {
+            parameters.push(("UserName", user_name));
+        }
+        if let Some(max_items) = max_items.as_deref() {
+            parameters.push(("MaxItems", max_items));
+        }
+        if let Some(marker) = marker {
+            parameters.push(("Marker", marker));
+        }
+
+        serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+    }
+
+    /// Extract the `Marker` a truncated listing reports, to be handed back as the next page's
+    /// `Marker` parameter.
+    ///
+    /// A pagination token is a version character followed by URL-safe base64, so what is between
+    /// the tags is the token itself: there is nothing in it for the response serializer to escape.
+    fn pagination_marker(body: &str) -> String {
+        const OPEN: &str = "<Marker>";
+        const CLOSE: &str = "</Marker>";
+
+        let start = body.find(OPEN).expect("no Marker in body") + OPEN.len();
+        let end = start + body[start..].find(CLOSE).expect("unterminated Marker");
+
+        body[start..end].to_string()
     }
 
     /// A copy of `svc_state` configured to believe the `X-Forwarded-For` header of proxies in
@@ -3192,5 +3386,460 @@ mod tests {
         let (status, body) =
             call(&svc_state, principal, session_data, &untag_user_parameters(Some("Root-Target"), &["Root"])).await;
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+    }
+
+    /// End-to-end authorization checks for `ListUserPolicies` through `serve_request` against an
+    /// embedded PostgreSQL database. A single test function is used because the database is
+    /// stateful and expensive to start.
+    #[test_log::test(tokio::test)]
+    async fn test_list_user_policies_authorization() {
+        let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
+        database.bootstrap().await.expect("Failed to set up, start, and bootstrap PostgreSQL database");
+        let pool = database
+            .get_scratchstack_pool()
+            .await
+            .expect("Failed to get PostgreSQL connection pool for scratchstack user");
+
+        let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
+        MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
+        raw_sql(LIST_USER_POLICIES_TEST_DATA).execute(&mut *c).await.expect("Failed to load test data into database");
+        drop(c);
+
+        let svc_state = ServiceState::builder().db(Arc::new(pool)).secure_transport(true).build();
+
+        // A caller allowed iam:ListUserPolicies on any user reads the names of the inline policies
+        // on one, ordered by name.
+        let (principal, session_data) = user_identity("SVCLUPBROADLST01", "Broad-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_user_policies_parameters(Some("Policy-Holder"), None, None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(
+            body.contains(
+                "<PolicyNames>App-Access</PolicyNames><PolicyNames>Db-Access</PolicyNames>\
+                 <PolicyNames>Zz-Access</PolicyNames>"
+            ),
+            "unexpected body: {body}"
+        );
+
+        // The names come back cased as they were stored, and they are all that comes back: the
+        // documents themselves are read with GetUserPolicy, which is granted separately.
+        assert!(!body.contains("PolicyDocument"), "unexpected body: {body}");
+        assert!(!body.contains("s3:GetObject"), "unexpected body: {body}");
+
+        // A user carrying no inline policies at all is an empty listing rather than a missing
+        // user.
+        let (principal, session_data) = user_identity("SVCLUPBROADLST01", "Broad-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_policies_parameters(Some("Empty-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUserPoliciesResult/>"), "unexpected body: {body}");
+
+        // MaxItems bounds a page, and a bounded page reports the marker the next one continues
+        // from...
+        let (principal, session_data) = user_identity("SVCLUPBROADLST01", "Broad-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_user_policies_parameters(Some("Policy-Holder"), Some(2), None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<IsTruncated>true</IsTruncated>"), "unexpected body: {body}");
+        assert!(
+            body.contains("<PolicyNames>App-Access</PolicyNames><PolicyNames>Db-Access</PolicyNames>"),
+            "unexpected body: {body}"
+        );
+        assert!(!body.contains("Zz-Access"), "unexpected body: {body}");
+        let marker = pagination_marker(&body);
+
+        // ...which reports the rest, and reports itself as the last page.
+        let (principal, session_data) = user_identity("SVCLUPBROADLST01", "Broad-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_user_policies_parameters(Some("Policy-Holder"), Some(2), Some(&marker)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<PolicyNames>Zz-Access</PolicyNames>"), "unexpected body: {body}");
+        assert!(!body.contains("App-Access"), "unexpected body: {body}");
+        assert!(!body.contains("<IsTruncated>"), "unexpected body: {body}");
+
+        // The resource ARN carries the target user's path, so a grant scoped to a path prefix
+        // reaches users under that path...
+        let (principal, session_data) = user_identity("SVCLUPPATHLST001", "Path-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_user_policies_parameters(Some("Division-Target"), None, None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<PolicyNames>Division-Access</PolicyNames>"), "unexpected body: {body}");
+
+        // ...and no further.
+        let (principal, session_data) = user_identity("SVCLUPPATHLST001", "Path-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_user_policies_parameters(Some("Policy-Holder"), None, None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The tags on the user carrying the policies back the aws:ResourceTag condition keys.
+        let (principal, session_data) = user_identity("SVCLUPTAGLST0001", "Tag-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_user_policies_parameters(Some("Engineering-Target"), None, None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<PolicyNames>Eng-Access</PolicyNames>"), "unexpected body: {body}");
+
+        // A user carrying the tag with a different value does not satisfy the condition.
+        let (principal, session_data) = user_identity("SVCLUPTAGLST0001", "Tag-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_policies_parameters(Some("Sales-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // Neither does a user carrying no tags at all: the condition key is absent.
+        let (principal, session_data) = user_identity("SVCLUPTAGLST0001", "Tag-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_user_policies_parameters(Some("Policy-Holder"), None, None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A grant naming a single user reaches every inline policy on it -- there is no naming an
+        // inline policy in a resource ARN -- and reaches no other user.
+        let (principal, session_data) = user_identity("SVCLUPNARROWLS01", "Narrow-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_user_policies_parameters(Some("Policy-Holder"), None, None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<PolicyNames>App-Access</PolicyNames>"), "unexpected body: {body}");
+        assert!(body.contains("<PolicyNames>Db-Access</PolicyNames>"), "unexpected body: {body}");
+        assert!(body.contains("<PolicyNames>Zz-Access</PolicyNames>"), "unexpected body: {body}");
+
+        let (principal, session_data) = user_identity("SVCLUPNARROWLS01", "Narrow-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_user_policies_parameters(Some("Engineering-Target"), None, None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A caller with no grant at all is denied, and is told what it was denied.
+        let (principal, session_data) = user_identity("SVCLUPNOGRANTL01", "No-Grant-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_user_policies_parameters(Some("Policy-Holder"), None, None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(
+            body.contains(&format!(
+                "User: arn:aws:iam::{TEST_ACCOUNT_ID}:user/No-Grant-Lister is not authorized to perform: \
+                 iam:ListUserPolicies on resource: arn:aws:iam::{TEST_ACCOUNT_ID}:user/Policy-Holder"
+            )),
+            "unexpected body: {body}"
+        );
+
+        // A user that does not exist is still authorized against the ARN the request names, so a
+        // caller allowed iam:ListUserPolicies on any user is told the user is missing...
+        let (principal, session_data) = user_identity("SVCLUPBROADLST01", "Broad-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_policies_parameters(Some("No-Such-User"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
+        assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
+
+        // ...while a caller allowed it only on a specific user learns nothing about it.
+        let (principal, session_data) = user_identity("SVCLUPNARROWLS01", "Narrow-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_policies_parameters(Some("No-Such-User"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // UserName is required; it does not default to the calling user.
+        let (principal, session_data) = user_identity("SVCLUPBROADLST01", "Broad-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_policies_parameters(None, None, None)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+        assert!(body.contains("<Code>MalformedInput</Code>"), "unexpected body: {body}");
+
+        // A MaxItems outside the range a page may take is rejected, and so is a marker that is not
+        // shaped like a pagination token; both are settled before the request is authorized.
+        for parameters in [
+            list_user_policies_parameters(Some("Policy-Holder"), Some(0), None),
+            list_user_policies_parameters(Some("Policy-Holder"), Some(1001), None),
+            list_user_policies_parameters(Some("Policy-Holder"), None, Some("")),
+        ] {
+            let (principal, session_data) = user_identity("SVCLUPBROADLST01", "Broad-Lister");
+            let (status, body) = call(&svc_state, principal, session_data, &parameters).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+            assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
+        }
+
+        // A MaxItems that is not a number at all never becomes a value the request can carry, so
+        // it is reported as malformed input rather than as a validation failure.
+        let (principal, session_data) = user_identity("SVCLUPBROADLST01", "Broad-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            "Action=ListUserPolicies&Version=2010-05-08&UserName=Policy-Holder&MaxItems=many",
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+        assert!(body.contains("<Code>MalformedInput</Code>"), "unexpected body: {body}");
+
+        // An assumed-role session is governed by the role's own policy.
+        let (principal, session_data) = role_identity("SVCLUPROLE000001", "List-User-Policies-Role");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_user_policies_parameters(Some("Policy-Holder"), None, None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<PolicyNames>App-Access</PolicyNames>"), "unexpected body: {body}");
+
+        // The account root user is implicitly allowed.
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_policies_parameters(Some("Root-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<PolicyNames>Root-Access</PolicyNames>"), "unexpected body: {body}");
+    }
+
+    /// End-to-end authorization checks for `ListUserTags` through `serve_request` against an
+    /// embedded PostgreSQL database. A single test function is used because the database is
+    /// stateful and expensive to start.
+    #[test_log::test(tokio::test)]
+    async fn test_list_user_tags_authorization() {
+        let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
+        database.bootstrap().await.expect("Failed to set up, start, and bootstrap PostgreSQL database");
+        let pool = database
+            .get_scratchstack_pool()
+            .await
+            .expect("Failed to get PostgreSQL connection pool for scratchstack user");
+
+        let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
+        MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
+        raw_sql(LIST_USER_TAGS_TEST_DATA).execute(&mut *c).await.expect("Failed to load test data into database");
+        drop(c);
+
+        let svc_state = ServiceState::builder().db(Arc::new(pool)).secure_transport(true).build();
+
+        // A caller allowed iam:ListUserTags on any user reads the tags off one, ordered by key and
+        // cased as they were stored.
+        let (principal, session_data) = user_identity("SVCLUTBROADLST01", "Broad-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_tags_parameters(Some("Tag-Target"), None, None)).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(
+            body.contains(
+                "<Tags><Key>CostCenter</Key><Value>1234</Value></Tags>\
+                 <Tags><Key>Project</Key><Value>Scratchstack</Value></Tags>\
+                 <Tags><Key>Zone</Key><Value>West</Value></Tags>"
+            ),
+            "unexpected body: {body}"
+        );
+
+        // A user carrying no tags at all is an empty listing rather than a missing user.
+        let (principal, session_data) = user_identity("SVCLUTBROADLST01", "Broad-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_tags_parameters(Some("Empty-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<ListUserTagsResult/>"), "unexpected body: {body}");
+
+        // MaxItems bounds a page, and a bounded page reports the marker the next one continues
+        // from...
+        let (principal, session_data) = user_identity("SVCLUTBROADLST01", "Broad-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_tags_parameters(Some("Tag-Target"), Some(2), None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<IsTruncated>true</IsTruncated>"), "unexpected body: {body}");
+        assert!(body.contains("<Key>CostCenter</Key><Value>1234</Value>"), "unexpected body: {body}");
+        assert!(body.contains("<Key>Project</Key><Value>Scratchstack</Value>"), "unexpected body: {body}");
+        assert!(!body.contains("<Key>Zone</Key>"), "unexpected body: {body}");
+        let marker = pagination_marker(&body);
+
+        // ...which reports the rest, and reports itself as the last page.
+        let (principal, session_data) = user_identity("SVCLUTBROADLST01", "Broad-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_user_tags_parameters(Some("Tag-Target"), Some(2), Some(&marker)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<Key>Zone</Key><Value>West</Value>"), "unexpected body: {body}");
+        assert!(!body.contains("<Key>CostCenter</Key>"), "unexpected body: {body}");
+        assert!(!body.contains("<IsTruncated>"), "unexpected body: {body}");
+
+        // The resource ARN carries the target user's path, so a grant scoped to a path prefix
+        // reaches users under that path...
+        let (principal, session_data) = user_identity("SVCLUTPATHLST001", "Path-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_tags_parameters(Some("Division-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<Key>Project</Key><Value>Division</Value>"), "unexpected body: {body}");
+
+        // ...and no further.
+        let (principal, session_data) = user_identity("SVCLUTPATHLST001", "Path-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_tags_parameters(Some("Tag-Target"), None, None)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The tags being listed are the tags backing the aws:ResourceTag condition keys, so a
+        // grant conditioned on a tag reaches the request that reads that very tag back.
+        let (principal, session_data) = user_identity("SVCLUTRESLST0001", "Resource-Tag-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_user_tags_parameters(Some("Engineering-Target"), None, None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<Key>Department</Key><Value>Engineering</Value>"), "unexpected body: {body}");
+        assert!(body.contains("<Key>CostCenter</Key><Value>5678</Value>"), "unexpected body: {body}");
+
+        // A user carrying the tag with a different value does not satisfy the condition.
+        let (principal, session_data) = user_identity("SVCLUTRESLST0001", "Resource-Tag-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_tags_parameters(Some("Sales-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // Neither does a user carrying other tags but not that one, nor one carrying no tags at
+        // all: the condition key is absent in both cases.
+        for user_name in ["Tag-Target", "Empty-Target"] {
+            let (principal, session_data) = user_identity("SVCLUTRESLST0001", "Resource-Tag-Lister");
+            let (status, body) =
+                call(&svc_state, principal, session_data, &list_user_tags_parameters(Some(user_name), None, None))
+                    .await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+            assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+        }
+
+        // A grant naming a single user reaches every tag on it, and reaches no other user.
+        let (principal, session_data) = user_identity("SVCLUTNARROWLS01", "Narrow-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_tags_parameters(Some("Tag-Target"), None, None)).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<Key>Zone</Key><Value>West</Value>"), "unexpected body: {body}");
+
+        let (principal, session_data) = user_identity("SVCLUTNARROWLS01", "Narrow-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_tags_parameters(Some("Sales-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A caller with no grant at all is denied, and is told what it was denied.
+        let (principal, session_data) = user_identity("SVCLUTNOGRANTL01", "No-Grant-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_tags_parameters(Some("Tag-Target"), None, None)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(
+            body.contains(&format!(
+                "User: arn:aws:iam::{TEST_ACCOUNT_ID}:user/No-Grant-Lister is not authorized to perform: \
+                 iam:ListUserTags on resource: arn:aws:iam::{TEST_ACCOUNT_ID}:user/Tag-Target"
+            )),
+            "unexpected body: {body}"
+        );
+
+        // A user that does not exist is still authorized against the ARN the request names, so a
+        // caller allowed iam:ListUserTags on any user is told the user is missing...
+        let (principal, session_data) = user_identity("SVCLUTBROADLST01", "Broad-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_tags_parameters(Some("No-Such-User"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
+        assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
+
+        // ...while a caller allowed it only on a specific user learns nothing about it.
+        let (principal, session_data) = user_identity("SVCLUTNARROWLS01", "Narrow-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_tags_parameters(Some("No-Such-User"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // UserName is required; it does not default to the calling user.
+        let (principal, session_data) = user_identity("SVCLUTBROADLST01", "Broad-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_tags_parameters(None, None, None)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+        assert!(body.contains("<Code>MalformedInput</Code>"), "unexpected body: {body}");
+
+        // A MaxItems outside the range a page may take is rejected, and so is a marker that is not
+        // shaped like a pagination token; both are settled before the request is authorized.
+        for parameters in [
+            list_user_tags_parameters(Some("Tag-Target"), Some(0), None),
+            list_user_tags_parameters(Some("Tag-Target"), Some(1001), None),
+            list_user_tags_parameters(Some("Tag-Target"), None, Some("")),
+        ] {
+            let (principal, session_data) = user_identity("SVCLUTBROADLST01", "Broad-Lister");
+            let (status, body) = call(&svc_state, principal, session_data, &parameters).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+            assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
+        }
+
+        // An assumed-role session is governed by the role's own policy.
+        let (principal, session_data) = role_identity("SVCLUTROLE000001", "List-User-Tags-Role");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_tags_parameters(Some("Tag-Target"), None, None)).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<Key>Project</Key><Value>Scratchstack</Value>"), "unexpected body: {body}");
+
+        // The account root user is implicitly allowed.
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_user_tags_parameters(Some("Root-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<Key>Root</Key><Value>Tag</Value>"), "unexpected body: {body}");
     }
 }
