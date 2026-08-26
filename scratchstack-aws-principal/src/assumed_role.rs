@@ -1,6 +1,6 @@
 use {
     crate::{PrincipalError, utils::validate_name},
-    derive_builder::Builder,
+    bon::bon,
     scratchstack_arn::{
         Arn,
         utils::{validate_account_id, validate_partition},
@@ -15,27 +15,23 @@ use {
 ///
 /// `AssumedRole` structs are immutable. They are created using the [`AssumedRoleBuilder`] returned by
 /// [`AssumedRole::builder`].
-#[derive(Builder, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[builder(build_fn(validate = "Self::validate", error = "PrincipalError"))]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AssumedRole {
     /// The partition this principal exists in.
-    #[builder(setter(into))]
     partition: String,
 
     /// The account id.
-    #[builder(setter(into))]
     account_id: String,
 
     /// Name of the role, case-insensitive.
-    #[builder(setter(into))]
     role_name: String,
 
     /// Session name for the assumed role.
-    #[builder(setter(into))]
     session_name: String,
 }
 
+#[bon]
 impl AssumedRole {
     /// Create an [`AssumedRoleBuilder`] for building an [`AssumedRole`].
     ///
@@ -69,8 +65,32 @@ impl AssumedRole {
     /// assert_eq!(assumed_role.role_name(), "role-name");
     /// assert_eq!(assumed_role.session_name(), "session-name");
     /// ```
-    pub fn builder() -> AssumedRoleBuilder {
-        AssumedRoleBuilder::default()
+    #[builder(builder_type = AssumedRoleBuilder, finish_fn = build)]
+    pub fn builder(
+        /// The partition this principal exists in.
+        #[builder(into)]
+        partition: String,
+
+        /// The account id.
+        #[builder(into)]
+        account_id: String,
+
+        /// Name of the role, case-insensitive.
+        #[builder(into)]
+        role_name: String,
+
+        /// Session name for the assumed role.
+        #[builder(into)]
+        session_name: String,
+    ) -> Result<Self, PrincipalError> {
+        Self::validate_parts(&partition, &account_id, &role_name, &session_name)?;
+
+        Ok(Self {
+            partition,
+            account_id,
+            role_name,
+            session_name,
+        })
     }
 
     /// Create an `AssumedRole` object.
@@ -149,19 +169,6 @@ impl AssumedRole {
     #[inline]
     pub fn session_name(&self) -> &str {
         &self.session_name
-    }
-}
-
-impl AssumedRoleBuilder {
-    /// Validate the fields set on this builder, returning a [`PrincipalError`] if any required field is missing or
-    /// any field is invalid.
-    fn validate(&self) -> Result<(), PrincipalError> {
-        let partition = self.partition.as_deref().ok_or(PrincipalError::MissingField("partition"))?;
-        let account_id = self.account_id.as_deref().ok_or(PrincipalError::MissingField("account_id"))?;
-        let role_name = self.role_name.as_deref().ok_or(PrincipalError::MissingField("role_name"))?;
-        let session_name = self.session_name.as_deref().ok_or(PrincipalError::MissingField("session_name"))?;
-
-        AssumedRole::validate_parts(partition, account_id, role_name, session_name)
     }
 }
 
@@ -619,23 +626,6 @@ mod tests {
 
         let err = AssumedRole::from_str("arn:aws:sts::123456789012:user/role/role-name/session-name").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid resource: "user/role/role-name/session-name""#);
-    }
-
-    #[test]
-    fn check_builder_missing_fields() {
-        let err = AssumedRole::builder().build().unwrap_err();
-        assert_eq!(err, PrincipalError::MissingField("partition"));
-
-        let err = AssumedRole::builder().partition("aws").build().unwrap_err();
-        assert_eq!(err, PrincipalError::MissingField("account_id"));
-
-        let err = AssumedRole::builder().partition("aws").account_id("123456789012").build().unwrap_err();
-        assert_eq!(err, PrincipalError::MissingField("role_name"));
-
-        let err =
-            AssumedRole::builder().partition("aws").account_id("123456789012").role_name("role").build().unwrap_err();
-        assert_eq!(err, PrincipalError::MissingField("session_name"));
-        assert_eq!(err.to_string(), "Missing required field: session_name");
     }
 
     #[test]

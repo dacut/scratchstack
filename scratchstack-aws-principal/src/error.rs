@@ -1,5 +1,4 @@
 use {
-    derive_builder::UninitializedFieldError,
     scratchstack_arn::ArnError,
     std::{
         error::Error,
@@ -131,13 +130,6 @@ impl Display for PrincipalError {
     }
 }
 
-/// Allows [`PrincipalError`] to be used as the error type for `derive_builder`-generated builders.
-impl From<UninitializedFieldError> for PrincipalError {
-    fn from(err: UninitializedFieldError) -> Self {
-        Self::MissingField(err.field_name())
-    }
-}
-
 impl From<ArnError> for PrincipalError {
     fn from(err: ArnError) -> Self {
         match err {
@@ -157,7 +149,7 @@ impl From<ArnError> for PrincipalError {
 
 #[cfg(test)]
 mod tests {
-    use {super::PrincipalError, derive_builder::UninitializedFieldError, scratchstack_arn::ArnError};
+    use {super::PrincipalError, scratchstack_arn::ArnError};
 
     #[test]
     fn exercise_unused_in_crate() {
@@ -167,6 +159,9 @@ mod tests {
 
         let err = PrincipalError::InvalidInstanceProfileName("test+1".to_string());
         assert_eq!(err.to_string(), r#"Invalid instance profile name: "test+1""#);
+
+        let err = PrincipalError::MissingField("account_id");
+        assert_eq!(err.to_string(), "Missing required field: account_id");
     }
 
     fn check_arn_err_into(arn_err: ArnError) {
@@ -187,13 +182,6 @@ mod tests {
         check_arn_err_into(ArnError::InvalidResource("".to_string()));
         check_arn_err_into(ArnError::InvalidScheme("https".to_string()));
         check_arn_err_into(ArnError::InvalidService("foo".to_string()));
-    }
-
-    #[test]
-    fn test_from_uninitialized_field_error() {
-        let err = PrincipalError::from(UninitializedFieldError::new("account_id"));
-        assert_eq!(err, PrincipalError::MissingField("account_id"));
-        assert_eq!(err.to_string(), "Missing required field: account_id");
     }
 }
 // end tests -- do not delete; needed for coverage.

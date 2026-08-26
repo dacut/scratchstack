@@ -3,7 +3,7 @@ use {
         PrincipalError,
         utils::{validate_name, validate_path},
     },
-    derive_builder::Builder,
+    bon::bon,
     scratchstack_arn::{
         Arn,
         utils::{validate_account_id, validate_partition},
@@ -17,27 +17,23 @@ use {
 /// Details about an AWS IAM user.
 ///
 /// `User` structs are immutable. They are created using the [`UserBuilder`] returned by [`User::builder`].
-#[derive(Builder, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[builder(build_fn(validate = "Self::validate", error = "PrincipalError"))]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct User {
     /// The partition this principal exists in.
-    #[builder(setter(into))]
     partition: String,
 
     /// The account id.
-    #[builder(setter(into))]
     account_id: String,
 
     /// Path, starting with a `/`.
-    #[builder(setter(into))]
     path: String,
 
     /// Name of the principal, case-insensitive.
-    #[builder(setter(into))]
     user_name: String,
 }
 
+#[bon]
 impl User {
     /// Create a [`UserBuilder`] for building a [`User`].
     ///
@@ -73,8 +69,32 @@ impl User {
     /// assert_eq!(user.path(), "/");
     /// assert_eq!(user.user_name(), "user-name");
     /// ```
-    pub fn builder() -> UserBuilder {
-        UserBuilder::default()
+    #[builder(builder_type = UserBuilder, finish_fn = build)]
+    pub fn builder(
+        /// The partition this principal exists in.
+        #[builder(into)]
+        partition: String,
+
+        /// The account id.
+        #[builder(into)]
+        account_id: String,
+
+        /// Path, starting with a `/`.
+        #[builder(into)]
+        path: String,
+
+        /// Name of the principal, case-insensitive.
+        #[builder(into)]
+        user_name: String,
+    ) -> Result<Self, PrincipalError> {
+        Self::validate_parts(&partition, &account_id, &path, &user_name)?;
+
+        Ok(Self {
+            partition,
+            account_id,
+            path,
+            user_name,
+        })
     }
 
     /// Create a [`User`] object.
@@ -144,19 +164,6 @@ impl User {
     #[inline]
     pub fn user_name(&self) -> &str {
         &self.user_name
-    }
-}
-
-impl UserBuilder {
-    /// Validate the fields set on this builder, returning a [`PrincipalError`] if any required field is missing or
-    /// any field is invalid.
-    fn validate(&self) -> Result<(), PrincipalError> {
-        let partition = self.partition.as_deref().ok_or(PrincipalError::MissingField("partition"))?;
-        let account_id = self.account_id.as_deref().ok_or(PrincipalError::MissingField("account_id"))?;
-        let path = self.path.as_deref().ok_or(PrincipalError::MissingField("path"))?;
-        let user_name = self.user_name.as_deref().ok_or(PrincipalError::MissingField("user_name"))?;
-
-        User::validate_parts(partition, account_id, path, user_name)
     }
 }
 
@@ -502,22 +509,6 @@ mod tests {
 
         let err = User::from_str("arn:aws:iam::123456789012:role/user-name").unwrap_err();
         assert_eq!(err.to_string(), r#"Invalid resource: "role/user-name""#);
-    }
-
-    #[test]
-    fn check_builder_missing_fields() {
-        let err = User::builder().build().unwrap_err();
-        assert_eq!(err, PrincipalError::MissingField("partition"));
-
-        let err = User::builder().partition("aws").build().unwrap_err();
-        assert_eq!(err, PrincipalError::MissingField("account_id"));
-
-        let err = User::builder().partition("aws").account_id("123456789012").build().unwrap_err();
-        assert_eq!(err, PrincipalError::MissingField("path"));
-
-        let err = User::builder().partition("aws").account_id("123456789012").path("/").build().unwrap_err();
-        assert_eq!(err, PrincipalError::MissingField("user_name"));
-        assert_eq!(err.to_string(), "Missing required field: user_name");
     }
 
     #[test]
