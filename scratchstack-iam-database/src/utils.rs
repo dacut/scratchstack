@@ -362,9 +362,10 @@ impl TempDatabase {
             .connect()
             .await?;
 
-        // Safety: the password is quoted with pg_quote_literal; DDL cannot use bind parameters.
+        // Safety: the name is a compile-time constant and the password is quoted with
+        // pg_quote_literal; DDL cannot use bind parameters.
         query(AssertSqlSafe(format!(
-            "CREATE ROLE scratchstack NOSUPERUSER CREATEDB NOCREATEROLE LOGIN PASSWORD {}",
+            "CREATE ROLE {SCRATCHSTACK_USER} NOSUPERUSER CREATEDB NOCREATEROLE LOGIN PASSWORD {}",
             pg_quote_literal(&self.scratchstack_password)
         )))
         .execute(&mut c)
