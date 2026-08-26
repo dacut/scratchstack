@@ -11,7 +11,7 @@ use {
             GetUserInternalRequest, GetUserPolicyInternalRequest, ListAccessKeysInternalRequest,
             ListUserPoliciesInternalRequest, ListUserTagsInternalRequest, ListUsersInternalRequest,
             PutUserPermissionsBoundaryInternalRequest, PutUserPolicyInternalRequest, TagUserInternalRequest,
-            UntagUserInternalRequest, UpdateAccessKeyInternalRequest,
+            UntagUserInternalRequest, UpdateAccessKeyInternalRequest, UpdateUserInternalRequest,
         },
         types::{PermissionsBoundaryAttachmentType, StatusType, Tag},
     },
@@ -554,6 +554,192 @@ pub async fn test_get_user_no_user_name(pool: &sqlx::PgPool) {
 }
 
 /// Clear a permissions boundary that is set on a user. The user exists and has a PB; afterwards
+/// Rename a user, and verify the rename takes the user's id with it: everything the user carries
+/// is keyed on that id rather than on the name.
+pub async fn test_update_user_rename(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let created = CreateUserInternalRequest::builder()
+        .user_name("Update-Target")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build CreateUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to create user to update");
+    tx.commit().await.expect("Failed to commit transaction");
+    let user_id = created.user.expect("Response should include created user").user_id;
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UpdateUserInternalRequest::builder()
+        .user_name("Update-Target")
+        .new_user_name("Update-Renamed")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build UpdateUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to rename user");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetUserInternalRequest::builder()
+        .user_name("Update-Renamed")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build GetUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to get renamed user");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert_eq!(resp.user.user_name, "Update-Renamed");
+    assert_eq!(resp.user.user_id, user_id);
+    assert!(resp.user.arn.ends_with(":user/Update-Renamed"), "unexpected ARN: {}", resp.user.arn);
+
+    // The old name names nothing now.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = GetUserInternalRequest::builder()
+        .user_name("Update-Target")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build GetUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("Getting a user by the name it was renamed away from must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// Change the path of a user; the path is part of the ARN, so the ARN moves with it.
+pub async fn test_update_user_change_path(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UpdateUserInternalRequest::builder()
+        .user_name("Update-Renamed")
+        .new_path("/division/")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build UpdateUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to update user path");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetUserInternalRequest::builder()
+        .user_name("Update-Renamed")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build GetUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to get user after path change");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert_eq!(resp.user.path, "/division/");
+    assert!(resp.user.arn.ends_with(":user/division/Update-Renamed"), "unexpected ARN: {}", resp.user.arn);
+}
+
+/// A request replacing neither the name nor the path leaves the user as it was.
+pub async fn test_update_user_no_changes(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UpdateUserInternalRequest::builder()
+        .user_name("Update-Renamed")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build UpdateUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to update user with nothing to change");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetUserInternalRequest::builder()
+        .user_name("Update-Renamed")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build GetUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to get user after a no-op update");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert_eq!(resp.user.user_name, "Update-Renamed");
+    assert_eq!(resp.user.path, "/division/");
+}
+
+/// User names are compared case-insensitively, so a rename that changes only the casing renames
+/// the user to itself: it collides with nothing, and the new casing is what is stored.
+pub async fn test_update_user_rename_case_only(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UpdateUserInternalRequest::builder()
+        .user_name("update-renamed")
+        .new_user_name("UPDATE-RENAMED")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build UpdateUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to rename user to a different casing of its own name");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetUserInternalRequest::builder()
+        .user_name("Update-Renamed")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build GetUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to get user after a case-only rename");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert_eq!(resp.user.user_name, "UPDATE-RENAMED");
+}
+
+/// Renaming a user onto a name the account already carries is a collision, not an internal
+/// failure, and the comparison ignores case.
+pub async fn test_update_user_duplicate_name(pool: &sqlx::PgPool) {
+    for new_user_name in ["alice", "ALICE"] {
+        let mut tx = pool.begin().await.expect("Failed to begin transaction");
+        let err = UpdateUserInternalRequest::builder()
+            .user_name("Update-Renamed")
+            .new_user_name(new_user_name)
+            .account_id("123456789012")
+            .build()
+            .expect("Failed to build UpdateUserInternalRequest")
+            .execute(&mut tx, RequestId::new())
+            .await
+            .expect_err("Renaming a user onto an existing name must fail");
+        tx.rollback().await.expect("Failed to rollback transaction");
+        assert!(matches!(err, IamError::EntityAlreadyExistsException(_)), "Expected EntityAlreadyExists, got: {err:?}");
+    }
+}
+
+/// Updating a user that does not exist must fail.
+pub async fn test_update_user_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = UpdateUserInternalRequest::builder()
+        .user_name("Nonexistent-User")
+        .new_user_name("Still-Nonexistent-User")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build UpdateUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("Updating a nonexistent user must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+
+    // The user the test renamed is cleaned up here, so the subtests that follow see the users
+    // they were seeded with.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    DeleteUserInternalRequest::builder()
+        .user_name("Update-Renamed")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build DeleteUserInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to delete the updated user");
+    tx.commit().await.expect("Failed to commit transaction");
+}
+
 /// the column must be NULL.
 pub async fn test_delete_user_permissions_boundary_simple(pool: &sqlx::PgPool) {
     // Set up: create a user with no PB, then attach a PB directly via SQL (the create_user API

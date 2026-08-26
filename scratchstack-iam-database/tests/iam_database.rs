@@ -74,6 +74,7 @@ async fn test_database() {
     subtest_tag_untag_user(&pool).await;
     subtest_get_user(&pool).await;
     subtest_list_users(&pool).await;
+    subtest_update_user(&pool).await;
     subtest_delete_user_permissions_boundary(&pool).await;
     subtest_put_user_permissions_boundary(&pool).await;
     subtest_put_user_policy(&pool).await;
@@ -233,6 +234,16 @@ async fn subtest_get_user(pool: &PgPool) {
 /// ListUsersInternalRequest
 async fn subtest_list_users(pool: &PgPool) {
     user::test_list_users_reports_path_in_arn(pool).await;
+}
+
+/// UpdateUserInternalRequest
+async fn subtest_update_user(pool: &PgPool) {
+    user::test_update_user_rename(pool).await;
+    user::test_update_user_change_path(pool).await;
+    user::test_update_user_no_changes(pool).await;
+    user::test_update_user_rename_case_only(pool).await;
+    user::test_update_user_duplicate_name(pool).await;
+    user::test_update_user_nonexistent(pool).await;
 }
 
 /// DeleteUserPermissionsBoundaryInternalRequest

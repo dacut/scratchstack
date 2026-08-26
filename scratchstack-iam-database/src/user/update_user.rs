@@ -1,13 +1,19 @@
 //! UpdateUser database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, internal_failure, path::validate_path,
-        user::validate_user_name,
+        RequestExecutor,
+        account::validate_account_id,
+        constants::*,
+        internal_failure,
+        path::validate_path,
+        user::{is_user_name_unique_violation, validate_user_name},
     },
     indoc::indoc,
     scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
-        error_meta::Error as IamError, operation::UpdateUserInternalRequest, types::error::NoSuchEntityException,
+        error_meta::Error as IamError,
+        operation::UpdateUserInternalRequest,
+        types::error::{EntityAlreadyExistsException, NoSuchEntityException},
     },
     sqlx::{postgres::PgTransaction, query},
 };
@@ -74,6 +80,20 @@ pub async fn update_user(
     {
         Ok(result) => result,
         Err(e) => {
+            // Renaming a user to a name the account already carries collides on the user-name
+            // constraint; names are compared case-insensitively, so the collision is on the
+            // lower-cased name rather than the one the caller spelled. A rename that only changes
+            // the casing of the user's own name updates that user's own row and collides with
+            // nothing. Any other error is ours rather than the caller's.
+            if let Some(new_user_name) = new_user_name
+                && is_user_name_unique_violation(&e)
+            {
+                return Err(EntityAlreadyExistsException::builder()
+                    .message(format!("User with name {new_user_name} already exists."))
+                    .request_id(request_id)
+                    .build()
+                    .into());
+            }
             log::error!("Failed to update user in database: {e}");
             return Err(internal_failure(request_id).into());
         }
