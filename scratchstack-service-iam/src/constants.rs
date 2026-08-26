@@ -11,6 +11,9 @@ pub(crate) use scratchstack_service_common::constants::*;
 /// The ARN resource type for IAM managed policies.
 pub(crate) const ARN_RESOURCE_TYPE_POLICY: &str = "policy";
 
+/// The ARN resource type for IAM roles.
+pub(crate) const ARN_RESOURCE_TYPE_ROLE: &str = "role";
+
 /// The ARN resource type for IAM users.
 pub(crate) const ARN_RESOURCE_TYPE_USER: &str = "user";
 

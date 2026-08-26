@@ -161,20 +161,82 @@ pub async fn test_create_role_with_permissions_boundary(pool: &sqlx::PgPool) {
     assert_eq!(pb_arn, "arn:aws:iam::123456789012:policy/Example-Managed-Policy-1");
 }
 
-/// Attempting to create a role whose (lowercased) name already exists in the account must fail.
+/// Attempting to create a role whose (lowercased) name already exists in the account must fail,
+/// and must say so as a name collision rather than as a failure of ours.
 pub async fn test_create_role_duplicate_name(pool: &sqlx::PgPool) {
     // "LambdaExecutor" was committed by test_create_role_simple; re-inserting it must fail.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
-    let result = CreateRoleInternalRequest::builder()
+    let err = CreateRoleInternalRequest::builder()
         .role_name("LambdaExecutor")
         .account_id("123456789012")
         .assume_role_policy_document(TRUST_POLICY.to_string())
         .build()
         .expect("Failed to build CreateRoleInternalRequest")
         .execute(&mut tx, RequestId::new())
-        .await;
+        .await
+        .expect_err("Creating a duplicate role name must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
-    assert!(result.is_err(), "Creating a duplicate role name must fail");
+
+    let IamError::EntityAlreadyExistsException(err) = err else {
+        panic!("Expected EntityAlreadyExistsException, got: {err:?}");
+    };
+    assert_eq!(err.message.as_deref(), Some("Role with name LambdaExecutor already exists."));
+}
+
+/// Role names are compared case-insensitively, so a name differing only in case is the same name.
+pub async fn test_create_role_duplicate_name_different_case(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = CreateRoleInternalRequest::builder()
+        .role_name("LAMBDAEXECUTOR")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .build()
+        .expect("Failed to build CreateRoleInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("A name differing only in case must collide with the existing role");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    // The message names the role as the caller spelled it, not as the existing role spells it.
+    let IamError::EntityAlreadyExistsException(err) = err else {
+        panic!("Expected EntityAlreadyExistsException, got: {err:?}");
+    };
+    assert_eq!(err.message.as_deref(), Some("Role with name LAMBDAEXECUTOR already exists."));
+}
+
+/// Role names are unique per account, so another account may hold a role of the same name.
+pub async fn test_create_role_duplicate_name_other_account(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateRoleInternalRequest::builder()
+        .role_name("LambdaExecutor")
+        .account_id("210987654321")
+        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .build()
+        .expect("Failed to build CreateRoleInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("A role of the same name in another account must be allowed");
+    tx.rollback().await.expect("Failed to rollback transaction");
+}
+
+/// A trust policy that is not a policy document at all must be rejected as malformed, rather
+/// than stored on a role that could then never be assumed.
+pub async fn test_create_role_malformed_trust_policy(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = CreateRoleInternalRequest::builder()
+        .role_name("BrokenTrustRole")
+        .account_id("123456789012")
+        .assume_role_policy_document("{ not valid aspen json }")
+        .build()
+        .expect("Failed to build CreateRoleInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("CreateRole with a malformed trust policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(
+        matches!(err, IamError::MalformedPolicyDocumentException(_)),
+        "Expected MalformedPolicyDocumentException, got: {err:?}"
+    );
 }
 
 /// Building a request with an invalid role name must fail before touching the database.

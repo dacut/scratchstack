@@ -2,3 +2,134 @@
 //!
 //! Each operation lives in its own module and is dispatched to by
 //! [`crate::service::serve_request`].
+
+mod create_role;
+mod delete_role;
+mod get_role;
+mod list_roles;
+mod update_role;
+
+pub(crate) use {
+    create_role::create_role, delete_role::delete_role, get_role::get_role, list_roles::list_roles,
+    update_role::update_role,
+};
+
+use {
+    crate::{constants::*, policy::encode_policy_document, service::internal_failure},
+    scratchstack_arn::Arn,
+    scratchstack_core::{
+        RequestId,
+        axum::{body::Body, response::Response},
+        response::Responder as _,
+    },
+    scratchstack_iam_database::{RequestExecutor as _, partition::get_current_partition_or_fail},
+    scratchstack_shapes_iam::{
+        error_meta::Error as IamError,
+        operation::GetRoleInternalRequest,
+        types::{Role, Tag},
+    },
+    sqlx::postgres::PgTransaction,
+    std::str::FromStr as _,
+};
+
+/// Percent-encode the trust policy a role reports, for the response reporting the role.
+///
+/// A role's trust policy is a policy document, and IAM reports it the way it reports every other
+/// one: percent-encoded, leaving a client to URL-decode what it reads back. The database stores
+/// and returns it as it was given, so the encoding belongs here, on the way out.
+///
+/// This is asymmetric with `CreateRole`, which reads the document as plain JSON once the query
+/// string itself has been decoded.
+pub(crate) fn encode_trust_policy(role: &mut Role) {
+    if let Some(document) = role.assume_role_policy_document.as_mut() {
+        *document = encode_policy_document(document);
+    }
+}
+
+/// Build the ARN naming the IAM role `role_name` under `path` in `account_id`.
+///
+/// The path is part of a role's ARN, so a policy can be scoped to a path prefix; an operation
+/// therefore cannot name the role it acts on without knowing the path. An operation acting on an
+/// existing role reads the path from that role, while one creating a role takes it from the
+/// request.
+///
+/// The partition is read from the database inside `tx`, so this must be called within the same
+/// transaction as the operation it authorizes.
+///
+/// Returns the ready-to-send error response if the partition could not be read or the resulting
+/// ARN is not well-formed; neither is something the caller can act on.
+pub(crate) async fn role_arn(
+    tx: &mut PgTransaction<'_>,
+    request_id: RequestId,
+    account_id: &str,
+    path: &str,
+    role_name: &str,
+) -> Result<Arn, Box<Response<Body>>> {
+    let partition = match get_current_partition_or_fail(tx, request_id).await {
+        Ok(partition) => partition,
+        Err(e) => return Err(Box::new(e.respond())),
+    };
+
+    // A role's ARN spells its path between the resource type and the name, with the surrounding
+    // slashes collapsed: the root path "/" yields "role/Name" rather than "role//Name".
+    let resource_path = path.trim_matches('/');
+    let resource = if resource_path.is_empty() {
+        format!("{ARN_RESOURCE_TYPE_ROLE}/{role_name}")
+    } else {
+        format!("{ARN_RESOURCE_TYPE_ROLE}/{resource_path}/{role_name}")
+    };
+
+    Arn::builder().partition(partition).service(SERVICE_IAM).account_id(account_id).resource(resource).build().map_err(
+        |e| {
+            log::error!("{request_id}: Could not construct ARN for role {role_name}: {e}");
+            Box::new(internal_failure(request_id))
+        },
+    )
+}
+
+/// Look up the role named `role_name` in `account_id` and describe it as the resource an
+/// operation acts on: the ARN naming it, and the tags attached to it.
+///
+/// An operation acting on an existing role cannot name it without this lookup: the resource ARN
+/// carries the role's path and the policy may be conditioned on the role's tags, and a request
+/// naming the role supplies neither. The lookup runs inside `tx`, so what is authorized is what
+/// the operation goes on to act on.
+///
+/// Authorization is still evaluated when no such role exists, so that a caller allowed the action
+/// broadly is told the role does not exist while one allowed it only on specific roles learns
+/// nothing at all. There is no role to read a path or tags from in that case, so the root path is
+/// assumed and no tags are reported; the operation itself then reports the missing role.
+///
+/// Returns the ready-to-send error response if the lookup failed for any reason other than the
+/// role not existing.
+pub(crate) async fn role_resource(
+    tx: &mut PgTransaction<'_>,
+    request_id: RequestId,
+    account_id: &str,
+    role_name: &str,
+) -> Result<(Arn, Vec<Tag>), Box<Response<Body>>> {
+    let request =
+        match GetRoleInternalRequest::builder().account_id(account_id.to_string()).role_name(role_name).build() {
+            Ok(request) => request,
+            Err(mut e) => {
+                e.request_id = Some(request_id.to_string());
+                return Err(Box::new(e.respond()));
+            }
+        };
+
+    let role = match request.execute(tx, request_id).await {
+        Ok(response) => response.role,
+        Err(IamError::NoSuchEntityException(_)) => {
+            return Ok((role_arn(tx, request_id, account_id, "/", role_name).await?, Vec::new()));
+        }
+        Err(e) => return Err(Box::new(e.respond())),
+    };
+
+    match Arn::from_str(&role.arn) {
+        Ok(arn) => Ok((arn, role.tags)),
+        Err(e) => {
+            log::error!("{request_id}: Role {role_name} has an unparseable ARN {}: {e}", role.arn);
+            Err(Box::new(internal_failure(request_id)))
+        }
+    }
+}
