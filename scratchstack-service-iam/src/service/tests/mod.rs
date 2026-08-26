@@ -574,6 +574,101 @@ fn policy_version_parameters(action: &str, policy_arn: Option<&str>, version_id:
     serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
 }
 
+/// Build the query parameters for a `SetDefaultPolicyVersion` request naming a policy and the
+/// version to make its default, or leaving either off.
+fn set_default_policy_version_parameters(policy_arn: Option<&str>, version_id: Option<&str>) -> String {
+    policy_version_parameters("SetDefaultPolicyVersion", policy_arn, version_id)
+}
+
+/// Build the query parameters for a `TagPolicy` request naming a policy, or leaving `PolicyArn`
+/// off, and carrying the tags to apply.
+fn tag_policy_parameters(policy_arn: Option<&str>, tags: &[(&str, &str)]) -> String {
+    let mut parameters = action_parameters("TagPolicy");
+
+    if let Some(policy_arn) = policy_arn {
+        parameters.push(("PolicyArn".to_string(), policy_arn.to_string()));
+    }
+
+    append_tag_parameters(&mut parameters, tags);
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for an `UntagPolicy` request naming a policy, or leaving `PolicyArn`
+/// off, and carrying the tag keys to remove.
+fn untag_policy_parameters(policy_arn: Option<&str>, tag_keys: &[&str]) -> String {
+    let mut parameters = action_parameters("UntagPolicy");
+
+    if let Some(policy_arn) = policy_arn {
+        parameters.push(("PolicyArn".to_string(), policy_arn.to_string()));
+    }
+
+    // A list of scalars is indexed the same way a list of structures is, with no field name
+    // after the index.
+    for (index, key) in tag_keys.iter().enumerate() {
+        let index = index + 1;
+        parameters.push((format!("TagKeys.member.{index}"), key.to_string()));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `ListPolicyTags` request naming a policy, or leaving
+/// `PolicyArn` off, and carrying the pagination arguments the caller supplies.
+fn list_policy_tags_parameters(policy_arn: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
+    let max_items = max_items.map(|max_items| max_items.to_string());
+    let mut parameters = vec![("Action", "ListPolicyTags"), ("Version", "2010-05-08")];
+
+    if let Some(policy_arn) = policy_arn {
+        parameters.push(("PolicyArn", policy_arn));
+    }
+    if let Some(max_items) = max_items.as_deref() {
+        parameters.push(("MaxItems", max_items));
+    }
+    if let Some(marker) = marker {
+        parameters.push(("Marker", marker));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `ListEntitiesForPolicy` request naming a policy, or leaving
+/// `PolicyArn` off, and carrying the filters and pagination arguments the caller supplies.
+///
+/// `entity_filter` and `policy_usage_filter` are taken as strings rather than as the enumerations
+/// they name so that a value neither one defines can be exercised.
+fn list_entities_for_policy_parameters(
+    policy_arn: Option<&str>,
+    entity_filter: Option<&str>,
+    path_prefix: Option<&str>,
+    policy_usage_filter: Option<&str>,
+    max_items: Option<i32>,
+    marker: Option<&str>,
+) -> String {
+    let max_items = max_items.map(|max_items| max_items.to_string());
+    let mut parameters = vec![("Action", "ListEntitiesForPolicy"), ("Version", "2010-05-08")];
+
+    if let Some(policy_arn) = policy_arn {
+        parameters.push(("PolicyArn", policy_arn));
+    }
+    if let Some(entity_filter) = entity_filter {
+        parameters.push(("EntityFilter", entity_filter));
+    }
+    if let Some(path_prefix) = path_prefix {
+        parameters.push(("PathPrefix", path_prefix));
+    }
+    if let Some(policy_usage_filter) = policy_usage_filter {
+        parameters.push(("PolicyUsageFilter", policy_usage_filter));
+    }
+    if let Some(max_items) = max_items.as_deref() {
+        parameters.push(("MaxItems", max_items));
+    }
+    if let Some(marker) = marker {
+        parameters.push(("Marker", marker));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
 /// Build the query parameters for a `ListPolicyVersions` request naming a policy, or leaving
 /// `PolicyArn` off, and carrying the pagination arguments the caller supplies.
 fn list_policy_versions_parameters(policy_arn: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {

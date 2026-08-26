@@ -9,13 +9,20 @@ mod delete_policy;
 mod delete_policy_version;
 mod get_policy;
 mod get_policy_version;
+mod list_entities_for_policy;
 mod list_policies;
+mod list_policy_tags;
 mod list_policy_versions;
+mod set_default_policy_version;
+mod tag_policy;
+mod untag_policy;
 
 pub(crate) use {
     create_policy::create_policy, create_policy_version::create_policy_version, delete_policy::delete_policy,
     delete_policy_version::delete_policy_version, get_policy::get_policy, get_policy_version::get_policy_version,
-    list_policies::list_policies, list_policy_versions::list_policy_versions,
+    list_entities_for_policy::list_entities_for_policy, list_policies::list_policies,
+    list_policy_tags::list_policy_tags, list_policy_versions::list_policy_versions,
+    set_default_policy_version::set_default_policy_version, tag_policy::tag_policy, untag_policy::untag_policy,
 };
 
 use {
