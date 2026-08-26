@@ -37,7 +37,7 @@ pub(crate) use {
 };
 
 use {
-    crate::{constants::*, service::internal_failure},
+    crate::{authz::EntityResource, constants::*, service::internal_failure},
     scratchstack_arn::Arn,
     scratchstack_aws_principal::Principal,
     scratchstack_core::{
@@ -47,10 +47,7 @@ use {
     },
     scratchstack_iam_database::{RequestExecutor as _, partition::get_current_partition_or_fail},
     scratchstack_shapes_iam::{
-        action::Action,
-        error_meta::Error as IamError,
-        operation::GetUserInternalRequest,
-        types::{Tag, error::ValidationError},
+        action::Action, error_meta::Error as IamError, operation::GetUserInternalRequest, types::error::ValidationError,
     },
     sqlx::postgres::PgTransaction,
     std::str::FromStr as _,
@@ -131,17 +128,18 @@ pub(crate) async fn user_arn(
 }
 
 /// Look up the user named `user_name` in `account_id` and describe it as the resource an
-/// operation acts on: the ARN naming it, and the tags attached to it.
+/// operation acts on: the ARN naming it, the tags attached to it, and the permissions boundary
+/// set on it.
 ///
 /// An operation acting on an existing user cannot name it without this lookup: the resource ARN
-/// carries the user's path and the policy may be conditioned on the user's tags, and a request
-/// naming the user supplies neither. The lookup runs inside `tx`, so what is authorized is what
+/// carries the user's path and the policy may be conditioned on the user's tags or on the
+/// boundary set on it, and a request naming the user supplies none of those. The lookup runs inside `tx`, so what is authorized is what
 /// the operation goes on to act on.
 ///
 /// Authorization is still evaluated when no such user exists, so that a caller allowed the action
 /// broadly is told the user does not exist while one allowed it only on specific users learns
-/// nothing at all. There is no user to read a path or tags from in that case, so the root path is
-/// assumed and no tags are reported; the operation itself then reports the missing user.
+/// nothing at all. There is no user to read any of that from in that case, so the root path is
+/// assumed and neither tags nor a boundary are reported; the operation itself then reports the missing user.
 ///
 /// Returns the ready-to-send error response if the lookup failed for any reason other than the
 /// user not existing.
@@ -150,7 +148,7 @@ pub(crate) async fn user_resource(
     request_id: RequestId,
     account_id: &str,
     user_name: &str,
-) -> Result<(Arn, Vec<Tag>), Box<Response<Body>>> {
+) -> Result<EntityResource, Box<Response<Body>>> {
     let request =
         match GetUserInternalRequest::builder().account_id(account_id.to_string()).user_name(user_name).build() {
             Ok(request) => request,
@@ -163,13 +161,24 @@ pub(crate) async fn user_resource(
     let user = match request.execute(tx, request_id).await {
         Ok(response) => response.user,
         Err(IamError::NoSuchEntityException(_)) => {
-            return Ok((user_arn(tx, request_id, account_id, "/", user_name).await?, Vec::new()));
+            return Ok(EntityResource {
+                arn: user_arn(tx, request_id, account_id, "/", user_name).await?,
+                permissions_boundary: None,
+                tags: Vec::new(),
+            });
         }
         Err(e) => return Err(Box::new(e.respond())),
     };
 
     match Arn::from_str(&user.arn) {
-        Ok(arn) => Ok((arn, user.tags)),
+        Ok(arn) => Ok(EntityResource {
+            arn,
+            // A boundary is stored as the managed policy serving as it, so what the entity
+            // reports is an attachment wrapping that policy's ARN; an entity under no boundary
+            // reports no attachment at all.
+            permissions_boundary: user.permissions_boundary.and_then(|boundary| boundary.permissions_boundary_arn),
+            tags: user.tags,
+        }),
         Err(e) => {
             log::error!("{request_id}: User {user_name} has an unparseable ARN {}: {e}", user.arn);
             Err(Box::new(internal_failure(request_id)))

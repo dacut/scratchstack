@@ -1,6 +1,6 @@
 use {
     crate::{
-        authz::{check_authorization, request_tag_context, resource_tag_context},
+        authz::{check_authorization, request_tag_context},
         constants::*,
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
         user::user_resource,
@@ -88,7 +88,7 @@ pub(crate) async fn tag_user(
         }
     };
 
-    let (resource_arn, resource_tags) = match user_resource(&mut tx, request_id, &account_id, &user_name).await {
+    let resource = match user_resource(&mut tx, request_id, &account_id, &user_name).await {
         Ok(resource) => resource,
         Err(response) => return *response,
     };
@@ -98,7 +98,7 @@ pub(crate) async fn tag_user(
     // conditioned on what is being written, on what the user already holds, or on both at once.
     let mut request_context =
         request_tag_context(request.tags.iter().map(|tag| (tag.key.as_str(), tag.value.as_str())));
-    request_context.extend(&resource_tag_context(&resource_tags));
+    request_context.extend(&resource.context());
 
     if let Err(response) = check_authorization(
         &mut tx,
@@ -108,7 +108,7 @@ pub(crate) async fn tag_user(
         &session_policies,
         &request_metadata,
         Action::TagUser,
-        &[resource_arn],
+        &[resource.arn],
         &request_context,
     )
     .await

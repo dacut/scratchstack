@@ -1,6 +1,6 @@
 use {
     crate::{
-        authz::{check_authorization, resource_tag_context},
+        authz::check_authorization,
         constants::*,
         policy::encode_policy_document,
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
@@ -83,10 +83,12 @@ pub(crate) async fn get_user_policy(
         }
     };
 
-    let (resource_arn, resource_tags) = match user_resource(&mut tx, request_id, &account_id, &user_name).await {
+    let resource = match user_resource(&mut tx, request_id, &account_id, &user_name).await {
         Ok(resource) => resource,
         Err(response) => return *response,
     };
+
+    let request_context = resource.context();
 
     if let Err(response) = check_authorization(
         &mut tx,
@@ -96,8 +98,8 @@ pub(crate) async fn get_user_policy(
         &session_policies,
         &request_metadata,
         Action::GetUserPolicy,
-        &[resource_arn],
-        &resource_tag_context(&resource_tags),
+        &[resource.arn],
+        &request_context,
     )
     .await
     {

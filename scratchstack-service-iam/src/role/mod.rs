@@ -19,7 +19,7 @@ pub(crate) use {
 };
 
 use {
-    crate::{constants::*, policy::encode_policy_document, service::internal_failure},
+    crate::{authz::EntityResource, constants::*, policy::encode_policy_document, service::internal_failure},
     scratchstack_arn::Arn,
     scratchstack_core::{
         RequestId,
@@ -27,11 +27,7 @@ use {
         response::Responder as _,
     },
     scratchstack_iam_database::{RequestExecutor as _, partition::get_current_partition_or_fail},
-    scratchstack_shapes_iam::{
-        error_meta::Error as IamError,
-        operation::GetRoleInternalRequest,
-        types::{Role, Tag},
-    },
+    scratchstack_shapes_iam::{error_meta::Error as IamError, operation::GetRoleInternalRequest, types::Role},
     sqlx::postgres::PgTransaction,
     std::str::FromStr as _,
 };
@@ -92,17 +88,18 @@ pub(crate) async fn role_arn(
 }
 
 /// Look up the role named `role_name` in `account_id` and describe it as the resource an
-/// operation acts on: the ARN naming it, and the tags attached to it.
+/// operation acts on: the ARN naming it, the tags attached to it, and the permissions boundary
+/// set on it.
 ///
 /// An operation acting on an existing role cannot name it without this lookup: the resource ARN
-/// carries the role's path and the policy may be conditioned on the role's tags, and a request
-/// naming the role supplies neither. The lookup runs inside `tx`, so what is authorized is what
+/// carries the role's path and the policy may be conditioned on the role's tags or on the
+/// boundary set on it, and a request naming the role supplies none of those. The lookup runs inside `tx`, so what is authorized is what
 /// the operation goes on to act on.
 ///
 /// Authorization is still evaluated when no such role exists, so that a caller allowed the action
 /// broadly is told the role does not exist while one allowed it only on specific roles learns
-/// nothing at all. There is no role to read a path or tags from in that case, so the root path is
-/// assumed and no tags are reported; the operation itself then reports the missing role.
+/// nothing at all. There is no role to read any of that from in that case, so the root path is
+/// assumed and neither tags nor a boundary are reported; the operation itself then reports the missing role.
 ///
 /// Returns the ready-to-send error response if the lookup failed for any reason other than the
 /// role not existing.
@@ -111,7 +108,7 @@ pub(crate) async fn role_resource(
     request_id: RequestId,
     account_id: &str,
     role_name: &str,
-) -> Result<(Arn, Vec<Tag>), Box<Response<Body>>> {
+) -> Result<EntityResource, Box<Response<Body>>> {
     let request =
         match GetRoleInternalRequest::builder().account_id(account_id.to_string()).role_name(role_name).build() {
             Ok(request) => request,
@@ -124,13 +121,24 @@ pub(crate) async fn role_resource(
     let role = match request.execute(tx, request_id).await {
         Ok(response) => response.role,
         Err(IamError::NoSuchEntityException(_)) => {
-            return Ok((role_arn(tx, request_id, account_id, "/", role_name).await?, Vec::new()));
+            return Ok(EntityResource {
+                arn: role_arn(tx, request_id, account_id, "/", role_name).await?,
+                permissions_boundary: None,
+                tags: Vec::new(),
+            });
         }
         Err(e) => return Err(Box::new(e.respond())),
     };
 
     match Arn::from_str(&role.arn) {
-        Ok(arn) => Ok((arn, role.tags)),
+        Ok(arn) => Ok(EntityResource {
+            arn,
+            // A boundary is stored as the managed policy serving as it, so what the entity
+            // reports is an attachment wrapping that policy's ARN; an entity under no boundary
+            // reports no attachment at all.
+            permissions_boundary: role.permissions_boundary.and_then(|boundary| boundary.permissions_boundary_arn),
+            tags: role.tags,
+        }),
         Err(e) => {
             log::error!("{request_id}: Role {role_name} has an unparseable ARN {}: {e}", role.arn);
             Err(Box::new(internal_failure(request_id)))

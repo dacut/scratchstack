@@ -1,6 +1,6 @@
 use {
     crate::{
-        authz::{check_authorization, resource_tag_context},
+        authz::check_authorization,
         constants::*,
         role::role_resource,
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
@@ -36,6 +36,13 @@ use {
 /// resource before and after the change and is authorized once. What it can change is how long a
 /// session on the role lasts, which is why a policy limiting who may raise `MaxSessionDuration`
 /// belongs on this action rather than on `sts:AssumeRole`.
+///
+/// The permissions boundary set on the role backs the `iam:PermissionsBoundary` condition key,
+/// naming the managed policy serving as that boundary. It describes the role the request names
+/// rather than anything the request supplies, which is what lets a grant delegate management of
+/// roles while requiring that the roles managed stay under a particular boundary -- so a
+/// delegated administrator cannot raise a role above itself. A role under no boundary supplies
+/// no key, so a condition on it does not match rather than matching an empty string.
 pub(crate) async fn update_role(
     svc_state: ServiceState,
     request_id: RequestId,
@@ -86,10 +93,12 @@ pub(crate) async fn update_role(
         }
     };
 
-    let (resource_arn, resource_tags) = match role_resource(&mut tx, request_id, &account_id, &role_name).await {
+    let resource = match role_resource(&mut tx, request_id, &account_id, &role_name).await {
         Ok(resource) => resource,
         Err(response) => return *response,
     };
+
+    let request_context = resource.context_with_boundary();
 
     if let Err(response) = check_authorization(
         &mut tx,
@@ -99,8 +108,8 @@ pub(crate) async fn update_role(
         &session_policies,
         &request_metadata,
         Action::UpdateRole,
-        &[resource_arn],
-        &resource_tag_context(&resource_tags),
+        &[resource.arn],
+        &request_context,
     )
     .await
     {

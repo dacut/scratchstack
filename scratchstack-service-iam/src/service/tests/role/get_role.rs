@@ -5,7 +5,8 @@ const TRUST_POLICY: &str = r#"{"Version":"2012-10-17","Statement":[{"Effect":"Al
 
 /// Seed data for the `GetRole` authorization tests. `Broad-Reader` may read any role;
 /// `Path-Reader` only roles under `/division/`; `Tag-Reader` only roles tagged
-/// `Department=Engineering`; `No-Grant-Reader` none at all. The roles differ in path, tags, and
+/// `Department=Engineering`; `Boundary-Reader` only roles carrying `Boundary-Policy` as their
+/// permissions boundary; `No-Grant-Reader` none at all. The roles differ in path, tags, and
 /// whether they carry a permissions boundary, so that what `GetRole` reports about each can be
 /// checked.
 const GET_ROLE_TEST_DATA: &str = r#"
@@ -16,7 +17,8 @@ const GET_ROLE_TEST_DATA: &str = r#"
     ('SVCGETROLEBROAD', '%ACCOUNT_ID%', 'broad-reader', 'Broad-Reader', '/'),
     ('SVCGETROLEPATH1', '%ACCOUNT_ID%', 'path-reader', 'Path-Reader', '/'),
     ('SVCGETROLETAG01', '%ACCOUNT_ID%', 'tag-reader', 'Tag-Reader', '/'),
-    ('SVCGETROLENONE1', '%ACCOUNT_ID%', 'no-grant-reader', 'No-Grant-Reader', '/');
+    ('SVCGETROLENONE1', '%ACCOUNT_ID%', 'no-grant-reader', 'No-Grant-Reader', '/'),
+    ('SVCGETROLEBOUND', '%ACCOUNT_ID%', 'boundary-reader', 'Boundary-Reader', '/');
 
     INSERT INTO iam.managed_policies(managed_policy_id, account_id, managed_policy_name_lower,
         managed_policy_name_cased, path, default_version, deprecated, latest_version) VALUES
@@ -50,7 +52,11 @@ const GET_ROLE_TEST_DATA: &str = r#"
         "Resource":"arn:aws:iam::%ACCOUNT_ID%:role/division/*"}]}'),
     ('SVCGETROLETAG01', 'allow-get-engineering', 'Allow-Get-Engineering',
         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:GetRole","Resource":"*",
-        "Condition":{"StringEquals":{"iam:ResourceTag/department":"Engineering"}}}]}');
+        "Condition":{"StringEquals":{"iam:ResourceTag/department":"Engineering"}}}]}'),
+    ('SVCGETROLEBOUND', 'allow-read-bounded-roles', 'Allow-Read-Bounded-Roles',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:GetRole","Resource":"*",
+        "Condition":{"StringEquals":{"iam:PermissionsBoundary":
+        "arn:aws:iam::%ACCOUNT_ID%:policy/Boundary-Policy"}}}]}');
 "#;
 
 /// End-to-end authorization checks for `GetRole` through `serve_request` against an embedded
@@ -125,6 +131,19 @@ async fn test_get_role_authorization() {
 
     // An untagged role leaves the condition key absent, so the grant does not apply.
     let (principal, session_data) = database.user_identity("SVCGETROLETAG01", "Tag-Reader");
+    let (status, body) = call(&svc_state, principal, session_data, &get_role_parameters(Some("Plain-Role"))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+    assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+    // The boundary set on the role backs the iam:PermissionsBoundary condition key, so a grant
+    // confined to roles under a particular boundary reaches one carrying it...
+    let (principal, session_data) = database.user_identity("SVCGETROLEBOUND", "Boundary-Reader");
+    let (status, body) = call(&svc_state, principal, session_data, &get_role_parameters(Some("Tagged-Role"))).await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+    assert!(body.contains("<RoleName>Tagged-Role</RoleName>"), "unexpected body: {body}");
+
+    // ...and not a role under no boundary, which supplies no key for the condition to match.
+    let (principal, session_data) = database.user_identity("SVCGETROLEBOUND", "Boundary-Reader");
     let (status, body) = call(&svc_state, principal, session_data, &get_role_parameters(Some("Plain-Role"))).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
     assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");

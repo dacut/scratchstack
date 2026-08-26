@@ -4,8 +4,8 @@ use {crate::service::tests::*, pretty_assertions::assert_eq, scratchstack_core::
 /// `Unbounded-Target` already carries `Boundary-Policy` as its boundary, so each caller has
 /// something to take away and a user with no boundary can be told apart from one that does not
 /// exist. The callers carry grants scoped by the path of the user losing its boundary, by that
-/// user's tags, and by the user itself; the boundary being cleared is not named by the
-/// request, so there is nothing here for a grant to scope by it.
+/// user's tags, by the user itself, and by the boundary being cleared -- which the request does
+/// not name, but which the user carries and which backs `iam:PermissionsBoundary`.
 const DELETE_USER_PERMISSIONS_BOUNDARY_TEST_DATA: &str = r#"
     INSERT INTO iam.accounts(account_id, email, alias) VALUES
     ('%ACCOUNT_ID%', 'delete-user-permissions-boundary-test@example.com',
@@ -32,7 +32,9 @@ const DELETE_USER_PERMISSIONS_BOUNDARY_TEST_DATA: &str = r#"
     ('SVCDPBTGTENGNR01', '%ACCOUNT_ID%', 'engineering-target', 'Engineering-Target', '/', 'SVCDPBPOLBND0001'),
     ('SVCDPBTGTSALES01', '%ACCOUNT_ID%', 'sales-target', 'Sales-Target', '/', 'SVCDPBPOLBND0001'),
     ('SVCDPBTGTROLE001', '%ACCOUNT_ID%', 'role-target', 'Role-Target', '/', 'SVCDPBPOLBND0001'),
-    ('SVCDPBTGTROOT001', '%ACCOUNT_ID%', 'root-target', 'Root-Target', '/', 'SVCDPBPOLBND0001');
+    ('SVCDPBTGTROOT001', '%ACCOUNT_ID%', 'root-target', 'Root-Target', '/', 'SVCDPBPOLBND0001'),
+    ('SVCDPBBOUNDCLR01', '%ACCOUNT_ID%', 'bounded-clearer', 'Bounded-Clearer', '/', NULL),
+    ('SVCDPBTGTBOUND01', '%ACCOUNT_ID%', 'bounded-target', 'Bounded-Target', '/', 'SVCDPBPOLBND0001');
 
     INSERT INTO iam.user_tags(user_id, key_lower, key_cased, value) VALUES
     ('SVCDPBTGTENGNR01', 'department', 'Department', 'Engineering'),
@@ -50,7 +52,11 @@ const DELETE_USER_PERMISSIONS_BOUNDARY_TEST_DATA: &str = r#"
         "Resource":"*","Condition":{"StringEquals":{"aws:ResourceTag/department":"Engineering"}}}]}'),
     ('SVCDPBNARROWD001', 'allow-clear-on-target', 'Allow-Clear-On-Target',
         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:DeleteUserPermissionsBoundary",
-        "Resource":"arn:aws:iam::%ACCOUNT_ID%:user/Boundary-Target"}]}');
+        "Resource":"arn:aws:iam::%ACCOUNT_ID%:user/Boundary-Target"}]}'),
+    ('SVCDPBBOUNDCLR01', 'allow-clear-known-boundary', 'Allow-Clear-Known-Boundary',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:DeleteUserPermissionsBoundary",
+        "Resource":"*","Condition":{"StringEquals":{"iam:PermissionsBoundary":
+        "arn:aws:iam::%ACCOUNT_ID%:policy/Boundary-Policy"}}}]}');
 
     INSERT INTO iam.roles(role_id, account_id, role_name_lower, role_name_cased, path, assume_role_policy_document) VALUES
     ('SVCDPBROLE000001', '%ACCOUNT_ID%', 'delete-user-permissions-boundary-role',
@@ -172,6 +178,38 @@ async fn test_delete_user_permissions_boundary_authorization() {
     let (status, body) =
         call(&svc_state, principal, session_data, &delete_user_permissions_boundary_parameters(Some("Sales-Target")))
             .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+    assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+    // The boundary the user carries backs iam:PermissionsBoundary even though the request does
+    // not name it, so a grant confined to clearing one particular boundary reaches a user under
+    // it. This is the operation such a condition matters most on: without it, a grant to clear
+    // boundaries is a grant to clear every boundary.
+    let (principal, session_data) = database.user_identity("SVCDPBBOUNDCLR01", "Bounded-Clearer");
+    let (status, body) =
+        call(&svc_state, principal, session_data, &delete_user_permissions_boundary_parameters(Some("Bounded-Target")))
+            .await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+    // The key describes the user as it stands when the request is authorized, so once the
+    // boundary is gone the same caller can no longer reach that user at all.
+    let (principal, session_data) = database.user_identity("SVCDPBBOUNDCLR01", "Bounded-Clearer");
+    let (status, body) =
+        call(&svc_state, principal, session_data, &delete_user_permissions_boundary_parameters(Some("Bounded-Target")))
+            .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+    assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+    // A user that never carried a boundary supplies no key, so the condition does not match
+    // rather than matching an empty string.
+    let (principal, session_data) = database.user_identity("SVCDPBBOUNDCLR01", "Bounded-Clearer");
+    let (status, body) = call(
+        &svc_state,
+        principal,
+        session_data,
+        &delete_user_permissions_boundary_parameters(Some("Unbounded-Target")),
+    )
+    .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
     assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
 
