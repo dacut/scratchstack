@@ -418,6 +418,157 @@ pub async fn test_detach_role_policy_nonexistent_role(pool: &sqlx::PgPool) {
     assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
 }
 
+// -- cross-account attachment tests -------------------------------------------
+
+/// Managed policies are not shared across accounts. Attaching one another account owns is reported
+/// the way attaching one that does not exist is, whichever kind of entity is receiving it, and the
+/// message names the policy rather than the entity -- the ARN is settled before anything looks the
+/// entity up, so a caller cannot probe another account's policies through an entity of its own.
+pub async fn test_attach_policy_cross_account_rejected(pool: &sqlx::PgPool) {
+    // Owned by 123456789012; every attach below is made by 210987654321.
+    const FOREIGN_POLICY_ARN: &str = "arn:aws:iam::123456789012:policy/Example-Managed-Policy-1";
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+
+    let err = AttachUserPolicyInternalRequest::builder()
+        .account_id("210987654321")
+        .user_name("Example-User-2")
+        .policy_arn(FOREIGN_POLICY_ARN)
+        .build()
+        .expect("Failed to build AttachUserPolicyInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("Attaching another account's policy to a user must fail");
+    assert_cross_account_rejection(err, FOREIGN_POLICY_ARN);
+
+    // The group and role here do not exist in that account either; the policy is what the failure
+    // names, which is what says the ARN was settled first.
+    let err = AttachGroupPolicyInternalRequest::builder()
+        .account_id("210987654321")
+        .group_name("No-Such-Group")
+        .policy_arn(FOREIGN_POLICY_ARN)
+        .build()
+        .expect("Failed to build AttachGroupPolicyInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("Attaching another account's policy to a group must fail");
+    assert_cross_account_rejection(err, FOREIGN_POLICY_ARN);
+
+    let err = AttachRolePolicyInternalRequest::builder()
+        .account_id("210987654321")
+        .role_name("No-Such-Role")
+        .policy_arn(FOREIGN_POLICY_ARN)
+        .build()
+        .expect("Failed to build AttachRolePolicyInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("Attaching another account's policy to a role must fail");
+    assert_cross_account_rejection(err, FOREIGN_POLICY_ARN);
+
+    tx.rollback().await.expect("Failed to rollback transaction");
+}
+
+/// Detaching is confined the same way attaching is. The seed data carries a cross-account
+/// attachment that predates the rule, so this also shows that state cannot be reached back into
+/// through the API even where it exists.
+pub async fn test_detach_policy_cross_account_rejected(pool: &sqlx::PgPool) {
+    const FOREIGN_POLICY_ARN: &str = "arn:aws:iam::123456789012:policy/Example-Managed-Policy-1";
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+
+    let err = DetachUserPolicyInternalRequest::builder()
+        .account_id("210987654321")
+        .user_name("Example-User-2")
+        .policy_arn(FOREIGN_POLICY_ARN)
+        .build()
+        .expect("Failed to build DetachUserPolicyInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("Detaching another account's policy from a user must fail");
+    assert_cross_account_rejection(err, FOREIGN_POLICY_ARN);
+
+    let err = DetachGroupPolicyInternalRequest::builder()
+        .account_id("210987654321")
+        .group_name("No-Such-Group")
+        .policy_arn(FOREIGN_POLICY_ARN)
+        .build()
+        .expect("Failed to build DetachGroupPolicyInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("Detaching another account's policy from a group must fail");
+    assert_cross_account_rejection(err, FOREIGN_POLICY_ARN);
+
+    let err = DetachRolePolicyInternalRequest::builder()
+        .account_id("210987654321")
+        .role_name("No-Such-Role")
+        .policy_arn(FOREIGN_POLICY_ARN)
+        .build()
+        .expect("Failed to build DetachRolePolicyInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("Detaching another account's policy from a role must fail");
+    assert_cross_account_rejection(err, FOREIGN_POLICY_ARN);
+
+    tx.rollback().await.expect("Failed to rollback transaction");
+}
+
+/// The one policy every account reaches is an AWS-managed one, and it can be named either through
+/// the `aws` account alias IAM spells it with or through the numeric account it is stored under.
+/// Both name the same policy, and every kind of entity accepts either spelling.
+pub async fn test_attach_policy_aws_managed_either_spelling(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+
+    CreatePolicyInternalRequest::builder()
+        .account_id("000000000000")
+        .policy_name("AwsManagedEitherSpelling")
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to create AWS-managed policy");
+
+    AttachUserPolicyInternalRequest::builder()
+        .account_id("123456789012")
+        .user_name("Example-User-1")
+        .policy_arn("arn:aws:iam::aws:policy/AwsManagedEitherSpelling")
+        .build()
+        .expect("Failed to build AttachUserPolicyInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Attaching an AWS-managed policy by its alias must succeed");
+
+    AttachGroupPolicyInternalRequest::builder()
+        .account_id("123456789012")
+        .group_name("Example-Group-1")
+        .policy_arn("arn:aws:iam::000000000000:policy/AwsManagedEitherSpelling")
+        .build()
+        .expect("Failed to build AttachGroupPolicyInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Attaching an AWS-managed policy by its numeric account must succeed");
+
+    AttachRolePolicyInternalRequest::builder()
+        .account_id("123456789012")
+        .role_name("Example-Role-1")
+        .policy_arn("arn:aws:iam::000000000000:policy/AwsManagedEitherSpelling")
+        .build()
+        .expect("Failed to build AttachRolePolicyInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Attaching an AWS-managed policy by its numeric account must succeed");
+
+    tx.rollback().await.expect("Failed to rollback transaction");
+}
+
+/// Assert that `err` is the "no such policy" report a cross-account ARN earns, naming `policy_arn`.
+fn assert_cross_account_rejection(err: IamError, policy_arn: &str) {
+    let IamError::NoSuchEntityException(e) = err else {
+        panic!("Expected NoSuchEntity, got: {err:?}");
+    };
+    assert_eq!(e.message.as_deref(), Some(format!("Policy {policy_arn} was not found.").as_str()));
+}
+
 // -- ListAttachedUserPoliciesInternalRequest tests ----------------------------
 
 /// Seed data has Example-User-2 (account 210987654321) attached to Example-Managed-Policy-1.

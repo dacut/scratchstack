@@ -1,5 +1,6 @@
 //! Role test suite.
 use {
+    super::common::VALID_POLICY_DOCUMENT,
     base64::{Engine as _, engine::general_purpose::URL_SAFE},
     chrono::Utc,
     pretty_assertions::assert_eq,
@@ -14,12 +15,12 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
-            CreateRoleInternalRequest, CreateSessionTokenEncryptionKeyRequest, DeleteRoleInternalRequest,
-            DeleteRolePermissionsBoundaryInternalRequest, DeleteRolePolicyInternalRequest, GetRoleInternalRequest,
-            GetRolePolicyInternalRequest, ListRolePoliciesInternalRequest, ListRoleTagsInternalRequest,
-            ListRolesInternalRequest, PutRolePermissionsBoundaryInternalRequest, PutRolePolicyInternalRequest,
-            TagRoleInternalRequest, UntagRoleInternalRequest, UpdateRoleDescriptionInternalRequest,
-            UpdateRoleInternalRequest,
+            CreatePolicyInternalRequest, CreateRoleInternalRequest, CreateSessionTokenEncryptionKeyRequest,
+            DeleteRoleInternalRequest, DeleteRolePermissionsBoundaryInternalRequest, DeleteRolePolicyInternalRequest,
+            GetRoleInternalRequest, GetRolePolicyInternalRequest, ListRolePoliciesInternalRequest,
+            ListRoleTagsInternalRequest, ListRolesInternalRequest, PutRolePermissionsBoundaryInternalRequest,
+            PutRolePolicyInternalRequest, TagRoleInternalRequest, UntagRoleInternalRequest,
+            UpdateRoleDescriptionInternalRequest, UpdateRoleInternalRequest,
         },
         types::{PermissionsBoundaryAttachmentType, Tag},
     },
@@ -2080,6 +2081,44 @@ pub async fn test_assume_role(pool: &sqlx::PgPool) {
     );
     assert_eq!(metadata.get("aws:PrincipalType"), Some(&SessionValue::String("AssumedRole".to_string())));
     assert_eq!(metadata.get("aws:PrincipalAccount"), Some(&SessionValue::String("123456789012".to_string())));
+}
+
+/// A session policy is named by ARN, and managed policies are not shared across accounts: a role
+/// in one account cannot be assumed under a session policy another account owns. The refusal reads
+/// the same as one naming a policy that does not exist, so assuming a role tells the caller nothing
+/// about another account's policies.
+pub async fn test_assume_role_session_policy_cross_account_rejected(pool: &sqlx::PgPool) {
+    // Owned by 210987654321, while the role being assumed lives in 123456789012.
+    const FOREIGN_POLICY_ARN: &str = "arn:aws:iam::210987654321:policy/Foreign-Session-Policy";
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreatePolicyInternalRequest::builder()
+        .account_id("210987654321")
+        .policy_name("Foreign-Session-Policy")
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to create the other account's policy");
+
+    let err = AssumeRoleRequest::builder()
+        .role_arn("arn:aws:iam::123456789012:role/example-role-1")
+        .role_session_name("cross-account-session")
+        .policy_arns(PolicyDescriptorType {
+            arn: Some(FOREIGN_POLICY_ARN.to_string()),
+        })
+        .build()
+        .expect("Failed to build AssumeRoleRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("Assuming a role under another account's session policy must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let StsError::ValidationError(e) = err else {
+        panic!("Expected ValidationError, got: {err:?}");
+    };
+    assert_eq!(e.message.as_deref(), Some(format!("Policy {FOREIGN_POLICY_ARN} does not exist").as_str()));
 }
 
 /// AssumeRole with session policies records them in the session token, and the direct-database

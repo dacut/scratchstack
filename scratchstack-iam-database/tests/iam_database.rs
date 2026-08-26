@@ -370,6 +370,7 @@ async fn subtest_create_role(pool: &PgPool) {
 /// AssumeRoleRequest
 async fn subtest_assume_role(pool: &PgPool) {
     role::test_assume_role(pool).await;
+    role::test_assume_role_session_policy_cross_account_rejected(pool).await;
     role::test_assume_role_with_session_policies(pool).await;
     role::test_assume_role_nonexistent_role(pool).await;
     role::test_assume_role_invalid_arn(pool).await;
@@ -490,6 +491,9 @@ async fn subtest_detach_policy(pool: &PgPool) {
     policy_attachment::test_detach_role_policy_not_attached(pool).await;
     policy_attachment::test_detach_role_policy_nonexistent_policy(pool).await;
     policy_attachment::test_detach_role_policy_nonexistent_role(pool).await;
+    policy_attachment::test_attach_policy_cross_account_rejected(pool).await;
+    policy_attachment::test_detach_policy_cross_account_rejected(pool).await;
+    policy_attachment::test_attach_policy_aws_managed_either_spelling(pool).await;
 }
 
 /// ListAttachedUserPoliciesInternalRequest / ListAttachedGroupPoliciesInternalRequest / ListAttachedRolePoliciesInternalRequest
