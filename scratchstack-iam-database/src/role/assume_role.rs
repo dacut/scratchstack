@@ -5,7 +5,7 @@ use {
         constants::*,
         id::IamId,
         internal_failure,
-        policy::get_policy,
+        policy::{get_policy, parse_policy_arn, resolve_policy_account_id},
         session_token_encryption_key::get_current_session_token_encryption_key,
         tag::{validate_tag_key, validate_tag_value},
     },
@@ -79,6 +79,19 @@ pub async fn assume_role(
         let Some(policy_arn) = &policy_descriptor.arn else {
             continue;
         };
+
+        // A session policy is named by ARN, and managed policies are not shared across accounts:
+        // the role's account reaches its own policies and the AWS-managed ones and nothing else.
+        // An ARN naming any other account is reported the way one naming no policy at all is, so
+        // that assuming a role tells the caller nothing about another account's policies.
+        let policy_parts = parse_policy_arn(policy_arn, request_id)?;
+        if resolve_policy_account_id(role_account_id, &policy_parts, request_id).is_err() {
+            return Err(ValidationError::builder()
+                .message(format!("Policy {policy_arn} does not exist"))
+                .request_id(request_id)
+                .build()
+                .into());
+        }
 
         let get_policy_response = match get_policy(tx, role_account_id, policy_arn, request_id).await {
             Ok(response) => response,

@@ -241,6 +241,44 @@ async fn lookup_managed_policy_id(
     })
 }
 
+/// Resolve the account the managed policy `policy_arn` names is stored under, confined to the
+/// policies a caller in `account_id` may reach.
+///
+/// IAM does not share managed policies across accounts. A caller reaches the policies of its own
+/// account and the AWS-managed policies, which every account may attach and none owns; an ARN
+/// naming any other account names nothing the caller can see. That is reported as a policy that
+/// does not exist rather than as a refusal, so a caller learns nothing about whether another
+/// account has a policy by that name.
+///
+/// An AWS-managed policy can be named either through the `aws` account alias, as IAM spells it,
+/// or through the numeric account the tables store it under, and both name the same policy. The
+/// account returned is the numeric one, ready to be matched against `iam.managed_policies`.
+pub(crate) fn resolve_policy_account_id<'arn>(
+    account_id: &str,
+    policy_arn: &'arn IamResourceArn,
+    request_id: RequestId,
+) -> Result<&'arn str, IamError> {
+    let caller_account_id = match account_id {
+        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
+        account_id => account_id,
+    };
+    let policy_account_id = match policy_arn.account_id() {
+        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
+        account_id => account_id,
+    };
+
+    if policy_account_id == caller_account_id || policy_account_id == AWS_ACCOUNT_ID_NUMERIC {
+        return Ok(policy_account_id);
+    }
+
+    log::info!("{request_id}: Policy {policy_arn} is not reachable from account {caller_account_id}");
+    Err(NoSuchEntityException::builder()
+        .message(format!("Policy {policy_arn} was not found."))
+        .request_id(request_id)
+        .build()
+        .into())
+}
+
 /// Parse a policy ARN and extract the account id, path, and lowercase policy name. Returns a
 /// `ValidationError` if the ARN is unparseable or does not point at a policy resource.
 pub(crate) fn parse_policy_arn(policy_arn: &str, request_id: RequestId) -> Result<IamResourceArn, IamError> {

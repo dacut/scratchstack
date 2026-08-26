@@ -156,6 +156,26 @@ async fn test_attach_user_policy_authorization() {
     assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
     assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
 
+    // Managed policies are not shared across accounts, so a policy another account owns is
+    // reported the way one that does not exist is -- after authorization, since the caller here
+    // is allowed to attach any policy.
+    let (principal, session_data) = database.user_identity("SVCAUPBROADATT01", "Broad-Attacher");
+    let (status, body) = call(
+        &svc_state,
+        principal,
+        session_data,
+        &attach_user_policy_parameters(
+            Some("Attach-Target"),
+            Some("arn:aws:iam::210987654321:policy/Other-Account-Policy"),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
+    assert!(
+        body.contains("<Message>Policy arn:aws:iam::210987654321:policy/Other-Account-Policy was not found.</Message>"),
+        "unexpected body: {body}"
+    );
+
     // An AWS-owned policy is named through the aws account alias, and iam:PolicyARN carries
     // the ARN as the request spelled it, so that is what the condition compares.
     let (principal, session_data) = database.user_identity("SVCAUPAWSATT0001", "Aws-Attacher");

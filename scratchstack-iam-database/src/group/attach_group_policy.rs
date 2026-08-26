@@ -1,8 +1,12 @@
 //! AttachGroupPolicy database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, group::validate_group_name, internal_failure,
-        policy::parse_policy_arn,
+        RequestExecutor,
+        account::validate_account_id,
+        constants::*,
+        group::validate_group_name,
+        internal_failure,
+        policy::{parse_policy_arn, resolve_policy_account_id},
     },
     indoc::indoc,
     scratchstack_core::RequestId,
@@ -36,18 +40,10 @@ pub async fn attach_group_policy(
     };
     validate_group_name(group_name, request_id)?;
 
+    // Managed policies are not shared across accounts, so the ARN reaches this account's own
+    // policies and the AWS-managed ones and nothing else.
     let parts = parse_policy_arn(policy_arn, request_id)?;
-    if parts.account_id() != account_id && parts.account_id() != AWS_ACCOUNT_ID {
-        return Err(NoSuchEntityException::builder()
-            .message(format!("Policy {policy_arn} was not found."))
-            .request_id(request_id)
-            .build()
-            .into());
-    }
-    let policy_account_id = match parts.account_id() {
-        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
-        account_id => account_id,
-    };
+    let policy_account_id = resolve_policy_account_id(account_id, &parts, request_id)?;
 
     // Look up the managed_policy_id.
     let managed_policy_id: String = match query(indoc! {"

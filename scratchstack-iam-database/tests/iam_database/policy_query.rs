@@ -82,6 +82,12 @@ pub async fn test_get_policy_aws_account(pool: &sqlx::PgPool) {
 /// accounts: `Example-Group-1` and `Example-Role-1` carry it in 123456789012, `Example-User-2`
 /// carries it in 210987654321, and `Example-User-1` is bounded by it in 123456789012. Each
 /// account is told about its own entities and no others.
+///
+/// That cross-account attachment is raw seed data, and the API no longer lets one be made -- see
+/// [`resolve_policy_account_id`][scratchstack_iam_database::policy] and the attachment tests. It
+/// stands here because counting has to be right about rows it finds, however they got there, and
+/// because it is the same shape as the case that is reachable: an AWS-managed policy attached in
+/// more than one account.
 pub async fn test_get_policy_attachment_counts_are_per_account(pool: &sqlx::PgPool) {
     const POLICY_ARN: &str = "arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1";
 
