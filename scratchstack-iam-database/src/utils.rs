@@ -177,13 +177,18 @@ pub const DB_VERSION: &str = "18.3";
 /// The initial username to use for connecting to the database before creating a scratchstack user.
 pub const BOOTSTRAP_USER: &str = "postgres";
 
+/// The username bootstrapping creates and the schema migrations and services run as.
+pub const SCRATCHSTACK_USER: &str = "scratchstack";
+
+/// The name of the database bootstrapping creates for the IAM service.
+pub const SCRATCHSTACK_DATABASE: &str = "scratchstack_iam";
+
 /// How long a `postgresql_embedded` command -- `initdb`, `pg_ctl start` -- is given to finish.
 ///
 /// The crate's own default is five seconds, which is ample for one database but not for the
-/// several a package's tests stand up at once: each test owns its own instance, and `cargo test`
-/// runs them in parallel, so they contend for the machine while starting. Exceeding the timeout
-/// fails the test outright, so this is set well above what any single command needs rather than
-/// close to it.
+/// several a package's tests stand up at once: `cargo test` runs them in parallel, so instances
+/// contend for the machine while starting. Exceeding the timeout fails the test outright, so
+/// this is set well above what any single command needs rather than close to it.
 const DB_COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Generates a random password of the given length using characters from [`PASSWORD_CHARSET`].
@@ -366,7 +371,8 @@ impl TempDatabase {
         .await
         .expect("Failed to create role in PostgreSQL database");
 
-        query("CREATE DATABASE scratchstack_iam OWNER scratchstack")
+        // Safety: both names are compile-time constants, not caller-supplied.
+        query(AssertSqlSafe(format!("CREATE DATABASE {SCRATCHSTACK_DATABASE} OWNER {SCRATCHSTACK_USER}")))
             .execute(&mut c)
             .await
             .expect("Failed to create database in PostgreSQL database");
@@ -397,20 +403,44 @@ impl TempDatabase {
         Ok(())
     }
 
-    /// Returns a PostgreSQL connection pool for the scratchstack user.
+    /// Returns a PostgreSQL connection pool for the scratchstack user against [`SCRATCHSTACK_DATABASE`].
     pub async fn get_scratchstack_pool(&self) -> Result<sqlx::PgPool, SqlxError> {
-        let conn_options = PgConnectOptions::new()
-            .port(self.settings().get_port())
-            .username("scratchstack")
-            .password(&self.scratchstack_password)
-            .database("scratchstack_iam");
+        self.get_scratchstack_pool_for(SCRATCHSTACK_DATABASE).await
+    }
 
+    /// Returns a PostgreSQL connection pool for the scratchstack user against `db_name`.
+    pub async fn get_scratchstack_pool_for(&self, db_name: &str) -> Result<sqlx::PgPool, SqlxError> {
         PgPoolOptions::new()
             .min_connections(1)
             .max_connections(5)
             .acquire_timeout(Duration::from_secs(5))
-            .connect_with(conn_options)
+            .connect_with(self.scratchstack_connect_options(db_name))
             .await
+    }
+
+    /// Creates an additional database on this instance owned by the scratchstack user.
+    ///
+    /// Starting an instance costs several seconds, so a package whose tests each need their own
+    /// data can share one instance and take a database apiece from it rather than starting an
+    /// instance per test. The new database is empty: callers run the migrations on it themselves.
+    pub async fn create_scratchstack_database(&self, db_name: &str) -> Result<(), SqlxError> {
+        let mut c = self.scratchstack_connect_options(SCRATCHSTACK_DATABASE).connect().await?;
+
+        // Safety: the name is quoted with pg_quote_ident; DDL cannot use bind parameters.
+        query(AssertSqlSafe(format!("CREATE DATABASE {} OWNER {SCRATCHSTACK_USER}", pg_quote_ident(db_name))))
+            .execute(&mut c)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Returns the options for connecting to `db_name` on this instance as the scratchstack user.
+    fn scratchstack_connect_options(&self, db_name: &str) -> PgConnectOptions {
+        PgConnectOptions::new()
+            .port(self.settings().get_port())
+            .username(SCRATCHSTACK_USER)
+            .password(&self.scratchstack_password)
+            .database(db_name)
     }
 
     /// Get a connection URL for connecting to the temporary PostgreSQL instance using the bootstrap user.
