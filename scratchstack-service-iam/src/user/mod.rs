@@ -1,9 +1,7 @@
-//! The IAM operations this service implements.
+//! IAM user operations.
 //!
 //! Each operation lives in its own module and is dispatched to by
-//! [`crate::service::serve_request`]. What they share is gathered here: the ARN an operation
-//! names the user it acts on by, which both the authorization check and the error responses are
-//! built around.
+//! [`crate::service::serve_request`].
 
 mod attach_user_policy;
 mod create_access_key;
@@ -40,7 +38,6 @@ pub(crate) use {
 
 use {
     crate::{constants::*, service::internal_failure},
-    pct_str::{PctString, UriReserved},
     scratchstack_arn::Arn,
     scratchstack_aws_principal::Principal,
     scratchstack_core::{
@@ -58,19 +55,6 @@ use {
     sqlx::postgres::PgTransaction,
     std::str::FromStr as _,
 };
-
-/// Percent-encode a policy document for the response reporting it.
-///
-/// IAM does not report a policy document as the JSON it stores: it reports it percent-encoded,
-/// leaving a client to URL-decode what it reads back. The encoding is RFC 3986's, escaping
-/// everything outside the unreserved set, which is what [`UriReserved::Any`] describes.
-///
-/// This is asymmetric with the operations that take a policy document, which read it as plain
-/// JSON once the query string itself has been decoded. The database stores and returns the
-/// document as it was given, so the encoding belongs here, on the way out, and nowhere else.
-pub(crate) fn encode_policy_document(policy_document: &str) -> String {
-    PctString::encode(policy_document.chars(), UriReserved::Any).into_string()
-}
 
 /// Resolve the user an operation acts on from the `UserName` the request supplied, falling back
 /// to the calling user when it supplied none.

@@ -14,8 +14,11 @@
 
 pub(crate) mod authz;
 pub(crate) mod constants;
-pub(crate) mod operations;
+pub(crate) mod group;
+pub(crate) mod policy;
+pub(crate) mod role;
 pub(crate) mod service;
+pub(crate) mod user;
 
 use {
     crate::{constants::*, service::serve_request},

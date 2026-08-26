@@ -2,8 +2,8 @@ use {
     crate::{
         authz::{check_authorization, resource_tag_context},
         constants::*,
-        operations::user_resource,
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
+        user::{resolve_user_name, user_resource},
     },
     scratchstack_aws_principal::{Principal, SessionData, SessionValue},
     scratchstack_aws_signature::SessionPolicies,
@@ -16,24 +16,29 @@ use {
     scratchstack_iam_database::RequestExecutor as _,
     scratchstack_shapes_iam::{
         action::Action,
-        operation::{DeleteUserPolicyInternalRequest, DeleteUserPolicyRequest, DeleteUserPolicyResponseEnvelope},
+        operation::{CreateAccessKeyInternalRequest, CreateAccessKeyRequest, CreateAccessKeyResponseEnvelope},
     },
 };
 
-/// Handle a `DeleteUserPolicy` request.
+/// Handle a `CreateAccessKey` request.
 ///
 /// The caller has already been authenticated by the SigV4 layer. The caller's identity-based
 /// policies (including group-inherited policies and any permissions boundary), intersected with
-/// any session policies, must allow `iam:DeleteUserPolicy` on the user the policy is embedded
-/// in; the account root user is implicitly allowed.
+/// any session policies, must allow `iam:CreateAccessKey` on the user the key is created for; the
+/// account root user is implicitly allowed.
 ///
-/// An inline policy is not a resource of its own -- it is part of the user carrying it -- so the
-/// action is authorized against the user's ARN, and `PolicyName` narrows nothing. A caller
-/// allowed to delete one inline policy on a user is allowed to delete every one of them.
+/// An access key is not a resource of its own -- it is a credential belonging to the user it is
+/// created for -- so the action is authorized against the user's ARN, which is the only thing a
+/// grant can be scoped by. That makes this the widest-reaching of the access key operations: a
+/// caller allowed to create a key for a user can sign requests as that user afterwards, and so
+/// holds every permission that user holds, whatever its own policies say.
 ///
-/// `UserName` and `PolicyName` are both required; neither defaults. Deleting a policy that is not
-/// attached to the user is reported as `NoSuchEntity` rather than succeeding silently.
-pub(crate) async fn delete_user_policy(
+/// `UserName` is optional and defaults to the calling user, which is only meaningful for IAM user
+/// credentials; role sessions and root credentials must name the user explicitly.
+///
+/// The response carries the secret access key, which is reported here and nowhere else: nothing
+/// reads it back afterwards, so a caller that loses it has to create another key.
+pub(crate) async fn create_access_key(
     svc_state: ServiceState,
     request_id: RequestId,
     principal: Principal,
@@ -48,20 +53,25 @@ pub(crate) async fn delete_user_policy(
     };
     let account_id = account_id.clone();
 
-    let request: DeleteUserPolicyRequest = match from_query_str(parameters) {
+    let request: CreateAccessKeyRequest = match from_query_str(parameters) {
         Ok(request) => request,
         Err(e) => {
-            log::debug!("{request_id}: Could not parse DeleteUserPolicy parameters: {e}");
+            log::debug!("{request_id}: Could not parse CreateAccessKey parameters: {e}");
             return malformed_input(request_id);
         }
     };
-    let user_name = request.user_name;
 
-    // Building the internal request validates the user name and the policy name, so a malformed
-    // request is rejected before it is authorized.
-    let request = match DeleteUserPolicyInternalRequest::builder()
+    // An omitted UserName names the calling user. Only IAM user credentials identify one; a role
+    // session or root credentials have no user to fall back to.
+    let user_name = match resolve_user_name(request_id, &principal, Action::CreateAccessKey, request.user_name) {
+        Ok(user_name) => user_name,
+        Err(response) => return *response,
+    };
+
+    // Building the internal request validates the user name, so a malformed request is rejected
+    // before it is authorized.
+    let request = match CreateAccessKeyInternalRequest::builder()
         .account_id(account_id.clone())
-        .policy_name(request.policy_name)
         .user_name(user_name.clone())
         .build()
     {
@@ -92,7 +102,7 @@ pub(crate) async fn delete_user_policy(
         &session_data,
         &session_policies,
         &request_metadata,
-        Action::DeleteUserPolicy,
+        Action::CreateAccessKey,
         &[resource_arn],
         &resource_tag_context(&resource_tags),
     )
@@ -102,14 +112,18 @@ pub(crate) async fn delete_user_policy(
         return *response;
     }
 
-    // The delete reports a user or a policy that does not exist as `NoSuchEntity` itself, so the
-    // missing cases need no separate handling here.
+    // The creation reports a user that does not exist as `NoSuchEntity` itself, so the missing
+    // case needs no separate handling here.
     let response = match request.execute(&mut tx, request_id).await {
-        Ok(()) => DeleteUserPolicyResponseEnvelope::builder().request_id(request_id).build().respond(),
-        // Dropping the transaction rolls back a partial delete.
+        Ok(response) => {
+            CreateAccessKeyResponseEnvelope::builder().result(response).request_id(request_id).build().respond()
+        }
+        // Dropping the transaction rolls back a partial write.
         Err(e) => return e.respond(),
     };
 
+    // The key is only usable once this commits; a failure here leaves the caller holding a secret
+    // that names no key, which is why the response is not reported until the commit succeeds.
     if let Err(e) = tx.commit().await {
         log::error!("{request_id}: Could not commit database transaction: {e}");
         return internal_failure(request_id);
