@@ -15,11 +15,17 @@ use {
             response::Response,
         },
     },
+    scratchstack_iam_database::{migrate::MIGRATOR, utils::TempDatabase},
+    sqlx::raw_sql,
     std::{
         net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
         str::FromStr as _,
-        sync::Arc,
+        sync::{
+            Arc, LazyLock, Weak,
+            atomic::{AtomicU32, Ordering},
+        },
     },
+    tokio::sync::Mutex,
 };
 
 mod user;
@@ -736,4 +742,87 @@ async fn call_as(
     let status = response.status();
     let body = response.into_body().collect().await.expect("failed to read body").to_bytes();
     (status, String::from_utf8(body.to_vec()).expect("body is not UTF-8"))
+}
+
+/// The embedded PostgreSQL instance the service tests share.
+///
+/// Starting an instance costs several seconds -- far more than the tests that run against it --
+/// so the tests share one rather than each standing up its own. The first test to ask for a
+/// database starts it, and it is shut down once the last test holding a [`TestDatabase`] is
+/// done; a test arriving after that starts a fresh one. Holding a [`Weak`] is what gives that
+/// last part its timing: it keeps the running instance reachable without keeping it alive.
+static SHARED_SERVER: LazyLock<Mutex<Weak<TempDatabase>>> = LazyLock::new(|| Mutex::new(Weak::new()));
+
+/// Distinguishes the databases [`TestDatabase::new`] hands out from one another.
+static TEST_DATABASE_COUNT: AtomicU32 = AtomicU32::new(0);
+
+/// A migrated, seeded database of a test's own, on the shared PostgreSQL instance.
+///
+/// Every test seeds the same partition and the same account, so sharing one database between
+/// them would put their seed data in each other's way; each test gets a database to itself
+/// instead, and the tests stay free to run in parallel. Keeping the handle alive keeps the
+/// instance running, so it has to outlive the requests made against the [`ServiceState`] it
+/// hands out.
+struct TestDatabase {
+    /// The state to serve requests against.
+    ///
+    /// This *must* be before `server` so that the pool it holds is dropped before the instance
+    /// that pool connects to is stopped.
+    svc_state: ServiceState,
+
+    /// The shared instance this database was created on.
+    ///
+    /// Nothing reads this: it is held so that the instance outlives the handle, and stops once
+    /// the last handle is dropped.
+    #[allow(dead_code)]
+    server: Arc<TempDatabase>,
+}
+
+impl TestDatabase {
+    /// Create a database on the shared instance -- starting the instance if no other test is
+    /// currently holding one -- run the migrations on it, and load `test_data` into it.
+    async fn new(test_data: &'static str) -> Self {
+        let server = shared_server().await;
+        let db_name = format!("scratchstack_iam_test_{}", TEST_DATABASE_COUNT.fetch_add(1, Ordering::Relaxed));
+        server.create_scratchstack_database(&db_name).await.expect("Failed to create test database");
+
+        let pool = server
+            .get_scratchstack_pool_for(&db_name)
+            .await
+            .expect("Failed to get PostgreSQL connection pool for scratchstack user");
+        let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
+        MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
+        raw_sql(test_data).execute(&mut *c).await.expect("Failed to load test data into database");
+        drop(c);
+
+        Self {
+            svc_state: ServiceState::builder().db(Arc::new(pool)).secure_transport(true).build(),
+            server,
+        }
+    }
+
+    /// The service state requests against this database are served with.
+    fn svc_state(&self) -> &ServiceState {
+        &self.svc_state
+    }
+}
+
+/// Return the shared PostgreSQL instance, starting and bootstrapping one if no test currently
+/// holds it.
+///
+/// The lock is held across the startup so that tests arriving while an instance is coming up
+/// wait for it rather than starting instances of their own.
+async fn shared_server() -> Arc<TempDatabase> {
+    let mut shared = SHARED_SERVER.lock().await;
+
+    if let Some(server) = shared.upgrade() {
+        return server;
+    }
+
+    let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
+    database.bootstrap().await.expect("Failed to set up, start, and bootstrap PostgreSQL database");
+
+    let server = Arc::new(database);
+    *shared = Arc::downgrade(&server);
+    server
 }
