@@ -36,16 +36,12 @@ fuzz_target!(|data: PrincipalTarget| {
         PrincipalTarget::RootUser(partition, account_id) => {
             RootUser::builder().partition(partition).account_id(account_id).build().map(|ru| ru.into())
         }
-        PrincipalTarget::Service(partition, region, service_name) => {
-            let mut builder = Service::builder();
-            builder.service_name(partition).dns_suffix(service_name);
-
-            if let Some(region) = region {
-                builder.region(region);
-            }
-
-            builder.build().map(|s| s.into())
-        }
+        PrincipalTarget::Service(partition, region, service_name) => Service::builder()
+            .service_name(partition)
+            .maybe_region(region)
+            .dns_suffix(service_name)
+            .build()
+            .map(|s| s.into()),
         PrincipalTarget::User(partition, account_id, path, user_name) => User::builder()
             .partition(partition)
             .account_id(account_id)

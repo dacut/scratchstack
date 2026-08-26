@@ -1,6 +1,6 @@
 use {
     crate::{PrincipalError, utils::validate_name},
-    derive_builder::Builder,
+    bon::bon,
     scratchstack_arn::{
         Arn,
         utils::{validate_account_id, validate_partition},
@@ -12,23 +12,20 @@ use {
 ///
 /// `FederatedUser` structs are immutable. They are created using the [`FederatedUserBuilder`] returned by
 /// [`FederatedUser::builder`].
-#[derive(Builder, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[builder(build_fn(validate = "Self::validate", error = "PrincipalError"))]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FederatedUser {
     /// The partition this principal exists in.
-    #[builder(setter(into))]
     partition: String,
 
     /// The account id.
-    #[builder(setter(into))]
     account_id: String,
 
     /// Name of the principal, case-insensitive.
-    #[builder(setter(into))]
     user_name: String,
 }
 
+#[bon]
 impl FederatedUser {
     /// Create a [`FederatedUserBuilder`] for building a [`FederatedUser`].
     ///
@@ -56,8 +53,27 @@ impl FederatedUser {
     /// assert_eq!(federated_user.account_id(), "123456789012");
     /// assert_eq!(federated_user.user_name(), "user@example.com");
     /// ```
-    pub fn builder() -> FederatedUserBuilder {
-        FederatedUserBuilder::default()
+    #[builder(builder_type = FederatedUserBuilder, finish_fn = build)]
+    pub fn builder(
+        /// The partition this principal exists in.
+        #[builder(into)]
+        partition: String,
+
+        /// The account id.
+        #[builder(into)]
+        account_id: String,
+
+        /// Name of the principal, case-insensitive.
+        #[builder(into)]
+        user_name: String,
+    ) -> Result<Self, PrincipalError> {
+        Self::validate_parts(&partition, &account_id, &user_name)?;
+
+        Ok(Self {
+            partition,
+            account_id,
+            user_name,
+        })
     }
 
     /// Create a [`FederatedUser`] object.
@@ -115,18 +131,6 @@ impl FederatedUser {
     #[inline]
     pub fn user_name(&self) -> &str {
         &self.user_name
-    }
-}
-
-impl FederatedUserBuilder {
-    /// Validate the fields set on this builder, returning a [`PrincipalError`] if any required field is missing or
-    /// any field is invalid.
-    fn validate(&self) -> Result<(), PrincipalError> {
-        let partition = self.partition.as_deref().ok_or(PrincipalError::MissingField("partition"))?;
-        let account_id = self.account_id.as_deref().ok_or(PrincipalError::MissingField("account_id"))?;
-        let user_name = self.user_name.as_deref().ok_or(PrincipalError::MissingField("user_name"))?;
-
-        FederatedUser::validate_parts(partition, account_id, user_name)
     }
 }
 
@@ -373,19 +377,6 @@ mod tests {
                 .to_string(),
             r#"Invalid federated user name: "user@domain-with-33-characters===""#
         );
-    }
-
-    #[test]
-    fn check_builder_missing_fields() {
-        let err = FederatedUser::builder().build().unwrap_err();
-        assert_eq!(err, PrincipalError::MissingField("partition"));
-
-        let err = FederatedUser::builder().partition("aws").build().unwrap_err();
-        assert_eq!(err, PrincipalError::MissingField("account_id"));
-
-        let err = FederatedUser::builder().partition("aws").account_id("123456789012").build().unwrap_err();
-        assert_eq!(err, PrincipalError::MissingField("user_name"));
-        assert_eq!(err.to_string(), "Missing required field: user_name");
     }
 
     #[test]

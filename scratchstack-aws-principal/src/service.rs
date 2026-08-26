@@ -1,6 +1,6 @@
 use {
     crate::{PrincipalError, utils::validate_dns},
-    derive_builder::Builder,
+    bon::bon,
     scratchstack_arn::utils::validate_region,
     std::fmt::{Display, Formatter, Result as FmtResult},
 };
@@ -8,23 +8,20 @@ use {
 /// Details about an AWS or AWS-like service.
 ///
 /// `Service` structs are immutable. They are created using the [`ServiceBuilder`] returned by [`Service::builder`].
-#[derive(Builder, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[builder(build_fn(validate = "Self::validate", error = "PrincipalError"))]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Service {
     /// Name of the service.
-    #[builder(setter(into))]
     service_name: String,
 
     /// The region the service is running in. If None, the service is global.
-    #[builder(setter(into, strip_option), default)]
     region: Option<String>,
 
     /// The DNS suffix of the service. This is usually amazonaws.com.
-    #[builder(setter(into))]
     dns_suffix: String,
 }
 
+#[bon]
 impl Service {
     /// Create a [`ServiceBuilder`] for building a [`Service`] representing an AWS(-ish) service.
     ///
@@ -56,8 +53,27 @@ impl Service {
     /// let global = Service::builder().service_name("s3").dns_suffix("amazonaws.com").build().unwrap();
     /// assert_eq!(global.region(), None);
     /// ```
-    pub fn builder() -> ServiceBuilder {
-        ServiceBuilder::default()
+    #[builder(builder_type = ServiceBuilder, finish_fn = build)]
+    pub fn builder(
+        /// Name of the service.
+        #[builder(into)]
+        service_name: String,
+
+        /// The region the service is running in. If unset, the service is global.
+        #[builder(into)]
+        region: Option<String>,
+
+        /// The DNS suffix of the service. This is usually amazonaws.com.
+        #[builder(into)]
+        dns_suffix: String,
+    ) -> Result<Self, PrincipalError> {
+        Self::validate_parts(&service_name, region.as_deref(), &dns_suffix)?;
+
+        Ok(Self {
+            service_name,
+            region,
+            dns_suffix,
+        })
     }
 
     /// Create a [`Service`] object representing an AWS(-ish) service.
@@ -127,18 +143,6 @@ impl Service {
     /// The global DNS name of the service (omitting the regional component, if any).
     pub fn global_dns_name(&self) -> String {
         format!("{}.{}", self.service_name, self.dns_suffix)
-    }
-}
-
-impl ServiceBuilder {
-    /// Validate the fields set on this builder, returning a [`PrincipalError`] if any required field is missing or
-    /// any field is invalid.
-    fn validate(&self) -> Result<(), PrincipalError> {
-        let service_name = self.service_name.as_deref().ok_or(PrincipalError::MissingField("service_name"))?;
-        let dns_suffix = self.dns_suffix.as_deref().ok_or(PrincipalError::MissingField("dns_suffix"))?;
-        let region = self.region.as_ref().and_then(|region| region.as_deref());
-
-        Service::validate_parts(service_name, region, dns_suffix)
     }
 }
 
@@ -355,17 +359,6 @@ mod tests {
                 .to_string(),
             r#"Invalid service name: "amazonaws..com""#
         );
-    }
-
-    #[test]
-    fn check_builder_missing_fields() {
-        let err = Service::builder().build().unwrap_err();
-        assert_eq!(err, PrincipalError::MissingField("service_name"));
-
-        // The region is optional; the DNS suffix is not.
-        let err = Service::builder().service_name("s3").region("us-east-1").build().unwrap_err();
-        assert_eq!(err, PrincipalError::MissingField("dns_suffix"));
-        assert_eq!(err.to_string(), "Missing required field: dns_suffix");
     }
 
     #[test]

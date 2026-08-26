@@ -1,6 +1,6 @@
 use {
     crate::PrincipalError,
-    derive_builder::Builder,
+    bon::bon,
     scratchstack_arn::{
         Arn,
         utils::{validate_account_id, validate_partition},
@@ -12,19 +12,17 @@ use {
 ///
 /// `RootUser` structs are immutable. They are created using the [`RootUserBuilder`] returned by
 /// [`RootUser::builder`].
-#[derive(Builder, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[builder(build_fn(validate = "Self::validate", error = "PrincipalError"))]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RootUser {
     /// The partition this principal exists in.
-    #[builder(setter(into))]
     partition: String,
 
     /// The account id.
-    #[builder(setter(into))]
     account_id: String,
 }
 
+#[bon]
 impl RootUser {
     /// Create a [`RootUserBuilder`] for building a [`RootUser`], referring to an actor with root credentials for the
     /// specified AWS account.
@@ -43,8 +41,22 @@ impl RootUser {
     /// assert_eq!(root_user.partition(), "aws");
     /// assert_eq!(root_user.account_id(), "123456789012");
     /// ```
-    pub fn builder() -> RootUserBuilder {
-        RootUserBuilder::default()
+    #[builder(builder_type = RootUserBuilder, finish_fn = build)]
+    pub fn builder(
+        /// The partition this principal exists in.
+        #[builder(into)]
+        partition: String,
+
+        /// The account id.
+        #[builder(into)]
+        account_id: String,
+    ) -> Result<Self, PrincipalError> {
+        Self::validate_parts(&partition, &account_id)?;
+
+        Ok(Self {
+            partition,
+            account_id,
+        })
     }
 
     /// Create a [`RootUser`] object, refering to an actor with root credentials for the specified
@@ -89,17 +101,6 @@ impl RootUser {
     #[inline]
     pub fn account_id(&self) -> &str {
         &self.account_id
-    }
-}
-
-impl RootUserBuilder {
-    /// Validate the fields set on this builder, returning a [`PrincipalError`] if any required field is missing or
-    /// any field is invalid.
-    fn validate(&self) -> Result<(), PrincipalError> {
-        let partition = self.partition.as_deref().ok_or(PrincipalError::MissingField("partition"))?;
-        let account_id = self.account_id.as_deref().ok_or(PrincipalError::MissingField("account_id"))?;
-
-        RootUser::validate_parts(partition, account_id)
     }
 }
 
@@ -199,16 +200,6 @@ mod tests {
             RootUser::builder().partition("aws").account_id("").build().unwrap_err().to_string(),
             r#"Invalid account id: """#
         );
-    }
-
-    #[test]
-    fn check_builder_missing_fields() {
-        let err = RootUser::builder().build().unwrap_err();
-        assert_eq!(err, PrincipalError::MissingField("partition"));
-        assert_eq!(err.to_string(), "Missing required field: partition");
-
-        let err = RootUser::builder().partition("aws").build().unwrap_err();
-        assert_eq!(err, PrincipalError::MissingField("account_id"));
     }
 
     #[test]
