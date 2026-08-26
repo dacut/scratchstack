@@ -2,9 +2,10 @@ use {
     crate::{
         constants::*,
         operations::{
-            attach_user_policy, create_user, delete_user, delete_user_permissions_boundary, delete_user_policy,
-            detach_user_policy, get_user, get_user_policy, list_attached_user_policies, list_user_policies,
-            list_user_tags, list_users, put_user_permissions_boundary, put_user_policy, tag_user, untag_user,
+            attach_user_policy, create_access_key, create_user, delete_access_key, delete_user,
+            delete_user_permissions_boundary, delete_user_policy, detach_user_policy, get_user, get_user_policy,
+            list_access_keys, list_attached_user_policies, list_user_policies, list_user_tags, list_users,
+            put_user_permissions_boundary, put_user_policy, tag_user, untag_user, update_access_key,
         },
     },
     scratchstack_aws_principal::{Principal, SessionData},
@@ -84,9 +85,33 @@ pub(crate) async fn serve_request(
             )
             .await
         }
+        Ok(Action::CreateAccessKey) => {
+            create_access_key(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
         Ok(Action::CreateUser) => {
             create_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
                 .await
+        }
+        Ok(Action::DeleteAccessKey) => {
+            delete_access_key(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
         }
         Ok(Action::DeleteUser) => {
             delete_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
@@ -134,6 +159,18 @@ pub(crate) async fn serve_request(
         }
         Ok(Action::GetUserPolicy) => {
             get_user_policy(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
+        Ok(Action::ListAccessKeys) => {
+            list_access_keys(
                 svc_state,
                 request_id,
                 principal,
@@ -215,6 +252,18 @@ pub(crate) async fn serve_request(
         Ok(Action::UntagUser) => {
             untag_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
                 .await
+        }
+        Ok(Action::UpdateAccessKey) => {
+            update_access_key(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
         }
         _ => invalid_action(request_id, &action, &version),
     }
@@ -1334,6 +1383,249 @@ mod tests {
            "Resource":"*"}]}');
     "#;
 
+    /// Seed data for the `CreateAccessKey` authorization tests. No target carries a key to begin
+    /// with, so a key found on one afterwards is the one the test created. The callers carry
+    /// grants scoped by the path of the user receiving the key, by that user's tags, and by the
+    /// user itself; `Self-Creator` is granted a key on itself, which is what an omitted `UserName`
+    /// resolves to.
+    const CREATE_ACCESS_KEY_TEST_DATA: &str = r#"
+        INSERT INTO iam.partition(partition) VALUES ('aws');
+
+        INSERT INTO iam.accounts(account_id, email, alias) VALUES
+        ('123456789012', 'create-access-key-test@example.com', 'create-access-key-test');
+
+        INSERT INTO iam.users(user_id, account_id, user_name_lower, user_name_cased, path) VALUES
+        ('SVCCAKBROADCRT01', '123456789012', 'broad-creator', 'Broad-Creator', '/'),
+        ('SVCCAKPATHCRT001', '123456789012', 'path-creator', 'Path-Creator', '/'),
+        ('SVCCAKTAGCRT0001', '123456789012', 'tag-creator', 'Tag-Creator', '/'),
+        ('SVCCAKNARROWCR01', '123456789012', 'narrow-creator', 'Narrow-Creator', '/'),
+        ('SVCCAKNOGRANTC01', '123456789012', 'no-grant-creator', 'No-Grant-Creator', '/'),
+        ('SVCCAKSELFCRT001', '123456789012', 'self-creator', 'Self-Creator', '/'),
+        ('SVCCAKTGTPLAIN01', '123456789012', 'key-target', 'Key-Target', '/'),
+        ('SVCCAKTGTDIVSN01', '123456789012', 'division-target', 'Division-Target', '/division/'),
+        ('SVCCAKTGTENGNR01', '123456789012', 'engineering-target', 'Engineering-Target', '/'),
+        ('SVCCAKTGTSALES01', '123456789012', 'sales-target', 'Sales-Target', '/'),
+        ('SVCCAKTGTROOT001', '123456789012', 'root-target', 'Root-Target', '/');
+
+        INSERT INTO iam.user_tags(user_id, key_lower, key_cased, value) VALUES
+        ('SVCCAKTGTENGNR01', 'department', 'Department', 'Engineering'),
+        ('SVCCAKTGTSALES01', 'department', 'Department', 'Sales');
+
+        INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+        ('SVCCAKBROADCRT01', 'allow-create-any-key', 'Allow-Create-Any-Key',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateAccessKey","Resource":"*"}]}'),
+        ('SVCCAKPATHCRT001', 'allow-create-division-keys', 'Allow-Create-Division-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateAccessKey",
+           "Resource":"arn:aws:iam::123456789012:user/division/*"}]}'),
+        ('SVCCAKTAGCRT0001', 'allow-create-engineering-keys', 'Allow-Create-Engineering-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateAccessKey","Resource":"*",
+           "Condition":{"StringEquals":{"aws:ResourceTag/department":"Engineering"}}}]}'),
+        ('SVCCAKNARROWCR01', 'allow-create-target-keys', 'Allow-Create-Target-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateAccessKey",
+           "Resource":"arn:aws:iam::123456789012:user/Key-Target"}]}'),
+        ('SVCCAKSELFCRT001', 'allow-create-own-keys', 'Allow-Create-Own-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateAccessKey",
+           "Resource":"arn:aws:iam::123456789012:user/Self-Creator"}]}');
+
+        INSERT INTO iam.roles(role_id, account_id, role_name_lower, role_name_cased, path, assume_role_policy_document) VALUES
+        ('SVCCAKROLE000001', '123456789012', 'create-access-key-role', 'Create-Access-Key-Role', '/',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}');
+
+        INSERT INTO iam.role_inline_policies(role_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+        ('SVCCAKROLE000001', 'allow-create-any-key', 'Allow-Create-Any-Key',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateAccessKey","Resource":"*"}]}');
+    "#;
+
+    /// Seed data for the `DeleteAccessKey` authorization tests. Every target carries a key of its
+    /// own, so a delete that reaches past the user it was authorized against would be visible;
+    /// `Key-Target` carries two, so one can be deleted and the other shown to survive. The callers
+    /// carry grants scoped by the path of the user carrying the key, by that user's tags, and by
+    /// the user itself.
+    const DELETE_ACCESS_KEY_TEST_DATA: &str = r#"
+        INSERT INTO iam.partition(partition) VALUES ('aws');
+
+        INSERT INTO iam.accounts(account_id, email, alias) VALUES
+        ('123456789012', 'delete-access-key-test@example.com', 'delete-access-key-test');
+
+        INSERT INTO iam.users(user_id, account_id, user_name_lower, user_name_cased, path) VALUES
+        ('SVCDAKBROADDEL01', '123456789012', 'broad-deleter', 'Broad-Deleter', '/'),
+        ('SVCDAKPATHDEL001', '123456789012', 'path-deleter', 'Path-Deleter', '/'),
+        ('SVCDAKTAGDEL0001', '123456789012', 'tag-deleter', 'Tag-Deleter', '/'),
+        ('SVCDAKNARROWDL01', '123456789012', 'narrow-deleter', 'Narrow-Deleter', '/'),
+        ('SVCDAKNOGRANTD01', '123456789012', 'no-grant-deleter', 'No-Grant-Deleter', '/'),
+        ('SVCDAKSELFDEL001', '123456789012', 'self-deleter', 'Self-Deleter', '/'),
+        ('SVCDAKTGTPLAIN01', '123456789012', 'key-target', 'Key-Target', '/'),
+        ('SVCDAKTGTOTHER01', '123456789012', 'other-target', 'Other-Target', '/'),
+        ('SVCDAKTGTDIVSN01', '123456789012', 'division-target', 'Division-Target', '/division/'),
+        ('SVCDAKTGTENGNR01', '123456789012', 'engineering-target', 'Engineering-Target', '/'),
+        ('SVCDAKTGTSALES01', '123456789012', 'sales-target', 'Sales-Target', '/'),
+        ('SVCDAKTGTROOT001', '123456789012', 'root-target', 'Root-Target', '/');
+
+        INSERT INTO iam.user_tags(user_id, key_lower, key_cased, value) VALUES
+        ('SVCDAKTGTENGNR01', 'department', 'Department', 'Engineering'),
+        ('SVCDAKTGTSALES01', 'department', 'Department', 'Sales');
+
+        INSERT INTO iam.user_credentials(access_key_id, user_id, secret_key, enabled) VALUES
+        ('DAKTARGETKEY0001', 'SVCDAKTGTPLAIN01', 'delete-target-secret-1', TRUE),
+        ('DAKTARGETKEY0002', 'SVCDAKTGTPLAIN01', 'delete-target-secret-2', TRUE),
+        ('DAKOTHERKEY00001', 'SVCDAKTGTOTHER01', 'delete-other-secret', TRUE),
+        ('DAKDIVISIONKEY01', 'SVCDAKTGTDIVSN01', 'delete-division-secret', TRUE),
+        ('DAKENGINEERKY001', 'SVCDAKTGTENGNR01', 'delete-engineering-secret', TRUE),
+        ('DAKSALESKEY00001', 'SVCDAKTGTSALES01', 'delete-sales-secret', TRUE),
+        ('DAKROOTKEY000001', 'SVCDAKTGTROOT001', 'delete-root-secret', TRUE),
+        ('DAKSELFKEY000001', 'SVCDAKSELFDEL001', 'delete-self-secret', TRUE);
+
+        INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+        ('SVCDAKBROADDEL01', 'allow-delete-any-key', 'Allow-Delete-Any-Key',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:DeleteAccessKey","Resource":"*"}]}'),
+        ('SVCDAKPATHDEL001', 'allow-delete-division-keys', 'Allow-Delete-Division-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:DeleteAccessKey",
+           "Resource":"arn:aws:iam::123456789012:user/division/*"}]}'),
+        ('SVCDAKTAGDEL0001', 'allow-delete-engineering-keys', 'Allow-Delete-Engineering-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:DeleteAccessKey","Resource":"*",
+           "Condition":{"StringEquals":{"aws:ResourceTag/department":"Engineering"}}}]}'),
+        ('SVCDAKNARROWDL01', 'allow-delete-target-keys', 'Allow-Delete-Target-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:DeleteAccessKey",
+           "Resource":"arn:aws:iam::123456789012:user/Key-Target"}]}'),
+        ('SVCDAKSELFDEL001', 'allow-delete-own-keys', 'Allow-Delete-Own-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:DeleteAccessKey",
+           "Resource":"arn:aws:iam::123456789012:user/Self-Deleter"}]}');
+
+        INSERT INTO iam.roles(role_id, account_id, role_name_lower, role_name_cased, path, assume_role_policy_document) VALUES
+        ('SVCDAKROLE000001', '123456789012', 'delete-access-key-role', 'Delete-Access-Key-Role', '/',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}');
+
+        INSERT INTO iam.role_inline_policies(role_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+        ('SVCDAKROLE000001', 'allow-delete-any-key', 'Allow-Delete-Any-Key',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:DeleteAccessKey","Resource":"*"}]}');
+    "#;
+
+    /// Seed data for the `ListAccessKeys` authorization tests. `Key-Holder` carries several keys,
+    /// one of them deactivated, so a listing can be paged through and shown to report the state of
+    /// each key; `Empty-Target` carries none, so a user without keys can be told apart from one
+    /// that does not exist. The remaining targets carry the paths and tags the resource ARN and the
+    /// `aws:ResourceTag` condition keys are derived from.
+    const LIST_ACCESS_KEYS_TEST_DATA: &str = r#"
+        INSERT INTO iam.partition(partition) VALUES ('aws');
+
+        INSERT INTO iam.accounts(account_id, email, alias) VALUES
+        ('123456789012', 'list-access-keys-test@example.com', 'list-access-keys-test');
+
+        INSERT INTO iam.users(user_id, account_id, user_name_lower, user_name_cased, path) VALUES
+        ('SVCLAKBROADLST01', '123456789012', 'broad-lister', 'Broad-Lister', '/'),
+        ('SVCLAKPATHLST001', '123456789012', 'path-lister', 'Path-Lister', '/'),
+        ('SVCLAKTAGLST0001', '123456789012', 'tag-lister', 'Tag-Lister', '/'),
+        ('SVCLAKNARROWLS01', '123456789012', 'narrow-lister', 'Narrow-Lister', '/'),
+        ('SVCLAKNOGRANTL01', '123456789012', 'no-grant-lister', 'No-Grant-Lister', '/'),
+        ('SVCLAKSELFLST001', '123456789012', 'self-lister', 'Self-Lister', '/'),
+        ('SVCLAKTGTHOLDER1', '123456789012', 'key-holder', 'Key-Holder', '/'),
+        ('SVCLAKTGTEMPTY01', '123456789012', 'empty-target', 'Empty-Target', '/'),
+        ('SVCLAKTGTDIVSN01', '123456789012', 'division-target', 'Division-Target', '/division/'),
+        ('SVCLAKTGTENGNR01', '123456789012', 'engineering-target', 'Engineering-Target', '/'),
+        ('SVCLAKTGTSALES01', '123456789012', 'sales-target', 'Sales-Target', '/'),
+        ('SVCLAKTGTROOT001', '123456789012', 'root-target', 'Root-Target', '/');
+
+        INSERT INTO iam.user_tags(user_id, key_lower, key_cased, value) VALUES
+        ('SVCLAKTGTENGNR01', 'department', 'Department', 'Engineering'),
+        ('SVCLAKTGTSALES01', 'department', 'Department', 'Sales');
+
+        INSERT INTO iam.user_credentials(access_key_id, user_id, secret_key, enabled) VALUES
+        ('LAKHOLDERKEY0001', 'SVCLAKTGTHOLDER1', 'list-holder-secret-1', TRUE),
+        ('LAKHOLDERKEY0002', 'SVCLAKTGTHOLDER1', 'list-holder-secret-2', FALSE),
+        ('LAKHOLDERKEY0003', 'SVCLAKTGTHOLDER1', 'list-holder-secret-3', TRUE),
+        ('LAKDIVISIONKEY01', 'SVCLAKTGTDIVSN01', 'list-division-secret', TRUE),
+        ('LAKENGINEERKY001', 'SVCLAKTGTENGNR01', 'list-engineering-secret', TRUE),
+        ('LAKSALESKEY00001', 'SVCLAKTGTSALES01', 'list-sales-secret', TRUE),
+        ('LAKROOTKEY000001', 'SVCLAKTGTROOT001', 'list-root-secret', TRUE),
+        ('LAKSELFKEY000001', 'SVCLAKSELFLST001', 'list-self-secret', TRUE);
+
+        INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+        ('SVCLAKBROADLST01', 'allow-list-any-keys', 'Allow-List-Any-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListAccessKeys","Resource":"*"}]}'),
+        ('SVCLAKPATHLST001', 'allow-list-division-keys', 'Allow-List-Division-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListAccessKeys",
+           "Resource":"arn:aws:iam::123456789012:user/division/*"}]}'),
+        ('SVCLAKTAGLST0001', 'allow-list-engineering-keys', 'Allow-List-Engineering-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListAccessKeys","Resource":"*",
+           "Condition":{"StringEquals":{"aws:ResourceTag/department":"Engineering"}}}]}'),
+        ('SVCLAKNARROWLS01', 'allow-list-holder-keys', 'Allow-List-Holder-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListAccessKeys",
+           "Resource":"arn:aws:iam::123456789012:user/Key-Holder"}]}'),
+        ('SVCLAKSELFLST001', 'allow-list-own-keys', 'Allow-List-Own-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListAccessKeys",
+           "Resource":"arn:aws:iam::123456789012:user/Self-Lister"}]}');
+
+        INSERT INTO iam.roles(role_id, account_id, role_name_lower, role_name_cased, path, assume_role_policy_document) VALUES
+        ('SVCLAKROLE000001', '123456789012', 'list-access-keys-role', 'List-Access-Keys-Role', '/',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}');
+
+        INSERT INTO iam.role_inline_policies(role_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+        ('SVCLAKROLE000001', 'allow-list-any-keys', 'Allow-List-Any-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListAccessKeys","Resource":"*"}]}');
+    "#;
+
+    /// Seed data for the `UpdateAccessKey` authorization tests. Every target carries an active key
+    /// of its own, so a state change that reaches past the user it was authorized against would be
+    /// visible. The callers carry grants scoped by the path of the user carrying the key, by that
+    /// user's tags, and by the user itself.
+    const UPDATE_ACCESS_KEY_TEST_DATA: &str = r#"
+        INSERT INTO iam.partition(partition) VALUES ('aws');
+
+        INSERT INTO iam.accounts(account_id, email, alias) VALUES
+        ('123456789012', 'update-access-key-test@example.com', 'update-access-key-test');
+
+        INSERT INTO iam.users(user_id, account_id, user_name_lower, user_name_cased, path) VALUES
+        ('SVCUAKBROADUPD01', '123456789012', 'broad-updater', 'Broad-Updater', '/'),
+        ('SVCUAKPATHUPD001', '123456789012', 'path-updater', 'Path-Updater', '/'),
+        ('SVCUAKTAGUPD0001', '123456789012', 'tag-updater', 'Tag-Updater', '/'),
+        ('SVCUAKNARROWUP01', '123456789012', 'narrow-updater', 'Narrow-Updater', '/'),
+        ('SVCUAKNOGRANTU01', '123456789012', 'no-grant-updater', 'No-Grant-Updater', '/'),
+        ('SVCUAKSELFUPD001', '123456789012', 'self-updater', 'Self-Updater', '/'),
+        ('SVCUAKTGTPLAIN01', '123456789012', 'key-target', 'Key-Target', '/'),
+        ('SVCUAKTGTOTHER01', '123456789012', 'other-target', 'Other-Target', '/'),
+        ('SVCUAKTGTDIVSN01', '123456789012', 'division-target', 'Division-Target', '/division/'),
+        ('SVCUAKTGTENGNR01', '123456789012', 'engineering-target', 'Engineering-Target', '/'),
+        ('SVCUAKTGTSALES01', '123456789012', 'sales-target', 'Sales-Target', '/'),
+        ('SVCUAKTGTROOT001', '123456789012', 'root-target', 'Root-Target', '/');
+
+        INSERT INTO iam.user_tags(user_id, key_lower, key_cased, value) VALUES
+        ('SVCUAKTGTENGNR01', 'department', 'Department', 'Engineering'),
+        ('SVCUAKTGTSALES01', 'department', 'Department', 'Sales');
+
+        INSERT INTO iam.user_credentials(access_key_id, user_id, secret_key, enabled) VALUES
+        ('UAKTARGETKEY0001', 'SVCUAKTGTPLAIN01', 'update-target-secret', TRUE),
+        ('UAKOTHERKEY00001', 'SVCUAKTGTOTHER01', 'update-other-secret', TRUE),
+        ('UAKDIVISIONKEY01', 'SVCUAKTGTDIVSN01', 'update-division-secret', TRUE),
+        ('UAKENGINEERKY001', 'SVCUAKTGTENGNR01', 'update-engineering-secret', TRUE),
+        ('UAKSALESKEY00001', 'SVCUAKTGTSALES01', 'update-sales-secret', TRUE),
+        ('UAKROOTKEY000001', 'SVCUAKTGTROOT001', 'update-root-secret', TRUE),
+        ('UAKSELFKEY000001', 'SVCUAKSELFUPD001', 'update-self-secret', TRUE);
+
+        INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+        ('SVCUAKBROADUPD01', 'allow-update-any-key', 'Allow-Update-Any-Key',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:UpdateAccessKey","Resource":"*"}]}'),
+        ('SVCUAKPATHUPD001', 'allow-update-division-keys', 'Allow-Update-Division-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:UpdateAccessKey",
+           "Resource":"arn:aws:iam::123456789012:user/division/*"}]}'),
+        ('SVCUAKTAGUPD0001', 'allow-update-engineering-keys', 'Allow-Update-Engineering-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:UpdateAccessKey","Resource":"*",
+           "Condition":{"StringEquals":{"aws:ResourceTag/department":"Engineering"}}}]}'),
+        ('SVCUAKNARROWUP01', 'allow-update-target-keys', 'Allow-Update-Target-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:UpdateAccessKey",
+           "Resource":"arn:aws:iam::123456789012:user/Key-Target"}]}'),
+        ('SVCUAKSELFUPD001', 'allow-update-own-keys', 'Allow-Update-Own-Keys',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:UpdateAccessKey",
+           "Resource":"arn:aws:iam::123456789012:user/Self-Updater"}]}');
+
+        INSERT INTO iam.roles(role_id, account_id, role_name_lower, role_name_cased, path, assume_role_policy_document) VALUES
+        ('SVCUAKROLE000001', '123456789012', 'update-access-key-role', 'Update-Access-Key-Role', '/',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}');
+
+        INSERT INTO iam.role_inline_policies(role_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+        ('SVCUAKROLE000001', 'allow-update-any-key', 'Allow-Update-Any-Key',
+         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:UpdateAccessKey","Resource":"*"}]}');
+    "#;
+
     /// Build the principal and session data the SigV4 layer would produce for a seeded user.
     fn user_identity(user_id: &str, user_name: &str) -> (Principal, SessionData) {
         let principal = Principal::from(
@@ -1618,6 +1910,59 @@ mod tests {
         serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
     }
 
+    /// Build the query parameters for a `CreateAccessKey` request, naming a user or leaving
+    /// `UserName` off so it defaults to the caller.
+    fn create_access_key_parameters(user_name: Option<&str>) -> String {
+        let mut parameters = vec![("Action", "CreateAccessKey"), ("Version", "2010-05-08")];
+
+        if let Some(user_name) = user_name {
+            parameters.push(("UserName", user_name));
+        }
+
+        serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+    }
+
+    /// Build the query parameters for a `DeleteAccessKey` request, naming an access key and the
+    /// user carrying it, or leaving either off.
+    fn delete_access_key_parameters(user_name: Option<&str>, access_key_id: Option<&str>) -> String {
+        let mut parameters = vec![("Action", "DeleteAccessKey"), ("Version", "2010-05-08")];
+
+        if let Some(user_name) = user_name {
+            parameters.push(("UserName", user_name));
+        }
+        if let Some(access_key_id) = access_key_id {
+            parameters.push(("AccessKeyId", access_key_id));
+        }
+
+        serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+    }
+
+    /// Build the query parameters for an `UpdateAccessKey` request, naming an access key, the
+    /// user carrying it, and the state to assign it, or leaving any of them off.
+    ///
+    /// `Status` is taken as a string rather than as a [`StatusType`](
+    /// scratchstack_shapes_iam::types::StatusType) so that a state this operation cannot assign --
+    /// or one that names no state at all -- can be exercised.
+    fn update_access_key_parameters(
+        user_name: Option<&str>,
+        access_key_id: Option<&str>,
+        status: Option<&str>,
+    ) -> String {
+        let mut parameters = vec![("Action", "UpdateAccessKey"), ("Version", "2010-05-08")];
+
+        if let Some(user_name) = user_name {
+            parameters.push(("UserName", user_name));
+        }
+        if let Some(access_key_id) = access_key_id {
+            parameters.push(("AccessKeyId", access_key_id));
+        }
+        if let Some(status) = status {
+            parameters.push(("Status", status));
+        }
+
+        serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+    }
+
     /// Start the parameter list for a request invoking `action`, for the builders whose
     /// parameters carry indexed names and so cannot borrow them.
     ///
@@ -1642,6 +1987,13 @@ mod tests {
             parameters.push((format!("Tags.member.{index}.Key"), key.to_string()));
             parameters.push((format!("Tags.member.{index}.Value"), value.to_string()));
         }
+    }
+
+    /// Build the query parameters for a `ListAccessKeys` request, naming a user or leaving
+    /// `UserName` off so it defaults to the caller, and carrying the pagination arguments the
+    /// caller supplies.
+    fn list_access_keys_parameters(user_name: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
+        list_parameters("ListAccessKeys", user_name, None, max_items, marker)
     }
 
     /// Build the query parameters for a `ListAttachedUserPolicies` request, naming a user or
@@ -1700,6 +2052,22 @@ mod tests {
         }
 
         serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+    }
+
+    /// Extract the `AccessKeyId` a response reports, to be named by the operations acting on that
+    /// key afterwards.
+    ///
+    /// An access key id is alphanumeric, so what is between the tags is the id itself: there is
+    /// nothing in it for the response serializer to escape. A `CreateAccessKey` response carries
+    /// exactly one, and a listing's first is the first key it reports.
+    fn access_key_id(body: &str) -> String {
+        const OPEN: &str = "<AccessKeyId>";
+        const CLOSE: &str = "</AccessKeyId>";
+
+        let start = body.find(OPEN).expect("no AccessKeyId in body") + OPEN.len();
+        let end = start + body[start..].find(CLOSE).expect("unterminated AccessKeyId");
+
+        body[start..end].to_string()
     }
 
     /// Extract the `Marker` a truncated listing reports, to be handed back as the next page's
@@ -5987,5 +6355,1087 @@ mod tests {
         let (status, body) = call(&svc_state, principal, session_data, &get_user_parameters(Some("Root-Target"))).await;
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
         assert!(!body.contains("<PermissionsBoundary"), "unexpected body: {body}");
+    }
+
+    /// End-to-end authorization checks for `CreateAccessKey` through `serve_request` against an
+    /// embedded PostgreSQL database. A single test function is used because the database is
+    /// stateful and expensive to start.
+    #[test_log::test(tokio::test)]
+    async fn test_create_access_key_authorization() {
+        let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
+        database.bootstrap().await.expect("Failed to set up, start, and bootstrap PostgreSQL database");
+        let pool = database
+            .get_scratchstack_pool()
+            .await
+            .expect("Failed to get PostgreSQL connection pool for scratchstack user");
+
+        let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
+        MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
+        raw_sql(CREATE_ACCESS_KEY_TEST_DATA).execute(&mut *c).await.expect("Failed to load test data into database");
+        drop(c);
+
+        let svc_state = ServiceState::builder().db(Arc::new(pool)).secure_transport(true).build();
+
+        // A caller allowed iam:CreateAccessKey on any user creates a key for one, and is handed the
+        // secret along with it. A new key is active, so it can be signed with immediately.
+        let (principal, session_data) = user_identity("SVCCAKBROADCRT01", "Broad-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_access_key_parameters(Some("Key-Target"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<UserName>Key-Target</UserName>"), "unexpected body: {body}");
+        assert!(body.contains("<Status>Active</Status>"), "unexpected body: {body}");
+        assert!(body.contains("<SecretAccessKey>"), "unexpected body: {body}");
+
+        // The id is shaped as IAM spells an access key id: the AKIA prefix and sixteen further
+        // characters.
+        let created = access_key_id(&body);
+        assert!(created.starts_with("AKIA"), "unexpected access key id: {created}");
+        assert_eq!(created.len(), 20, "unexpected access key id: {created}");
+
+        // The key was committed, so the root user -- implicitly allowed everything -- reads it back
+        // from the user. It reads back without the secret: the secret is reported by the creation
+        // and by nothing afterwards.
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Key-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains(&format!("<AccessKeyId>{created}</AccessKeyId>")), "unexpected body: {body}");
+        assert!(!body.contains("SecretAccessKey"), "unexpected body: {body}");
+
+        // An omitted UserName names the calling user, which is what Self-Creator is granted keys
+        // on...
+        let (principal, session_data) = user_identity("SVCCAKSELFCRT001", "Self-Creator");
+        let (status, body) = call(&svc_state, principal, session_data, &create_access_key_parameters(None)).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<UserName>Self-Creator</UserName>"), "unexpected body: {body}");
+
+        // ...and only on the calling user: the default is a convenience, not a widening of the
+        // grant.
+        let (principal, session_data) = user_identity("SVCCAKSELFCRT001", "Self-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_access_key_parameters(Some("Key-Target"))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The resource ARN carries the receiving user's path, so a grant scoped to a path prefix
+        // reaches users under that path...
+        let (principal, session_data) = user_identity("SVCCAKPATHCRT001", "Path-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_access_key_parameters(Some("Division-Target"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<UserName>Division-Target</UserName>"), "unexpected body: {body}");
+
+        // ...and no further.
+        let (principal, session_data) = user_identity("SVCCAKPATHCRT001", "Path-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_access_key_parameters(Some("Key-Target"))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The tags on the user receiving the key back the aws:ResourceTag condition keys.
+        let (principal, session_data) = user_identity("SVCCAKTAGCRT0001", "Tag-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_access_key_parameters(Some("Engineering-Target"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // A user carrying the tag with a different value does not satisfy the condition.
+        let (principal, session_data) = user_identity("SVCCAKTAGCRT0001", "Tag-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_access_key_parameters(Some("Sales-Target"))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // Neither does a user carrying no tags at all: the condition key is absent.
+        let (principal, session_data) = user_identity("SVCCAKTAGCRT0001", "Tag-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_access_key_parameters(Some("Key-Target"))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The denial rolled its transaction back, so no key was minted for that user: a caller
+        // denied the action does not leave a usable credential behind.
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Sales-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(
+            body.contains("<ListAccessKeysResult><AccessKeyMetadata/></ListAccessKeysResult>"),
+            "unexpected body: {body}"
+        );
+
+        // A grant naming a single user reaches keys minted for that user, and reaches no other
+        // user.
+        let (principal, session_data) = user_identity("SVCCAKNARROWCR01", "Narrow-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_access_key_parameters(Some("Key-Target"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        let (principal, session_data) = user_identity("SVCCAKNARROWCR01", "Narrow-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_access_key_parameters(Some("Engineering-Target"))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A caller with no grant at all is denied, and is told what it was denied.
+        let (principal, session_data) = user_identity("SVCCAKNOGRANTC01", "No-Grant-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_access_key_parameters(Some("Key-Target"))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(
+            body.contains(&format!(
+                "User: arn:aws:iam::{TEST_ACCOUNT_ID}:user/No-Grant-Creator is not authorized to perform: \
+                 iam:CreateAccessKey on resource: arn:aws:iam::{TEST_ACCOUNT_ID}:user/Key-Target"
+            )),
+            "unexpected body: {body}"
+        );
+
+        // A user that does not exist is still authorized against the ARN the request names, so a
+        // caller allowed iam:CreateAccessKey on any user is told the user is missing...
+        let (principal, session_data) = user_identity("SVCCAKBROADCRT01", "Broad-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_access_key_parameters(Some("No-Such-User"))).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
+        assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
+
+        // ...while a caller allowed it only on a specific user learns nothing about it.
+        let (principal, session_data) = user_identity("SVCCAKNARROWCR01", "Narrow-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_access_key_parameters(Some("No-Such-User"))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A user name that cannot name a user is rejected before the request is authorized, so
+        // even a caller with no grant is told the name is malformed rather than denied.
+        let (principal, session_data) = user_identity("SVCCAKNOGRANTC01", "No-Grant-Creator");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_access_key_parameters(Some("Not/A/User-Name"))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+        assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
+
+        // Credentials that identify no IAM user have nothing for an omitted UserName to name, so
+        // they must name the user outright.
+        for (principal, session_data) in [role_identity("SVCCAKROLE000001", "Create-Access-Key-Role"), root_identity()]
+        {
+            let (status, body) = call(&svc_state, principal, session_data, &create_access_key_parameters(None)).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+            assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
+            assert!(
+                body.contains("Must specify userName when calling with non-User credentials"),
+                "unexpected body: {body}"
+            );
+        }
+
+        // An assumed-role session is governed by the role's own policy.
+        let (principal, session_data) = role_identity("SVCCAKROLE000001", "Create-Access-Key-Role");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_access_key_parameters(Some("Key-Target"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // The account root user is implicitly allowed.
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &create_access_key_parameters(Some("Root-Target"))).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        let created = access_key_id(&body);
+
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Root-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains(&format!("<AccessKeyId>{created}</AccessKeyId>")), "unexpected body: {body}");
+    }
+
+    /// End-to-end authorization checks for `DeleteAccessKey` through `serve_request` against an
+    /// embedded PostgreSQL database. A single test function is used because the database is
+    /// stateful and expensive to start.
+    #[test_log::test(tokio::test)]
+    async fn test_delete_access_key_authorization() {
+        const TARGET_KEY: &str = "AKIADAKTARGETKEY0001";
+        const OTHER_TARGET_KEY: &str = "AKIADAKOTHERKEY00001";
+
+        let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
+        database.bootstrap().await.expect("Failed to set up, start, and bootstrap PostgreSQL database");
+        let pool = database
+            .get_scratchstack_pool()
+            .await
+            .expect("Failed to get PostgreSQL connection pool for scratchstack user");
+
+        let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
+        MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
+        raw_sql(DELETE_ACCESS_KEY_TEST_DATA).execute(&mut *c).await.expect("Failed to load test data into database");
+        drop(c);
+
+        let svc_state = ServiceState::builder().db(Arc::new(pool)).secure_transport(true).build();
+
+        // A caller allowed iam:DeleteAccessKey on any user deletes one of that user's keys.
+        let (principal, session_data) = user_identity("SVCDAKBROADDEL01", "Broad-Deleter");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &delete_access_key_parameters(Some("Key-Target"), Some(TARGET_KEY)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<DeleteAccessKeyResponse"), "unexpected body: {body}");
+
+        // The key is gone and the user's other key is untouched: AccessKeyId names one key, not
+        // the set of them.
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Key-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(!body.contains(TARGET_KEY), "unexpected body: {body}");
+        assert!(body.contains("<AccessKeyId>AKIADAKTARGETKEY0002</AccessKeyId>"), "unexpected body: {body}");
+
+        // Deleting it again reports it missing rather than succeeding silently.
+        let (principal, session_data) = user_identity("SVCDAKBROADDEL01", "Broad-Deleter");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &delete_access_key_parameters(Some("Key-Target"), Some(TARGET_KEY)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
+        assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
+
+        // A key belonging to another user is reported missing rather than deleted, even for a
+        // caller allowed the action on every user: the key must belong to the user the request
+        // names, which is the user the request was authorized against.
+        let (principal, session_data) = user_identity("SVCDAKBROADDEL01", "Broad-Deleter");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &delete_access_key_parameters(Some("Key-Target"), Some(OTHER_TARGET_KEY)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
+        assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
+
+        // That other user still carries its key.
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Other-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains(&format!("<AccessKeyId>{OTHER_TARGET_KEY}</AccessKeyId>")), "unexpected body: {body}");
+
+        // An omitted UserName names the calling user, which is what Self-Deleter is granted its
+        // keys on.
+        let (principal, session_data) = user_identity("SVCDAKSELFDEL001", "Self-Deleter");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &delete_access_key_parameters(None, Some("AKIADAKSELFKEY000001")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // The resource ARN carries the path of the user carrying the key, so a grant scoped to a
+        // path prefix reaches users under that path...
+        let (principal, session_data) = user_identity("SVCDAKPATHDEL001", "Path-Deleter");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &delete_access_key_parameters(Some("Division-Target"), Some("AKIADAKDIVISIONKEY01")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // ...and no further.
+        let (principal, session_data) = user_identity("SVCDAKPATHDEL001", "Path-Deleter");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &delete_access_key_parameters(Some("Key-Target"), Some("AKIADAKTARGETKEY0002")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The tags on the user carrying the key back the aws:ResourceTag condition keys.
+        let (principal, session_data) = user_identity("SVCDAKTAGDEL0001", "Tag-Deleter");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &delete_access_key_parameters(Some("Engineering-Target"), Some("AKIADAKENGINEERKY001")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // A user carrying the tag with a different value does not satisfy the condition.
+        let (principal, session_data) = user_identity("SVCDAKTAGDEL0001", "Tag-Deleter");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &delete_access_key_parameters(Some("Sales-Target"), Some("AKIADAKSALESKEY00001")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The denial rolled its transaction back, so that key is still there to sign with.
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Sales-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<AccessKeyId>AKIADAKSALESKEY00001</AccessKeyId>"), "unexpected body: {body}");
+
+        // A grant naming a single user reaches every key that user carries -- there is no naming
+        // an access key in a resource ARN -- and reaches no other user.
+        let (principal, session_data) = user_identity("SVCDAKNARROWDL01", "Narrow-Deleter");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &delete_access_key_parameters(Some("Key-Target"), Some("AKIADAKTARGETKEY0002")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        let (principal, session_data) = user_identity("SVCDAKNARROWDL01", "Narrow-Deleter");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &delete_access_key_parameters(Some("Other-Target"), Some(OTHER_TARGET_KEY)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A caller with no grant at all is denied, and is told what it was denied.
+        let (principal, session_data) = user_identity("SVCDAKNOGRANTD01", "No-Grant-Deleter");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &delete_access_key_parameters(Some("Other-Target"), Some(OTHER_TARGET_KEY)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(
+            body.contains(&format!(
+                "User: arn:aws:iam::{TEST_ACCOUNT_ID}:user/No-Grant-Deleter is not authorized to perform: \
+                 iam:DeleteAccessKey on resource: arn:aws:iam::{TEST_ACCOUNT_ID}:user/Other-Target"
+            )),
+            "unexpected body: {body}"
+        );
+
+        // A user that does not exist is still authorized against the ARN the request names, so a
+        // caller allowed iam:DeleteAccessKey on any user is told the key is missing...
+        let (principal, session_data) = user_identity("SVCDAKBROADDEL01", "Broad-Deleter");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &delete_access_key_parameters(Some("No-Such-User"), Some(OTHER_TARGET_KEY)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
+        assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
+
+        // ...while a caller allowed it only on a specific user learns nothing about it.
+        let (principal, session_data) = user_identity("SVCDAKNARROWDL01", "Narrow-Deleter");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &delete_access_key_parameters(Some("No-Such-User"), Some(OTHER_TARGET_KEY)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // AccessKeyId is required, and there is nothing for it to default to.
+        let (principal, session_data) = user_identity("SVCDAKBROADDEL01", "Broad-Deleter");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &delete_access_key_parameters(Some("Key-Target"), None)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+        assert!(body.contains("<Code>MalformedInput</Code>"), "unexpected body: {body}");
+
+        // An access key id too short to be one, or carrying characters an id never carries, is
+        // rejected before the request is authorized, so even a caller with no grant is told the id
+        // is malformed rather than denied.
+        for access_key_id in ["AKIA123", "AKIA/DAK/TARGET/KEY"] {
+            let (principal, session_data) = user_identity("SVCDAKNOGRANTD01", "No-Grant-Deleter");
+            let (status, body) = call(
+                &svc_state,
+                principal,
+                session_data,
+                &delete_access_key_parameters(Some("Other-Target"), Some(access_key_id)),
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+            assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
+        }
+
+        // The AKIA prefix, on the other hand, is checked by the delete itself, after the request
+        // is authorized: an id shaped like one but naming another kind of credential reaches an
+        // allowed caller as a validation failure...
+        let (principal, session_data) = user_identity("SVCDAKBROADDEL01", "Broad-Deleter");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &delete_access_key_parameters(Some("Other-Target"), Some("ASIADAKOTHERKEY00001")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+        assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
+
+        // ...and a caller with no grant is denied before it gets that far.
+        let (principal, session_data) = user_identity("SVCDAKNOGRANTD01", "No-Grant-Deleter");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &delete_access_key_parameters(Some("Other-Target"), Some("ASIADAKOTHERKEY00001")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // Credentials that identify no IAM user have nothing for an omitted UserName to name, so
+        // they must name the user outright.
+        for (principal, session_data) in [role_identity("SVCDAKROLE000001", "Delete-Access-Key-Role"), root_identity()]
+        {
+            let (status, body) =
+                call(&svc_state, principal, session_data, &delete_access_key_parameters(None, Some(OTHER_TARGET_KEY)))
+                    .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+            assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
+            assert!(
+                body.contains("Must specify userName when calling with non-User credentials"),
+                "unexpected body: {body}"
+            );
+        }
+
+        // An assumed-role session is governed by the role's own policy.
+        let (principal, session_data) = role_identity("SVCDAKROLE000001", "Delete-Access-Key-Role");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &delete_access_key_parameters(Some("Other-Target"), Some(OTHER_TARGET_KEY)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // The account root user is implicitly allowed.
+        let (principal, session_data) = root_identity();
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &delete_access_key_parameters(Some("Root-Target"), Some("AKIADAKROOTKEY000001")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Root-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(
+            body.contains("<ListAccessKeysResult><AccessKeyMetadata/></ListAccessKeysResult>"),
+            "unexpected body: {body}"
+        );
+    }
+
+    /// End-to-end authorization checks for `ListAccessKeys` through `serve_request` against an
+    /// embedded PostgreSQL database. A single test function is used because the database is
+    /// stateful and expensive to start.
+    #[test_log::test(tokio::test)]
+    async fn test_list_access_keys_authorization() {
+        let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
+        database.bootstrap().await.expect("Failed to set up, start, and bootstrap PostgreSQL database");
+        let pool = database
+            .get_scratchstack_pool()
+            .await
+            .expect("Failed to get PostgreSQL connection pool for scratchstack user");
+
+        let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
+        MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
+        raw_sql(LIST_ACCESS_KEYS_TEST_DATA).execute(&mut *c).await.expect("Failed to load test data into database");
+        drop(c);
+
+        let svc_state = ServiceState::builder().db(Arc::new(pool)).secure_transport(true).build();
+
+        // A caller allowed iam:ListAccessKeys on any user reads the keys on one, ordered by id,
+        // each with the user it belongs to and the state it is in.
+        let (principal, session_data) = user_identity("SVCLAKBROADLST01", "Broad-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Key-Holder"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<AccessKeyId>AKIALAKHOLDERKEY0001</AccessKeyId>"), "unexpected body: {body}");
+        assert!(body.contains("<AccessKeyId>AKIALAKHOLDERKEY0002</AccessKeyId>"), "unexpected body: {body}");
+        assert!(body.contains("<AccessKeyId>AKIALAKHOLDERKEY0003</AccessKeyId>"), "unexpected body: {body}");
+        assert!(body.contains("<UserName>Key-Holder</UserName>"), "unexpected body: {body}");
+        assert_eq!(access_key_id(&body), "AKIALAKHOLDERKEY0001", "unexpected body: {body}");
+
+        // A deactivated key is reported alongside the active ones, as inactive: the listing says
+        // which keys exist, not which of them can be signed with.
+        assert!(body.contains("<Status>Active</Status>"), "unexpected body: {body}");
+        assert!(body.contains("<Status>Inactive</Status>"), "unexpected body: {body}");
+
+        // The secret is not among what is reported: it is handed out by CreateAccessKey and by
+        // nothing afterwards, so a caller allowed to list a user's keys cannot sign as that user.
+        assert!(!body.contains("SecretAccessKey"), "unexpected body: {body}");
+
+        // A user carrying no keys at all is an empty listing rather than a missing user.
+        let (principal, session_data) = user_identity("SVCLAKBROADLST01", "Broad-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Empty-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(
+            body.contains("<ListAccessKeysResult><AccessKeyMetadata/></ListAccessKeysResult>"),
+            "unexpected body: {body}"
+        );
+
+        // MaxItems bounds a page, and a bounded page reports the marker the next one continues
+        // from...
+        let (principal, session_data) = user_identity("SVCLAKBROADLST01", "Broad-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Key-Holder"), Some(2), None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<IsTruncated>true</IsTruncated>"), "unexpected body: {body}");
+        assert!(body.contains("<AccessKeyId>AKIALAKHOLDERKEY0001</AccessKeyId>"), "unexpected body: {body}");
+        assert!(body.contains("<AccessKeyId>AKIALAKHOLDERKEY0002</AccessKeyId>"), "unexpected body: {body}");
+        assert!(!body.contains("AKIALAKHOLDERKEY0003"), "unexpected body: {body}");
+        let marker = pagination_marker(&body);
+
+        // ...which reports the rest, and reports itself as the last page.
+        let (principal, session_data) = user_identity("SVCLAKBROADLST01", "Broad-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_access_keys_parameters(Some("Key-Holder"), Some(2), Some(&marker)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<AccessKeyId>AKIALAKHOLDERKEY0003</AccessKeyId>"), "unexpected body: {body}");
+        assert!(!body.contains("AKIALAKHOLDERKEY0001"), "unexpected body: {body}");
+        assert!(!body.contains("<IsTruncated>"), "unexpected body: {body}");
+
+        // An omitted UserName names the calling user, which is what Self-Lister is granted its
+        // keys on.
+        let (principal, session_data) = user_identity("SVCLAKSELFLST001", "Self-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(None, None, None)).await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<AccessKeyId>AKIALAKSELFKEY000001</AccessKeyId>"), "unexpected body: {body}");
+
+        // The resource ARN carries the path of the user carrying the keys, so a grant scoped to a
+        // path prefix reaches users under that path...
+        let (principal, session_data) = user_identity("SVCLAKPATHLST001", "Path-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_access_keys_parameters(Some("Division-Target"), None, None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<AccessKeyId>AKIALAKDIVISIONKEY01</AccessKeyId>"), "unexpected body: {body}");
+
+        // ...and no further.
+        let (principal, session_data) = user_identity("SVCLAKPATHLST001", "Path-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Key-Holder"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The tags on the user carrying the keys back the aws:ResourceTag condition keys.
+        let (principal, session_data) = user_identity("SVCLAKTAGLST0001", "Tag-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_access_keys_parameters(Some("Engineering-Target"), None, None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<AccessKeyId>AKIALAKENGINEERKY001</AccessKeyId>"), "unexpected body: {body}");
+
+        // A user carrying the tag with a different value does not satisfy the condition.
+        let (principal, session_data) = user_identity("SVCLAKTAGLST0001", "Tag-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Sales-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // Neither does a user carrying no tags at all: the condition key is absent.
+        let (principal, session_data) = user_identity("SVCLAKTAGLST0001", "Tag-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Key-Holder"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A grant naming a single user reaches every key that user carries -- there is no naming
+        // an access key in a resource ARN -- and reaches no other user.
+        let (principal, session_data) = user_identity("SVCLAKNARROWLS01", "Narrow-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Key-Holder"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<AccessKeyId>AKIALAKHOLDERKEY0001</AccessKeyId>"), "unexpected body: {body}");
+        assert!(body.contains("<AccessKeyId>AKIALAKHOLDERKEY0002</AccessKeyId>"), "unexpected body: {body}");
+        assert!(body.contains("<AccessKeyId>AKIALAKHOLDERKEY0003</AccessKeyId>"), "unexpected body: {body}");
+
+        let (principal, session_data) = user_identity("SVCLAKNARROWLS01", "Narrow-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_access_keys_parameters(Some("Engineering-Target"), None, None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A caller with no grant at all is denied, and is told what it was denied.
+        let (principal, session_data) = user_identity("SVCLAKNOGRANTL01", "No-Grant-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Key-Holder"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(
+            body.contains(&format!(
+                "User: arn:aws:iam::{TEST_ACCOUNT_ID}:user/No-Grant-Lister is not authorized to perform: \
+                 iam:ListAccessKeys on resource: arn:aws:iam::{TEST_ACCOUNT_ID}:user/Key-Holder"
+            )),
+            "unexpected body: {body}"
+        );
+
+        // A user that does not exist is still authorized against the ARN the request names, so a
+        // caller allowed iam:ListAccessKeys on any user is told the user is missing...
+        let (principal, session_data) = user_identity("SVCLAKBROADLST01", "Broad-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("No-Such-User"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
+        assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
+
+        // ...while a caller allowed it only on a specific user learns nothing about it.
+        let (principal, session_data) = user_identity("SVCLAKNARROWLS01", "Narrow-Lister");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("No-Such-User"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A MaxItems outside the range a page may take is rejected, and so is a marker that is not
+        // shaped like a pagination token; both are settled before the request is authorized.
+        for parameters in [
+            list_access_keys_parameters(Some("Key-Holder"), Some(0), None),
+            list_access_keys_parameters(Some("Key-Holder"), Some(1001), None),
+            list_access_keys_parameters(Some("Key-Holder"), None, Some("")),
+        ] {
+            let (principal, session_data) = user_identity("SVCLAKBROADLST01", "Broad-Lister");
+            let (status, body) = call(&svc_state, principal, session_data, &parameters).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+            assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
+        }
+
+        // A marker this service did not issue is the caller's to fix rather than ours, so it is
+        // reported as invalid input rather than as an internal failure -- a client-side pagination
+        // token passed back in place of the marker it wraps lands here.
+        let (principal, session_data) = user_identity("SVCLAKBROADLST01", "Broad-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &list_access_keys_parameters(Some("Key-Holder"), None, Some(FOREIGN_PAGINATION_TOKEN)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+        assert!(body.contains("<Code>InvalidInput</Code>"), "unexpected body: {body}");
+
+        // A MaxItems that is not a number at all never becomes a value the request can carry, so
+        // it is reported as malformed input rather than as a validation failure.
+        let (principal, session_data) = user_identity("SVCLAKBROADLST01", "Broad-Lister");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            "Action=ListAccessKeys&Version=2010-05-08&UserName=Key-Holder&MaxItems=many",
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+        assert!(body.contains("<Code>MalformedInput</Code>"), "unexpected body: {body}");
+
+        // Credentials that identify no IAM user have nothing for an omitted UserName to name, so
+        // they must name the user outright.
+        for (principal, session_data) in [role_identity("SVCLAKROLE000001", "List-Access-Keys-Role"), root_identity()] {
+            let (status, body) =
+                call(&svc_state, principal, session_data, &list_access_keys_parameters(None, None, None)).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+            assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
+            assert!(
+                body.contains("Must specify userName when calling with non-User credentials"),
+                "unexpected body: {body}"
+            );
+        }
+
+        // An assumed-role session is governed by the role's own policy.
+        let (principal, session_data) = role_identity("SVCLAKROLE000001", "List-Access-Keys-Role");
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Key-Holder"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<AccessKeyId>AKIALAKHOLDERKEY0001</AccessKeyId>"), "unexpected body: {body}");
+
+        // The account root user is implicitly allowed.
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Root-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<AccessKeyId>AKIALAKROOTKEY000001</AccessKeyId>"), "unexpected body: {body}");
+    }
+
+    /// End-to-end authorization checks for `UpdateAccessKey` through `serve_request` against an
+    /// embedded PostgreSQL database. A single test function is used because the database is
+    /// stateful and expensive to start.
+    #[test_log::test(tokio::test)]
+    async fn test_update_access_key_authorization() {
+        const TARGET_KEY: &str = "AKIAUAKTARGETKEY0001";
+        const OTHER_TARGET_KEY: &str = "AKIAUAKOTHERKEY00001";
+
+        let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
+        database.bootstrap().await.expect("Failed to set up, start, and bootstrap PostgreSQL database");
+        let pool = database
+            .get_scratchstack_pool()
+            .await
+            .expect("Failed to get PostgreSQL connection pool for scratchstack user");
+
+        let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
+        MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
+        raw_sql(UPDATE_ACCESS_KEY_TEST_DATA).execute(&mut *c).await.expect("Failed to load test data into database");
+        drop(c);
+
+        let svc_state = ServiceState::builder().db(Arc::new(pool)).secure_transport(true).build();
+
+        // A caller allowed iam:UpdateAccessKey on any user deactivates one of that user's keys.
+        let (principal, session_data) = user_identity("SVCUAKBROADUPD01", "Broad-Updater");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &update_access_key_parameters(Some("Key-Target"), Some(TARGET_KEY), Some("Inactive")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<UpdateAccessKeyResponse"), "unexpected body: {body}");
+
+        // The key is still there, and is now inactive: deactivating revokes the credential without
+        // discarding it, which is what tells it apart from deleting it.
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Key-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains(&format!("<AccessKeyId>{TARGET_KEY}</AccessKeyId>")), "unexpected body: {body}");
+        assert!(body.contains("<Status>Inactive</Status>"), "unexpected body: {body}");
+
+        // Naming the state it is already in succeeds and changes nothing, and the key can be
+        // activated again afterwards.
+        for status_value in ["Inactive", "Active"] {
+            let (principal, session_data) = user_identity("SVCUAKBROADUPD01", "Broad-Updater");
+            let (status, body) = call(
+                &svc_state,
+                principal,
+                session_data,
+                &update_access_key_parameters(Some("Key-Target"), Some(TARGET_KEY), Some(status_value)),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        }
+
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Key-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<Status>Active</Status>"), "unexpected body: {body}");
+
+        // A key belonging to another user is reported missing rather than updated, even for a
+        // caller allowed the action on every user: the key must belong to the user the request
+        // names, which is the user the request was authorized against.
+        let (principal, session_data) = user_identity("SVCUAKBROADUPD01", "Broad-Updater");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &update_access_key_parameters(Some("Key-Target"), Some(OTHER_TARGET_KEY), Some("Inactive")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
+        assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
+
+        // That other user's key is untouched.
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Other-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<Status>Active</Status>"), "unexpected body: {body}");
+
+        // An omitted UserName names the calling user, which is what Self-Updater is granted its
+        // keys on.
+        let (principal, session_data) = user_identity("SVCUAKSELFUPD001", "Self-Updater");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &update_access_key_parameters(None, Some("AKIAUAKSELFKEY000001"), Some("Inactive")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // The resource ARN carries the path of the user carrying the key, so a grant scoped to a
+        // path prefix reaches users under that path...
+        let (principal, session_data) = user_identity("SVCUAKPATHUPD001", "Path-Updater");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &update_access_key_parameters(Some("Division-Target"), Some("AKIAUAKDIVISIONKEY01"), Some("Inactive")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // ...and no further.
+        let (principal, session_data) = user_identity("SVCUAKPATHUPD001", "Path-Updater");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &update_access_key_parameters(Some("Key-Target"), Some(TARGET_KEY), Some("Inactive")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The tags on the user carrying the key back the aws:ResourceTag condition keys.
+        let (principal, session_data) = user_identity("SVCUAKTAGUPD0001", "Tag-Updater");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &update_access_key_parameters(Some("Engineering-Target"), Some("AKIAUAKENGINEERKY001"), Some("Inactive")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // A user carrying the tag with a different value does not satisfy the condition.
+        let (principal, session_data) = user_identity("SVCUAKTAGUPD0001", "Tag-Updater");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &update_access_key_parameters(Some("Sales-Target"), Some("AKIAUAKSALESKEY00001"), Some("Inactive")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // The denial rolled its transaction back, so that key is still active.
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Sales-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<Status>Active</Status>"), "unexpected body: {body}");
+
+        // A grant naming a single user reaches every key that user carries -- there is no naming
+        // an access key in a resource ARN -- and reaches no other user.
+        let (principal, session_data) = user_identity("SVCUAKNARROWUP01", "Narrow-Updater");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &update_access_key_parameters(Some("Key-Target"), Some(TARGET_KEY), Some("Inactive")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        let (principal, session_data) = user_identity("SVCUAKNARROWUP01", "Narrow-Updater");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &update_access_key_parameters(Some("Other-Target"), Some(OTHER_TARGET_KEY), Some("Inactive")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // A caller with no grant at all is denied, and is told what it was denied.
+        let (principal, session_data) = user_identity("SVCUAKNOGRANTU01", "No-Grant-Updater");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &update_access_key_parameters(Some("Other-Target"), Some(OTHER_TARGET_KEY), Some("Inactive")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(
+            body.contains(&format!(
+                "User: arn:aws:iam::{TEST_ACCOUNT_ID}:user/No-Grant-Updater is not authorized to perform: \
+                 iam:UpdateAccessKey on resource: arn:aws:iam::{TEST_ACCOUNT_ID}:user/Other-Target"
+            )),
+            "unexpected body: {body}"
+        );
+
+        // A user that does not exist is still authorized against the ARN the request names, so a
+        // caller allowed iam:UpdateAccessKey on any user is told the key is missing...
+        let (principal, session_data) = user_identity("SVCUAKBROADUPD01", "Broad-Updater");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &update_access_key_parameters(Some("No-Such-User"), Some(OTHER_TARGET_KEY), Some("Inactive")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
+        assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
+
+        // ...while a caller allowed it only on a specific user learns nothing about it.
+        let (principal, session_data) = user_identity("SVCUAKNARROWUP01", "Narrow-Updater");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &update_access_key_parameters(Some("No-Such-User"), Some(OTHER_TARGET_KEY), Some("Inactive")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // AccessKeyId and Status are both required, and a Status naming no state this service
+        // knows never becomes a value the request can carry; all three are malformed input rather
+        // than validation failures.
+        for parameters in [
+            update_access_key_parameters(Some("Key-Target"), None, Some("Inactive")),
+            update_access_key_parameters(Some("Key-Target"), Some(TARGET_KEY), None),
+            update_access_key_parameters(Some("Key-Target"), Some(TARGET_KEY), Some("Disabled")),
+        ] {
+            let (principal, session_data) = user_identity("SVCUAKBROADUPD01", "Broad-Updater");
+            let (status, body) = call(&svc_state, principal, session_data, &parameters).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+            assert!(body.contains("<Code>MalformedInput</Code>"), "unexpected body: {body}");
+        }
+
+        // Expired is a state a credential can be in but not one this operation can assign, so a
+        // request naming it is a validation failure rather than malformed input -- and it is the
+        // update that says so, after the request is authorized.
+        let (principal, session_data) = user_identity("SVCUAKBROADUPD01", "Broad-Updater");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &update_access_key_parameters(Some("Key-Target"), Some(TARGET_KEY), Some("Expired")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+        assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
+
+        let (principal, session_data) = user_identity("SVCUAKNOGRANTU01", "No-Grant-Updater");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &update_access_key_parameters(Some("Key-Target"), Some(TARGET_KEY), Some("Expired")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+        assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+        // An access key id too short to be one, or carrying characters an id never carries, is
+        // rejected before the request is authorized, so even a caller with no grant is told the id
+        // is malformed rather than denied.
+        for access_key_id in ["AKIA123", "AKIA/UAK/TARGET/KEY"] {
+            let (principal, session_data) = user_identity("SVCUAKNOGRANTU01", "No-Grant-Updater");
+            let (status, body) = call(
+                &svc_state,
+                principal,
+                session_data,
+                &update_access_key_parameters(Some("Key-Target"), Some(access_key_id), Some("Inactive")),
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+            assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
+        }
+
+        // Credentials that identify no IAM user have nothing for an omitted UserName to name, so
+        // they must name the user outright.
+        for (principal, session_data) in [role_identity("SVCUAKROLE000001", "Update-Access-Key-Role"), root_identity()]
+        {
+            let (status, body) = call(
+                &svc_state,
+                principal,
+                session_data,
+                &update_access_key_parameters(None, Some(OTHER_TARGET_KEY), Some("Inactive")),
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+            assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
+            assert!(
+                body.contains("Must specify userName when calling with non-User credentials"),
+                "unexpected body: {body}"
+            );
+        }
+
+        // An assumed-role session is governed by the role's own policy.
+        let (principal, session_data) = role_identity("SVCUAKROLE000001", "Update-Access-Key-Role");
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &update_access_key_parameters(Some("Other-Target"), Some(OTHER_TARGET_KEY), Some("Inactive")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        // The account root user is implicitly allowed.
+        let (principal, session_data) = root_identity();
+        let (status, body) = call(
+            &svc_state,
+            principal,
+            session_data,
+            &update_access_key_parameters(Some("Root-Target"), Some("AKIAUAKROOTKEY000001"), Some("Inactive")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+        let (principal, session_data) = root_identity();
+        let (status, body) =
+            call(&svc_state, principal, session_data, &list_access_keys_parameters(Some("Root-Target"), None, None))
+                .await;
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body.contains("<Status>Inactive</Status>"), "unexpected body: {body}");
     }
 }
