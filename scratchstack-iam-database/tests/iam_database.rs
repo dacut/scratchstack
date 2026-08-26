@@ -361,6 +361,9 @@ async fn subtest_create_role(pool: &PgPool) {
     role::test_create_role_with_tags(pool).await;
     role::test_create_role_with_permissions_boundary(pool).await;
     role::test_create_role_duplicate_name(pool).await;
+    role::test_create_role_duplicate_name_different_case(pool).await;
+    role::test_create_role_duplicate_name_other_account(pool).await;
+    role::test_create_role_malformed_trust_policy(pool).await;
     role::test_create_role_invalid_name();
     role::test_create_role_invalid_max_session_duration();
     role::test_create_role_nonexistent_account(pool).await;

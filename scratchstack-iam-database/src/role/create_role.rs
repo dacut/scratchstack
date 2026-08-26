@@ -9,19 +9,24 @@ use {
         partition::get_current_partition_or_fail,
         path::validate_path,
         policy::get_permissions_boundary_id,
-        role::{role_arn_resource, validate_role_name},
+        role::{is_role_name_unique_violation, role_arn_resource, validate_role_name},
         tag::{validate_tag_key, validate_tag_value},
     },
     indoc::indoc,
     scratchstack_arn::Arn,
+    scratchstack_aspen::Policy as AspenPolicy,
     scratchstack_aws_principal::IamResourceType,
     scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{CreateRoleInternalRequest, CreateRoleResponse},
-        types::{AttachedPermissionsBoundary, PermissionsBoundaryAttachmentType, Role, Tag, error::ValidationError},
+        types::{
+            AttachedPermissionsBoundary, PermissionsBoundaryAttachmentType, Role, Tag,
+            error::{EntityAlreadyExistsException, MalformedPolicyDocumentException, ValidationError},
+        },
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
+    std::str::FromStr as _,
 };
 
 impl RequestExecutor for CreateRoleInternalRequest {
@@ -67,6 +72,16 @@ pub async fn create_role(
     let path = path.unwrap_or("/");
     validate_path(path, request_id)?;
     validate_role_name(role_name, request_id)?;
+
+    // The trust policy is a policy document like any other, and one that does not parse would
+    // create a role nobody could ever assume -- with the failure surfacing at AssumeRole time,
+    // against a caller who did not write it. Reject it here, where the caller who did is the one
+    // being told.
+    if let Err(e) = AspenPolicy::from_str(assume_role_policy_document) {
+        let message = format!("Invalid policy document: {e}");
+        return Err(MalformedPolicyDocumentException::builder().message(message).request_id(request_id).build().into());
+    }
+
     if let Some(max_session_duration) = max_session_duration
         && (max_session_duration < 3600 || max_session_duration > 43200)
     {
@@ -112,6 +127,20 @@ pub async fn create_role(
     {
         Ok(result) => result,
         Err(e) => {
+            // Only a violation of the role-name constraint means the account already has a role
+            // with this name; names are compared case-insensitively, so the collision is on the
+            // lower-cased name rather than the one the caller spelled. The table can also raise a
+            // unique violation on the role_id primary key, which is a generated-id collision
+            // rather than anything the caller did, and falls through to the internal failure
+            // below.
+            if is_role_name_unique_violation(&e) {
+                let message = format!("Role with name {role_name} already exists.");
+                return Err(EntityAlreadyExistsException::builder()
+                    .message(message)
+                    .request_id(request_id)
+                    .build()
+                    .into());
+            }
             log::error!("Failed to insert role into database: {e}");
             return Err(internal_failure(request_id).into());
         }

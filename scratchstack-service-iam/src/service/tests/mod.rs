@@ -29,6 +29,7 @@ use {
 };
 
 mod policy;
+mod role;
 mod user;
 
 /// The token the seed data uses where the test's own account id belongs.
@@ -460,6 +461,104 @@ fn update_user_parameters(user_name: Option<&str>, new_user_name: Option<&str>, 
     }
 
     serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `CreateRole` request naming the role to create and the trust
+/// policy to attach to it, leaving off the parameters the caller does not supply so that a
+/// request missing a required one can be exercised.
+fn create_role_parameters(
+    role_name: Option<&str>,
+    assume_role_policy_document: Option<&str>,
+    path: Option<&str>,
+    description: Option<&str>,
+    max_session_duration: Option<i32>,
+    tags: &[(&str, &str)],
+    permissions_boundary: Option<&str>,
+) -> String {
+    let mut parameters = action_parameters("CreateRole");
+
+    if let Some(role_name) = role_name {
+        parameters.push(("RoleName".to_string(), role_name.to_string()));
+    }
+    if let Some(assume_role_policy_document) = assume_role_policy_document {
+        parameters.push(("AssumeRolePolicyDocument".to_string(), assume_role_policy_document.to_string()));
+    }
+    if let Some(path) = path {
+        parameters.push(("Path".to_string(), path.to_string()));
+    }
+    if let Some(description) = description {
+        parameters.push(("Description".to_string(), description.to_string()));
+    }
+    if let Some(max_session_duration) = max_session_duration {
+        parameters.push(("MaxSessionDuration".to_string(), max_session_duration.to_string()));
+    }
+
+    append_tag_parameters(&mut parameters, tags);
+
+    if let Some(permissions_boundary) = permissions_boundary {
+        parameters.push(("PermissionsBoundary".to_string(), permissions_boundary.to_string()));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `GetRole` request naming a role, or leaving `RoleName` off.
+fn get_role_parameters(role_name: Option<&str>) -> String {
+    role_name_parameters("GetRole", role_name)
+}
+
+/// Build the query parameters for a `DeleteRole` request naming a role, or leaving `RoleName`
+/// off.
+fn delete_role_parameters(role_name: Option<&str>) -> String {
+    role_name_parameters("DeleteRole", role_name)
+}
+
+/// Build the query parameters for a request whose only argument is the name of the role it acts
+/// on, leaving `RoleName` off when the caller does not supply one so that a request missing it
+/// can be exercised.
+fn role_name_parameters(action: &str, role_name: Option<&str>) -> String {
+    let mut parameters = vec![("Action", action), ("Version", "2010-05-08")];
+
+    if let Some(role_name) = role_name {
+        parameters.push(("RoleName", role_name));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for an `UpdateRole` request naming the role to update and the
+/// description and maximum session duration to give it, leaving either replacement off.
+fn update_role_parameters(
+    role_name: Option<&str>,
+    description: Option<&str>,
+    max_session_duration: Option<i32>,
+) -> String {
+    let max_session_duration = max_session_duration.map(|duration| duration.to_string());
+    let mut parameters = vec![("Action", "UpdateRole"), ("Version", "2010-05-08")];
+
+    if let Some(role_name) = role_name {
+        parameters.push(("RoleName", role_name));
+    }
+    if let Some(description) = description {
+        parameters.push(("Description", description));
+    }
+    if let Some(max_session_duration) = max_session_duration.as_deref() {
+        parameters.push(("MaxSessionDuration", max_session_duration));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `ListRoles` request, filtering by the path of the roles
+/// reported and carrying the pagination arguments the caller supplies.
+fn list_roles_parameters(path_prefix: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
+    list_parameters("ListRoles", None, path_prefix, max_items, marker)
+}
+
+/// Extract the `AssumeRolePolicyDocument` from a role response and percent-decode it, standing in
+/// for the URL decoding a client applies.
+fn decoded_trust_policy_document(body: &str) -> String {
+    decoded_document_element(body, "AssumeRolePolicyDocument")
 }
 
 /// Build the query parameters for a `CreatePolicy` request naming the managed policy to create
