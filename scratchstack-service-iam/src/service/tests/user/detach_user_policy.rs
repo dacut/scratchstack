@@ -1,14 +1,4 @@
-use {
-    crate::service::{
-        ServiceState,
-        tests::*,
-    },
-    pretty_assertions::assert_eq,
-    scratchstack_core::axum::http::StatusCode,
-    scratchstack_iam_database::{migrate::MIGRATOR, utils::TempDatabase},
-    sqlx::raw_sql,
-    std::sync::Arc,
-};
+use {crate::service::tests::*, pretty_assertions::assert_eq, scratchstack_core::axum::http::StatusCode};
 
 /// Seed data for the `DetachUserPolicy` authorization tests. This mirrors
 /// [`ATTACH_USER_POLICY_TEST_DATA`] with the attachments already in place, so that each caller
@@ -88,25 +78,16 @@ const DETACH_USER_POLICY_TEST_DATA: &str = r#"
 "#;
 
 /// End-to-end authorization checks for `DetachUserPolicy` through `serve_request` against an
-/// embedded PostgreSQL database. A single test function is used because the database is
-/// stateful and expensive to start.
+/// embedded PostgreSQL database. A single test function covers every case: the cases run in order
+/// against one database, and several of them read the state the cases before them left behind.
 #[test_log::test(tokio::test)]
 async fn test_detach_user_policy_authorization() {
     const ADMIN_POLICY_ARN: &str = "arn:aws:iam::123456789012:policy/Admin-Policy";
     const EXTRA_POLICY_ARN: &str = "arn:aws:iam::123456789012:policy/Extra-Policy";
     const SAFE_POLICY_ARN: &str = "arn:aws:iam::123456789012:policy/safe/Safe-Policy";
 
-    let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
-    database.bootstrap().await.expect("Failed to set up, start, and bootstrap PostgreSQL database");
-    let pool =
-        database.get_scratchstack_pool().await.expect("Failed to get PostgreSQL connection pool for scratchstack user");
-
-    let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
-    MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
-    raw_sql(DETACH_USER_POLICY_TEST_DATA).execute(&mut *c).await.expect("Failed to load test data into database");
-    drop(c);
-
-    let svc_state = ServiceState::builder().db(Arc::new(pool)).secure_transport(true).build();
+    let database = TestDatabase::new(DETACH_USER_POLICY_TEST_DATA).await;
+    let svc_state = database.svc_state().clone();
 
     // The policy being detached backs iam:PolicyARN here as it does when attaching, so a grant
     // confined to a policy path reaches the policies under it...

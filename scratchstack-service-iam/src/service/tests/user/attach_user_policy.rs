@@ -1,11 +1,4 @@
-use {
-    crate::service::{ServiceState, tests::*},
-    pretty_assertions::assert_eq,
-    scratchstack_core::axum::http::StatusCode,
-    scratchstack_iam_database::{migrate::MIGRATOR, utils::TempDatabase},
-    sqlx::raw_sql,
-    std::sync::Arc,
-};
+use {crate::service::tests::*, pretty_assertions::assert_eq, scratchstack_core::axum::http::StatusCode};
 
 /// Seed data for the `AttachUserPolicy` authorization tests. The callers carry grants scoped by
 /// the policy being attached (`iam:PolicyARN`), by the path of the user receiving it, by that
@@ -82,8 +75,8 @@ const ATTACH_USER_POLICY_TEST_DATA: &str = r#"
 "#;
 
 /// End-to-end authorization checks for `AttachUserPolicy` through `serve_request` against an
-/// embedded PostgreSQL database. A single test function is used because the database is
-/// stateful and expensive to start.
+/// embedded PostgreSQL database. A single test function covers every case: the cases run in order
+/// against one database, and several of them read the state the cases before them left behind.
 #[test_log::test(tokio::test)]
 async fn test_attach_user_policy_authorization() {
     const ADMIN_POLICY_ARN: &str = "arn:aws:iam::123456789012:policy/Admin-Policy";
@@ -91,17 +84,8 @@ async fn test_attach_user_policy_authorization() {
     const SAFE_POLICY_ARN: &str = "arn:aws:iam::123456789012:policy/safe/Safe-Policy";
     const AWS_MANAGED_POLICY_ARN: &str = "arn:aws:iam::aws:policy/Aws-Managed-Policy";
 
-    let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
-    database.bootstrap().await.expect("Failed to set up, start, and bootstrap PostgreSQL database");
-    let pool =
-        database.get_scratchstack_pool().await.expect("Failed to get PostgreSQL connection pool for scratchstack user");
-
-    let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
-    MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
-    raw_sql(ATTACH_USER_POLICY_TEST_DATA).execute(&mut *c).await.expect("Failed to load test data into database");
-    drop(c);
-
-    let svc_state = ServiceState::builder().db(Arc::new(pool)).secure_transport(true).build();
+    let database = TestDatabase::new(ATTACH_USER_POLICY_TEST_DATA).await;
+    let svc_state = database.svc_state().clone();
 
     // A caller allowed iam:AttachUserPolicy on any user attaches a managed policy to one.
     let (principal, session_data) = user_identity("SVCAUPBROADATT01", "Broad-Attacher");

@@ -1,11 +1,4 @@
-use {
-    crate::service::{ServiceState, tests::*},
-    pretty_assertions::assert_eq,
-    scratchstack_core::axum::http::StatusCode,
-    scratchstack_iam_database::{migrate::MIGRATOR, utils::TempDatabase},
-    sqlx::raw_sql,
-    std::sync::Arc,
-};
+use {crate::service::tests::*, pretty_assertions::assert_eq, scratchstack_core::axum::http::StatusCode};
 
 /// Seed data for the `ListUserTags` authorization tests. `Tag-Target` carries several tags, so
 /// a listing can be paged through; `Empty-Target` carries none, so a user without tags can be
@@ -63,22 +56,13 @@ const LIST_USER_TAGS_TEST_DATA: &str = r#"
         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUserTags","Resource":"*"}]}');
 "#;
 
-/// End-to-end authorization checks for `ListUserTags` through `serve_request` against an
-/// embedded PostgreSQL database. A single test function is used because the database is
-/// stateful and expensive to start.
+/// End-to-end authorization checks for `ListUserTags` through `serve_request` against an embedded
+/// PostgreSQL database. A single test function covers every case so that they share one seeded
+/// database, rather than migrating and seeding one apiece.
 #[test_log::test(tokio::test)]
 async fn test_list_user_tags_authorization() {
-    let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
-    database.bootstrap().await.expect("Failed to set up, start, and bootstrap PostgreSQL database");
-    let pool =
-        database.get_scratchstack_pool().await.expect("Failed to get PostgreSQL connection pool for scratchstack user");
-
-    let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
-    MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
-    raw_sql(LIST_USER_TAGS_TEST_DATA).execute(&mut *c).await.expect("Failed to load test data into database");
-    drop(c);
-
-    let svc_state = ServiceState::builder().db(Arc::new(pool)).secure_transport(true).build();
+    let database = TestDatabase::new(LIST_USER_TAGS_TEST_DATA).await;
+    let svc_state = database.svc_state().clone();
 
     // A caller allowed iam:ListUserTags on any user reads the tags off one, ordered by key and
     // cased as they were stored.
