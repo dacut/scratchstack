@@ -553,7 +553,6 @@ pub async fn test_get_user_no_user_name(pool: &sqlx::PgPool) {
     assert!(result.is_err(), "Getting a user without a user name must fail");
 }
 
-/// Clear a permissions boundary that is set on a user. The user exists and has a PB; afterwards
 /// Rename a user, and verify the rename takes the user's id with it: everything the user carries
 /// is keyed on that id rather than on the name.
 pub async fn test_update_user_rename(pool: &sqlx::PgPool) {
