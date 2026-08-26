@@ -73,6 +73,49 @@ async fn test_create_policy_authorization() {
     assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
     assert!(body.contains("<PolicyName>New-Policy</PolicyName>"), "unexpected body: {body}");
 
+    // A second policy of the same name collides with the one just created. That is the caller's
+    // error rather than ours, so it is reported as an entity that already exists.
+    let (principal, session_data) = database.user_identity("SVCCREPOLBROAD01", "Broad-Creator");
+    let (status, body) = call(
+        &svc_state,
+        principal,
+        session_data,
+        &create_policy_parameters(Some("New-Policy"), Some(POLICY_DOCUMENT), None, None, &[]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "unexpected response: {body}");
+    assert!(body.contains("<Code>EntityAlreadyExists</Code>"), "unexpected body: {body}");
+    assert!(
+        body.contains("<Message>A policy called New-Policy already exists. Duplicate names are not allowed.</Message>"),
+        "unexpected body: {body}"
+    );
+
+    // Policy names are compared case-insensitively, so a name differing only in case collides with
+    // the policy just created too...
+    let (principal, session_data) = database.user_identity("SVCCREPOLBROAD01", "Broad-Creator");
+    let (status, body) = call(
+        &svc_state,
+        principal,
+        session_data,
+        &create_policy_parameters(Some("NEW-POLICY"), Some(POLICY_DOCUMENT), None, None, &[]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "unexpected response: {body}");
+    assert!(body.contains("<Code>EntityAlreadyExists</Code>"), "unexpected body: {body}");
+
+    // ...and a name is taken account-wide rather than per path, so the same name under another
+    // path collides as well.
+    let (principal, session_data) = database.user_identity("SVCCREPOLBROAD01", "Broad-Creator");
+    let (status, body) = call(
+        &svc_state,
+        principal,
+        session_data,
+        &create_policy_parameters(Some("New-Policy"), Some(POLICY_DOCUMENT), Some("/elsewhere/"), None, &[]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "unexpected response: {body}");
+    assert!(body.contains("<Code>EntityAlreadyExists</Code>"), "unexpected body: {body}");
+
     // The path the request asks for is part of the ARN being authorized, so a grant scoped to a
     // path prefix reaches policies created under that path...
     let (principal, session_data) = database.user_identity("SVCCREPOLPATH001", "Path-Creator");

@@ -87,7 +87,7 @@ pub(crate) async fn delete_policy(
     // not exist: the caller learns nothing about it, and nothing deletes it.
     let owned = policy_is_owned(&account_id, &policy_arn);
     let (resource_arn, resource_tags) = if owned {
-        match policy_resource(&mut tx, request_id, &policy_arn).await {
+        match policy_resource(&mut tx, request_id, &account_id, &policy_arn).await {
             Ok(resource) => resource,
             Err(response) => return *response,
         }

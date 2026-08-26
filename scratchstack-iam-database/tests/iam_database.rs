@@ -512,6 +512,8 @@ async fn subtest_create_policy(pool: &PgPool) {
     policy_crud::test_create_policy_with_description(pool).await;
     policy_crud::test_create_policy_with_tags(pool).await;
     policy_crud::test_create_policy_duplicate_name(pool).await;
+    policy_crud::test_create_policy_duplicate_name_different_case(pool).await;
+    policy_crud::test_create_policy_duplicate_name_other_account(pool).await;
     policy_crud::test_create_policy_invalid_document(pool).await;
     policy_crud::test_create_policy_valid_json_invalid_aspen(pool).await;
     policy_crud::test_create_policy_nonexistent_account(pool).await;
@@ -551,6 +553,7 @@ async fn subtest_get_policy(pool: &PgPool) {
     policy_query::test_get_policy_simple(pool).await;
     policy_query::test_get_policy_with_path(pool).await;
     policy_query::test_get_policy_aws_account(pool).await;
+    policy_query::test_get_policy_attachment_counts_are_per_account(pool).await;
     policy_query::test_get_policy_mismatched_path(pool).await;
     policy_query::test_get_policy_nonexistent(pool).await;
     policy_query::test_get_policy_version_simple(pool).await;

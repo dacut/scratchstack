@@ -176,6 +176,9 @@ pub(crate) fn policy_is_owned(account_id: &str, policy_arn: &Arn) -> bool {
 /// caller may be conditioned on the policy's tags. The lookup runs inside `tx`, so what is
 /// authorized is what the operation goes on to act on.
 ///
+/// `account_id` is the caller's account, which is the account the attachment counts the lookup
+/// reports are counted within; nothing here reads those counts, but the lookup answers them.
+///
 /// Authorization is still evaluated when no such policy exists, so that a caller allowed the
 /// action broadly is told the policy does not exist while one allowed it only on specific
 /// policies learns nothing at all. There is nothing to read tags from in that case, so the ARN
@@ -187,9 +190,10 @@ pub(crate) fn policy_is_owned(account_id: &str, policy_arn: &Arn) -> bool {
 pub(crate) async fn policy_resource(
     tx: &mut PgTransaction<'_>,
     request_id: RequestId,
+    account_id: &str,
     policy_arn: &Arn,
 ) -> Result<(Arn, Vec<Tag>), Box<Response<Body>>> {
-    let policy = match read_policy(tx, &policy_arn.to_string(), request_id).await {
+    let policy = match read_policy(tx, account_id, &policy_arn.to_string(), request_id).await {
         Ok(response) => response.policy,
         Err(IamError::NoSuchEntityException(_)) => return Ok((policy_arn.clone(), Vec::new())),
         Err(e) => return Err(Box::new(e.respond())),

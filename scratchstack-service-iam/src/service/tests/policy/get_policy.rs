@@ -25,7 +25,9 @@ const GET_POLICY_TEST_DATA: &str = r#"
     ('SVCGETPOLNARROW1', '%ACCOUNT_ID%', 'narrow-reader', 'Narrow-Reader', '/'),
     ('SVCGETPOLTAG0001', '%ACCOUNT_ID%', 'tag-reader', 'Tag-Reader', '/'),
     ('SVCGETPOLNONE001', '%ACCOUNT_ID%', 'no-grant-reader', 'No-Grant-Reader', '/'),
-    ('SVCGETPOLATTACH1', '%ACCOUNT_ID%', 'attached-user', 'Attached-User', '/');
+    ('SVCGETPOLATTACH1', '%ACCOUNT_ID%', 'attached-user', 'Attached-User', '/'),
+    ('SVCGETPOLAWSATT1', '%ACCOUNT_ID%', 'aws-policy-user', 'Aws-Policy-User', '/'),
+    ('SVCGETPOLFRGNUSR', '310987654321', 'foreign-user', 'Foreign-User', '/');
 
     INSERT INTO iam.managed_policies(managed_policy_id, account_id, managed_policy_name_lower,
         managed_policy_name_cased, path, default_version, deprecated, latest_version, description) VALUES
@@ -47,8 +49,12 @@ const GET_POLICY_TEST_DATA: &str = r#"
     INSERT INTO iam.managed_policy_tags(managed_policy_id, key_lower, key_cased, value) VALUES
     ('SVCGETPOLADMIN01', 'department', 'Department', 'Engineering');
 
+    -- The AWS-managed policy is carried by a user in this account and by one in an unrelated
+    -- account, so the count reported to this account has something to leave out.
     INSERT INTO iam.user_attached_policies(user_id, managed_policy_id) VALUES
-    ('SVCGETPOLATTACH1', 'SVCGETPOLADMIN01');
+    ('SVCGETPOLATTACH1', 'SVCGETPOLADMIN01'),
+    ('SVCGETPOLAWSATT1', 'SVCGETPOLAWSMG01'),
+    ('SVCGETPOLFRGNUSR', 'SVCGETPOLAWSMG01');
 
     INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
     ('SVCGETPOLBROAD01', 'allow-get-any-policy', 'Allow-Get-Any-Policy',
@@ -180,14 +186,24 @@ async fn test_get_policy_authorization() {
     assert!(body.contains("<PolicyName>Get-Policy-Aws-Managed</PolicyName>"), "unexpected body: {body}");
     assert!(body.contains(&format!("<Arn>{AWS_MANAGED_POLICY_ARN}</Arn>")), "unexpected body: {body}");
 
+    // The counts an AWS-managed policy reports are the asking account's own: two users carry this
+    // policy, but only one of them is in this account, and that is the one that is counted.
+    assert!(body.contains("<AttachmentCount>1</AttachmentCount>"), "unexpected body: {body}");
+    assert!(
+        body.contains("<PermissionsBoundaryUsageCount>0</PermissionsBoundaryUsageCount>"),
+        "unexpected body: {body}"
+    );
+
     // ...or through the `aws` account alias IAM spells them with, which names the same policy and
-    // is reported back the way the request spelled it.
+    // is reported back the way the request spelled it. Which spelling the request used does not
+    // change the counts: they are the asking account's either way.
     let (principal, session_data) = database.user_identity("SVCGETPOLBROAD01", "Broad-Reader");
     let (status, body) =
         call(&svc_state, principal, session_data, &get_policy_parameters(Some(AWS_MANAGED_POLICY_ALIAS_ARN))).await;
     assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
     assert!(body.contains(&format!("<Arn>{AWS_MANAGED_POLICY_ALIAS_ARN}</Arn>")), "unexpected body: {body}");
     assert!(body.contains("<PolicyName>Get-Policy-Aws-Managed</PolicyName>"), "unexpected body: {body}");
+    assert!(body.contains("<AttachmentCount>1</AttachmentCount>"), "unexpected body: {body}");
 
     // A managed policy is not shared across customer accounts, so a policy in another account is
     // reported as no policy at all -- to a caller allowed the action on every resource, which

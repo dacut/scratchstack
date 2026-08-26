@@ -34,6 +34,27 @@ use {
     std::str::FromStr as _,
 };
 
+/// Name of the unique constraint that enforces policy-name uniqueness on
+/// `iam.managed_policies(account_id, managed_policy_name_lower)`. Used to distinguish a name
+/// collision from the other unique violation the table can raise -- a primary-key collision on
+/// `managed_policy_id`, whose generated ids [`crate::id::IamId::new`] does not guarantee to be
+/// unique.
+pub(crate) const POLICY_NAME_UNIQUE_CONSTRAINT: &str = "uk_mp_acctid_polname";
+
+/// Returns true if `e` is a Postgres unique-violation error specifically against the unique
+/// constraint on `iam.managed_policies(account_id, managed_policy_name_lower)`.
+///
+/// A unique violation on any other constraint of the table -- notably a `managed_policy_id`
+/// primary-key collision -- is not a name collision and must not be reported as one.
+pub(crate) fn is_policy_name_unique_violation(e: &sqlx::Error) -> bool {
+    if let sqlx::Error::Database(db_err) = e {
+        db_err.code().as_deref() == Some(SQLSTATE_UNIQUE_VIOLATION)
+            && db_err.constraint() == Some(POLICY_NAME_UNIQUE_CONSTRAINT)
+    } else {
+        false
+    }
+}
+
 /// Construct a policy ARN from its components.
 pub(crate) fn build_policy_arn(
     partition: &str,
@@ -91,21 +112,34 @@ pub(crate) async fn fetch_policy_tags(
     Ok(tags)
 }
 
-/// Calculate the number of attachments for a policy by its managed_policy_id. This is the sum of
-/// the number of user, group, and role attachments.
+/// Calculate the number of entities in `account_id` that carry the policy `managed_policy_id`.
+/// This is the sum of the number of user, group, and role attachments.
+///
+/// The count is confined to one account because that is the count IAM reports: an AWS-managed
+/// policy is attachable in every account, and what an account is told is how many of *its own*
+/// entities carry the policy, not how many carry it everywhere. A customer-managed policy can
+/// only be attached within the account that owns it, so for one the confinement changes nothing.
 pub(crate) async fn get_policy_attachment_count(
     tx: &mut PgTransaction<'_>,
+    account_id: &str,
     managed_policy_id: &str,
     request_id: RequestId,
 ) -> Result<i32, IamError> {
     let row = query(indoc! {"
             SELECT
-                (SELECT COUNT(*) FROM iam.user_attached_policies WHERE managed_policy_id = $1) +
-                (SELECT COUNT(*) FROM iam.group_attached_policies WHERE managed_policy_id = $1) +
-                (SELECT COUNT(*) FROM iam.role_attached_policies WHERE managed_policy_id = $1)
+                (SELECT COUNT(*) FROM iam.user_attached_policies uap
+                    JOIN iam.users u ON u.user_id = uap.user_id
+                    WHERE uap.managed_policy_id = $1 AND u.account_id = $2) +
+                (SELECT COUNT(*) FROM iam.group_attached_policies gap
+                    JOIN iam.groups g ON g.group_id = gap.group_id
+                    WHERE gap.managed_policy_id = $1 AND g.account_id = $2) +
+                (SELECT COUNT(*) FROM iam.role_attached_policies rap
+                    JOIN iam.roles r ON r.role_id = rap.role_id
+                    WHERE rap.managed_policy_id = $1 AND r.account_id = $2)
                 AS attachment_count
         "})
     .bind(managed_policy_id)
+    .bind(account_id)
     .fetch_one(tx.as_mut())
     .await
     .map_err(|e| {
@@ -127,20 +161,27 @@ pub(crate) async fn get_policy_attachment_count(
         })
 }
 
-/// Calculate the number of permissions boundary attachments for a policy by its managed_policy_id.
+/// Calculate the number of entities in `account_id` that the policy `managed_policy_id` bounds.
 /// This is the sum of the number of user and role permissions boundary attachments.
+///
+/// The count is confined to one account for the same reason
+/// [`get_policy_attachment_count`] is.
 async fn get_policy_permissions_boundary_usage_count(
     tx: &mut PgTransaction<'_>,
+    account_id: &str,
     managed_policy_id: &str,
     request_id: RequestId,
 ) -> Result<i32, IamError> {
     let row = query(indoc! {"
             SELECT
-                (SELECT COUNT(*) FROM iam.users WHERE permissions_boundary_managed_policy_id = $1) +
-                (SELECT COUNT(*) FROM iam.roles WHERE permissions_boundary_managed_policy_id = $1)
+                (SELECT COUNT(*) FROM iam.users
+                    WHERE permissions_boundary_managed_policy_id = $1 AND account_id = $2) +
+                (SELECT COUNT(*) FROM iam.roles
+                    WHERE permissions_boundary_managed_policy_id = $1 AND account_id = $2)
                 AS usage_count
         "})
     .bind(managed_policy_id)
+    .bind(account_id)
     .fetch_one(tx.as_mut())
     .await
     .map_err(|e| {

@@ -8,7 +8,7 @@ use {
         internal_failure,
         partition::get_current_partition_or_fail,
         path::validate_path,
-        policy::{policy_arn_resource, validate_policy_name},
+        policy::{is_policy_name_unique_violation, policy_arn_resource, validate_policy_name},
         tag::{validate_tag_key, validate_tag_value},
     },
     indoc::indoc,
@@ -19,7 +19,10 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{CreatePolicyInternalRequest, CreatePolicyResponse},
-        types::{Policy, Tag, error::MalformedPolicyDocumentException},
+        types::{
+            Policy, Tag,
+            error::{EntityAlreadyExistsException, MalformedPolicyDocumentException},
+        },
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
     std::str::FromStr as _,
@@ -100,6 +103,20 @@ pub async fn create_policy(
     {
         Ok(result) => result,
         Err(e) => {
+            // Only a violation of the policy-name constraint means the account already has a
+            // policy with this name; names are compared case-insensitively, so the collision is
+            // on the lower-cased name rather than the one the caller spelled. The table can also
+            // raise a unique violation on the managed_policy_id primary key, which is a
+            // generated-id collision rather than anything the caller did, and falls through to
+            // the internal failure below.
+            if is_policy_name_unique_violation(&e) {
+                let message = format!("A policy called {policy_name} already exists. Duplicate names are not allowed.");
+                return Err(EntityAlreadyExistsException::builder()
+                    .message(message)
+                    .request_id(request_id)
+                    .build()
+                    .into());
+            }
             log::error!("Failed to insert managed policy into database: {e}");
             return Err(internal_failure(request_id).into());
         }

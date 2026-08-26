@@ -4,7 +4,7 @@ use {
     super::common::VALID_POLICY_DOCUMENT,
     pretty_assertions::assert_eq,
     scratchstack_core::RequestId,
-    scratchstack_iam_database::RequestExecutor,
+    scratchstack_iam_database::{RequestExecutor, policy::get_policy},
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
@@ -72,6 +72,39 @@ pub async fn test_get_policy_aws_account(pool: &sqlx::PgPool) {
 
     let policy = resp.policy.expect("Response should include policy");
     assert_eq!(policy.policy_name.as_deref(), Some("AwsOwnedDelVersion"));
+}
+
+/// The attachment counts a policy reports are counted within the account asking, not across every
+/// account the policy is attached in. An AWS-managed policy is attachable in every account, so a
+/// count that spanned them all would tell an account nothing about itself.
+///
+/// The seed data splits `Example-Managed-Policy-1`, which account 123456789012 owns, across two
+/// accounts: `Example-Group-1` and `Example-Role-1` carry it in 123456789012, `Example-User-2`
+/// carries it in 210987654321, and `Example-User-1` is bounded by it in 123456789012. Each
+/// account is told about its own entities and no others.
+pub async fn test_get_policy_attachment_counts_are_per_account(pool: &sqlx::PgPool) {
+    const POLICY_ARN: &str = "arn:test-partition:iam::123456789012:policy/Example-Managed-Policy-1";
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let own = get_policy(&mut tx, "123456789012", POLICY_ARN, RequestId::new())
+        .await
+        .expect("Failed to get Example-Managed-Policy-1 as its own account");
+    let other = get_policy(&mut tx, "210987654321", POLICY_ARN, RequestId::new())
+        .await
+        .expect("Failed to get Example-Managed-Policy-1 as another account");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let own = own.policy.expect("Response should include policy");
+    assert_eq!(own.attachment_count, Some(2), "the owning account carries it on a group and a role");
+
+    // At least `Example-User-1`; the subtests that ran before this one commit roles bounded by
+    // this policy as well, so the exact number is theirs to decide and only the floor is ours.
+    let own_boundary_usage = own.permissions_boundary_usage_count.expect("Response should report boundary usage");
+    assert!(own_boundary_usage >= 1, "the owning account has entities bounded by it, got {own_boundary_usage}");
+
+    let other = other.policy.expect("Response should include policy");
+    assert_eq!(other.attachment_count, Some(1), "the other account carries it on one user");
+    assert_eq!(other.permissions_boundary_usage_count, Some(0), "the other account has nothing bounded by it");
 }
 
 pub async fn test_get_policy_mismatched_path(pool: &sqlx::PgPool) {
