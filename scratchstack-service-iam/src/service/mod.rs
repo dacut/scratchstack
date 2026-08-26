@@ -3,7 +3,8 @@ use {
         constants::*,
         policy::{
             create_policy, create_policy_version, delete_policy, delete_policy_version, get_policy, get_policy_version,
-            list_policies, list_policy_versions,
+            list_entities_for_policy, list_policies, list_policy_tags, list_policy_versions,
+            set_default_policy_version, tag_policy, untag_policy,
         },
         user::{
             attach_user_policy, create_access_key, create_user, delete_access_key, delete_user,
@@ -261,8 +262,32 @@ pub(crate) async fn serve_request(
             )
             .await
         }
+        Ok(Action::ListEntitiesForPolicy) => {
+            list_entities_for_policy(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
         Ok(Action::ListPolicies) => {
             list_policies(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
+        Ok(Action::ListPolicyTags) => {
+            list_policy_tags(
                 svc_state,
                 request_id,
                 principal,
@@ -337,9 +362,37 @@ pub(crate) async fn serve_request(
             )
             .await
         }
+        Ok(Action::SetDefaultPolicyVersion) => {
+            set_default_policy_version(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
+        Ok(Action::TagPolicy) => {
+            tag_policy(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
+                .await
+        }
         Ok(Action::TagUser) => {
             tag_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
                 .await
+        }
+        Ok(Action::UntagPolicy) => {
+            untag_policy(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
         }
         Ok(Action::UntagUser) => {
             untag_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)

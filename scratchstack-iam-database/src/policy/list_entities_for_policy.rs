@@ -26,8 +26,14 @@ impl RequestExecutor for ListEntitiesForPolicyRequest {
     type Error = IamError;
 
     async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        // The request names the policy and nothing else, so there is no caller account whose
+        // entities the listing should be confined to; the policy's own account is the one this
+        // form can answer for. A caller that knows who is asking -- the IAM service, which reads
+        // it from the session -- calls [`list_entities_for_policy`] with that account instead.
+        let parts = parse_policy_arn(&self.policy_arn, request_id)?;
         list_entities_for_policy(
             tx,
+            parts.account_id(),
             &self.policy_arn,
             self.entity_filter.as_ref(),
             self.marker.as_deref(),
@@ -76,11 +82,18 @@ impl Display for EntitySection {
     }
 }
 
-/// List the IAM entities (users, groups, roles) that a managed policy is attached to (or, when
-/// `policy_usage_filter == PermissionsBoundary`, that use the policy as a permissions boundary).
+/// List the IAM entities (users, groups, roles) in `account_id` that a managed policy is attached
+/// to (or, when `policy_usage_filter == PermissionsBoundary`, that use the policy as a permissions
+/// boundary).
+///
+/// `account_id` names the account asking, and the listing reports only that account's entities. An
+/// AWS-managed policy is attachable in every account, so a listing that spanned them all would
+/// hand one account the names of another's users, groups, and roles. A customer-managed policy can
+/// only be attached within the account that owns it, so for one the confinement changes nothing.
 #[allow(clippy::too_many_arguments)]
 pub async fn list_entities_for_policy(
     tx: &mut PgTransaction<'_>,
+    account_id: &str,
     policy_arn: &str,
     entity_filter: Option<&EntityType>,
     marker: Option<&str>,
@@ -92,6 +105,10 @@ pub async fn list_entities_for_policy(
     if let Some(path_prefix) = path_prefix {
         validate_path_prefix(path_prefix, request_id)?;
     }
+    let listing_account_id = match account_id {
+        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
+        account_id => account_id,
+    };
     let max_items = constrain_max_items(max_items, request_id)?;
     let partition = get_current_partition_or_fail(tx, request_id).await?;
     let parts = parse_policy_arn(policy_arn, request_id)?;
@@ -201,6 +218,7 @@ pub async fn list_entities_for_policy(
         let rows = fetch_section_rows(
             tx,
             section,
+            listing_account_id,
             &managed_policy_id,
             is_pb_filter,
             path_prefix,
@@ -271,12 +289,13 @@ pub async fn list_entities_for_policy(
     })
 }
 
-/// Fetch rows from the requested section (groups/roles/users) attached to or boundaried by a
-/// managed policy. The rows are returned in `entity_id` order.
+/// Fetch rows from the requested section (groups/roles/users) in `account_id` attached to or
+/// boundaried by a managed policy. The rows are returned in `entity_id` order.
 #[allow(clippy::too_many_arguments)]
 async fn fetch_section_rows(
     tx: &mut PgTransaction<'_>,
     section: EntitySection,
+    account_id: &str,
     managed_policy_id: &str,
     is_pb_filter: bool,
     path_prefix: Option<&str>,
@@ -315,6 +334,10 @@ async fn fetch_section_rows(
         "});
         sql.push_bind(managed_policy_id);
     }
+
+    // Entities in other accounts are not this account's to be told about, whoever owns the policy.
+    sql.push("\nAND e.account_id = ");
+    sql.push_bind(account_id);
 
     if let Some(path_prefix) = path_prefix {
         sql.push("\nAND e.path LIKE ");
