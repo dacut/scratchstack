@@ -27,13 +27,24 @@ impl RequestExecutor for GetPolicyRequest {
     type Error = IamError;
 
     async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
-        get_policy(tx, &self.policy_arn, request_id).await
+        // The request names the policy and nothing else, so there is no caller account to count
+        // attachments in; the policy's own account is the one this form can answer for. A caller
+        // that knows who is asking -- the IAM service, which reads it from the session -- calls
+        // [`get_policy`] with that account instead.
+        let parts = parse_policy_arn(&self.policy_arn, request_id)?;
+        get_policy(tx, parts.account_id(), &self.policy_arn, request_id).await
     }
 }
 
 /// Get details for a single managed policy by ARN.
+///
+/// `account_id` names the account asking, which is the account the reported `AttachmentCount` and
+/// `PermissionsBoundaryUsageCount` are counted within: an AWS-managed policy is attachable in
+/// every account, and IAM reports how many of the asking account's own entities carry it rather
+/// than how many carry it everywhere.
 pub async fn get_policy(
     tx: &mut PgTransaction<'_>,
+    account_id: &str,
     policy_arn: &str,
     request_id: RequestId,
 ) -> Result<GetPolicyResponse, IamError> {
@@ -88,26 +99,28 @@ pub async fn get_policy(
         request_id,
     )?;
     let tags = fetch_policy_tags(tx, &policy_row.managed_policy_id, request_id).await?;
-    let attachment_count = if parts.account_id() == AWS_ACCOUNT_ID_NUMERIC {
-        None
-    } else {
-        Some(get_policy_attachment_count(tx, &policy_row.managed_policy_id, request_id).await?)
+
+    // Both counts are answered for the account asking, whoever owns the policy, so an AWS-managed
+    // policy reports what the asking account has done with it rather than nothing at all.
+    let counting_account_id = match account_id {
+        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
+        account_id => account_id,
     };
-    let permissions_boundary_usage_count = if policy_account_id == AWS_ACCOUNT_ID_NUMERIC {
-        None
-    } else {
-        Some(get_policy_permissions_boundary_usage_count(tx, &policy_row.managed_policy_id, request_id).await?)
-    };
+    let attachment_count =
+        get_policy_attachment_count(tx, counting_account_id, &policy_row.managed_policy_id, request_id).await?;
+    let permissions_boundary_usage_count =
+        get_policy_permissions_boundary_usage_count(tx, counting_account_id, &policy_row.managed_policy_id, request_id)
+            .await?;
 
     let policy = Policy::builder()
         .arn(arn.to_string())
-        .set_attachment_count(attachment_count)
+        .attachment_count(attachment_count)
         .create_date(policy_row.created_at)
         .default_version_id(format!("v{}", policy_row.default_version))
         .set_description(policy_row.description)
         .is_attachable(!policy_row.deprecated)
         .path(policy_row.path)
-        .set_permissions_boundary_usage_count(permissions_boundary_usage_count)
+        .permissions_boundary_usage_count(permissions_boundary_usage_count)
         .policy_id(format!("{}{}", IamResourceType::ManagedPolicy.as_str(), policy_row.managed_policy_id))
         .policy_name(policy_row.managed_policy_name_cased)
         .update_date(policy_row.update_date)

@@ -80,7 +80,7 @@ pub async fn assume_role(
             continue;
         };
 
-        let get_policy_response = match get_policy(tx, policy_arn, request_id).await {
+        let get_policy_response = match get_policy(tx, role_account_id, policy_arn, request_id).await {
             Ok(response) => response,
             Err(IamError::NoSuchEntityException(e)) => {
                 return Err(StsError::ValidationError(Box::new(

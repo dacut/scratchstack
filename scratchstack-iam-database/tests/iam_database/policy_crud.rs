@@ -119,18 +119,68 @@ pub async fn test_create_policy_with_tags(pool: &sqlx::PgPool) {
 
 /// Creating a policy with a duplicate name must fail.
 pub async fn test_create_policy_duplicate_name(pool: &sqlx::PgPool) {
-    // "TestPolicy" was committed by test_create_policy_simple; re-inserting must fail.
+    // "TestPolicy" was committed by test_create_policy_simple; re-inserting must fail. The
+    // collision is the caller's to fix, so it is reported as an entity that already exists rather
+    // than as an internal failure.
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
-    let result = CreatePolicyInternalRequest::builder()
+    let err = CreatePolicyInternalRequest::builder()
         .policy_name("TestPolicy")
         .policy_document(VALID_POLICY_DOCUMENT.to_string())
         .account_id("123456789012")
         .build()
         .expect("Failed to build CreatePolicyInternalRequest")
         .execute(&mut tx, RequestId::new())
-        .await;
+        .await
+        .expect_err("Creating a duplicate policy name must fail");
     tx.rollback().await.expect("Failed to rollback transaction");
-    assert!(result.is_err(), "Creating a duplicate policy name must fail");
+
+    let IamError::EntityAlreadyExistsException(e) = err else {
+        panic!("Expected EntityAlreadyExists, got: {err:?}");
+    };
+    assert_eq!(
+        e.message.as_deref(),
+        Some("A policy called TestPolicy already exists. Duplicate names are not allowed.")
+    );
+}
+
+/// Policy names are compared case-insensitively, so a name differing only in case collides with
+/// one that already exists.
+pub async fn test_create_policy_duplicate_name_different_case(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = CreatePolicyInternalRequest::builder()
+        .policy_name("TESTPOLICY")
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("Creating a policy whose name differs only in case must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    // The message names the policy the way the request spelled it, as IAM does.
+    let IamError::EntityAlreadyExistsException(e) = err else {
+        panic!("Expected EntityAlreadyExists, got: {err:?}");
+    };
+    assert_eq!(
+        e.message.as_deref(),
+        Some("A policy called TESTPOLICY already exists. Duplicate names are not allowed.")
+    );
+}
+
+/// A policy name that is free in one account is free even when another account has it.
+pub async fn test_create_policy_duplicate_name_other_account(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreatePolicyInternalRequest::builder()
+        .policy_name("TestPolicy")
+        .policy_document(VALID_POLICY_DOCUMENT.to_string())
+        .account_id("000000000000")
+        .build()
+        .expect("Failed to build CreatePolicyInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("A name taken in one account must still be free in another");
+    tx.rollback().await.expect("Failed to rollback transaction");
 }
 
 /// Creating a policy with an invalid policy document must fail.

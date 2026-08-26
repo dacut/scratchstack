@@ -51,7 +51,8 @@ const LIST_POLICIES_TEST_DATA: &str = r#"
     ('SVCLSTPOLBOUNDED', '%ACCOUNT_ID%', 'bounded-user', 'Bounded-User', '/', 'SVCLSTPOL0000005');
 
     INSERT INTO iam.user_attached_policies(user_id, managed_policy_id) VALUES
-    ('SVCLSTPOLHOLDER1', 'SVCLSTPOL0000004');
+    ('SVCLSTPOLHOLDER1', 'SVCLSTPOL0000004'),
+    ('SVCLSTPOLHOLDER1', 'SVCLSTPOLAWSMG01');
 
     INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
     ('SVCLSTPOLBROAD01', 'allow-list-policies', 'Allow-List-Policies',
@@ -108,6 +109,10 @@ async fn test_list_policies_authorization() {
     assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
     assert!(body.contains("<PolicyName>List-Policies-Aws-Managed</PolicyName>"), "unexpected body: {body}");
     assert!(!body.contains("Shared-Path-Policy"), "unexpected body: {body}");
+
+    // The counts an AWS-managed policy reports are the listing account's own, so this account is
+    // told about the one user of its own that carries the policy -- not about every account's.
+    assert!(body.contains("<AttachmentCount>1</AttachmentCount>"), "unexpected body: {body}");
 
     // Asking for neither scope reports both, so the same path prefix reports the caller's policy
     // alongside the AWS-managed one.

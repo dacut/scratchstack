@@ -14,7 +14,7 @@ use {
         query::from_query_str,
         response::Responder as _,
     },
-    scratchstack_iam_database::RequestExecutor as _,
+    scratchstack_iam_database::policy::get_policy as read_policy,
     scratchstack_shapes_iam::{
         action::Action,
         error_meta::Error as IamError,
@@ -90,8 +90,12 @@ pub(crate) async fn get_policy(
     // stored spelling of its name, and the caller's policies may be conditioned on the policy's
     // tags, none of which the request itself supplies. A policy the caller cannot reach is not
     // looked up at all, and is treated exactly as one that does not exist.
+    //
+    // The caller's account is what the reported attachment counts are counted within, so the read
+    // names it: an AWS-managed policy is attachable in every account, and what this caller is
+    // told is how many of its own entities carry the policy.
     let result: Option<GetPolicyResponse> = if policy_is_visible(&account_id, &policy_arn) {
-        match request.execute(&mut tx, request_id).await {
+        match read_policy(&mut tx, &account_id, &request.policy_arn, request_id).await {
             Ok(response) => Some(response),
             Err(IamError::NoSuchEntityException(_)) => None,
             Err(e) => return e.respond(),
