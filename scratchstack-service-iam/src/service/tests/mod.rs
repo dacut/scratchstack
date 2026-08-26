@@ -16,13 +16,13 @@ use {
         },
     },
     scratchstack_iam_database::{migrate::MIGRATOR, utils::TempDatabase},
-    sqlx::raw_sql,
+    sqlx::{AssertSqlSafe, raw_sql},
     std::{
         net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
         str::FromStr as _,
         sync::{
             Arc, LazyLock, Weak,
-            atomic::{AtomicU32, Ordering},
+            atomic::{AtomicU64, Ordering},
         },
     },
     tokio::sync::Mutex,
@@ -30,7 +30,18 @@ use {
 
 mod user;
 
-const TEST_ACCOUNT_ID: &str = "123456789012";
+/// The token the seed data uses where the test's own account id belongs.
+///
+/// Each test is seeded into an account of its own, so the account id cannot be written into
+/// the seed data literally; [`TestDatabase::new`] substitutes this for the one it assigned.
+const ACCOUNT_ID_PLACEHOLDER: &str = "%ACCOUNT_ID%";
+
+/// The first account id handed out to a test.
+///
+/// This is well clear of the account ids the seed data names outright -- `210987654321` for the
+/// account a policy deliberately does not grant, `000000000000` for the AWS-managed policies --
+/// so a test's own account is never one of them.
+const FIRST_TEST_ACCOUNT_ID: u64 = 900_000_000_000;
 
 /// The region test requests are signed for; the signing-key provider records it as
 /// `aws:RequestedRegion` for both long-term and temporary credentials.
@@ -63,28 +74,26 @@ const TEST_PROXY_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
 /// `aws:EpochTime`, `aws:SourceIp`, `aws:referer`, `aws:UserAgent`) that
 /// `check_authorization` injects, and on the `aws:TokenIssueTime` the session token carries.
 const AUTHZ_TEST_DATA: &str = r#"
-    INSERT INTO iam.partition(partition) VALUES ('aws');
-
     INSERT INTO iam.accounts(account_id, email, alias) VALUES
-    ('123456789012', 'authz-test@example.com', 'authz-test');
+    ('%ACCOUNT_ID%', 'authz-test@example.com', 'authz-test');
 
     INSERT INTO iam.users(user_id, account_id, user_name_lower, user_name_cased, path) VALUES
-    ('SVCTESTALLOWUSER', '123456789012', 'allowed-user', 'Allowed-User', '/'),
-    ('SVCTESTDENYUSER1', '123456789012', 'denied-user', 'Denied-User', '/'),
-    ('SVCTESTTLSUSER01', '123456789012', 'tls-user', 'Tls-User', '/'),
-    ('SVCTESTTIMEUSER1', '123456789012', 'time-user', 'Time-User', '/'),
-    ('SVCTESTPASTUSER1', '123456789012', 'past-user', 'Past-User', '/'),
-    ('SVCTESTEPOCHUSR1', '123456789012', 'epoch-user', 'Epoch-User', '/'),
-    ('SVCTESTIPV4USER1', '123456789012', 'ipv4-user', 'Ipv4-User', '/'),
-    ('SVCTESTIPV6USER1', '123456789012', 'ipv6-user', 'Ipv6-User', '/'),
-    ('SVCTESTDENYIPUSR', '123456789012', 'deny-ip-user', 'Deny-Ip-User', '/'),
-    ('SVCTESTTOKENUSER', '123456789012', 'token-user', 'Token-User', '/'),
-    ('SVCTESTREGIONUSR', '123456789012', 'region-user', 'Region-User', '/'),
-    ('SVCTESTOTHERRGN1', '123456789012', 'other-region-user', 'Other-Region-User', '/'),
-    ('SVCTESTDIRECTUSR', '123456789012', 'direct-call-user', 'Direct-Call-User', '/'),
-    ('SVCTESTAGENTUSR1', '123456789012', 'agent-user', 'Agent-User', '/'),
-    ('SVCTESTACCTUSER1', '123456789012', 'account-user', 'Account-User', '/'),
-    ('SVCTESTOTHRACCT1', '123456789012', 'other-account-user', 'Other-Account-User', '/');
+    ('SVCTESTALLOWUSER', '%ACCOUNT_ID%', 'allowed-user', 'Allowed-User', '/'),
+    ('SVCTESTDENYUSER1', '%ACCOUNT_ID%', 'denied-user', 'Denied-User', '/'),
+    ('SVCTESTTLSUSER01', '%ACCOUNT_ID%', 'tls-user', 'Tls-User', '/'),
+    ('SVCTESTTIMEUSER1', '%ACCOUNT_ID%', 'time-user', 'Time-User', '/'),
+    ('SVCTESTPASTUSER1', '%ACCOUNT_ID%', 'past-user', 'Past-User', '/'),
+    ('SVCTESTEPOCHUSR1', '%ACCOUNT_ID%', 'epoch-user', 'Epoch-User', '/'),
+    ('SVCTESTIPV4USER1', '%ACCOUNT_ID%', 'ipv4-user', 'Ipv4-User', '/'),
+    ('SVCTESTIPV6USER1', '%ACCOUNT_ID%', 'ipv6-user', 'Ipv6-User', '/'),
+    ('SVCTESTDENYIPUSR', '%ACCOUNT_ID%', 'deny-ip-user', 'Deny-Ip-User', '/'),
+    ('SVCTESTTOKENUSER', '%ACCOUNT_ID%', 'token-user', 'Token-User', '/'),
+    ('SVCTESTREGIONUSR', '%ACCOUNT_ID%', 'region-user', 'Region-User', '/'),
+    ('SVCTESTOTHERRGN1', '%ACCOUNT_ID%', 'other-region-user', 'Other-Region-User', '/'),
+    ('SVCTESTDIRECTUSR', '%ACCOUNT_ID%', 'direct-call-user', 'Direct-Call-User', '/'),
+    ('SVCTESTAGENTUSR1', '%ACCOUNT_ID%', 'agent-user', 'Agent-User', '/'),
+    ('SVCTESTACCTUSER1', '%ACCOUNT_ID%', 'account-user', 'Account-User', '/'),
+    ('SVCTESTOTHRACCT1', '%ACCOUNT_ID%', 'other-account-user', 'Other-Account-User', '/');
 
     INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
     ('SVCTESTALLOWUSER', 'allow-list-users', 'Allow-List-Users',
@@ -109,7 +118,7 @@ const AUTHZ_TEST_DATA: &str = r#"
         "Condition":{"IpAddress":{"aws:SourceIp":"2001:db8::/32"}}}]}'),
     ('SVCTESTACCTUSER1', 'allow-own-account', 'Allow-Own-Account',
         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
-        "Condition":{"StringEquals":{"aws:ResourceAccount":"123456789012"}}}]}'),
+        "Condition":{"StringEquals":{"aws:ResourceAccount":"%ACCOUNT_ID%"}}}]}'),
     ('SVCTESTOTHRACCT1', 'allow-other-account', 'Allow-Other-Account',
         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
         "Condition":{"StringEquals":{"aws:ResourceAccount":"210987654321"}}}]}'),
@@ -136,13 +145,13 @@ const AUTHZ_TEST_DATA: &str = r#"
         "Condition":{"NotIpAddress":{"aws:SourceIp":"203.0.113.0/24"}}}]}');
 
     INSERT INTO iam.roles(role_id, account_id, role_name_lower, role_name_cased, path, assume_role_policy_document) VALUES
-    ('SVCTESTROLE00001', '123456789012', 'session-role', 'Session-Role', '/',
+    ('SVCTESTROLE00001', '%ACCOUNT_ID%', 'session-role', 'Session-Role', '/',
         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'),
-    ('SVCTESTTOKENROLE', '123456789012', 'token-role', 'Token-Role', '/',
+    ('SVCTESTTOKENROLE', '%ACCOUNT_ID%', 'token-role', 'Token-Role', '/',
         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'),
-    ('SVCTESTRGNROLE01', '123456789012', 'region-role', 'Region-Role', '/',
+    ('SVCTESTRGNROLE01', '%ACCOUNT_ID%', 'region-role', 'Region-Role', '/',
         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'),
-    ('SVCTESTDIRROLE01', '123456789012', 'direct-call-role', 'Direct-Call-Role', '/',
+    ('SVCTESTDIRROLE01', '%ACCOUNT_ID%', 'direct-call-role', 'Direct-Call-Role', '/',
         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}');
 
     INSERT INTO iam.role_inline_policies(role_id, policy_name_lower, policy_name_cased, policy_document) VALUES
@@ -160,84 +169,11 @@ const AUTHZ_TEST_DATA: &str = r#"
 
     INSERT INTO iam.managed_policies(managed_policy_id, account_id, managed_policy_name_lower,
         managed_policy_name_cased, path, default_version, deprecated, latest_version) VALUES
-    ('SVCTESTSESSPOL01', '123456789012', 'session-allow-iam', 'Session-Allow-Iam', '/', 1, false, 1);
+    ('SVCTESTSESSPOL01', '%ACCOUNT_ID%', 'session-allow-iam', 'Session-Allow-Iam', '/', 1, false, 1);
 
     INSERT INTO iam.managed_policy_versions(managed_policy_id, managed_policy_version, policy_document) VALUES
     ('SVCTESTSESSPOL01', 1, '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:*","Resource":"*"}]}');
 "#;
-
-/// Build the principal and session data the SigV4 layer would produce for a seeded user.
-fn user_identity(user_id: &str, user_name: &str) -> (Principal, SessionData) {
-    let principal = Principal::from(
-        User::builder()
-            .partition("aws")
-            .account_id(TEST_ACCOUNT_ID)
-            .path("/")
-            .user_name(user_name)
-            .build()
-            .expect("failed to build user"),
-    );
-    let mut session_data = SessionData::new();
-    session_data.insert("aws:PrincipalAccount", SessionValue::String(TEST_ACCOUNT_ID.to_string()));
-    session_data
-        .insert("aws:PrincipalArn", SessionValue::String(format!("arn:aws:iam::{TEST_ACCOUNT_ID}:user/{user_name}")));
-    session_data.insert("aws:userid", SessionValue::String(format!("AIDA{user_id}")));
-    session_data.insert("aws:username", SessionValue::String(user_name.to_string()));
-    session_data.insert("aws:PrincipalType", SessionValue::String("User".to_string()));
-    session_data.insert("aws:PrincipalIsAWSService", SessionValue::Bool(false));
-    session_data.insert("aws:RequestedRegion", SessionValue::String(TEST_REGION.to_string()));
-    session_data.insert("aws:ViaAWSService", SessionValue::Bool(false));
-    (principal, session_data)
-}
-
-/// Build the principal and session data the SigV4 layer would produce for a session on the
-/// seeded role, issued just now.
-fn role_identity(role_id: &str, role_name: &str) -> (Principal, SessionData) {
-    role_identity_issued_at(role_id, role_name, Utc::now())
-}
-
-/// Build the principal and session data the SigV4 layer would produce for a session on the
-/// seeded role that `sts:AssumeRole` minted at `issued_at`.
-///
-/// The keys here mirror the session metadata `AssumeRole` records in the session token, which
-/// the signing-key provider hands back verbatim as the session data for a request signed with
-/// the resulting temporary credentials.
-fn role_identity_issued_at(role_id: &str, role_name: &str, issued_at: DateTime<Utc>) -> (Principal, SessionData) {
-    let principal = Principal::from(
-        AssumedRole::builder()
-            .partition("aws")
-            .account_id(TEST_ACCOUNT_ID)
-            .role_name(role_name)
-            .session_name("test-session")
-            .build()
-            .expect("failed to build assumed role"),
-    );
-    let mut session_data = SessionData::new();
-    session_data.insert("aws:PrincipalAccount", SessionValue::String(TEST_ACCOUNT_ID.to_string()));
-    session_data.insert(
-        "aws:PrincipalArn",
-        SessionValue::String(format!("arn:aws:sts::{TEST_ACCOUNT_ID}:assumed-role/{role_name}/test-session")),
-    );
-    session_data.insert("aws:userid", SessionValue::String(format!("AROA{role_id}:test-session")));
-    session_data.insert("aws:PrincipalType", SessionValue::String("AssumedRole".to_string()));
-    session_data.insert("aws:MultiFactorAuthPresent", SessionValue::Bool(false));
-    session_data.insert("aws:PrincipalIsAWSService", SessionValue::Bool(false));
-    session_data.insert("aws:RequestedRegion", SessionValue::String(TEST_REGION.to_string()));
-    session_data.insert("aws:TokenIssueTime", SessionValue::Timestamp(issued_at));
-    session_data.insert("aws:ViaAWSService", SessionValue::Bool(false));
-    (principal, session_data)
-}
-
-/// Build the principal and session data the SigV4 layer would produce for the account root
-/// user.
-fn root_identity() -> (Principal, SessionData) {
-    let principal = Principal::from(
-        RootUser::builder().partition("aws").account_id(TEST_ACCOUNT_ID).build().expect("failed to build root user"),
-    );
-    let mut session_data = SessionData::new();
-    session_data.insert("aws:PrincipalAccount", SessionValue::String(TEST_ACCOUNT_ID.to_string()));
-    (principal, session_data)
-}
 
 /// Build the query parameters for a `GetUser` request, naming a user or leaving `UserName`
 /// off so it defaults to the caller.
@@ -744,33 +680,41 @@ async fn call_as(
     (status, String::from_utf8(body.to_vec()).expect("body is not UTF-8"))
 }
 
-/// The embedded PostgreSQL instance the service tests share.
+/// The embedded PostgreSQL instance -- and the one migrated database on it -- the service
+/// tests share.
 ///
-/// Starting an instance costs several seconds -- far more than the tests that run against it --
-/// so the tests share one rather than each standing up its own. The first test to ask for a
-/// database starts it, and it is shut down once the last test holding a [`TestDatabase`] is
-/// done; a test arriving after that starts a fresh one. Holding a [`Weak`] is what gives that
-/// last part its timing: it keeps the running instance reachable without keeping it alive.
+/// Starting an instance costs a couple of seconds and migrating a database another second, both
+/// far more than the tests that run against them. The first test to ask for a database starts
+/// the instance, migrates `scratchstack_iam` once, and records the partition every test reads;
+/// the rest is shut down once the last test holding a [`TestDatabase`] is done. Holding a
+/// [`Weak`] is what gives that its timing: it keeps the running instance reachable without
+/// keeping it alive.
 static SHARED_SERVER: LazyLock<Mutex<Weak<TempDatabase>>> = LazyLock::new(|| Mutex::new(Weak::new()));
 
-/// Distinguishes the databases [`TestDatabase::new`] hands out from one another.
-static TEST_DATABASE_COUNT: AtomicU32 = AtomicU32::new(0);
+/// Hands out the account id each test is seeded into.
+static TEST_ACCOUNT_COUNT: AtomicU64 = AtomicU64::new(0);
 
-/// A migrated, seeded database of a test's own, on the shared PostgreSQL instance.
+/// One test's seeded account in the shared database.
 ///
-/// Every test seeds the same partition and the same account, so sharing one database between
-/// them would put their seed data in each other's way; each test gets a database to itself
-/// instead, and the tests stay free to run in parallel. Keeping the handle alive keeps the
-/// instance running, so it has to outlive the requests made against the [`ServiceState`] it
-/// hands out.
+/// The tests share a database rather than taking one apiece, so they are held apart by account
+/// instead: each is seeded into an account of its own, and every IAM read is scoped to the
+/// account of the caller making it. Keeping the handle alive keeps the instance running, so it
+/// has to outlive the requests made against the [`ServiceState`] it hands out.
+///
+/// What the tests still share, beyond the schema, is the row in `iam.partition` and the
+/// AWS-managed policies in account `000000000000`, neither of which belongs to any one account.
+/// Tests seeding an AWS-managed policy have to keep its name distinct from every other test's.
 struct TestDatabase {
+    /// The account this test's seed data was loaded into.
+    account_id: String,
+
     /// The state to serve requests against.
     ///
     /// This *must* be before `server` so that the pool it holds is dropped before the instance
     /// that pool connects to is stopped.
     svc_state: ServiceState,
 
-    /// The shared instance this database was created on.
+    /// The shared instance this test's account lives on.
     ///
     /// Nothing reads this: it is held so that the instance outlives the handle, and stops once
     /// the last handle is dropped.
@@ -779,36 +723,137 @@ struct TestDatabase {
 }
 
 impl TestDatabase {
-    /// Create a database on the shared instance -- starting the instance if no other test is
-    /// currently holding one -- run the migrations on it, and load `test_data` into it.
-    async fn new(test_data: &'static str) -> Self {
+    /// Claim an account on the shared database -- starting and migrating it if no other test is
+    /// currently holding it -- and load `test_data` into that account.
+    ///
+    /// `test_data` names the account as [`ACCOUNT_ID_PLACEHOLDER`] wherever it means "this
+    /// test's account", which is substituted here. Account ids it spells out literally are left
+    /// alone, since those name accounts the test is deliberately not in.
+    async fn new(test_data: &str) -> Self {
         let server = shared_server().await;
-        let db_name = format!("scratchstack_iam_test_{}", TEST_DATABASE_COUNT.fetch_add(1, Ordering::Relaxed));
-        server.create_scratchstack_database(&db_name).await.expect("Failed to create test database");
+        let account_id = format!("{:012}", FIRST_TEST_ACCOUNT_ID + TEST_ACCOUNT_COUNT.fetch_add(1, Ordering::Relaxed));
 
         let pool = server
-            .get_scratchstack_pool_for(&db_name)
+            .get_scratchstack_pool()
             .await
             .expect("Failed to get PostgreSQL connection pool for scratchstack user");
         let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
-        MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
-        raw_sql(test_data).execute(&mut *c).await.expect("Failed to load test data into database");
+        raw_sql(AssertSqlSafe(test_data.replace(ACCOUNT_ID_PLACEHOLDER, &account_id)))
+            .execute(&mut *c)
+            .await
+            .expect("Failed to load test data into database");
         drop(c);
 
         Self {
+            account_id,
             svc_state: ServiceState::builder().db(Arc::new(pool)).secure_transport(true).build(),
             server,
         }
+    }
+
+    /// The account this test's seed data was loaded into, and the account its callers are in.
+    fn account_id(&self) -> &str {
+        &self.account_id
+    }
+
+    /// An ARN in this test's account, from the part after the account id -- `policy/Admin-Policy`,
+    /// `user/Broad-Reader`, and so on.
+    fn arn(&self, resource: &str) -> String {
+        format!("arn:aws:iam::{}:{resource}", self.account_id)
     }
 
     /// The service state requests against this database are served with.
     fn svc_state(&self) -> &ServiceState {
         &self.svc_state
     }
+
+    /// Build the principal and session data the SigV4 layer would produce for a seeded user.
+    fn user_identity(&self, user_id: &str, user_name: &str) -> (Principal, SessionData) {
+        let principal = Principal::from(
+            User::builder()
+                .partition("aws")
+                .account_id(&self.account_id)
+                .path("/")
+                .user_name(user_name)
+                .build()
+                .expect("failed to build user"),
+        );
+        let mut session_data = SessionData::new();
+        session_data.insert("aws:PrincipalAccount", SessionValue::String(self.account_id.clone()));
+        session_data.insert(
+            "aws:PrincipalArn",
+            SessionValue::String(format!("arn:aws:iam::{}:user/{user_name}", self.account_id)),
+        );
+        session_data.insert("aws:userid", SessionValue::String(format!("AIDA{user_id}")));
+        session_data.insert("aws:username", SessionValue::String(user_name.to_string()));
+        session_data.insert("aws:PrincipalType", SessionValue::String("User".to_string()));
+        session_data.insert("aws:PrincipalIsAWSService", SessionValue::Bool(false));
+        session_data.insert("aws:RequestedRegion", SessionValue::String(TEST_REGION.to_string()));
+        session_data.insert("aws:ViaAWSService", SessionValue::Bool(false));
+        (principal, session_data)
+    }
+
+    /// Build the principal and session data the SigV4 layer would produce for a session on the
+    /// seeded role, issued just now.
+    fn role_identity(&self, role_id: &str, role_name: &str) -> (Principal, SessionData) {
+        self.role_identity_issued_at(role_id, role_name, Utc::now())
+    }
+
+    /// Build the principal and session data the SigV4 layer would produce for a session on the
+    /// seeded role that `sts:AssumeRole` minted at `issued_at`.
+    ///
+    /// The keys here mirror the session metadata `AssumeRole` records in the session token, which
+    /// the signing-key provider hands back verbatim as the session data for a request signed with
+    /// the resulting temporary credentials.
+    fn role_identity_issued_at(
+        &self,
+        role_id: &str,
+        role_name: &str,
+        issued_at: DateTime<Utc>,
+    ) -> (Principal, SessionData) {
+        let principal = Principal::from(
+            AssumedRole::builder()
+                .partition("aws")
+                .account_id(&self.account_id)
+                .role_name(role_name)
+                .session_name("test-session")
+                .build()
+                .expect("failed to build assumed role"),
+        );
+        let mut session_data = SessionData::new();
+        session_data.insert("aws:PrincipalAccount", SessionValue::String(self.account_id.clone()));
+        session_data.insert(
+            "aws:PrincipalArn",
+            SessionValue::String(format!("arn:aws:sts::{}:assumed-role/{role_name}/test-session", self.account_id)),
+        );
+        session_data.insert("aws:userid", SessionValue::String(format!("AROA{role_id}:test-session")));
+        session_data.insert("aws:PrincipalType", SessionValue::String("AssumedRole".to_string()));
+        session_data.insert("aws:MultiFactorAuthPresent", SessionValue::Bool(false));
+        session_data.insert("aws:PrincipalIsAWSService", SessionValue::Bool(false));
+        session_data.insert("aws:RequestedRegion", SessionValue::String(TEST_REGION.to_string()));
+        session_data.insert("aws:TokenIssueTime", SessionValue::Timestamp(issued_at));
+        session_data.insert("aws:ViaAWSService", SessionValue::Bool(false));
+        (principal, session_data)
+    }
+
+    /// Build the principal and session data the SigV4 layer would produce for the account root
+    /// user.
+    fn root_identity(&self) -> (Principal, SessionData) {
+        let principal = Principal::from(
+            RootUser::builder()
+                .partition("aws")
+                .account_id(&self.account_id)
+                .build()
+                .expect("failed to build root user"),
+        );
+        let mut session_data = SessionData::new();
+        session_data.insert("aws:PrincipalAccount", SessionValue::String(self.account_id.clone()));
+        (principal, session_data)
+    }
 }
 
-/// Return the shared PostgreSQL instance, starting and bootstrapping one if no test currently
-/// holds it.
+/// Return the shared PostgreSQL instance, starting, bootstrapping and migrating one if no test
+/// currently holds it.
 ///
 /// The lock is held across the startup so that tests arriving while an instance is coming up
 /// wait for it rather than starting instances of their own.
@@ -821,6 +866,23 @@ async fn shared_server() -> Arc<TempDatabase> {
 
     let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
     database.bootstrap().await.expect("Failed to set up, start, and bootstrap PostgreSQL database");
+
+    let pool =
+        database.get_scratchstack_pool().await.expect("Failed to get PostgreSQL connection pool for scratchstack user");
+    let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
+    MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
+
+    // Every test reads this and none of them owns it, so it is recorded once here rather than by
+    // the seed data. The service fails any request unless the table holds exactly one row.
+    raw_sql("INSERT INTO iam.partition(partition) VALUES ('aws');")
+        .execute(&mut *c)
+        .await
+        .expect("Failed to record the partition");
+    drop(c);
+
+    // This pool belongs to the runtime of whichever test got here first, which is gone once that
+    // test ends; close it now rather than leaving connections behind for the server to reap.
+    pool.close().await;
 
     let server = Arc::new(database);
     *shared = Arc::downgrade(&server);
