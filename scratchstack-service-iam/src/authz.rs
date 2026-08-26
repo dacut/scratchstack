@@ -28,6 +28,56 @@ pub(crate) use scratchstack_service_common::authz::{
     request_tag_context, request_tag_keys_context, resource_account_context,
 };
 
+/// An existing IAM entity -- a user or a role -- described as the resource an operation acts on.
+///
+/// An operation acting on an existing entity cannot name it without looking it up: the resource
+/// ARN carries the entity's path, and the policy may be conditioned on the entity's tags or on
+/// the permissions boundary set on it, none of which a request naming the entity supplies. The
+/// lookup runs inside the operation's transaction, so what is authorized is what the operation
+/// goes on to act on.
+pub(crate) struct EntityResource {
+    /// The ARN naming the entity, which is the resource the action is authorized against.
+    pub(crate) arn: Arn,
+
+    /// The ARN of the managed policy serving as the entity's permissions boundary, if it has one.
+    pub(crate) permissions_boundary: Option<String>,
+
+    /// The tags attached to the entity.
+    pub(crate) tags: Vec<Tag>,
+}
+
+impl EntityResource {
+    /// Build the condition keys describing this entity, for the `request_context` argument of
+    /// [`check_authorization`].
+    ///
+    /// This reports the entity's tags and nothing else. An operation IAM lists
+    /// `iam:PermissionsBoundary` among the condition keys for uses
+    /// [`Self::context_with_boundary`] instead.
+    pub(crate) fn context(&self) -> SessionData {
+        resource_tag_context(&self.tags)
+    }
+
+    /// Build the condition keys describing this entity, including the permissions boundary set on
+    /// it, for the `request_context` argument of [`check_authorization`].
+    ///
+    /// IAM lists `iam:PermissionsBoundary` among the condition keys for the operations that
+    /// change what an entity may do -- attaching and detaching managed policies, writing and
+    /// deleting inline policies, deleting the entity, and reading a role -- and there the key
+    /// names the boundary already set on the entity, not one the request supplies. This is what
+    /// lets a policy delegate entity management while requiring that the entities managed stay
+    /// under a particular boundary, so a delegated administrator cannot raise an entity above
+    /// itself.
+    ///
+    /// It is deliberately not supplied for every operation: an entity with no boundary supplies
+    /// no key, and a key supplied where IAM does not define one would make a `StringNotEquals`
+    /// deny guard fire where IAM leaves it dormant. [`Self::context`] covers those operations.
+    pub(crate) fn context_with_boundary(&self) -> SessionData {
+        let mut context = self.context();
+        context.extend(&permissions_boundary_context(self.permissions_boundary.as_deref()));
+        context
+    }
+}
+
 /// Authorize `action` for the calling principal, gathering the principal's identity-based
 /// policies inside `tx`. An IAM user caller is governed by the user's policies (including
 /// group-inherited policies and any permissions boundary); an assumed-role caller is governed by

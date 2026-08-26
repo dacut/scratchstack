@@ -1,6 +1,6 @@
 use {
     crate::{
-        authz::{check_authorization, permissions_boundary_context, resource_tag_context},
+        authz::{check_authorization, permissions_boundary_context},
         constants::*,
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
         user::user_resource,
@@ -89,7 +89,7 @@ pub(crate) async fn put_user_permissions_boundary(
         }
     };
 
-    let (resource_arn, resource_tags) = match user_resource(&mut tx, request_id, &account_id, &user_name).await {
+    let resource = match user_resource(&mut tx, request_id, &account_id, &user_name).await {
         Ok(resource) => resource,
         Err(response) => return *response,
     };
@@ -98,7 +98,7 @@ pub(crate) async fn put_user_permissions_boundary(
     // distinct condition keys, so both are supplied: a policy can be conditioned on which
     // boundary is being set, on whose it is, or on both at once.
     let mut request_context = permissions_boundary_context(Some(&request.permissions_boundary));
-    request_context.extend(&resource_tag_context(&resource_tags));
+    request_context.extend(&resource.context());
 
     if let Err(response) = check_authorization(
         &mut tx,
@@ -108,7 +108,7 @@ pub(crate) async fn put_user_permissions_boundary(
         &session_policies,
         &request_metadata,
         Action::PutUserPermissionsBoundary,
-        &[resource_arn],
+        &[resource.arn],
         &request_context,
     )
     .await

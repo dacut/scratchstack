@@ -1,6 +1,6 @@
 use {
     crate::{
-        authz::{check_authorization, resource_tag_context},
+        authz::check_authorization,
         constants::*,
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
         user::user_resource,
@@ -76,10 +76,12 @@ pub(crate) async fn delete_user(
         }
     };
 
-    let (resource_arn, resource_tags) = match user_resource(&mut tx, request_id, &account_id, &user_name).await {
+    let resource = match user_resource(&mut tx, request_id, &account_id, &user_name).await {
         Ok(resource) => resource,
         Err(response) => return *response,
     };
+
+    let request_context = resource.context();
 
     if let Err(response) = check_authorization(
         &mut tx,
@@ -89,8 +91,8 @@ pub(crate) async fn delete_user(
         &session_policies,
         &request_metadata,
         Action::DeleteUser,
-        &[resource_arn],
-        &resource_tag_context(&resource_tags),
+        &[resource.arn],
+        &request_context,
     )
     .await
     {

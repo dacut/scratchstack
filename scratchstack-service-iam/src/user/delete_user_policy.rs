@@ -1,6 +1,6 @@
 use {
     crate::{
-        authz::{check_authorization, resource_tag_context},
+        authz::check_authorization,
         constants::*,
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
         user::user_resource,
@@ -33,6 +33,13 @@ use {
 ///
 /// `UserName` and `PolicyName` are both required; neither defaults. Deleting a policy that is not
 /// attached to the user is reported as `NoSuchEntity` rather than succeeding silently.
+///
+/// The permissions boundary set on the user backs the `iam:PermissionsBoundary` condition key,
+/// naming the managed policy serving as that boundary. It describes the user the request names
+/// rather than anything the request supplies, which is what lets a grant delegate management of
+/// users while requiring that the users managed stay under a particular boundary -- so a
+/// delegated administrator cannot raise a user above itself. A user under no boundary supplies
+/// no key, so a condition on it does not match rather than matching an empty string.
 pub(crate) async fn delete_user_policy(
     svc_state: ServiceState,
     request_id: RequestId,
@@ -80,10 +87,12 @@ pub(crate) async fn delete_user_policy(
         }
     };
 
-    let (resource_arn, resource_tags) = match user_resource(&mut tx, request_id, &account_id, &user_name).await {
+    let resource = match user_resource(&mut tx, request_id, &account_id, &user_name).await {
         Ok(resource) => resource,
         Err(response) => return *response,
     };
+
+    let request_context = resource.context_with_boundary();
 
     if let Err(response) = check_authorization(
         &mut tx,
@@ -93,8 +102,8 @@ pub(crate) async fn delete_user_policy(
         &session_policies,
         &request_metadata,
         Action::DeleteUserPolicy,
-        &[resource_arn],
-        &resource_tag_context(&resource_tags),
+        &[resource.arn],
+        &request_context,
     )
     .await
     {

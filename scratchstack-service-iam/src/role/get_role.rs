@@ -1,6 +1,6 @@
 use {
     crate::{
-        authz::{check_authorization, resource_tag_context},
+        authz::{EntityResource, check_authorization},
         constants::*,
         role::{encode_trust_policy, role_arn},
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
@@ -36,6 +36,13 @@ use {
 ///
 /// The role is read from the caller's own account. The trust policy comes back percent-encoded,
 /// as IAM reports every policy document.
+///
+/// The permissions boundary set on the role backs the `iam:PermissionsBoundary` condition key,
+/// naming the managed policy serving as that boundary. It describes the role the request names
+/// rather than anything the request supplies, which is what lets a grant delegate management of
+/// roles while requiring that the roles managed stay under a particular boundary -- so a
+/// delegated administrator cannot raise a role above itself. A role under no boundary supplies
+/// no key, so a condition on it does not match rather than matching an empty string.
 pub(crate) async fn get_role(
     svc_state: ServiceState,
     request_id: RequestId,
@@ -85,9 +92,20 @@ pub(crate) async fn get_role(
         Err(e) => return e.respond(),
     };
 
-    let (resource_arn, resource_tags) = match &result {
+    let resource = match &result {
         Ok(response) => match Arn::from_str(&response.role.arn) {
-            Ok(arn) => (arn, response.role.tags.as_slice()),
+            Ok(arn) => EntityResource {
+                arn,
+                // A boundary is stored as the managed policy serving as it, so what the role
+                // reports is an attachment wrapping that policy's ARN; a role under no boundary
+                // reports no attachment at all.
+                permissions_boundary: response
+                    .role
+                    .permissions_boundary
+                    .as_ref()
+                    .and_then(|boundary| boundary.permissions_boundary_arn.clone()),
+                tags: response.role.tags.clone(),
+            },
             Err(e) => {
                 log::error!("{request_id}: Role {role_name} has an unparseable ARN {}: {e}", response.role.arn);
                 return internal_failure(request_id);
@@ -95,13 +113,19 @@ pub(crate) async fn get_role(
         },
         // Authorization is still evaluated when no such role exists, so that a caller allowed
         // `iam:GetRole` broadly is told the role does not exist while one allowed it only on
-        // specific roles learns nothing at all. There is no role to read a path from, so the
-        // root path is assumed.
+        // specific roles learns nothing at all. There is no role to read a path, tags, or a
+        // boundary from, so the root path is assumed and neither of the others is reported.
         Err(_) => match role_arn(&mut tx, request_id, &account_id, "/", &role_name).await {
-            Ok(arn) => (arn, [].as_slice()),
+            Ok(arn) => EntityResource {
+                arn,
+                permissions_boundary: None,
+                tags: Vec::new(),
+            },
             Err(response) => return *response,
         },
     };
+
+    let request_context = resource.context_with_boundary();
 
     if let Err(response) = check_authorization(
         &mut tx,
@@ -111,8 +135,8 @@ pub(crate) async fn get_role(
         &session_policies,
         &request_metadata,
         Action::GetRole,
-        &[resource_arn],
-        &resource_tag_context(resource_tags),
+        &[resource.arn],
+        &request_context,
     )
     .await
     {

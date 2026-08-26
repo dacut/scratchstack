@@ -1,6 +1,6 @@
 use {
     crate::{
-        authz::{check_authorization, resource_tag_context},
+        authz::check_authorization,
         constants::*,
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
         user::{user_arn, user_resource},
@@ -94,7 +94,7 @@ pub(crate) async fn update_user(
         }
     };
 
-    let (resource_arn, resource_tags) = match user_resource(&mut tx, request_id, &account_id, &user_name).await {
+    let resource = match user_resource(&mut tx, request_id, &account_id, &user_name).await {
         Ok(resource) => resource,
         Err(response) => return *response,
     };
@@ -104,7 +104,7 @@ pub(crate) async fn update_user(
     // than taken from the request: a user name is matched case-insensitively, so a request may
     // name the user with a casing other than the one the ARN spells, and the ARN a policy is
     // compared against is the one the user actually carries.
-    let (path, current_user_name) = user_arn_path_and_name(resource_arn.resource());
+    let (path, current_user_name) = user_arn_path_and_name(resource.arn.resource());
     let new_resource_arn = match user_arn(
         &mut tx,
         request_id,
@@ -120,12 +120,12 @@ pub(crate) async fn update_user(
 
     // The tags backing the aws:ResourceTag condition keys are the ones the user carries; this
     // operation does not change them, so they describe the user under either ARN.
-    let request_context = resource_tag_context(&resource_tags);
+    let request_context = resource.context();
 
     // Each ARN is authorized on its own rather than both at once, so that a denial names the ARN
     // the caller was not allowed to reach rather than whichever of the two came first.
     let mut resources = Vec::with_capacity(2);
-    resources.push(resource_arn);
+    resources.push(resource.arn);
     if new_resource_arn != resources[0] {
         resources.push(new_resource_arn);
     }
