@@ -6,7 +6,10 @@ use {
             list_entities_for_policy, list_policies, list_policy_tags, list_policy_versions,
             set_default_policy_version, tag_policy, untag_policy,
         },
-        role::{create_role, delete_role, get_role, list_roles, update_role},
+        role::{
+            create_role, delete_role, delete_role_policy, get_role, list_role_policies, list_roles, put_role_policy,
+            update_role,
+        },
         user::{
             attach_user_policy, create_access_key, create_user, delete_access_key, delete_user,
             delete_user_permissions_boundary, delete_user_policy, detach_user_policy, get_user, get_user_policy,
@@ -175,6 +178,18 @@ pub(crate) async fn serve_request(
             delete_role(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
                 .await
         }
+        Ok(Action::DeleteRolePolicy) => {
+            delete_role_policy(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
         Ok(Action::DeleteUser) => {
             delete_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
                 .await
@@ -323,6 +338,18 @@ pub(crate) async fn serve_request(
             )
             .await
         }
+        Ok(Action::ListRolePolicies) => {
+            list_role_policies(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
         Ok(Action::ListRoles) => {
             list_roles(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
                 .await
@@ -354,6 +381,18 @@ pub(crate) async fn serve_request(
         Ok(Action::ListUsers) => {
             list_users(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
                 .await
+        }
+        Ok(Action::PutRolePolicy) => {
+            put_role_policy(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
         }
         Ok(Action::PutUserPermissionsBoundary) => {
             put_user_permissions_boundary(
