@@ -7,8 +7,8 @@ use {
             set_default_policy_version, tag_policy, untag_policy,
         },
         role::{
-            create_role, delete_role, delete_role_policy, get_role, list_role_policies, list_roles, put_role_policy,
-            update_role,
+            attach_role_policy, create_role, delete_role, delete_role_policy, detach_role_policy, get_role,
+            list_attached_role_policies, list_role_policies, list_roles, put_role_policy, update_role,
         },
         user::{
             attach_user_policy, create_access_key, create_user, delete_access_key, delete_user,
@@ -82,6 +82,18 @@ pub(crate) async fn serve_request(
     }
 
     match action.parse::<Action>() {
+        Ok(Action::AttachRolePolicy) => {
+            attach_role_policy(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
         Ok(Action::AttachUserPolicy) => {
             attach_user_policy(
                 svc_state,
@@ -218,6 +230,18 @@ pub(crate) async fn serve_request(
             )
             .await
         }
+        Ok(Action::DetachRolePolicy) => {
+            detach_role_policy(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
         Ok(Action::DetachUserPolicy) => {
             detach_user_policy(
                 svc_state,
@@ -268,6 +292,18 @@ pub(crate) async fn serve_request(
         }
         Ok(Action::ListAccessKeys) => {
             list_access_keys(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
+        Ok(Action::ListAttachedRolePolicies) => {
+            list_attached_role_policies(
                 svc_state,
                 request_id,
                 principal,
