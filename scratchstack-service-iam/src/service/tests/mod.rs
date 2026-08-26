@@ -16,7 +16,7 @@ use {
         },
     },
     scratchstack_iam_database::{migrate::MIGRATOR, utils::TempDatabase},
-    sqlx::{AssertSqlSafe, raw_sql},
+    sqlx::{AssertSqlSafe, Row as _, query, raw_sql},
     std::{
         net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
         str::FromStr as _,
@@ -559,6 +559,69 @@ fn list_roles_parameters(path_prefix: Option<&str>, max_items: Option<i32>, mark
 /// for the URL decoding a client applies.
 fn decoded_trust_policy_document(body: &str) -> String {
     decoded_document_element(body, "AssumeRolePolicyDocument")
+}
+
+/// Build the query parameters for a `PutRolePolicy` request, naming a role, a policy, and the
+/// document to store under it, or leaving any of them off.
+fn put_role_policy_parameters(
+    role_name: Option<&str>,
+    policy_name: Option<&str>,
+    policy_document: Option<&str>,
+) -> String {
+    role_policy_parameters("PutRolePolicy", role_name, policy_name, policy_document)
+}
+
+/// Build the query parameters for a `DeleteRolePolicy` request, naming a role and a policy or
+/// leaving either off.
+fn delete_role_policy_parameters(role_name: Option<&str>, policy_name: Option<&str>) -> String {
+    role_policy_parameters("DeleteRolePolicy", role_name, policy_name, None)
+}
+
+/// Build the query parameters for an inline-role-policy request, leaving off the parameters the
+/// caller does not supply so that a request missing a required one can be exercised.
+///
+/// The parameters are form-encoded rather than interpolated: a policy document carries JSON
+/// punctuation that the query string would otherwise be read as its own.
+fn role_policy_parameters(
+    action: &str,
+    role_name: Option<&str>,
+    policy_name: Option<&str>,
+    policy_document: Option<&str>,
+) -> String {
+    let mut parameters = vec![("Action", action), ("Version", "2010-05-08")];
+
+    if let Some(role_name) = role_name {
+        parameters.push(("RoleName", role_name));
+    }
+    if let Some(policy_name) = policy_name {
+        parameters.push(("PolicyName", policy_name));
+    }
+    if let Some(policy_document) = policy_document {
+        parameters.push(("PolicyDocument", policy_document));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `ListRolePolicies` request, naming a role or leaving
+/// `RoleName` off, and carrying the pagination arguments the caller supplies.
+///
+/// This does not go through [`list_parameters`], which names the entity it lists as `UserName`.
+fn list_role_policies_parameters(role_name: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
+    let max_items = max_items.map(|max_items| max_items.to_string());
+    let mut parameters = vec![("Action", "ListRolePolicies"), ("Version", "2010-05-08")];
+
+    if let Some(role_name) = role_name {
+        parameters.push(("RoleName", role_name));
+    }
+    if let Some(max_items) = max_items.as_deref() {
+        parameters.push(("MaxItems", max_items));
+    }
+    if let Some(marker) = marker {
+        parameters.push(("Marker", marker));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
 }
 
 /// Build the query parameters for a `CreatePolicy` request naming the managed policy to create
@@ -1157,6 +1220,28 @@ impl TestDatabase {
     /// `user/Broad-Reader`, and so on.
     fn arn(&self, resource: &str) -> String {
         format!("arn:aws:iam::{}:{resource}", self.account_id)
+    }
+
+    /// Read the document stored under the inline policy `policy_name` on the role `role_name`,
+    /// or `None` if the role carries no policy by that name.
+    ///
+    /// The IAM API for reading an inline role policy is `GetRolePolicy`, which has no service
+    /// handler yet, so a test that needs to see what a write actually stored reads it from the
+    /// database directly. Both names are matched case-insensitively, as the operations do.
+    async fn role_inline_policy_document(&self, role_name: &str, policy_name: &str) -> Option<String> {
+        query(
+            "SELECT policy_document \
+             FROM iam.role_inline_policies AS p \
+             JOIN iam.roles AS r ON r.role_id = p.role_id \
+             WHERE r.account_id = $1 AND r.role_name_lower = $2 AND p.policy_name_lower = $3",
+        )
+        .bind(&self.account_id)
+        .bind(role_name.to_ascii_lowercase())
+        .bind(policy_name.to_ascii_lowercase())
+        .fetch_optional(&*self.svc_state.db)
+        .await
+        .expect("failed to read role inline policy")
+        .map(|row| row.get(0))
     }
 
     /// The service state requests against this database are served with.

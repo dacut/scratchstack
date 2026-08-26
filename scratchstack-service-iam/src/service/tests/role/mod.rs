@@ -1,5 +1,8 @@
 mod create_role;
 mod delete_role;
+mod delete_role_policy;
 mod get_role;
+mod list_role_policies;
 mod list_roles;
+mod put_role_policy;
 mod update_role;

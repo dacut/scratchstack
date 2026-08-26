@@ -5,12 +5,16 @@
 
 mod create_role;
 mod delete_role;
+mod delete_role_policy;
 mod get_role;
+mod list_role_policies;
 mod list_roles;
+mod put_role_policy;
 mod update_role;
 
 pub(crate) use {
-    create_role::create_role, delete_role::delete_role, get_role::get_role, list_roles::list_roles,
+    create_role::create_role, delete_role::delete_role, delete_role_policy::delete_role_policy, get_role::get_role,
+    list_role_policies::list_role_policies, list_roles::list_roles, put_role_policy::put_role_policy,
     update_role::update_role,
 };
 
