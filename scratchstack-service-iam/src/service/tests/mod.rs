@@ -1,0 +1,739 @@
+use {
+    crate::service::{ServiceState, serve_request},
+    chrono::{DateTime, Utc},
+    http_body_util::BodyExt as _,
+    pct_str::PctStr,
+    scratchstack_aws_principal::{AssumedRole, Principal, RootUser, SessionData, SessionValue, User},
+    scratchstack_aws_signature::SessionPolicies,
+    scratchstack_config::{ForwardedForConfig, Resolvable as _},
+    scratchstack_core::{
+        RequestId,
+        axum::{
+            body::{Body, Bytes},
+            extract::{ConnectInfo, Extension, RawQuery, State},
+            http::{HeaderMap, StatusCode},
+            response::Response,
+        },
+    },
+    std::{
+        net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+        str::FromStr as _,
+        sync::Arc,
+    },
+};
+
+mod user;
+
+const TEST_ACCOUNT_ID: &str = "123456789012";
+
+/// The region test requests are signed for; the signing-key provider records it as
+/// `aws:RequestedRegion` for both long-term and temporary credentials.
+const TEST_REGION: &str = "us-east-1";
+
+/// The peer address test requests arrive from unless a test names another, backing the
+/// `aws:SourceIp` condition key. The addresses used here come from the documentation ranges
+/// reserved by RFC 5737 and RFC 3849.
+const TEST_SOURCE_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10));
+
+/// A pagination marker this service did not issue: base64-encoded JSON, which is the shape of
+/// the client-side pagination token the AWS CLI and several SDKs hand out in place of the
+/// marker they wrap. It is well-formed enough to reach the token itself, which is where a
+/// caller passing the wrong one back finds out.
+const FOREIGN_PAGINATION_TOKEN: &str = "eyJNYXJrZXIiOiAiMGFiYyIsICJib3RvX3RydW5jYXRlX2Ftb3VudCI6IDJ9";
+
+/// A peer address outside the CIDR block the source-IP test policies grant.
+const OUTSIDE_SOURCE_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(198, 51, 100, 7));
+
+/// A peer address inside the IPv6 CIDR block the source-IP test policies grant.
+const TEST_SOURCE_IPV6: IpAddr = IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1));
+
+/// The address of the load balancer in the forwarded-header tests, inside the CIDR block
+/// [`proxied_state`] trusts.
+const TEST_PROXY_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+
+/// Seed data for the authorization tests: one user whose inline policy allows
+/// `iam:ListUsers`, one user with no policies at all, and users whose grants are gated on
+/// the request-time condition keys (`aws:SecureTransport`, `aws:CurrentTime`,
+/// `aws:EpochTime`, `aws:SourceIp`, `aws:referer`, `aws:UserAgent`) that
+/// `check_authorization` injects, and on the `aws:TokenIssueTime` the session token carries.
+const AUTHZ_TEST_DATA: &str = r#"
+    INSERT INTO iam.partition(partition) VALUES ('aws');
+
+    INSERT INTO iam.accounts(account_id, email, alias) VALUES
+    ('123456789012', 'authz-test@example.com', 'authz-test');
+
+    INSERT INTO iam.users(user_id, account_id, user_name_lower, user_name_cased, path) VALUES
+    ('SVCTESTALLOWUSER', '123456789012', 'allowed-user', 'Allowed-User', '/'),
+    ('SVCTESTDENYUSER1', '123456789012', 'denied-user', 'Denied-User', '/'),
+    ('SVCTESTTLSUSER01', '123456789012', 'tls-user', 'Tls-User', '/'),
+    ('SVCTESTTIMEUSER1', '123456789012', 'time-user', 'Time-User', '/'),
+    ('SVCTESTPASTUSER1', '123456789012', 'past-user', 'Past-User', '/'),
+    ('SVCTESTEPOCHUSR1', '123456789012', 'epoch-user', 'Epoch-User', '/'),
+    ('SVCTESTIPV4USER1', '123456789012', 'ipv4-user', 'Ipv4-User', '/'),
+    ('SVCTESTIPV6USER1', '123456789012', 'ipv6-user', 'Ipv6-User', '/'),
+    ('SVCTESTDENYIPUSR', '123456789012', 'deny-ip-user', 'Deny-Ip-User', '/'),
+    ('SVCTESTTOKENUSER', '123456789012', 'token-user', 'Token-User', '/'),
+    ('SVCTESTREGIONUSR', '123456789012', 'region-user', 'Region-User', '/'),
+    ('SVCTESTOTHERRGN1', '123456789012', 'other-region-user', 'Other-Region-User', '/'),
+    ('SVCTESTDIRECTUSR', '123456789012', 'direct-call-user', 'Direct-Call-User', '/'),
+    ('SVCTESTAGENTUSR1', '123456789012', 'agent-user', 'Agent-User', '/'),
+    ('SVCTESTACCTUSER1', '123456789012', 'account-user', 'Account-User', '/'),
+    ('SVCTESTOTHRACCT1', '123456789012', 'other-account-user', 'Other-Account-User', '/');
+
+    INSERT INTO iam.user_inline_policies(user_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+    ('SVCTESTALLOWUSER', 'allow-list-users', 'Allow-List-Users',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*"}]}'),
+    ('SVCTESTTLSUSER01', 'allow-if-tls', 'Allow-If-Tls',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+        "Condition":{"Bool":{"aws:SecureTransport":"true"}}}]}'),
+    ('SVCTESTTIMEUSER1', 'allow-after-2020', 'Allow-After-2020',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+        "Condition":{"DateGreaterThan":{"aws:CurrentTime":"2020-01-01T00:00:00Z"}}}]}'),
+    ('SVCTESTPASTUSER1', 'allow-before-2020', 'Allow-Before-2020',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+        "Condition":{"DateLessThan":{"aws:CurrentTime":"2020-01-01T00:00:00Z"}}}]}'),
+    ('SVCTESTEPOCHUSR1', 'allow-after-2020-epoch', 'Allow-After-2020-Epoch',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+        "Condition":{"NumericGreaterThan":{"aws:EpochTime":"1577836800"}}}]}'),
+    ('SVCTESTIPV4USER1', 'allow-from-ipv4-block', 'Allow-From-Ipv4-Block',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+        "Condition":{"IpAddress":{"aws:SourceIp":"203.0.113.0/24"}}}]}'),
+    ('SVCTESTIPV6USER1', 'allow-from-ipv6-block', 'Allow-From-Ipv6-Block',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+        "Condition":{"IpAddress":{"aws:SourceIp":"2001:db8::/32"}}}]}'),
+    ('SVCTESTACCTUSER1', 'allow-own-account', 'Allow-Own-Account',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+        "Condition":{"StringEquals":{"aws:ResourceAccount":"123456789012"}}}]}'),
+    ('SVCTESTOTHRACCT1', 'allow-other-account', 'Allow-Other-Account',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+        "Condition":{"StringEquals":{"aws:ResourceAccount":"210987654321"}}}]}'),
+    ('SVCTESTAGENTUSR1', 'allow-known-clients', 'Allow-Known-Clients',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+        "Condition":{"StringLike":{"aws:UserAgent":"aws-cli/*"},
+                    "StringEquals":{"aws:referer":"https://console.example.com/"}}}]}'),
+    ('SVCTESTDIRECTUSR', 'allow-direct-calls', 'Allow-Direct-Calls',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+        "Condition":{"Bool":{"aws:ViaAWSService":"false","aws:PrincipalIsAWSService":"false"}}}]}'),
+    ('SVCTESTREGIONUSR', 'allow-in-us-east-1', 'Allow-In-Us-East-1',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+        "Condition":{"StringEquals":{"aws:RequestedRegion":"us-east-1"}}}]}'),
+    ('SVCTESTOTHERRGN1', 'allow-in-eu-west-1', 'Allow-In-Eu-West-1',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+        "Condition":{"StringEquals":{"aws:RequestedRegion":"eu-west-1"}}}]}'),
+    ('SVCTESTTOKENUSER', 'allow-recent-sessions', 'Allow-Recent-Sessions',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+        "Condition":{"DateGreaterThan":{"aws:TokenIssueTime":"2020-01-01T00:00:00Z"}}}]}'),
+    ('SVCTESTDENYIPUSR', 'deny-outside-ipv4-block', 'Deny-Outside-Ipv4-Block',
+        '{"Version":"2012-10-17","Statement":[
+        {"Effect":"Allow","Action":"iam:ListUsers","Resource":"*"},
+        {"Effect":"Deny","Action":"iam:ListUsers","Resource":"*",
+        "Condition":{"NotIpAddress":{"aws:SourceIp":"203.0.113.0/24"}}}]}');
+
+    INSERT INTO iam.roles(role_id, account_id, role_name_lower, role_name_cased, path, assume_role_policy_document) VALUES
+    ('SVCTESTROLE00001', '123456789012', 'session-role', 'Session-Role', '/',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'),
+    ('SVCTESTTOKENROLE', '123456789012', 'token-role', 'Token-Role', '/',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'),
+    ('SVCTESTRGNROLE01', '123456789012', 'region-role', 'Region-Role', '/',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'),
+    ('SVCTESTDIRROLE01', '123456789012', 'direct-call-role', 'Direct-Call-Role', '/',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}');
+
+    INSERT INTO iam.role_inline_policies(role_id, policy_name_lower, policy_name_cased, policy_document) VALUES
+    ('SVCTESTROLE00001', 'allow-list-users', 'Allow-List-Users',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*"}]}'),
+    ('SVCTESTTOKENROLE', 'allow-recent-sessions', 'Allow-Recent-Sessions',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+        "Condition":{"DateGreaterThan":{"aws:TokenIssueTime":"2020-01-01T00:00:00Z"}}}]}'),
+    ('SVCTESTRGNROLE01', 'allow-in-us-east-1', 'Allow-In-Us-East-1',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+        "Condition":{"StringEquals":{"aws:RequestedRegion":"us-east-1"}}}]}'),
+    ('SVCTESTDIRROLE01', 'allow-direct-calls', 'Allow-Direct-Calls',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListUsers","Resource":"*",
+        "Condition":{"Bool":{"aws:ViaAWSService":"false","aws:PrincipalIsAWSService":"false"}}}]}');
+
+    INSERT INTO iam.managed_policies(managed_policy_id, account_id, managed_policy_name_lower,
+        managed_policy_name_cased, path, default_version, deprecated, latest_version) VALUES
+    ('SVCTESTSESSPOL01', '123456789012', 'session-allow-iam', 'Session-Allow-Iam', '/', 1, false, 1);
+
+    INSERT INTO iam.managed_policy_versions(managed_policy_id, managed_policy_version, policy_document) VALUES
+    ('SVCTESTSESSPOL01', 1, '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:*","Resource":"*"}]}');
+"#;
+
+/// Build the principal and session data the SigV4 layer would produce for a seeded user.
+fn user_identity(user_id: &str, user_name: &str) -> (Principal, SessionData) {
+    let principal = Principal::from(
+        User::builder()
+            .partition("aws")
+            .account_id(TEST_ACCOUNT_ID)
+            .path("/")
+            .user_name(user_name)
+            .build()
+            .expect("failed to build user"),
+    );
+    let mut session_data = SessionData::new();
+    session_data.insert("aws:PrincipalAccount", SessionValue::String(TEST_ACCOUNT_ID.to_string()));
+    session_data
+        .insert("aws:PrincipalArn", SessionValue::String(format!("arn:aws:iam::{TEST_ACCOUNT_ID}:user/{user_name}")));
+    session_data.insert("aws:userid", SessionValue::String(format!("AIDA{user_id}")));
+    session_data.insert("aws:username", SessionValue::String(user_name.to_string()));
+    session_data.insert("aws:PrincipalType", SessionValue::String("User".to_string()));
+    session_data.insert("aws:PrincipalIsAWSService", SessionValue::Bool(false));
+    session_data.insert("aws:RequestedRegion", SessionValue::String(TEST_REGION.to_string()));
+    session_data.insert("aws:ViaAWSService", SessionValue::Bool(false));
+    (principal, session_data)
+}
+
+/// Build the principal and session data the SigV4 layer would produce for a session on the
+/// seeded role, issued just now.
+fn role_identity(role_id: &str, role_name: &str) -> (Principal, SessionData) {
+    role_identity_issued_at(role_id, role_name, Utc::now())
+}
+
+/// Build the principal and session data the SigV4 layer would produce for a session on the
+/// seeded role that `sts:AssumeRole` minted at `issued_at`.
+///
+/// The keys here mirror the session metadata `AssumeRole` records in the session token, which
+/// the signing-key provider hands back verbatim as the session data for a request signed with
+/// the resulting temporary credentials.
+fn role_identity_issued_at(role_id: &str, role_name: &str, issued_at: DateTime<Utc>) -> (Principal, SessionData) {
+    let principal = Principal::from(
+        AssumedRole::builder()
+            .partition("aws")
+            .account_id(TEST_ACCOUNT_ID)
+            .role_name(role_name)
+            .session_name("test-session")
+            .build()
+            .expect("failed to build assumed role"),
+    );
+    let mut session_data = SessionData::new();
+    session_data.insert("aws:PrincipalAccount", SessionValue::String(TEST_ACCOUNT_ID.to_string()));
+    session_data.insert(
+        "aws:PrincipalArn",
+        SessionValue::String(format!("arn:aws:sts::{TEST_ACCOUNT_ID}:assumed-role/{role_name}/test-session")),
+    );
+    session_data.insert("aws:userid", SessionValue::String(format!("AROA{role_id}:test-session")));
+    session_data.insert("aws:PrincipalType", SessionValue::String("AssumedRole".to_string()));
+    session_data.insert("aws:MultiFactorAuthPresent", SessionValue::Bool(false));
+    session_data.insert("aws:PrincipalIsAWSService", SessionValue::Bool(false));
+    session_data.insert("aws:RequestedRegion", SessionValue::String(TEST_REGION.to_string()));
+    session_data.insert("aws:TokenIssueTime", SessionValue::Timestamp(issued_at));
+    session_data.insert("aws:ViaAWSService", SessionValue::Bool(false));
+    (principal, session_data)
+}
+
+/// Build the principal and session data the SigV4 layer would produce for the account root
+/// user.
+fn root_identity() -> (Principal, SessionData) {
+    let principal = Principal::from(
+        RootUser::builder().partition("aws").account_id(TEST_ACCOUNT_ID).build().expect("failed to build root user"),
+    );
+    let mut session_data = SessionData::new();
+    session_data.insert("aws:PrincipalAccount", SessionValue::String(TEST_ACCOUNT_ID.to_string()));
+    (principal, session_data)
+}
+
+/// Build the query parameters for a `GetUser` request, naming a user or leaving `UserName`
+/// off so it defaults to the caller.
+fn get_user_parameters(user_name: Option<&str>) -> String {
+    let mut parameters = vec![("Action", "GetUser"), ("Version", "2010-05-08")];
+
+    if let Some(user_name) = user_name {
+        parameters.push(("UserName", user_name));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `CreateUser` request naming `user_name`, optionally
+/// under a path, carrying tags, and asking for a permissions boundary.
+fn create_user_parameters(
+    user_name: &str,
+    path: Option<&str>,
+    tags: &[(&str, &str)],
+    permissions_boundary: Option<&str>,
+) -> String {
+    let mut parameters = action_parameters("CreateUser");
+    parameters.push(("UserName".to_string(), user_name.to_string()));
+
+    if let Some(path) = path {
+        parameters.push(("Path".to_string(), path.to_string()));
+    }
+
+    append_tag_parameters(&mut parameters, tags);
+
+    if let Some(permissions_boundary) = permissions_boundary {
+        parameters.push(("PermissionsBoundary".to_string(), permissions_boundary.to_string()));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `DeleteUser` request, naming a user or leaving `UserName`
+/// off entirely.
+fn delete_user_parameters(user_name: Option<&str>) -> String {
+    let mut parameters = vec![("Action", "DeleteUser"), ("Version", "2010-05-08")];
+
+    if let Some(user_name) = user_name {
+        parameters.push(("UserName", user_name));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Extract the `PolicyDocument` from a policy response and percent-decode it, standing in for
+/// the URL decoding a client applies.
+///
+/// IAM reports policy documents percent-encoded, so a test that wants to look at the policy
+/// itself has to undo that first. The encoded form carries no XML metacharacters, so what is
+/// between the tags is exactly what was encoded.
+fn decoded_policy_document(body: &str) -> String {
+    const OPEN: &str = "<PolicyDocument>";
+    const CLOSE: &str = "</PolicyDocument>";
+
+    let start = body.find(OPEN).expect("no PolicyDocument in body") + OPEN.len();
+    let end = start + body[start..].find(CLOSE).expect("unterminated PolicyDocument");
+
+    PctStr::new(&body[start..end]).expect("PolicyDocument is not percent-encoded").decode()
+}
+
+/// Build the query parameters for a `GetUserPolicy` request, naming a user and a policy or
+/// leaving either off.
+fn get_user_policy_parameters(user_name: Option<&str>, policy_name: Option<&str>) -> String {
+    user_policy_parameters("GetUserPolicy", user_name, policy_name, None)
+}
+
+/// Build the query parameters for a `PutUserPolicy` request, naming a user, a policy, and the
+/// document to store under it, or leaving any of them off.
+fn put_user_policy_parameters(
+    user_name: Option<&str>,
+    policy_name: Option<&str>,
+    policy_document: Option<&str>,
+) -> String {
+    user_policy_parameters("PutUserPolicy", user_name, policy_name, policy_document)
+}
+
+/// Build the query parameters for a `DeleteUserPolicy` request, naming a user and a policy or
+/// leaving either off.
+fn delete_user_policy_parameters(user_name: Option<&str>, policy_name: Option<&str>) -> String {
+    user_policy_parameters("DeleteUserPolicy", user_name, policy_name, None)
+}
+
+/// Build the query parameters for an inline-user-policy request, leaving off the parameters
+/// the caller does not supply so that a request missing a required one can be exercised.
+///
+/// The parameters are form-encoded rather than interpolated: a policy document carries JSON
+/// punctuation that the query string would otherwise be read as its own.
+fn user_policy_parameters(
+    action: &str,
+    user_name: Option<&str>,
+    policy_name: Option<&str>,
+    policy_document: Option<&str>,
+) -> String {
+    let mut parameters = vec![("Action", action), ("Version", "2010-05-08")];
+
+    if let Some(user_name) = user_name {
+        parameters.push(("UserName", user_name));
+    }
+    if let Some(policy_name) = policy_name {
+        parameters.push(("PolicyName", policy_name));
+    }
+    if let Some(policy_document) = policy_document {
+        parameters.push(("PolicyDocument", policy_document));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for an `AttachUserPolicy` request, naming a user and a managed
+/// policy or leaving either off.
+fn attach_user_policy_parameters(user_name: Option<&str>, policy_arn: Option<&str>) -> String {
+    user_policy_attachment_parameters("AttachUserPolicy", user_name, policy_arn)
+}
+
+/// Build the query parameters for a `DetachUserPolicy` request, naming a user and a managed
+/// policy or leaving either off.
+fn detach_user_policy_parameters(user_name: Option<&str>, policy_arn: Option<&str>) -> String {
+    user_policy_attachment_parameters("DetachUserPolicy", user_name, policy_arn)
+}
+
+/// Build the query parameters for a managed-policy attachment request, leaving off the
+/// parameters the caller does not supply so that a request missing a required one can be
+/// exercised.
+///
+/// The parameters are form-encoded rather than interpolated: a policy ARN carries colons and
+/// slashes that the query string would otherwise be read as its own.
+fn user_policy_attachment_parameters(action: &str, user_name: Option<&str>, policy_arn: Option<&str>) -> String {
+    let mut parameters = vec![("Action", action), ("Version", "2010-05-08")];
+
+    if let Some(user_name) = user_name {
+        parameters.push(("UserName", user_name));
+    }
+    if let Some(policy_arn) = policy_arn {
+        parameters.push(("PolicyArn", policy_arn));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `PutUserPermissionsBoundary` request, naming a user and
+/// the managed policy to impose as its boundary, or leaving either off.
+///
+/// The parameters are form-encoded rather than interpolated: a policy ARN carries colons and
+/// slashes that the query string would otherwise be read as its own.
+fn put_user_permissions_boundary_parameters(user_name: Option<&str>, permissions_boundary: Option<&str>) -> String {
+    let mut parameters = vec![("Action", "PutUserPermissionsBoundary"), ("Version", "2010-05-08")];
+
+    if let Some(user_name) = user_name {
+        parameters.push(("UserName", user_name));
+    }
+    if let Some(permissions_boundary) = permissions_boundary {
+        parameters.push(("PermissionsBoundary", permissions_boundary));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `DeleteUserPermissionsBoundary` request, naming a user or
+/// leaving `UserName` off.
+fn delete_user_permissions_boundary_parameters(user_name: Option<&str>) -> String {
+    let mut parameters = vec![("Action", "DeleteUserPermissionsBoundary"), ("Version", "2010-05-08")];
+
+    if let Some(user_name) = user_name {
+        parameters.push(("UserName", user_name));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `TagUser` request, naming a user or leaving `UserName`
+/// off, and carrying the tags to apply.
+fn tag_user_parameters(user_name: Option<&str>, tags: &[(&str, &str)]) -> String {
+    let mut parameters = action_parameters("TagUser");
+
+    if let Some(user_name) = user_name {
+        parameters.push(("UserName".to_string(), user_name.to_string()));
+    }
+
+    append_tag_parameters(&mut parameters, tags);
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for an `UntagUser` request, naming a user or leaving `UserName`
+/// off, and carrying the tag keys to remove.
+fn untag_user_parameters(user_name: Option<&str>, tag_keys: &[&str]) -> String {
+    let mut parameters = action_parameters("UntagUser");
+
+    if let Some(user_name) = user_name {
+        parameters.push(("UserName".to_string(), user_name.to_string()));
+    }
+
+    // A list of scalars is indexed the same way a list of structures is, with no field name
+    // after the index.
+    for (index, key) in tag_keys.iter().enumerate() {
+        let index = index + 1;
+        parameters.push((format!("TagKeys.member.{index}"), key.to_string()));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `CreateAccessKey` request, naming a user or leaving
+/// `UserName` off so it defaults to the caller.
+fn create_access_key_parameters(user_name: Option<&str>) -> String {
+    let mut parameters = vec![("Action", "CreateAccessKey"), ("Version", "2010-05-08")];
+
+    if let Some(user_name) = user_name {
+        parameters.push(("UserName", user_name));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `DeleteAccessKey` request, naming an access key and the
+/// user carrying it, or leaving either off.
+fn delete_access_key_parameters(user_name: Option<&str>, access_key_id: Option<&str>) -> String {
+    let mut parameters = vec![("Action", "DeleteAccessKey"), ("Version", "2010-05-08")];
+
+    if let Some(user_name) = user_name {
+        parameters.push(("UserName", user_name));
+    }
+    if let Some(access_key_id) = access_key_id {
+        parameters.push(("AccessKeyId", access_key_id));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for an `UpdateAccessKey` request, naming an access key, the
+/// user carrying it, and the state to assign it, or leaving any of them off.
+///
+/// `Status` is taken as a string rather than as a [`StatusType`](
+/// scratchstack_shapes_iam::types::StatusType) so that a state this operation cannot assign --
+/// or one that names no state at all -- can be exercised.
+fn update_access_key_parameters(user_name: Option<&str>, access_key_id: Option<&str>, status: Option<&str>) -> String {
+    let mut parameters = vec![("Action", "UpdateAccessKey"), ("Version", "2010-05-08")];
+
+    if let Some(user_name) = user_name {
+        parameters.push(("UserName", user_name));
+    }
+    if let Some(access_key_id) = access_key_id {
+        parameters.push(("AccessKeyId", access_key_id));
+    }
+    if let Some(status) = status {
+        parameters.push(("Status", status));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Start the parameter list for a request invoking `action`, for the builders whose
+/// parameters carry indexed names and so cannot borrow them.
+///
+/// Every builder here finishes by form-encoding the pairs it collected rather than
+/// interpolating them into a query string. Interpolating is wrong for more inputs than it
+/// looks: the service decodes its parameters with form decoding, so a `+` -- legal in a user
+/// name, a path, a tag key, and a tag value alike -- arrives as a space, and an `&` in a tag
+/// value ends the value early and starts a parameter of its own. A request built that way
+/// names something other than what the test asked for, and the assertion that follows is
+/// measuring the wrong request.
+fn action_parameters(action: &str) -> Vec<(String, String)> {
+    vec![("Action".to_string(), action.to_string()), ("Version".to_string(), "2010-05-08".to_string())]
+}
+
+/// Append the parameters naming `tags` to a parameter list being built.
+///
+/// Lists arrive in the query string indexed under a `member` segment, one parameter per
+/// field, as the AWS query protocol spells them.
+fn append_tag_parameters(parameters: &mut Vec<(String, String)>, tags: &[(&str, &str)]) {
+    for (index, (key, value)) in tags.iter().enumerate() {
+        let index = index + 1;
+        parameters.push((format!("Tags.member.{index}.Key"), key.to_string()));
+        parameters.push((format!("Tags.member.{index}.Value"), value.to_string()));
+    }
+}
+
+/// Build the query parameters for a `ListAccessKeys` request, naming a user or leaving
+/// `UserName` off so it defaults to the caller, and carrying the pagination arguments the
+/// caller supplies.
+fn list_access_keys_parameters(user_name: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
+    list_parameters("ListAccessKeys", user_name, None, max_items, marker)
+}
+
+/// Build the query parameters for a `ListAttachedUserPolicies` request, naming a user or
+/// leaving `UserName` off, filtering by the path of the policies reported, and carrying the
+/// pagination arguments the caller supplies.
+fn list_attached_user_policies_parameters(
+    user_name: Option<&str>,
+    path_prefix: Option<&str>,
+    max_items: Option<i32>,
+    marker: Option<&str>,
+) -> String {
+    list_parameters("ListAttachedUserPolicies", user_name, path_prefix, max_items, marker)
+}
+
+/// Build the query parameters for a `ListUserPolicies` request, naming a user or leaving
+/// `UserName` off, and carrying the pagination arguments the caller supplies.
+fn list_user_policies_parameters(user_name: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
+    list_parameters("ListUserPolicies", user_name, None, max_items, marker)
+}
+
+/// Build the query parameters for a `ListUserTags` request, naming a user or leaving
+/// `UserName` off, and carrying the pagination arguments the caller supplies.
+fn list_user_tags_parameters(user_name: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
+    list_parameters("ListUserTags", user_name, None, max_items, marker)
+}
+
+/// Build the query parameters for a paginated listing request, leaving off the parameters the
+/// caller does not supply so that a request missing a required one can be exercised. A listing
+/// that takes no path prefix passes `None`.
+///
+/// Every parameter is form-encoded rather than interpolated. A pagination token is opaque and
+/// nothing here relies on what it happens to be made of; a path carries slashes, and may carry
+/// a `+`, which the service decodes as a space rather than as itself -- a request built by
+/// interpolation would arrive naming something other than what the test asked for.
+fn list_parameters(
+    action: &str,
+    user_name: Option<&str>,
+    path_prefix: Option<&str>,
+    max_items: Option<i32>,
+    marker: Option<&str>,
+) -> String {
+    let max_items = max_items.map(|max_items| max_items.to_string());
+    let mut parameters = vec![("Action", action), ("Version", "2010-05-08")];
+
+    if let Some(user_name) = user_name {
+        parameters.push(("UserName", user_name));
+    }
+    if let Some(path_prefix) = path_prefix {
+        parameters.push(("PathPrefix", path_prefix));
+    }
+    if let Some(max_items) = max_items.as_deref() {
+        parameters.push(("MaxItems", max_items));
+    }
+    if let Some(marker) = marker {
+        parameters.push(("Marker", marker));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Extract the `AccessKeyId` a response reports, to be named by the operations acting on that
+/// key afterwards.
+///
+/// An access key id is alphanumeric, so what is between the tags is the id itself: there is
+/// nothing in it for the response serializer to escape. A `CreateAccessKey` response carries
+/// exactly one, and a listing's first is the first key it reports.
+fn access_key_id(body: &str) -> String {
+    const OPEN: &str = "<AccessKeyId>";
+    const CLOSE: &str = "</AccessKeyId>";
+
+    let start = body.find(OPEN).expect("no AccessKeyId in body") + OPEN.len();
+    let end = start + body[start..].find(CLOSE).expect("unterminated AccessKeyId");
+
+    body[start..end].to_string()
+}
+
+/// Extract the `Marker` a truncated listing reports, to be handed back as the next page's
+/// `Marker` parameter.
+///
+/// A pagination token is a version character followed by URL-safe base64, so what is between
+/// the tags is the token itself: there is nothing in it for the response serializer to escape.
+fn pagination_marker(body: &str) -> String {
+    const OPEN: &str = "<Marker>";
+    const CLOSE: &str = "</Marker>";
+
+    let start = body.find(OPEN).expect("no Marker in body") + OPEN.len();
+    let end = start + body[start..].find(CLOSE).expect("unterminated Marker");
+
+    body[start..end].to_string()
+}
+
+/// A copy of `svc_state` configured to believe the `X-Forwarded-For` header of proxies in
+/// `10.0.0.0/8`, standing in for a deployment behind a load balancer.
+fn proxied_state(svc_state: &ServiceState) -> ServiceState {
+    let forwarded_for = ForwardedForConfig::builder()
+        .trusted_proxies(vec!["10.0.0.0/8".to_string()])
+        .build()
+        .resolve()
+        .expect("failed to resolve forwarded_for configuration");
+
+    ServiceState::builder()
+        .db(svc_state.db.clone())
+        .forwarded_for(Arc::new(forwarded_for))
+        .secure_transport(true)
+        .build()
+}
+
+/// Invoke `serve_request` directly with the given identity and return the status and body.
+async fn call(
+    svc_state: &ServiceState,
+    principal: Principal,
+    session_data: SessionData,
+    parameters: &str,
+) -> (StatusCode, String) {
+    call_as(
+        svc_state,
+        principal,
+        session_data,
+        SessionPolicies::default(),
+        TEST_SOURCE_IP,
+        HeaderMap::new(),
+        parameters,
+    )
+    .await
+}
+
+/// Invoke `serve_request` directly with the given identity and session policies and return
+/// the status and body.
+async fn call_with_session_policies(
+    svc_state: &ServiceState,
+    principal: Principal,
+    session_data: SessionData,
+    session_policies: SessionPolicies,
+    parameters: &str,
+) -> (StatusCode, String) {
+    call_as(svc_state, principal, session_data, session_policies, TEST_SOURCE_IP, HeaderMap::new(), parameters).await
+}
+
+/// Invoke `serve_request` directly with the given identity from the given peer address and
+/// return the status and body.
+async fn call_from(
+    svc_state: &ServiceState,
+    principal: Principal,
+    session_data: SessionData,
+    source_ip: IpAddr,
+    parameters: &str,
+) -> (StatusCode, String) {
+    call_as(svc_state, principal, session_data, SessionPolicies::default(), source_ip, HeaderMap::new(), parameters)
+        .await
+}
+
+/// Invoke `serve_request` directly for a request carrying the given headers.
+async fn call_with_headers(
+    svc_state: &ServiceState,
+    principal: Principal,
+    session_data: SessionData,
+    headers: HeaderMap,
+    parameters: &str,
+) -> (StatusCode, String) {
+    call_as(svc_state, principal, session_data, SessionPolicies::default(), TEST_SOURCE_IP, headers, parameters).await
+}
+
+/// Build a header map carrying a `Referer`, a `User-Agent`, or both.
+fn client_headers(referer: Option<&str>, user_agent: Option<&str>) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    if let Some(referer) = referer {
+        headers.append("referer", referer.parse().expect("invalid header value"));
+    }
+    if let Some(user_agent) = user_agent {
+        headers.append("user-agent", user_agent.parse().expect("invalid header value"));
+    }
+    headers
+}
+
+/// Invoke `serve_request` directly for a request that arrived from `source_ip` carrying
+/// `forwarded_for` in its `X-Forwarded-For` header.
+async fn call_forwarded(
+    svc_state: &ServiceState,
+    principal: Principal,
+    session_data: SessionData,
+    source_ip: IpAddr,
+    forwarded_for: &str,
+    parameters: &str,
+) -> (StatusCode, String) {
+    let mut headers = HeaderMap::new();
+    headers.append("x-forwarded-for", forwarded_for.parse().expect("invalid header value"));
+
+    call_as(svc_state, principal, session_data, SessionPolicies::default(), source_ip, headers, parameters).await
+}
+
+/// Invoke `serve_request` directly with every facet of the request spelled out, standing in
+/// for the connection information and identity the pipeline would otherwise supply.
+#[allow(clippy::too_many_arguments)]
+async fn call_as(
+    svc_state: &ServiceState,
+    principal: Principal,
+    session_data: SessionData,
+    session_policies: SessionPolicies,
+    source_ip: IpAddr,
+    headers: HeaderMap,
+    parameters: &str,
+) -> (StatusCode, String) {
+    let response: Response<Body> = serve_request(
+        State(svc_state.clone()),
+        RequestId::new(),
+        Some(Extension(ConnectInfo(SocketAddr::new(source_ip, 49152)))),
+        headers,
+        Extension(principal),
+        Extension(session_data),
+        Extension(session_policies),
+        RawQuery(None),
+        Bytes::from(parameters.as_bytes().to_vec()),
+    )
+    .await;
+
+    let status = response.status();
+    let body = response.into_body().collect().await.expect("failed to read body").to_bytes();
+    (status, String::from_utf8(body.to_vec()).expect("body is not UTF-8"))
+}
