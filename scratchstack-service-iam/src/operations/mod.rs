@@ -6,13 +6,16 @@
 //! built around.
 
 mod attach_user_policy;
+mod create_access_key;
 mod create_user;
+mod delete_access_key;
 mod delete_user;
 mod delete_user_permissions_boundary;
 mod delete_user_policy;
 mod detach_user_policy;
 mod get_user;
 mod get_user_policy;
+mod list_access_keys;
 mod list_attached_user_policies;
 mod list_user_policies;
 mod list_user_tags;
@@ -21,28 +24,36 @@ mod put_user_permissions_boundary;
 mod put_user_policy;
 mod tag_user;
 mod untag_user;
+mod update_access_key;
 
 pub(crate) use {
-    attach_user_policy::attach_user_policy, create_user::create_user, delete_user::delete_user,
+    attach_user_policy::attach_user_policy, create_access_key::create_access_key, create_user::create_user,
+    delete_access_key::delete_access_key, delete_user::delete_user,
     delete_user_permissions_boundary::delete_user_permissions_boundary, delete_user_policy::delete_user_policy,
     detach_user_policy::detach_user_policy, get_user::get_user, get_user_policy::get_user_policy,
-    list_attached_user_policies::list_attached_user_policies, list_user_policies::list_user_policies,
-    list_user_tags::list_user_tags, list_users::list_users,
+    list_access_keys::list_access_keys, list_attached_user_policies::list_attached_user_policies,
+    list_user_policies::list_user_policies, list_user_tags::list_user_tags, list_users::list_users,
     put_user_permissions_boundary::put_user_permissions_boundary, put_user_policy::put_user_policy, tag_user::tag_user,
-    untag_user::untag_user,
+    untag_user::untag_user, update_access_key::update_access_key,
 };
 
 use {
     crate::{constants::*, service::internal_failure},
     pct_str::{PctString, UriReserved},
     scratchstack_arn::Arn,
+    scratchstack_aws_principal::Principal,
     scratchstack_core::{
         RequestId,
         axum::{body::Body, response::Response},
         response::Responder as _,
     },
     scratchstack_iam_database::{RequestExecutor as _, partition::get_current_partition_or_fail},
-    scratchstack_shapes_iam::{error_meta::Error as IamError, operation::GetUserInternalRequest, types::Tag},
+    scratchstack_shapes_iam::{
+        action::Action,
+        error_meta::Error as IamError,
+        operation::GetUserInternalRequest,
+        types::{Tag, error::ValidationError},
+    },
     sqlx::postgres::PgTransaction,
     std::str::FromStr as _,
 };
@@ -58,6 +69,39 @@ use {
 /// document as it was given, so the encoding belongs here, on the way out, and nowhere else.
 pub(crate) fn encode_policy_document(policy_document: &str) -> String {
     PctString::encode(policy_document.chars(), UriReserved::Any).into_string()
+}
+
+/// Resolve the user an operation acts on from the `UserName` the request supplied, falling back
+/// to the calling user when it supplied none.
+///
+/// An omitted `UserName` names the calling user on the operations that allow it. Only IAM user
+/// credentials identify one: a role session and the account root user have no user to fall back
+/// to, so a request from either that leaves the name off is reported as a validation failure
+/// rather than acting on a user the caller never named.
+///
+/// `action` names the operation in the log line the rejection writes, and nothing else.
+///
+/// Returns the ready-to-send error response when the request named no user and the caller is not
+/// one.
+pub(crate) fn resolve_user_name(
+    request_id: RequestId,
+    principal: &Principal,
+    action: Action,
+    user_name: Option<String>,
+) -> Result<String, Box<Response<Body>>> {
+    if let Some(user_name) = user_name {
+        return Ok(user_name);
+    }
+
+    match principal.as_user() {
+        Some(user) => Ok(user.user_name().to_string()),
+        None => {
+            log::debug!("{request_id}: {action} without a UserName by non-user principal {principal}");
+            Err(Box::new(
+                ValidationError::builder().message(MSG_USER_NAME_REQUIRED).request_id(request_id).build().respond(),
+            ))
+        }
+    }
 }
 
 /// Build the ARN naming the IAM user `user_name` under `path` in `account_id`.
