@@ -231,13 +231,27 @@ fn delete_user_parameters(user_name: Option<&str>) -> String {
 /// itself has to undo that first. The encoded form carries no XML metacharacters, so what is
 /// between the tags is exactly what was encoded.
 fn decoded_policy_document(body: &str) -> String {
-    const OPEN: &str = "<PolicyDocument>";
-    const CLOSE: &str = "</PolicyDocument>";
+    decoded_document_element(body, "PolicyDocument")
+}
 
-    let start = body.find(OPEN).expect("no PolicyDocument in body") + OPEN.len();
-    let end = start + body[start..].find(CLOSE).expect("unterminated PolicyDocument");
+/// Extract the `Document` from a policy-version response and percent-decode it.
+///
+/// A managed policy version reports its document under `Document` where an inline policy reports
+/// it under `PolicyDocument`; both are percent-encoded the same way.
+fn decoded_policy_version_document(body: &str) -> String {
+    decoded_document_element(body, "Document")
+}
 
-    PctStr::new(&body[start..end]).expect("PolicyDocument is not percent-encoded").decode()
+/// Extract the element named `tag` from a response body and percent-decode it, standing in for
+/// the URL decoding a client applies.
+fn decoded_document_element(body: &str, tag: &str) -> String {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+
+    let start = body.find(&open).unwrap_or_else(|| panic!("no {tag} in body")) + open.len();
+    let end = start + body[start..].find(&close).unwrap_or_else(|| panic!("unterminated {tag}"));
+
+    PctStr::new(&body[start..end]).unwrap_or_else(|_| panic!("{tag} is not percent-encoded")).decode()
 }
 
 /// Build the query parameters for a `GetUserPolicy` request, naming a user and a policy or
@@ -500,6 +514,80 @@ fn policy_arn_parameters(action: &str, policy_arn: Option<&str>) -> String {
 
     if let Some(policy_arn) = policy_arn {
         parameters.push(("PolicyArn", policy_arn));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `CreatePolicyVersion` request naming the policy to version
+/// and the document to store as the new version, leaving off the parameters the caller does not
+/// supply so that a request missing a required one can be exercised.
+fn create_policy_version_parameters(
+    policy_arn: Option<&str>,
+    policy_document: Option<&str>,
+    set_as_default: Option<bool>,
+) -> String {
+    let set_as_default = set_as_default.map(|set_as_default| set_as_default.to_string());
+    let mut parameters = vec![("Action", "CreatePolicyVersion"), ("Version", "2010-05-08")];
+
+    if let Some(policy_arn) = policy_arn {
+        parameters.push(("PolicyArn", policy_arn));
+    }
+    if let Some(policy_document) = policy_document {
+        parameters.push(("PolicyDocument", policy_document));
+    }
+    if let Some(set_as_default) = set_as_default.as_deref() {
+        parameters.push(("SetAsDefault", set_as_default));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `DeletePolicyVersion` request naming a policy and one of its
+/// versions, or leaving either off.
+fn delete_policy_version_parameters(policy_arn: Option<&str>, version_id: Option<&str>) -> String {
+    policy_version_parameters("DeletePolicyVersion", policy_arn, version_id)
+}
+
+/// Build the query parameters for a `GetPolicyVersion` request naming a policy and one of its
+/// versions, or leaving either off.
+fn get_policy_version_parameters(policy_arn: Option<&str>, version_id: Option<&str>) -> String {
+    policy_version_parameters("GetPolicyVersion", policy_arn, version_id)
+}
+
+/// Build the query parameters for a request naming a managed policy and one of its versions,
+/// leaving off the parameters the caller does not supply so that a request missing a required one
+/// can be exercised.
+///
+/// `version_id` is taken as a string rather than as a version number so that something that is
+/// not a version id at all can be exercised.
+fn policy_version_parameters(action: &str, policy_arn: Option<&str>, version_id: Option<&str>) -> String {
+    let mut parameters = vec![("Action", action), ("Version", "2010-05-08")];
+
+    if let Some(policy_arn) = policy_arn {
+        parameters.push(("PolicyArn", policy_arn));
+    }
+    if let Some(version_id) = version_id {
+        parameters.push(("VersionId", version_id));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `ListPolicyVersions` request naming a policy, or leaving
+/// `PolicyArn` off, and carrying the pagination arguments the caller supplies.
+fn list_policy_versions_parameters(policy_arn: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
+    let max_items = max_items.map(|max_items| max_items.to_string());
+    let mut parameters = vec![("Action", "ListPolicyVersions"), ("Version", "2010-05-08")];
+
+    if let Some(policy_arn) = policy_arn {
+        parameters.push(("PolicyArn", policy_arn));
+    }
+    if let Some(max_items) = max_items.as_deref() {
+        parameters.push(("MaxItems", max_items));
+    }
+    if let Some(marker) = marker {
+        parameters.push(("Marker", marker));
     }
 
     serde_urlencoded::to_string(parameters).expect("failed to encode parameters")

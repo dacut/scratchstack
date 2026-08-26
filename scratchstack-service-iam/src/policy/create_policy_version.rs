@@ -16,27 +16,30 @@ use {
     scratchstack_iam_database::RequestExecutor as _,
     scratchstack_shapes_iam::{
         action::Action,
-        operation::{DeletePolicyRequest, DeletePolicyResponseEnvelope},
+        operation::{CreatePolicyVersionRequest, CreatePolicyVersionResponseEnvelope},
     },
 };
 
-/// Handle a `DeletePolicy` request.
+/// Handle a `CreatePolicyVersion` request.
 ///
 /// The caller has already been authenticated by the SigV4 layer. The caller's identity-based
 /// policies (including group-inherited policies and any permissions boundary), intersected with
-/// any session policies, must allow `iam:DeletePolicy` on the policy being deleted; the account
-/// root user is implicitly allowed.
+/// any session policies, must allow `iam:CreatePolicyVersion` on the policy being versioned; the
+/// account root user is implicitly allowed.
 ///
-/// `PolicyArn` is required and names the policy outright, so there is no account to infer from
-/// the caller: the ARN says which account the policy belongs to. Only the caller's own account's
-/// policies can be deleted, and an ARN naming any other account -- including an AWS-managed
-/// policy, which every account shares and none owns -- is reported as naming no policy.
+/// `PolicyArn` and `PolicyDocument` are required. Only the caller's own account's policies can be
+/// versioned: an AWS-managed policy is shared by every account and versioned by none, and a policy
+/// in another account is not the caller's to change, so an ARN naming either is reported as naming
+/// no policy.
 ///
-/// A policy that is still attached to a user, group, or role, that is still serving as a
-/// permissions boundary, or that still has versions other than its default cannot be deleted, and
-/// the attempt is reported as a `DeleteConflict`. The default version and the policy's tags go
-/// with the policy itself.
-pub(crate) async fn delete_policy(
+/// `SetAsDefault` makes the new version the one the policy grants by; it needs no second action,
+/// since creating a version a policy immediately grants by is what this operation is for. A policy
+/// that already has the maximum number of versions is reported as a `LimitExceeded`, and the
+/// caller must delete a version before adding another.
+///
+/// The new version's document is not reported back. IAM returns a policy document only from
+/// `GetPolicyVersion`, and this response carries the version's identity alone.
+pub(crate) async fn create_policy_version(
     svc_state: ServiceState,
     request_id: RequestId,
     principal: Principal,
@@ -51,18 +54,24 @@ pub(crate) async fn delete_policy(
     };
     let account_id = account_id.clone();
 
-    let request: DeletePolicyRequest = match from_query_str(parameters) {
+    let request: CreatePolicyVersionRequest = match from_query_str(parameters) {
         Ok(request) => request,
         Err(e) => {
-            log::debug!("{request_id}: Could not parse DeletePolicy parameters: {e}");
+            log::debug!("{request_id}: Could not parse CreatePolicyVersion parameters: {e}");
             return malformed_input(request_id);
         }
     };
 
-    // Rebuilding the request validates the length of the ARN, and parsing it settles that it
-    // names a policy at all, so a malformed request is rejected before it is authorized -- as it
-    // is for every other operation, and as AWS does.
-    let request = match DeletePolicyRequest::builder().policy_arn(request.policy_arn).build() {
+    // Rebuilding the request validates the length of the ARN and of the document, and parsing the
+    // ARN settles that it names a policy at all, so a malformed request is rejected before it is
+    // authorized -- as it is for every other operation, and as AWS does. Whether the document is a
+    // policy is settled by the creation itself, after authorization.
+    let request = match CreatePolicyVersionRequest::builder()
+        .policy_arn(request.policy_arn)
+        .policy_document(request.policy_document)
+        .set_set_as_default(request.set_as_default)
+        .build()
+    {
         Ok(request) => request,
         Err(mut e) => {
             e.request_id = Some(request_id.to_string());
@@ -83,8 +92,8 @@ pub(crate) async fn delete_policy(
         }
     };
 
-    // A policy the caller does not own is not looked up, and is treated exactly as one that does
-    // not exist: the caller learns nothing about it, and nothing deletes it.
+    // The version is added to an existing policy, so the resource ARN and the tags a condition may
+    // be written against are read from that policy rather than from the request.
     let owned = policy_is_owned(&account_id, &policy_arn);
     let (resource_arn, resource_tags) = match policy_operand(&mut tx, request_id, &account_id, &policy_arn, owned).await
     {
@@ -99,7 +108,7 @@ pub(crate) async fn delete_policy(
         &session_data,
         &session_policies,
         &request_metadata,
-        Action::DeletePolicy,
+        Action::CreatePolicyVersion,
         &[resource_arn],
         &resource_tag_context(&resource_tags),
     )
@@ -113,13 +122,22 @@ pub(crate) async fn delete_policy(
         return no_such_policy(request_id, &request.policy_arn);
     }
 
-    // The delete reports a policy that does not exist as `NoSuchEntity` itself, so the missing
+    // The creation reports a policy that does not exist as `NoSuchEntity` itself, so the missing
     // case needs no separate handling here.
-    let response = match request.execute(&mut tx, request_id).await {
-        Ok(()) => DeletePolicyResponseEnvelope::builder().request_id(request_id).build().respond(),
-        // Dropping the transaction rolls back a partial delete.
+    let mut response = match request.execute(&mut tx, request_id).await {
+        Ok(response) => response,
+        // Dropping the transaction rolls back the partial creation.
         Err(e) => return e.respond(),
     };
+
+    // The database reports the document it stored, since a caller inside the service may want it;
+    // IAM does not report one here, so it is dropped on the way out rather than percent-encoded.
+    if let Some(policy_version) = response.policy_version.as_mut() {
+        policy_version.document = None;
+    }
+
+    let response =
+        CreatePolicyVersionResponseEnvelope::builder().result(response).request_id(request_id).build().respond();
 
     if let Err(e) = tx.commit().await {
         log::error!("{request_id}: Could not commit database transaction: {e}");

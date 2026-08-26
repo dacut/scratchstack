@@ -16,27 +16,25 @@ use {
     scratchstack_iam_database::RequestExecutor as _,
     scratchstack_shapes_iam::{
         action::Action,
-        operation::{DeletePolicyRequest, DeletePolicyResponseEnvelope},
+        operation::{DeletePolicyVersionRequest, DeletePolicyVersionResponseEnvelope},
     },
 };
 
-/// Handle a `DeletePolicy` request.
+/// Handle a `DeletePolicyVersion` request.
 ///
 /// The caller has already been authenticated by the SigV4 layer. The caller's identity-based
 /// policies (including group-inherited policies and any permissions boundary), intersected with
-/// any session policies, must allow `iam:DeletePolicy` on the policy being deleted; the account
-/// root user is implicitly allowed.
+/// any session policies, must allow `iam:DeletePolicyVersion` on the policy the version belongs
+/// to; the account root user is implicitly allowed.
 ///
-/// `PolicyArn` is required and names the policy outright, so there is no account to infer from
-/// the caller: the ARN says which account the policy belongs to. Only the caller's own account's
-/// policies can be deleted, and an ARN naming any other account -- including an AWS-managed
-/// policy, which every account shares and none owns -- is reported as naming no policy.
+/// `PolicyArn` and `VersionId` are required. Only the caller's own account's policies can be
+/// versioned, so an ARN naming another account -- or the AWS-managed policies, which every account
+/// shares and none owns -- is reported as naming no policy.
 ///
-/// A policy that is still attached to a user, group, or role, that is still serving as a
-/// permissions boundary, or that still has versions other than its default cannot be deleted, and
-/// the attempt is reported as a `DeleteConflict`. The default version and the policy's tags go
-/// with the policy itself.
-pub(crate) async fn delete_policy(
+/// A policy's default version cannot be deleted, and the attempt is reported as a
+/// `DeleteConflict`; another version must be made the default first. Deleting a version does not
+/// delete the policy, which keeps the versions it still has.
+pub(crate) async fn delete_policy_version(
     svc_state: ServiceState,
     request_id: RequestId,
     principal: Principal,
@@ -51,18 +49,22 @@ pub(crate) async fn delete_policy(
     };
     let account_id = account_id.clone();
 
-    let request: DeletePolicyRequest = match from_query_str(parameters) {
+    let request: DeletePolicyVersionRequest = match from_query_str(parameters) {
         Ok(request) => request,
         Err(e) => {
-            log::debug!("{request_id}: Could not parse DeletePolicy parameters: {e}");
+            log::debug!("{request_id}: Could not parse DeletePolicyVersion parameters: {e}");
             return malformed_input(request_id);
         }
     };
 
-    // Rebuilding the request validates the length of the ARN, and parsing it settles that it
-    // names a policy at all, so a malformed request is rejected before it is authorized -- as it
-    // is for every other operation, and as AWS does.
-    let request = match DeletePolicyRequest::builder().policy_arn(request.policy_arn).build() {
+    // Rebuilding the request validates the length of the ARN and the shape of the version id, and
+    // parsing the ARN settles that it names a policy at all, so a malformed request is rejected
+    // before it is authorized -- as it is for every other operation, and as AWS does.
+    let request = match DeletePolicyVersionRequest::builder()
+        .policy_arn(request.policy_arn)
+        .version_id(request.version_id)
+        .build()
+    {
         Ok(request) => request,
         Err(mut e) => {
             e.request_id = Some(request_id.to_string());
@@ -83,8 +85,8 @@ pub(crate) async fn delete_policy(
         }
     };
 
-    // A policy the caller does not own is not looked up, and is treated exactly as one that does
-    // not exist: the caller learns nothing about it, and nothing deletes it.
+    // A version is not a resource of its own: `iam:DeletePolicyVersion` is authorized against the
+    // policy the version belongs to, so the resource ARN and its tags are read from that policy.
     let owned = policy_is_owned(&account_id, &policy_arn);
     let (resource_arn, resource_tags) = match policy_operand(&mut tx, request_id, &account_id, &policy_arn, owned).await
     {
@@ -99,7 +101,7 @@ pub(crate) async fn delete_policy(
         &session_data,
         &session_policies,
         &request_metadata,
-        Action::DeletePolicy,
+        Action::DeletePolicyVersion,
         &[resource_arn],
         &resource_tag_context(&resource_tags),
     )
@@ -113,10 +115,10 @@ pub(crate) async fn delete_policy(
         return no_such_policy(request_id, &request.policy_arn);
     }
 
-    // The delete reports a policy that does not exist as `NoSuchEntity` itself, so the missing
-    // case needs no separate handling here.
+    // The delete reports a policy or a version that does not exist as `NoSuchEntity` itself, so
+    // neither missing case needs separate handling here.
     let response = match request.execute(&mut tx, request_id).await {
-        Ok(()) => DeletePolicyResponseEnvelope::builder().request_id(request_id).build().respond(),
+        Ok(()) => DeletePolicyVersionResponseEnvelope::builder().request_id(request_id).build().respond(),
         // Dropping the transaction rolls back a partial delete.
         Err(e) => return e.respond(),
     };
