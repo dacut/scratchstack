@@ -1,6 +1,7 @@
 use {
     crate::{
         constants::*,
+        policy::{create_policy, delete_policy, get_policy, list_policies},
         user::{
             attach_user_policy, create_access_key, create_user, delete_access_key, delete_user,
             delete_user_permissions_boundary, delete_user_policy, detach_user_policy, get_user, get_user_policy,
@@ -97,12 +98,36 @@ pub(crate) async fn serve_request(
             )
             .await
         }
+        Ok(Action::CreatePolicy) => {
+            create_policy(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
         Ok(Action::CreateUser) => {
             create_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
                 .await
         }
         Ok(Action::DeleteAccessKey) => {
             delete_access_key(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
+        Ok(Action::DeletePolicy) => {
+            delete_policy(
                 svc_state,
                 request_id,
                 principal,
@@ -153,6 +178,10 @@ pub(crate) async fn serve_request(
             )
             .await
         }
+        Ok(Action::GetPolicy) => {
+            get_policy(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
+                .await
+        }
         Ok(Action::GetUser) => {
             get_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
                 .await
@@ -183,6 +212,18 @@ pub(crate) async fn serve_request(
         }
         Ok(Action::ListAttachedUserPolicies) => {
             list_attached_user_policies(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
+        Ok(Action::ListPolicies) => {
+            list_policies(
                 svc_state,
                 request_id,
                 principal,

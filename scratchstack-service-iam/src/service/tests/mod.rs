@@ -28,6 +28,7 @@ use {
     tokio::sync::Mutex,
 };
 
+mod policy;
 mod user;
 
 /// The token the seed data uses where the test's own account id belongs.
@@ -442,6 +443,102 @@ fn update_user_parameters(user_name: Option<&str>, new_user_name: Option<&str>, 
     }
     if let Some(new_path) = new_path {
         parameters.push(("NewPath", new_path));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `CreatePolicy` request naming the managed policy to create
+/// and the document to store as its first version, leaving off the parameters the caller does not
+/// supply so that a request missing a required one can be exercised.
+fn create_policy_parameters(
+    policy_name: Option<&str>,
+    policy_document: Option<&str>,
+    path: Option<&str>,
+    description: Option<&str>,
+    tags: &[(&str, &str)],
+) -> String {
+    let mut parameters = action_parameters("CreatePolicy");
+
+    if let Some(policy_name) = policy_name {
+        parameters.push(("PolicyName".to_string(), policy_name.to_string()));
+    }
+    if let Some(policy_document) = policy_document {
+        parameters.push(("PolicyDocument".to_string(), policy_document.to_string()));
+    }
+    if let Some(path) = path {
+        parameters.push(("Path".to_string(), path.to_string()));
+    }
+    if let Some(description) = description {
+        parameters.push(("Description".to_string(), description.to_string()));
+    }
+
+    append_tag_parameters(&mut parameters, tags);
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `GetPolicy` request naming a managed policy by ARN, or
+/// leaving `PolicyArn` off.
+fn get_policy_parameters(policy_arn: Option<&str>) -> String {
+    policy_arn_parameters("GetPolicy", policy_arn)
+}
+
+/// Build the query parameters for a `DeletePolicy` request naming a managed policy by ARN, or
+/// leaving `PolicyArn` off.
+fn delete_policy_parameters(policy_arn: Option<&str>) -> String {
+    policy_arn_parameters("DeletePolicy", policy_arn)
+}
+
+/// Build the query parameters for a request whose only argument is the ARN of the managed policy
+/// it acts on, leaving `PolicyArn` off when the caller does not supply one so that a request
+/// missing it can be exercised.
+///
+/// The parameters are form-encoded rather than interpolated: a policy ARN carries colons and
+/// slashes that the query string would otherwise be read as its own.
+fn policy_arn_parameters(action: &str, policy_arn: Option<&str>) -> String {
+    let mut parameters = vec![("Action", action), ("Version", "2010-05-08")];
+
+    if let Some(policy_arn) = policy_arn {
+        parameters.push(("PolicyArn", policy_arn));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `ListPolicies` request, carrying the filters and the
+/// pagination arguments the caller supplies.
+///
+/// `scope` and `policy_usage_filter` are taken as strings rather than as the enumerations they
+/// name so that a value neither one defines can be exercised.
+fn list_policies_parameters(
+    scope: Option<&str>,
+    path_prefix: Option<&str>,
+    only_attached: Option<bool>,
+    policy_usage_filter: Option<&str>,
+    max_items: Option<i32>,
+    marker: Option<&str>,
+) -> String {
+    let max_items = max_items.map(|max_items| max_items.to_string());
+    let only_attached = only_attached.map(|only_attached| only_attached.to_string());
+    let mut parameters = vec![("Action", "ListPolicies"), ("Version", "2010-05-08")];
+
+    if let Some(scope) = scope {
+        parameters.push(("Scope", scope));
+    }
+    if let Some(path_prefix) = path_prefix {
+        parameters.push(("PathPrefix", path_prefix));
+    }
+    if let Some(only_attached) = only_attached.as_deref() {
+        parameters.push(("OnlyAttached", only_attached));
+    }
+    if let Some(policy_usage_filter) = policy_usage_filter {
+        parameters.push(("PolicyUsageFilter", policy_usage_filter));
+    }
+    if let Some(max_items) = max_items.as_deref() {
+        parameters.push(("MaxItems", max_items));
+    }
+    if let Some(marker) = marker {
+        parameters.push(("Marker", marker));
     }
 
     serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
