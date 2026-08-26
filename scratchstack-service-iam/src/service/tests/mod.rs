@@ -603,16 +603,75 @@ fn role_policy_parameters(
     serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
 }
 
-/// Build the query parameters for a `ListRolePolicies` request, naming a role or leaving
-/// `RoleName` off, and carrying the pagination arguments the caller supplies.
+/// Build the query parameters for an `AttachRolePolicy` request, naming a role and a managed
+/// policy or leaving either off.
+fn attach_role_policy_parameters(role_name: Option<&str>, policy_arn: Option<&str>) -> String {
+    role_policy_attachment_parameters("AttachRolePolicy", role_name, policy_arn)
+}
+
+/// Build the query parameters for a `DetachRolePolicy` request, naming a role and a managed
+/// policy or leaving either off.
+fn detach_role_policy_parameters(role_name: Option<&str>, policy_arn: Option<&str>) -> String {
+    role_policy_attachment_parameters("DetachRolePolicy", role_name, policy_arn)
+}
+
+/// Build the query parameters for a managed-policy attachment request naming a role, leaving off
+/// the parameters the caller does not supply so that a request missing a required one can be
+/// exercised.
 ///
-/// This does not go through [`list_parameters`], which names the entity it lists as `UserName`.
-fn list_role_policies_parameters(role_name: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
-    let max_items = max_items.map(|max_items| max_items.to_string());
-    let mut parameters = vec![("Action", "ListRolePolicies"), ("Version", "2010-05-08")];
+/// The parameters are form-encoded rather than interpolated: a policy ARN carries colons and
+/// slashes that the query string would otherwise be read as its own.
+fn role_policy_attachment_parameters(action: &str, role_name: Option<&str>, policy_arn: Option<&str>) -> String {
+    let mut parameters = vec![("Action", action), ("Version", "2010-05-08")];
 
     if let Some(role_name) = role_name {
         parameters.push(("RoleName", role_name));
+    }
+    if let Some(policy_arn) = policy_arn {
+        parameters.push(("PolicyArn", policy_arn));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `ListAttachedRolePolicies` request, naming a role or leaving
+/// `RoleName` off, filtering by the path of the policies reported, and carrying the pagination
+/// arguments the caller supplies.
+fn list_attached_role_policies_parameters(
+    role_name: Option<&str>,
+    path_prefix: Option<&str>,
+    max_items: Option<i32>,
+    marker: Option<&str>,
+) -> String {
+    role_list_parameters("ListAttachedRolePolicies", role_name, path_prefix, max_items, marker)
+}
+
+/// Build the query parameters for a `ListRolePolicies` request, naming a role or leaving
+/// `RoleName` off, and carrying the pagination arguments the caller supplies.
+fn list_role_policies_parameters(role_name: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
+    role_list_parameters("ListRolePolicies", role_name, None, max_items, marker)
+}
+
+/// Build the query parameters for a paginated listing request naming a role, leaving off the
+/// parameters the caller does not supply so that a request missing a required one can be
+/// exercised. A listing that takes no path prefix passes `None`.
+///
+/// This does not go through [`list_parameters`], which names the entity it lists as `UserName`.
+fn role_list_parameters(
+    action: &str,
+    role_name: Option<&str>,
+    path_prefix: Option<&str>,
+    max_items: Option<i32>,
+    marker: Option<&str>,
+) -> String {
+    let max_items = max_items.map(|max_items| max_items.to_string());
+    let mut parameters = vec![("Action", action), ("Version", "2010-05-08")];
+
+    if let Some(role_name) = role_name {
+        parameters.push(("RoleName", role_name));
+    }
+    if let Some(path_prefix) = path_prefix {
+        parameters.push(("PathPrefix", path_prefix));
     }
     if let Some(max_items) = max_items.as_deref() {
         parameters.push(("MaxItems", max_items));
