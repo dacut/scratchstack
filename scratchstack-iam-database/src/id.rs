@@ -1,6 +1,6 @@
 //! IAM identifier generation and parsing.
 use {
-    derive_builder::{Builder, UninitializedFieldError},
+    bon::bon,
     rand::random,
     scratchstack_aws_principal::{IamResourceType, InvalidIamResourceType},
     std::{
@@ -57,8 +57,7 @@ const RESOURCE_ID_BITS: u32 = 39;
 ///     account_id: 557925715019,
 /// };
 /// ```
-#[derive(Builder, Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[builder(build_fn(validate = "Self::validate", error = "InvalidIamId"))]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub struct IamId {
     /// The resource type that the identifier represents. This is a 4-character string that is unique across
@@ -76,33 +75,14 @@ pub struct IamId {
     pub resource_id: u64,
 }
 
-impl IamIdBuilder {
-    /// Validate that the account id and resource id fit within the bit widths the identifier
-    /// format reserves for them.
+#[bon]
+impl IamId {
+    /// Create an [`IamIdBuilder`] for building an [`IamId`].
     ///
     /// # Errors
     ///
     /// An [`InvalidIamId`] error is returned if `account_id` does not fit in 40 bits or
     /// `resource_id` does not fit in 39 bits.
-    fn validate(&self) -> Result<(), InvalidIamId> {
-        if let Some(account_id) = self.account_id
-            && account_id >= (1 << ACCOUNT_ID_BITS)
-        {
-            return Err(InvalidIamId(format!("Account id {account_id} does not fit in {ACCOUNT_ID_BITS} bits")));
-        }
-
-        if let Some(resource_id) = self.resource_id
-            && resource_id >= (1 << RESOURCE_ID_BITS)
-        {
-            return Err(InvalidIamId(format!("Resource id {resource_id} does not fit in {RESOURCE_ID_BITS} bits")));
-        }
-
-        Ok(())
-    }
-}
-
-impl IamId {
-    /// Create an [`IamIdBuilder`] for building an [`IamId`].
     ///
     /// # Example
     ///
@@ -117,9 +97,32 @@ impl IamId {
     ///     .unwrap();
     /// assert_eq!(id.to_string(), "AKIAYDZXWZRFXQVTHPAJ");
     /// ```
-    pub fn builder() -> IamIdBuilder {
-        IamIdBuilder::default()
+    #[builder(builder_type = IamIdBuilder, finish_fn = build)]
+    pub fn builder(
+        /// The resource type that the identifier represents.
+        resource_type: IamResourceType,
+
+        /// The account id the identifier belongs to. This must fit in 40 bits.
+        account_id: u64,
+
+        /// The unique identifier for the resource. This must fit in 39 bits.
+        resource_id: u64,
+    ) -> Result<Self, InvalidIamId> {
+        if account_id >= (1 << ACCOUNT_ID_BITS) {
+            return Err(InvalidIamId(format!("Account id {account_id} does not fit in {ACCOUNT_ID_BITS} bits")));
+        }
+
+        if resource_id >= (1 << RESOURCE_ID_BITS) {
+            return Err(InvalidIamId(format!("Resource id {resource_id} does not fit in {RESOURCE_ID_BITS} bits")));
+        }
+
+        Ok(Self {
+            resource_type,
+            account_id,
+            resource_id,
+        })
     }
+
     /// Generate a new IAM identifier for the given resource type and account ID. The resource ID is
     /// generated randomly and is not guaranteed to be unique.
     pub fn new(resource_type: IamResourceType, account_id: u64) -> Self {
@@ -218,13 +221,6 @@ impl Display for InvalidIamId {
     }
 }
 
-/// Allows [`InvalidIamId`] to be used as the error type for `derive_builder`-generated builders.
-impl From<UninitializedFieldError> for InvalidIamId {
-    fn from(err: UninitializedFieldError) -> Self {
-        Self(format!("Missing required field: {}", err.field_name()))
-    }
-}
-
 impl From<InvalidIamResourceType> for InvalidIamId {
     fn from(err: InvalidIamResourceType) -> Self {
         Self(err.0)
@@ -272,12 +268,6 @@ mod tests {
             .build()
             .unwrap_err();
         assert_eq!(err.to_string(), "Invalid IAM id: Resource id 549755813888 does not fit in 39 bits");
-    }
-
-    #[test_log::test]
-    fn builder_reports_missing_field() {
-        let err = IamId::builder().resource_type(IamResourceType::AccessKey).build().unwrap_err();
-        assert_eq!(err.to_string(), "Invalid IAM id: Missing required field: account_id");
     }
 
     /// Known IAM id: AKIAYDZXWZRFXQVTHPAJ
