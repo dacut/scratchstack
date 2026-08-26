@@ -7,25 +7,23 @@ use {crate::service::tests::*, pretty_assertions::assert_eq, scratchstack_core::
 /// `iam:CreateUser` and nothing else, so it shows that tagging a user at creation is gated
 /// separately while attaching a permissions boundary is not.
 const CREATE_USER_TEST_DATA: &str = r#"
-    INSERT INTO iam.partition(partition) VALUES ('aws');
-
     INSERT INTO iam.accounts(account_id, email, alias) VALUES
-    ('123456789012', 'create-user-test@example.com', 'create-user-test');
+    ('%ACCOUNT_ID%', 'create-user-test@example.com', 'create-user-test');
 
     INSERT INTO iam.users(user_id, account_id, user_name_lower, user_name_cased, path) VALUES
-    ('SVCCREUSERBROAD', '123456789012', 'broad-creator', 'Broad-Creator', '/'),
-    ('SVCCREUSERPATH1', '123456789012', 'path-creator', 'Path-Creator', '/'),
-    ('SVCCREUSERTAG01', '123456789012', 'tag-creator', 'Tag-Creator', '/'),
-    ('SVCCREUSERKEYS1', '123456789012', 'tag-key-creator', 'Tag-Key-Creator', '/'),
-    ('SVCCREUSERPB001', '123456789012', 'boundary-creator', 'Boundary-Creator', '/'),
-    ('SVCCREUSERNONE1', '123456789012', 'no-grant-creator', 'No-Grant-Creator', '/'),
-    ('SVCCREUSERONLY1', '123456789012', 'create-only-creator', 'Create-Only-Creator', '/'),
-    ('SVCCREUSERARN01', '123456789012', 'arn-boundary-creator', 'Arn-Boundary-Creator', '/'),
-    ('SVCCREUSEREXIST', '123456789012', 'existing-user', 'Existing-User', '/');
+    ('SVCCREUSERBROAD', '%ACCOUNT_ID%', 'broad-creator', 'Broad-Creator', '/'),
+    ('SVCCREUSERPATH1', '%ACCOUNT_ID%', 'path-creator', 'Path-Creator', '/'),
+    ('SVCCREUSERTAG01', '%ACCOUNT_ID%', 'tag-creator', 'Tag-Creator', '/'),
+    ('SVCCREUSERKEYS1', '%ACCOUNT_ID%', 'tag-key-creator', 'Tag-Key-Creator', '/'),
+    ('SVCCREUSERPB001', '%ACCOUNT_ID%', 'boundary-creator', 'Boundary-Creator', '/'),
+    ('SVCCREUSERNONE1', '%ACCOUNT_ID%', 'no-grant-creator', 'No-Grant-Creator', '/'),
+    ('SVCCREUSERONLY1', '%ACCOUNT_ID%', 'create-only-creator', 'Create-Only-Creator', '/'),
+    ('SVCCREUSERARN01', '%ACCOUNT_ID%', 'arn-boundary-creator', 'Arn-Boundary-Creator', '/'),
+    ('SVCCREUSEREXIST', '%ACCOUNT_ID%', 'existing-user', 'Existing-User', '/');
 
     INSERT INTO iam.managed_policies(managed_policy_id, account_id, managed_policy_name_lower,
         managed_policy_name_cased, path, default_version, deprecated, latest_version) VALUES
-    ('SVCCREUSERBND01', '123456789012', 'boundary-policy', 'Boundary-Policy', '/', 1, false, 1);
+    ('SVCCREUSERBND01', '%ACCOUNT_ID%', 'boundary-policy', 'Boundary-Policy', '/', 1, false, 1);
 
     INSERT INTO iam.managed_policy_versions(managed_policy_id, managed_policy_version, policy_document) VALUES
     ('SVCCREUSERBND01', 1,
@@ -37,7 +35,7 @@ const CREATE_USER_TEST_DATA: &str = r#"
         "Resource":"*"}]}'),
     ('SVCCREUSERPATH1', 'allow-create-in-division', 'Allow-Create-In-Division',
         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateUser",
-        "Resource":"arn:aws:iam::123456789012:user/division/*"}]}'),
+        "Resource":"arn:aws:iam::%ACCOUNT_ID%:user/division/*"}]}'),
     ('SVCCREUSERTAG01', 'allow-create-engineering', 'Allow-Create-Engineering',
         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:CreateUser","iam:TagUser"],
         "Resource":"*","Condition":{"StringEquals":{"aws:RequestTag/department":"Engineering"}}}]}'),
@@ -48,37 +46,35 @@ const CREATE_USER_TEST_DATA: &str = r#"
     ('SVCCREUSERPB001', 'allow-create-with-boundary', 'Allow-Create-With-Boundary',
         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateUser","Resource":"*",
         "Condition":{"StringEquals":
-            {"iam:PermissionsBoundary":"arn:aws:iam::123456789012:policy/Boundary-Policy"}}}]}'),
+            {"iam:PermissionsBoundary":"arn:aws:iam::%ACCOUNT_ID%:policy/Boundary-Policy"}}}]}'),
     ('SVCCREUSERONLY1', 'allow-create-only', 'Allow-Create-Only',
         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreateUser","Resource":"*"}]}'),
     ('SVCCREUSERARN01', 'allow-create-with-arn-boundary', 'Allow-Create-With-Arn-Boundary',
         '{"Version":"2012-10-17","Statement":[{"Sid":"VisualEditor0","Effect":"Allow","Action":"iam:CreateUser",
         "Resource":"*","Condition":{"ArnEquals":
-            {"iam:PermissionsBoundary":"arn:aws:iam::123456789012:policy/Boundary-Policy"}}}]}');
+            {"iam:PermissionsBoundary":"arn:aws:iam::%ACCOUNT_ID%:policy/Boundary-Policy"}}}]}');
 "#;
 
 /// End-to-end authorization checks for `CreateUser` through `serve_request` against an embedded
 /// PostgreSQL database. A single test function covers every case: the cases run in order against
-/// one database, and several of them read the state the cases before them left behind.
+/// one account, and several of them read the state the cases before them left behind.
 #[test_log::test(tokio::test)]
 async fn test_create_user_authorization() {
     let database = TestDatabase::new(CREATE_USER_TEST_DATA).await;
     let svc_state = database.svc_state().clone();
+    let account_id = database.account_id();
 
     // A caller allowed iam:CreateUser on any user creates one at the root path.
-    let (principal, session_data) = user_identity("SVCCREUSERBROAD", "Broad-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERBROAD", "Broad-Creator");
     let (status, body) =
         call(&svc_state, principal, session_data, &create_user_parameters("New-User", None, &[], None)).await;
     assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
-    assert!(
-        body.contains(&format!("<Arn>arn:aws:iam::{TEST_ACCOUNT_ID}:user/New-User</Arn>")),
-        "unexpected body: {body}"
-    );
+    assert!(body.contains(&format!("<Arn>arn:aws:iam::{account_id}:user/New-User</Arn>")), "unexpected body: {body}");
     assert!(body.contains("<Path>/</Path>"), "unexpected body: {body}");
     assert!(body.contains("<UserName>New-User</UserName>"), "unexpected body: {body}");
 
     // The user is now readable, so the create was committed rather than rolled back.
-    let (principal, session_data) = user_identity("SVCCREUSERBROAD", "Broad-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERBROAD", "Broad-Creator");
     let (status, body) =
         call(&svc_state, principal, session_data, &create_user_parameters("New-User", None, &[], None)).await;
     assert_eq!(status, StatusCode::CONFLICT, "unexpected response: {body}");
@@ -86,7 +82,7 @@ async fn test_create_user_authorization() {
 
     // User names are compared case-insensitively, so a name differing only in case collides
     // with the user just created.
-    let (principal, session_data) = user_identity("SVCCREUSERBROAD", "Broad-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERBROAD", "Broad-Creator");
     let (status, body) =
         call(&svc_state, principal, session_data, &create_user_parameters("NEW-USER", None, &[], None)).await;
     assert_eq!(status, StatusCode::CONFLICT, "unexpected response: {body}");
@@ -94,7 +90,7 @@ async fn test_create_user_authorization() {
 
     // The path the request asks for is part of the ARN being authorized, so a grant scoped to
     // a path prefix reaches users created under that path...
-    let (principal, session_data) = user_identity("SVCCREUSERPATH1", "Path-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERPATH1", "Path-Creator");
     let (status, body) = call(
         &svc_state,
         principal,
@@ -104,27 +100,27 @@ async fn test_create_user_authorization() {
     .await;
     assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
     assert!(
-        body.contains(&format!("<Arn>arn:aws:iam::{TEST_ACCOUNT_ID}:user/division/Division-User</Arn>")),
+        body.contains(&format!("<Arn>arn:aws:iam::{account_id}:user/division/Division-User</Arn>")),
         "unexpected body: {body}"
     );
     assert!(body.contains("<Path>/division/</Path>"), "unexpected body: {body}");
 
     // ...and no further: the same caller cannot create a user at the root path.
-    let (principal, session_data) = user_identity("SVCCREUSERPATH1", "Path-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERPATH1", "Path-Creator");
     let (status, body) =
         call(&svc_state, principal, session_data, &create_user_parameters("Root-User", None, &[], None)).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
     assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
     assert!(
         body.contains(&format!(
-            "User: arn:aws:iam::{TEST_ACCOUNT_ID}:user/Path-Creator is not authorized to perform: \
-                 iam:CreateUser on resource: arn:aws:iam::{TEST_ACCOUNT_ID}:user/Root-User"
+            "User: arn:aws:iam::{account_id}:user/Path-Creator is not authorized to perform: \
+                 iam:CreateUser on resource: arn:aws:iam::{account_id}:user/Root-User"
         )),
         "unexpected body: {body}"
     );
 
     // A denial rolls the transaction back, so nothing was created.
-    let (principal, session_data) = user_identity("SVCCREUSERBROAD", "Broad-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERBROAD", "Broad-Creator");
     let (status, body) =
         call(&svc_state, principal, session_data, &create_user_parameters("Root-User", None, &[], None)).await;
     assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
@@ -132,7 +128,7 @@ async fn test_create_user_authorization() {
     // The tags the request asks to apply back the aws:RequestTag condition keys. The policy
     // spells the tag key in lower case while the request spells it "Department", confirming
     // that tag keys are matched case-insensitively.
-    let (principal, session_data) = user_identity("SVCCREUSERTAG01", "Tag-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERTAG01", "Tag-Creator");
     let (status, body) = call(
         &svc_state,
         principal,
@@ -145,7 +141,7 @@ async fn test_create_user_authorization() {
     assert!(body.contains("<Value>Engineering</Value>"), "unexpected body: {body}");
 
     // A request asking for the tag with a different value does not satisfy the condition.
-    let (principal, session_data) = user_identity("SVCCREUSERTAG01", "Tag-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERTAG01", "Tag-Creator");
     let (status, body) = call(
         &svc_state,
         principal,
@@ -158,7 +154,7 @@ async fn test_create_user_authorization() {
 
     // Neither does a request asking for no tags at all: the condition key is absent, so the
     // grant does not apply rather than matching an empty value.
-    let (principal, session_data) = user_identity("SVCCREUSERTAG01", "Tag-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERTAG01", "Tag-Creator");
     let (status, body) =
         call(&svc_state, principal, session_data, &create_user_parameters("Bare-User", None, &[], None)).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
@@ -167,7 +163,7 @@ async fn test_create_user_authorization() {
     // A grant conditioned on aws:TagKeys limits which tags the request may name at all,
     // whatever values it asks to give them: every tag key the request carries has to be one
     // the policy lists.
-    let (principal, session_data) = user_identity("SVCCREUSERKEYS1", "Tag-Key-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERKEYS1", "Tag-Key-Creator");
     let (status, body) = call(
         &svc_state,
         principal,
@@ -185,7 +181,7 @@ async fn test_create_user_authorization() {
 
     // One tag key outside the set the policy lists is enough to fail, even alongside keys
     // that are in it.
-    let (principal, session_data) = user_identity("SVCCREUSERKEYS1", "Tag-Key-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERKEYS1", "Tag-Key-Creator");
     let (status, body) = call(
         &svc_state,
         principal,
@@ -203,7 +199,7 @@ async fn test_create_user_authorization() {
 
     // A request naming no tags at all satisfies ForAllValues vacuously: there is no tag key
     // the policy would have to allow.
-    let (principal, session_data) = user_identity("SVCCREUSERKEYS1", "Tag-Key-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERKEYS1", "Tag-Key-Creator");
     let (status, body) =
         call(&svc_state, principal, session_data, &create_user_parameters("Untagged-User", None, &[], None)).await;
     assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
@@ -211,7 +207,7 @@ async fn test_create_user_authorization() {
     // Two tags with the same key ask for two values for one tag. That is the caller's error,
     // not ours, so it is reported as invalid input rather than an internal failure. The keys
     // here differ only in case, which IAM treats as the same key.
-    let (principal, session_data) = user_identity("SVCCREUSERBROAD", "Broad-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERBROAD", "Broad-Creator");
     let (status, body) = call(
         &svc_state,
         principal,
@@ -231,7 +227,7 @@ async fn test_create_user_authorization() {
     );
 
     // The rejection rolled the transaction back, so the name is still free.
-    let (principal, session_data) = user_identity("SVCCREUSERBROAD", "Broad-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERBROAD", "Broad-Creator");
     let (status, body) = call(
         &svc_state,
         principal,
@@ -243,8 +239,8 @@ async fn test_create_user_authorization() {
 
     // The permissions boundary the request asks for backs iam:PermissionsBoundary, which is
     // what lets a policy require that users be created only under a boundary.
-    let boundary = format!("arn:aws:iam::{TEST_ACCOUNT_ID}:policy/Boundary-Policy");
-    let (principal, session_data) = user_identity("SVCCREUSERPB001", "Boundary-Creator");
+    let boundary = format!("arn:aws:iam::{account_id}:policy/Boundary-Policy");
+    let (principal, session_data) = database.user_identity("SVCCREUSERPB001", "Boundary-Creator");
     let (status, body) =
         call(&svc_state, principal, session_data, &create_user_parameters("Bounded-User", None, &[], Some(&boundary)))
             .await;
@@ -255,15 +251,15 @@ async fn test_create_user_authorization() {
     );
 
     // Omitting the boundary leaves the condition key absent, so the grant does not apply.
-    let (principal, session_data) = user_identity("SVCCREUSERPB001", "Boundary-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERPB001", "Boundary-Creator");
     let (status, body) =
         call(&svc_state, principal, session_data, &create_user_parameters("Unbounded-User", None, &[], None)).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
     assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
 
     // Naming a different boundary does not satisfy the condition either.
-    let other_boundary = format!("arn:aws:iam::{TEST_ACCOUNT_ID}:policy/Other-Policy");
-    let (principal, session_data) = user_identity("SVCCREUSERPB001", "Boundary-Creator");
+    let other_boundary = format!("arn:aws:iam::{account_id}:policy/Other-Policy");
+    let (principal, session_data) = database.user_identity("SVCCREUSERPB001", "Boundary-Creator");
     let (status, body) = call(
         &svc_state,
         principal,
@@ -276,13 +272,13 @@ async fn test_create_user_authorization() {
 
     // Tagging a user is a separate action from creating one, so a caller allowed only
     // iam:CreateUser can create a user...
-    let (principal, session_data) = user_identity("SVCCREUSERONLY1", "Create-Only-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERONLY1", "Create-Only-Creator");
     let (status, body) =
         call(&svc_state, principal, session_data, &create_user_parameters("Plain-User", None, &[], None)).await;
     assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
 
     // ...but not a tagged one, and the denial names the action actually missing.
-    let (principal, session_data) = user_identity("SVCCREUSERONLY1", "Create-Only-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERONLY1", "Create-Only-Creator");
     let (status, body) = call(
         &svc_state,
         principal,
@@ -293,15 +289,15 @@ async fn test_create_user_authorization() {
     assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
     assert!(
         body.contains(&format!(
-            "User: arn:aws:iam::{TEST_ACCOUNT_ID}:user/Create-Only-Creator is not authorized to perform: \
-                 iam:TagUser on resource: arn:aws:iam::{TEST_ACCOUNT_ID}:user/Tagged-Denied-User"
+            "User: arn:aws:iam::{account_id}:user/Create-Only-Creator is not authorized to perform: \
+                 iam:TagUser on resource: arn:aws:iam::{account_id}:user/Tagged-Denied-User"
         )),
         "unexpected body: {body}"
     );
 
     // A permissions boundary, by contrast, needs no second action: the same caller can attach
     // one under iam:CreateUser alone, as the service allows.
-    let (principal, session_data) = user_identity("SVCCREUSERONLY1", "Create-Only-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERONLY1", "Create-Only-Creator");
     let (status, body) = call(
         &svc_state,
         principal,
@@ -316,7 +312,7 @@ async fn test_create_user_authorization() {
     );
 
     // The denials rolled their transactions back, so neither user was created.
-    let (principal, session_data) = user_identity("SVCCREUSERBROAD", "Broad-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERBROAD", "Broad-Creator");
     let (status, body) = call(
         &svc_state,
         principal,
@@ -329,7 +325,7 @@ async fn test_create_user_authorization() {
     // The boundary condition works with the ArnEquals operator as well as StringEquals, which
     // is what the console's policy editor emits for an ARN-valued key. Aspen treats ArnEquals
     // and ArnLike identically, as AWS documents them to be.
-    let (principal, session_data) = user_identity("SVCCREUSERARN01", "Arn-Boundary-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERARN01", "Arn-Boundary-Creator");
     let (status, body) = call(
         &svc_state,
         principal,
@@ -344,7 +340,7 @@ async fn test_create_user_authorization() {
     );
 
     // A different boundary does not satisfy it.
-    let (principal, session_data) = user_identity("SVCCREUSERARN01", "Arn-Boundary-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERARN01", "Arn-Boundary-Creator");
     let (status, body) = call(
         &svc_state,
         principal,
@@ -358,14 +354,14 @@ async fn test_create_user_authorization() {
     // Nor does omitting the boundary: the condition key is absent, which an ARN operator
     // treats as a null that only its IfExists variant would accept. This is the case that
     // matters, since a policy written this way exists to stop unbounded users being created.
-    let (principal, session_data) = user_identity("SVCCREUSERARN01", "Arn-Boundary-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERARN01", "Arn-Boundary-Creator");
     let (status, body) =
         call(&svc_state, principal, session_data, &create_user_parameters("Arn-Unbounded-User", None, &[], None)).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
     assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
 
     // A caller with no grant at all is refused.
-    let (principal, session_data) = user_identity("SVCCREUSERNONE1", "No-Grant-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERNONE1", "No-Grant-Creator");
     let (status, body) =
         call(&svc_state, principal, session_data, &create_user_parameters("Denied-User", None, &[], None)).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
@@ -373,15 +369,15 @@ async fn test_create_user_authorization() {
 
     // A malformed user name is rejected before the request is authorized, so the caller
     // learns the request was invalid rather than that it was denied.
-    let (principal, session_data) = user_identity("SVCCREUSERNONE1", "No-Grant-Creator");
+    let (principal, session_data) = database.user_identity("SVCCREUSERNONE1", "No-Grant-Creator");
     let (status, body) =
         call(&svc_state, principal, session_data, &create_user_parameters("bad%20name%21", None, &[], None)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
     assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
 
     // A permissions boundary naming a policy that does not exist is reported as such.
-    let missing_boundary = format!("arn:aws:iam::{TEST_ACCOUNT_ID}:policy/No-Such-Policy");
-    let (principal, session_data) = user_identity("SVCCREUSERBROAD", "Broad-Creator");
+    let missing_boundary = format!("arn:aws:iam::{account_id}:policy/No-Such-Policy");
+    let (principal, session_data) = database.user_identity("SVCCREUSERBROAD", "Broad-Creator");
     let (status, body) = call(
         &svc_state,
         principal,
@@ -393,12 +389,12 @@ async fn test_create_user_authorization() {
     assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
 
     // The account root user is implicitly allowed.
-    let (principal, session_data) = root_identity();
+    let (principal, session_data) = database.root_identity();
     let (status, body) =
         call(&svc_state, principal, session_data, &create_user_parameters("Root-Made-User", None, &[], None)).await;
     assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
     assert!(
-        body.contains(&format!("<Arn>arn:aws:iam::{TEST_ACCOUNT_ID}:user/Root-Made-User</Arn>")),
+        body.contains(&format!("<Arn>arn:aws:iam::{account_id}:user/Root-Made-User</Arn>")),
         "unexpected body: {body}"
     );
 }
