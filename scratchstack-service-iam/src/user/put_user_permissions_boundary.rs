@@ -2,8 +2,8 @@ use {
     crate::{
         authz::{check_authorization, permissions_boundary_context, resource_tag_context},
         constants::*,
-        operations::user_resource,
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
+        user::user_resource,
     },
     scratchstack_aws_principal::{Principal, SessionData, SessionValue},
     scratchstack_aws_signature::SessionPolicies,

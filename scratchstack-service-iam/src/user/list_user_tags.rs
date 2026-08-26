@@ -2,8 +2,8 @@ use {
     crate::{
         authz::{check_authorization, resource_tag_context},
         constants::*,
-        operations::user_resource,
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
+        user::user_resource,
     },
     scratchstack_aws_principal::{Principal, SessionData, SessionValue},
     scratchstack_aws_signature::SessionPolicies,
@@ -16,38 +16,29 @@ use {
     scratchstack_iam_database::RequestExecutor as _,
     scratchstack_shapes_iam::{
         action::Action,
-        operation::{
-            ListAttachedUserPoliciesInternalRequest, ListAttachedUserPoliciesRequest,
-            ListAttachedUserPoliciesResponseEnvelope,
-        },
+        operation::{ListUserTagsInternalRequest, ListUserTagsRequest, ListUserTagsResponseEnvelope},
     },
 };
 
-/// Handle a `ListAttachedUserPolicies` request.
+/// Handle a `ListUserTags` request.
 ///
 /// The caller has already been authenticated by the SigV4 layer. The caller's identity-based
 /// policies (including group-inherited policies and any permissions boundary), intersected with
-/// any session policies, must allow `iam:ListAttachedUserPolicies` on the user whose attachments
-/// are being listed; the account root user is implicitly allowed.
+/// any session policies, must allow `iam:ListUserTags` on the user whose tags are being listed;
+/// the account root user is implicitly allowed.
 ///
-/// The user is the resource, as it is for
-/// [`crate::operations::attach_user_policy`]. Unlike attaching and detaching, this reads no
-/// particular policy and so supplies no `iam:PolicyARN`: a caller allowed to list one user's
-/// attachments learns about all of them, whichever policies they happen to be.
-///
-/// `PathPrefix` filters which attached policies are reported, by the path of the policy rather
-/// than of the user. It narrows the listing and nothing else -- it is not a condition key, so a
-/// grant cannot be confined to a prefix by way of it, and a caller that omits it sees no less
-/// than one that supplies it.
-///
-/// Only the name and ARN of each attached policy are reported, never a document: the documents are
-/// read with `GetPolicy` and `GetPolicyVersion`, which are granted separately.
+/// The tags being listed are also the tags backing `aws:ResourceTag/${TagKey}` and IAM's own
+/// `iam:ResourceTag/${TagKey}`, so a grant conditioned on a user's tag reaches the request that
+/// reads that very tag back. There is nothing for `aws:RequestTag` or `aws:TagKeys` to carry: the
+/// request names no tags of its own, only the user holding them.
 ///
 /// `UserName` is required; it does not default to the calling user.
 ///
 /// The results are paginated: `MaxItems` bounds a page and `Marker` continues from where the
-/// previous page stopped.
-pub(crate) async fn list_attached_user_policies(
+/// previous page stopped. Pagination bounds what is reported and not what is authorized -- the
+/// condition keys describe the user's tags in full, as they do for every other operation acting
+/// on the user.
+pub(crate) async fn list_user_tags(
     svc_state: ServiceState,
     request_id: RequestId,
     principal: Principal,
@@ -62,22 +53,21 @@ pub(crate) async fn list_attached_user_policies(
     };
     let account_id = account_id.clone();
 
-    let request: ListAttachedUserPoliciesRequest = match from_query_str(parameters) {
+    let request: ListUserTagsRequest = match from_query_str(parameters) {
         Ok(request) => request,
         Err(e) => {
-            log::debug!("{request_id}: Could not parse ListAttachedUserPolicies parameters: {e}");
+            log::debug!("{request_id}: Could not parse ListUserTags parameters: {e}");
             return malformed_input(request_id);
         }
     };
     let user_name = request.user_name;
 
-    // Building the internal request validates the user name, the path prefix, and the pagination
-    // arguments, so a malformed request is rejected before it is authorized.
-    let request = match ListAttachedUserPoliciesInternalRequest::builder()
+    // Building the internal request validates the user name and the pagination arguments, so a
+    // malformed request is rejected before it is authorized.
+    let request = match ListUserTagsInternalRequest::builder()
         .account_id(account_id.clone())
         .set_marker(request.marker)
         .set_max_items(request.max_items)
-        .set_path_prefix(request.path_prefix)
         .user_name(user_name.clone())
         .build()
     {
@@ -108,7 +98,7 @@ pub(crate) async fn list_attached_user_policies(
         &session_data,
         &session_policies,
         &request_metadata,
-        Action::ListAttachedUserPolicies,
+        Action::ListUserTags,
         &[resource_arn],
         &resource_tag_context(&resource_tags),
     )
@@ -121,11 +111,9 @@ pub(crate) async fn list_attached_user_policies(
     // The listing reports a user that does not exist as `NoSuchEntity` itself, so the missing case
     // needs no separate handling here.
     let response = match request.execute(&mut tx, request_id).await {
-        Ok(response) => ListAttachedUserPoliciesResponseEnvelope::builder()
-            .result(response)
-            .request_id(request_id)
-            .build()
-            .respond(),
+        Ok(response) => {
+            ListUserTagsResponseEnvelope::builder().result(response).request_id(request_id).build().respond()
+        }
         Err(e) => return e.respond(),
     };
 

@@ -2,8 +2,8 @@ use {
     crate::{
         authz::{check_authorization, resource_tag_context},
         constants::*,
-        operations::{resolve_user_name, user_resource},
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
+        user::user_resource,
     },
     scratchstack_aws_principal::{Principal, SessionData, SessionValue},
     scratchstack_aws_signature::SessionPolicies,
@@ -16,28 +16,28 @@ use {
     scratchstack_iam_database::RequestExecutor as _,
     scratchstack_shapes_iam::{
         action::Action,
-        operation::{DeleteAccessKeyInternalRequest, DeleteAccessKeyRequest, DeleteAccessKeyResponseEnvelope},
+        operation::{ListUserPoliciesInternalRequest, ListUserPoliciesRequest, ListUserPoliciesResponseEnvelope},
     },
 };
 
-/// Handle a `DeleteAccessKey` request.
+/// Handle a `ListUserPolicies` request.
 ///
 /// The caller has already been authenticated by the SigV4 layer. The caller's identity-based
 /// policies (including group-inherited policies and any permissions boundary), intersected with
-/// any session policies, must allow `iam:DeleteAccessKey` on the user the key belongs to; the
-/// account root user is implicitly allowed.
+/// any session policies, must allow `iam:ListUserPolicies` on the user whose policies are being
+/// listed; the account root user is implicitly allowed.
 ///
-/// An access key is not a resource of its own -- it is a credential belonging to the user
-/// carrying it -- so the action is authorized against the user's ARN and `AccessKeyId` narrows
-/// nothing. A caller allowed to delete one of a user's access keys is allowed to delete every one
-/// of them, and so can revoke that user's programmatic access outright.
+/// An inline policy is not a resource of its own -- it is part of the user carrying it -- so the
+/// action is authorized against the user's ARN, as [`crate::operations::get_user_policy`] is. A
+/// caller allowed to list one user's inline policies learns the names of all of them, which is
+/// all this reports: the documents themselves are read with `GetUserPolicy`, which is granted
+/// separately.
 ///
-/// `UserName` is optional and defaults to the calling user, which is only meaningful for IAM user
-/// credentials; role sessions and root credentials must name the user explicitly. The key must
-/// belong to the user the request names: a key belonging to some other user is reported as
-/// `NoSuchEntity`, so a caller cannot reach past the user it was authorized against by naming a
-/// key id alone.
-pub(crate) async fn delete_access_key(
+/// `UserName` is required; it does not default to the calling user.
+///
+/// The results are paginated: `MaxItems` bounds a page and `Marker` continues from where the
+/// previous page stopped.
+pub(crate) async fn list_user_policies(
     svc_state: ServiceState,
     request_id: RequestId,
     principal: Principal,
@@ -52,28 +52,21 @@ pub(crate) async fn delete_access_key(
     };
     let account_id = account_id.clone();
 
-    let request: DeleteAccessKeyRequest = match from_query_str(parameters) {
+    let request: ListUserPoliciesRequest = match from_query_str(parameters) {
         Ok(request) => request,
         Err(e) => {
-            log::debug!("{request_id}: Could not parse DeleteAccessKey parameters: {e}");
+            log::debug!("{request_id}: Could not parse ListUserPolicies parameters: {e}");
             return malformed_input(request_id);
         }
     };
+    let user_name = request.user_name;
 
-    // An omitted UserName names the calling user. Only IAM user credentials identify one; a role
-    // session or root credentials have no user to fall back to.
-    let user_name = match resolve_user_name(request_id, &principal, Action::DeleteAccessKey, request.user_name) {
-        Ok(user_name) => user_name,
-        Err(response) => return *response,
-    };
-
-    // Building the internal request validates the user name and the shape of the access key id,
-    // so a malformed request is rejected before it is authorized. Whether the id names a key that
-    // exists -- or one this user owns -- is settled by the delete itself, after authorization, so
-    // an unauthorized caller is told no more than that.
-    let request = match DeleteAccessKeyInternalRequest::builder()
-        .access_key_id(request.access_key_id)
+    // Building the internal request validates the user name and the pagination arguments, so a
+    // malformed request is rejected before it is authorized.
+    let request = match ListUserPoliciesInternalRequest::builder()
         .account_id(account_id.clone())
+        .set_marker(request.marker)
+        .set_max_items(request.max_items)
         .user_name(user_name.clone())
         .build()
     {
@@ -104,7 +97,7 @@ pub(crate) async fn delete_access_key(
         &session_data,
         &session_policies,
         &request_metadata,
-        Action::DeleteAccessKey,
+        Action::ListUserPolicies,
         &[resource_arn],
         &resource_tag_context(&resource_tags),
     )
@@ -114,11 +107,12 @@ pub(crate) async fn delete_access_key(
         return *response;
     }
 
-    // The delete reports an access key that does not exist, or one the named user does not own,
-    // as `NoSuchEntity` itself, so neither case needs separate handling here.
+    // The listing reports a user that does not exist as `NoSuchEntity` itself, so the missing case
+    // needs no separate handling here.
     let response = match request.execute(&mut tx, request_id).await {
-        Ok(()) => DeleteAccessKeyResponseEnvelope::builder().request_id(request_id).build().respond(),
-        // Dropping the transaction rolls back a partial delete.
+        Ok(response) => {
+            ListUserPoliciesResponseEnvelope::builder().result(response).request_id(request_id).build().respond()
+        }
         Err(e) => return e.respond(),
     };
 

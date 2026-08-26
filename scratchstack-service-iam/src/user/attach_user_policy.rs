@@ -1,9 +1,9 @@
 use {
     crate::{
-        authz::{check_authorization, resource_tag_context},
+        authz::{check_authorization, policy_arn_context, resource_tag_context},
         constants::*,
-        operations::user_resource,
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
+        user::user_resource,
     },
     scratchstack_aws_principal::{Principal, SessionData, SessionValue},
     scratchstack_aws_signature::SessionPolicies,
@@ -16,30 +16,33 @@ use {
     scratchstack_iam_database::RequestExecutor as _,
     scratchstack_shapes_iam::{
         action::Action,
-        operation::{
-            DeleteUserPermissionsBoundaryInternalRequest, DeleteUserPermissionsBoundaryRequest,
-            DeleteUserPermissionsBoundaryResponseEnvelope,
-        },
+        operation::{AttachUserPolicyInternalRequest, AttachUserPolicyRequest, AttachUserPolicyResponseEnvelope},
     },
 };
 
-/// Handle a `DeleteUserPermissionsBoundary` request.
+/// Handle an `AttachUserPolicy` request.
 ///
 /// The caller has already been authenticated by the SigV4 layer. The caller's identity-based
 /// policies (including group-inherited policies and any permissions boundary), intersected with
-/// any session policies, must allow `iam:DeleteUserPermissionsBoundary` on the user whose
-/// boundary is being cleared; the account root user is implicitly allowed.
+/// any session policies, must allow `iam:AttachUserPolicy` on the user the policy is attached to;
+/// the account root user is implicitly allowed.
 ///
-/// This is [`crate::operations::put_user_permissions_boundary`] in reverse, but it is not
-/// authorized the same way: the request names no boundary, so there is no `iam:PermissionsBoundary`
-/// condition key to supply, and a grant of this action reaches whatever boundary the user
-/// happens to carry. Removing a boundary lifts the cap on everything the user's policies grant,
-/// which makes this the more dangerous half of the pair to hand out broadly.
+/// A managed policy is a resource of its own, unlike the inline policies
+/// [`crate::operations::put_user_policy`] writes, but it is not the resource this action acts on:
+/// IAM gives `iam:AttachUserPolicy` the user as its resource type, so the action is authorized
+/// against the user's ARN alone. The policy being attached is named by the `iam:PolicyARN`
+/// condition key instead, which is what lets a grant say which policies a caller may hand out
+/// without saying anything about which users may receive them, or the reverse.
 ///
-/// The managed policy serving as the boundary is untouched; only the user's reference to it is
-/// cleared. A user carrying no boundary is left as it is and the request succeeds, which is what
-/// IAM does.
-pub(crate) async fn delete_user_permissions_boundary(
+/// Both halves matter, because attaching a managed policy grants its permissions to the user:
+/// `iam:AttachUserPolicy` on a user is a privilege escalation unless it is confined by
+/// `iam:PolicyARN` to policies no more privileged than the caller. Nothing here checks that the
+/// caller holds the permissions the policy grants; IAM does not either.
+///
+/// The policy may belong to the caller's account or be an AWS-managed policy; the attachment
+/// itself is idempotent, so attaching a policy the user already carries succeeds and changes
+/// nothing.
+pub(crate) async fn attach_user_policy(
     svc_state: ServiceState,
     request_id: RequestId,
     principal: Principal,
@@ -54,20 +57,22 @@ pub(crate) async fn delete_user_permissions_boundary(
     };
     let account_id = account_id.clone();
 
-    let request: DeleteUserPermissionsBoundaryRequest = match from_query_str(parameters) {
+    let request: AttachUserPolicyRequest = match from_query_str(parameters) {
         Ok(request) => request,
         Err(e) => {
-            log::debug!("{request_id}: Could not parse DeleteUserPermissionsBoundary parameters: {e}");
+            log::debug!("{request_id}: Could not parse AttachUserPolicy parameters: {e}");
             return malformed_input(request_id);
         }
     };
     let user_name = request.user_name;
 
-    // Building the internal request validates the user name, so a malformed request is rejected
-    // before it is authorized. Whether the user exists is settled by the update itself, after
+    // Building the internal request validates the user name and the length of the policy ARN, so
+    // a malformed request is rejected before it is authorized. Whether the ARN names a policy at
+    // all -- or names one that exists -- is settled by the attachment itself, after
     // authorization, so an unauthorized caller is told no more than that.
-    let request = match DeleteUserPermissionsBoundaryInternalRequest::builder()
+    let request = match AttachUserPolicyInternalRequest::builder()
         .account_id(account_id.clone())
+        .policy_arn(request.policy_arn)
         .user_name(user_name.clone())
         .build()
     {
@@ -91,7 +96,11 @@ pub(crate) async fn delete_user_permissions_boundary(
         Err(response) => return *response,
     };
 
-    let request_context = resource_tag_context(&resource_tags);
+    // The policy being attached and the user receiving it are distinct facts, exposed through
+    // distinct condition keys, so both are supplied: a policy can be conditioned on what is being
+    // attached, on who is receiving it, or on both at once.
+    let mut request_context = policy_arn_context(&request.policy_arn);
+    request_context.extend(&resource_tag_context(&resource_tags));
 
     if let Err(response) = check_authorization(
         &mut tx,
@@ -100,7 +109,7 @@ pub(crate) async fn delete_user_permissions_boundary(
         &session_data,
         &session_policies,
         &request_metadata,
-        Action::DeleteUserPermissionsBoundary,
+        Action::AttachUserPolicy,
         &[resource_arn],
         &request_context,
     )
@@ -110,10 +119,10 @@ pub(crate) async fn delete_user_permissions_boundary(
         return *response;
     }
 
-    // The update reports a user that does not exist as `NoSuchEntity` itself, so that case needs
-    // no separate handling here.
+    // The attachment reports a user or a policy that does not exist as `NoSuchEntity` itself, so
+    // neither missing case needs separate handling here.
     let response = match request.execute(&mut tx, request_id).await {
-        Ok(()) => DeleteUserPermissionsBoundaryResponseEnvelope::builder().request_id(request_id).build().respond(),
+        Ok(()) => AttachUserPolicyResponseEnvelope::builder().request_id(request_id).build().respond(),
         // Dropping the transaction rolls back a partial write.
         Err(e) => return e.respond(),
     };

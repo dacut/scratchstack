@@ -1,7 +1,7 @@
 use {
     crate::{
         constants::*,
-        operations::{
+        user::{
             attach_user_policy, create_access_key, create_user, delete_access_key, delete_user,
             delete_user_permissions_boundary, delete_user_policy, detach_user_policy, get_user, get_user_policy,
             list_access_keys, list_attached_user_policies, list_user_policies, list_user_tags, list_users,

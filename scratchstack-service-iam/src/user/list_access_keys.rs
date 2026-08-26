@@ -2,8 +2,8 @@ use {
     crate::{
         authz::{check_authorization, resource_tag_context},
         constants::*,
-        operations::user_resource,
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
+        user::{resolve_user_name, user_resource},
     },
     scratchstack_aws_principal::{Principal, SessionData, SessionValue},
     scratchstack_aws_signature::SessionPolicies,
@@ -16,28 +16,29 @@ use {
     scratchstack_iam_database::RequestExecutor as _,
     scratchstack_shapes_iam::{
         action::Action,
-        operation::{ListUserPoliciesInternalRequest, ListUserPoliciesRequest, ListUserPoliciesResponseEnvelope},
+        operation::{ListAccessKeysInternalRequest, ListAccessKeysRequest, ListAccessKeysResponseEnvelope},
     },
 };
 
-/// Handle a `ListUserPolicies` request.
+/// Handle a `ListAccessKeys` request.
 ///
 /// The caller has already been authenticated by the SigV4 layer. The caller's identity-based
 /// policies (including group-inherited policies and any permissions boundary), intersected with
-/// any session policies, must allow `iam:ListUserPolicies` on the user whose policies are being
-/// listed; the account root user is implicitly allowed.
+/// any session policies, must allow `iam:ListAccessKeys` on the user whose keys are being listed;
+/// the account root user is implicitly allowed.
 ///
-/// An inline policy is not a resource of its own -- it is part of the user carrying it -- so the
-/// action is authorized against the user's ARN, as [`crate::operations::get_user_policy`] is. A
-/// caller allowed to list one user's inline policies learns the names of all of them, which is
-/// all this reports: the documents themselves are read with `GetUserPolicy`, which is granted
-/// separately.
+/// An access key is not a resource of its own -- it is a credential belonging to the user
+/// carrying it -- so the action is authorized against the user's ARN, as
+/// [`crate::operations::delete_access_key`] is. A caller allowed to list one of a user's access
+/// keys learns the id and state of all of them, which is all this reports: the secret access key
+/// is reported only by `CreateAccessKey`, and nothing reads it back afterwards.
 ///
-/// `UserName` is required; it does not default to the calling user.
+/// `UserName` is optional and defaults to the calling user, which is only meaningful for IAM user
+/// credentials; role sessions and root credentials must name the user explicitly.
 ///
 /// The results are paginated: `MaxItems` bounds a page and `Marker` continues from where the
 /// previous page stopped.
-pub(crate) async fn list_user_policies(
+pub(crate) async fn list_access_keys(
     svc_state: ServiceState,
     request_id: RequestId,
     principal: Principal,
@@ -52,18 +53,24 @@ pub(crate) async fn list_user_policies(
     };
     let account_id = account_id.clone();
 
-    let request: ListUserPoliciesRequest = match from_query_str(parameters) {
+    let request: ListAccessKeysRequest = match from_query_str(parameters) {
         Ok(request) => request,
         Err(e) => {
-            log::debug!("{request_id}: Could not parse ListUserPolicies parameters: {e}");
+            log::debug!("{request_id}: Could not parse ListAccessKeys parameters: {e}");
             return malformed_input(request_id);
         }
     };
-    let user_name = request.user_name;
+
+    // An omitted UserName names the calling user. Only IAM user credentials identify one; a role
+    // session or root credentials have no user to fall back to.
+    let user_name = match resolve_user_name(request_id, &principal, Action::ListAccessKeys, request.user_name) {
+        Ok(user_name) => user_name,
+        Err(response) => return *response,
+    };
 
     // Building the internal request validates the user name and the pagination arguments, so a
     // malformed request is rejected before it is authorized.
-    let request = match ListUserPoliciesInternalRequest::builder()
+    let request = match ListAccessKeysInternalRequest::builder()
         .account_id(account_id.clone())
         .set_marker(request.marker)
         .set_max_items(request.max_items)
@@ -97,7 +104,7 @@ pub(crate) async fn list_user_policies(
         &session_data,
         &session_policies,
         &request_metadata,
-        Action::ListUserPolicies,
+        Action::ListAccessKeys,
         &[resource_arn],
         &resource_tag_context(&resource_tags),
     )
@@ -111,7 +118,7 @@ pub(crate) async fn list_user_policies(
     // needs no separate handling here.
     let response = match request.execute(&mut tx, request_id).await {
         Ok(response) => {
-            ListUserPoliciesResponseEnvelope::builder().result(response).request_id(request_id).build().respond()
+            ListAccessKeysResponseEnvelope::builder().result(response).request_id(request_id).build().respond()
         }
         Err(e) => return e.respond(),
     };
