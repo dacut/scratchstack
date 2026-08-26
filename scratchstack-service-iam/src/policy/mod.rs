@@ -168,8 +168,8 @@ pub(crate) fn policy_is_visible(account_id: &str, policy_arn: &Arn) -> bool {
 /// caller in it.
 ///
 /// This is stricter than [`policy_is_visible`] by the AWS-managed policies: those are readable by
-/// every account, and modifiable by none, since one account changing a policy every account
-/// shares would change it for all of them.
+/// every account but modifiable by the AWS account itself, since one account changing a policy
+/// every account shares would change it for all of them.
 pub(crate) fn policy_is_owned(account_id: &str, policy_arn: &Arn) -> bool {
     policy_arn.account_id() == account_id
 }
