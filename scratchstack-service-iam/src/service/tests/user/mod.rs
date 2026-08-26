@@ -18,3 +18,4 @@ mod put_user_policy;
 mod tag_user;
 mod untag_user;
 mod update_access_key;
+mod update_user;

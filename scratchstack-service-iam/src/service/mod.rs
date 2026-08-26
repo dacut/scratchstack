@@ -5,7 +5,7 @@ use {
             attach_user_policy, create_access_key, create_user, delete_access_key, delete_user,
             delete_user_permissions_boundary, delete_user_policy, detach_user_policy, get_user, get_user_policy,
             list_access_keys, list_attached_user_policies, list_user_policies, list_user_tags, list_users,
-            put_user_permissions_boundary, put_user_policy, tag_user, untag_user, update_access_key,
+            put_user_permissions_boundary, put_user_policy, tag_user, untag_user, update_access_key, update_user,
         },
     },
     scratchstack_aws_principal::{Principal, SessionData},
@@ -264,6 +264,10 @@ pub(crate) async fn serve_request(
                 &parameters,
             )
             .await
+        }
+        Ok(Action::UpdateUser) => {
+            update_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
+                .await
         }
         _ => invalid_action(request_id, &action, &version),
     }

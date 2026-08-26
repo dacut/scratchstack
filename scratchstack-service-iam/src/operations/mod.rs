@@ -25,6 +25,7 @@ mod put_user_policy;
 mod tag_user;
 mod untag_user;
 mod update_access_key;
+mod update_user;
 
 pub(crate) use {
     attach_user_policy::attach_user_policy, create_access_key::create_access_key, create_user::create_user,
@@ -34,7 +35,7 @@ pub(crate) use {
     list_access_keys::list_access_keys, list_attached_user_policies::list_attached_user_policies,
     list_user_policies::list_user_policies, list_user_tags::list_user_tags, list_users::list_users,
     put_user_permissions_boundary::put_user_permissions_boundary, put_user_policy::put_user_policy, tag_user::tag_user,
-    untag_user::untag_user, update_access_key::update_access_key,
+    untag_user::untag_user, update_access_key::update_access_key, update_user::update_user,
 };
 
 use {
