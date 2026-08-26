@@ -429,6 +429,24 @@ fn update_access_key_parameters(user_name: Option<&str>, access_key_id: Option<&
     serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
 }
 
+/// Build the query parameters for an `UpdateUser` request, naming the user to update and the
+/// new name and path to give it, leaving either replacement off.
+fn update_user_parameters(user_name: Option<&str>, new_user_name: Option<&str>, new_path: Option<&str>) -> String {
+    let mut parameters = vec![("Action", "UpdateUser"), ("Version", "2010-05-08")];
+
+    if let Some(user_name) = user_name {
+        parameters.push(("UserName", user_name));
+    }
+    if let Some(new_user_name) = new_user_name {
+        parameters.push(("NewUserName", new_user_name));
+    }
+    if let Some(new_path) = new_path {
+        parameters.push(("NewPath", new_path));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
 /// Start the parameter list for a request invoking `action`, for the builders whose
 /// parameters carry indexed names and so cannot borrow them.
 ///
