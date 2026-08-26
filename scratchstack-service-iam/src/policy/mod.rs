@@ -4,12 +4,18 @@
 //! [`crate::service::serve_request`].
 
 mod create_policy;
+mod create_policy_version;
 mod delete_policy;
+mod delete_policy_version;
 mod get_policy;
+mod get_policy_version;
 mod list_policies;
+mod list_policy_versions;
 
 pub(crate) use {
-    create_policy::create_policy, delete_policy::delete_policy, get_policy::get_policy, list_policies::list_policies,
+    create_policy::create_policy, create_policy_version::create_policy_version, delete_policy::delete_policy,
+    delete_policy_version::delete_policy_version, get_policy::get_policy, get_policy_version::get_policy_version,
+    list_policies::list_policies, list_policy_versions::list_policy_versions,
 };
 
 use {
@@ -166,6 +172,34 @@ pub(crate) fn policy_is_visible(account_id: &str, policy_arn: &Arn) -> bool {
 /// shares would change it for all of them.
 pub(crate) fn policy_is_owned(account_id: &str, policy_arn: &Arn) -> bool {
     policy_arn.account_id() == account_id
+}
+
+/// Describe the managed policy an operation acts on for the authorization step: the ARN naming it
+/// as the resource, and the tags its conditions are evaluated against.
+///
+/// `reachable` says whether the policy is one this caller may act on at all, as
+/// [`policy_is_owned`] decides for an operation that modifies a policy and [`policy_is_visible`]
+/// for one that only reads it. A policy out of reach is not looked up: the caller learns nothing
+/// about it, not even whether it exists, and is authorized against the ARN it named as though the
+/// policy were absent. The operation goes on to report it as absent once the request has been
+/// authorized -- with [`no_such_policy`] -- so that the refusal cannot be told apart from the one
+/// a policy that really is not there earns.
+///
+/// Returns the ready-to-send error response if the lookup failed for any reason other than the
+/// policy not existing.
+pub(crate) async fn policy_operand(
+    tx: &mut PgTransaction<'_>,
+    request_id: RequestId,
+    account_id: &str,
+    policy_arn: &Arn,
+    reachable: bool,
+) -> Result<(Arn, Vec<Tag>), Box<Response<Body>>> {
+    if !reachable {
+        log::debug!("{request_id}: Policy {policy_arn} is out of reach for account {account_id}");
+        return Ok((policy_arn.clone(), Vec::new()));
+    }
+
+    policy_resource(tx, request_id, account_id, policy_arn).await
 }
 
 /// Look up the managed policy `policy_arn` names and describe it as the resource an operation
