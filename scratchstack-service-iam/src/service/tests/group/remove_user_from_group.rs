@@ -104,8 +104,8 @@ async fn test_remove_user_from_group_authorization() {
     assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
     assert!(body.contains("<UserName>RUG-Alice</UserName>"), "unexpected body: {body}");
 
-    // Unlike the add, this is not idempotent: removing a user that is not in the group is
-    // reported as NoSuchEntity rather than succeeding.
+    // Removing a user that is not in the group succeeds and changes nothing, so repeating a
+    // removal is a no-op rather than an error -- the same way repeating an add is.
     let (principal, session_data) = database.user_identity("SVCRUGBROADREM01", "Broad-Remover");
     let (status, body) = call(
         &svc_state,
@@ -114,10 +114,10 @@ async fn test_remove_user_from_group_authorization() {
         &remove_user_from_group_parameters(Some("Plain-Group"), Some("RUG-Alice")),
     )
     .await;
-    assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
-    assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
+    assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
 
-    // A user that exists but was never in the group is reported the same way.
+    // A user that exists but was never in the group is the same no-op, and leaves the group's
+    // actual members alone.
     let (principal, session_data) = database.user_identity("SVCRUGBROADREM01", "Broad-Remover");
     let (status, body) = call(
         &svc_state,
@@ -126,8 +126,18 @@ async fn test_remove_user_from_group_authorization() {
         &remove_user_from_group_parameters(Some("Plain-Group"), Some("RUG-Outsider")),
     )
     .await;
-    assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
-    assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
+    assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+
+    let (principal, session_data) = database.root_identity();
+    let (status, body) =
+        call(&svc_state, principal, session_data, &get_group_parameters(Some("Plain-Group"), None, None)).await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+    assert!(body.contains("<UserName>RUG-Bob</UserName>"), "unexpected body: {body}");
+    assert!(!body.contains("<UserName>RUG-Outsider</UserName>"), "unexpected body: {body}");
+
+    // A group or a user that does not exist is still NoSuchEntity, though: the membership is what
+    // may be absent, not the entities the request names. Those cases are covered below, after the
+    // grants that reach them.
 
     // The resource ARN carries the group's path, so a grant scoped to a path prefix reaches
     // groups under that path...

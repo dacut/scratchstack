@@ -3775,8 +3775,9 @@ async fn test_group_membership(database: &TempDatabase) {
     assert_eq!(groups.len(), 1, "Expected 1 group after removal");
     assert_eq!(groups[0].get("GroupName").unwrap().as_str().unwrap(), "SecondGroup");
 
-    // Removing user who is not a member should fail.
-    let err = database
+    // Removing a user who is not a member is a no-op rather than a failure, as it is on AWS: the
+    // group and the user both exist, and only the membership is absent.
+    database
         .run([
             "ssbs",
             "--port",
@@ -3792,8 +3793,7 @@ async fn test_group_membership(database: &TempDatabase) {
             "member-user",
         ])
         .await
-        .expect_err("Removing non-member from group should fail");
-    assert_eq!(err.code(), "NoSuchEntity", "Expected NoSuchEntity error, got: {err}");
+        .expect("Removing a non-member from a group should succeed");
 
     // Removing user from nonexistent group should fail.
     let err = database
