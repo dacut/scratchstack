@@ -1,6 +1,10 @@
 mod add_user_to_group;
+mod attach_group_policy;
 mod create_group;
 mod delete_group;
+mod delete_group_policy;
+mod detach_group_policy;
 mod get_group;
+mod put_group_policy;
 mod remove_user_from_group;
 mod update_group;

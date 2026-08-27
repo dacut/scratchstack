@@ -1,0 +1,133 @@
+use {
+    crate::{
+        authz::check_authorization,
+        constants::*,
+        group::group_resource,
+        service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
+    },
+    scratchstack_aws_principal::{Principal, SessionData, SessionValue},
+    scratchstack_aws_signature::SessionPolicies,
+    scratchstack_core::{
+        RequestId,
+        axum::{body::Body, response::Response},
+        query::from_query_str,
+        response::Responder as _,
+    },
+    scratchstack_iam_database::RequestExecutor as _,
+    scratchstack_shapes_iam::{
+        action::Action,
+        operation::{PutGroupPolicyInternalRequest, PutGroupPolicyRequest, PutGroupPolicyResponseEnvelope},
+    },
+};
+
+/// Handle a `PutGroupPolicy` request.
+///
+/// The caller has already been authenticated by the SigV4 layer. The caller's identity-based
+/// policies (including group-inherited policies and any permissions boundary), intersected with
+/// any session policies, must allow `iam:PutGroupPolicy` on the group the policy is embedded in;
+/// the account root user is implicitly allowed.
+///
+/// An inline policy is not a resource of its own -- it is part of the group carrying it -- so the
+/// action is authorized against the group's ARN, and `PolicyName` narrows nothing. A caller
+/// allowed to write one inline policy on a group is allowed to write every one of them.
+///
+/// That makes `iam:PutGroupPolicy` the broadest of the four group policy actions to hand out.
+/// Unlike [`crate::group::attach_group_policy`] there is no `iam:PolicyARN` to confine it with,
+/// because the policy is written rather than named: a caller reaching this action on a group can
+/// grant that group's members anything at all. Confining it means confining which groups it
+/// reaches, and nothing else.
+///
+/// The policy document must parse as a policy; it is not otherwise checked, and in particular a
+/// caller is not required to hold the permissions the document grants. An existing inline policy
+/// of the same name is replaced.
+///
+/// The document is read as plain JSON, once the query string carrying it has been decoded. This
+/// is asymmetric with `GetGroupPolicy`, which reports the document percent-encoded, and follows
+/// IAM in both directions.
+pub(crate) async fn put_group_policy(
+    svc_state: ServiceState,
+    request_id: RequestId,
+    principal: Principal,
+    session_data: SessionData,
+    session_policies: SessionPolicies,
+    request_metadata: RequestMetadata,
+    parameters: &str,
+) -> Response<Body> {
+    let Some(SessionValue::String(account_id)) = session_data.get(SESSION_KEY_AWS_PRINCIPAL_ACCOUNT) else {
+        log::error!("{request_id}: Missing or non-string {SESSION_KEY_AWS_PRINCIPAL_ACCOUNT} in session data");
+        return internal_failure(request_id);
+    };
+    let account_id = account_id.clone();
+
+    let request: PutGroupPolicyRequest = match from_query_str(parameters) {
+        Ok(request) => request,
+        Err(e) => {
+            log::debug!("{request_id}: Could not parse PutGroupPolicy parameters: {e}");
+            return malformed_input(request_id);
+        }
+    };
+    let group_name = request.group_name;
+
+    // Building the internal request validates the group name, the policy name, and the shape of
+    // the policy document, so a malformed request is rejected before it is authorized. Whether
+    // the document parses as a policy is settled by the write itself, after authorization, so an
+    // unauthorized caller is told no more than that.
+    let request = match PutGroupPolicyInternalRequest::builder()
+        .account_id(account_id.clone())
+        .group_name(group_name.clone())
+        .policy_document(request.policy_document)
+        .policy_name(request.policy_name)
+        .build()
+    {
+        Ok(request) => request,
+        Err(mut e) => {
+            e.request_id = Some(request_id.to_string());
+            return e.respond();
+        }
+    };
+
+    let mut tx = match svc_state.db.begin().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            log::error!("{request_id}: Could not begin database transaction: {e}");
+            return internal_failure(request_id);
+        }
+    };
+
+    let resource_arn = match group_resource(&mut tx, request_id, &account_id, &group_name).await {
+        Ok(arn) => arn,
+        Err(response) => return *response,
+    };
+
+    if let Err(response) = check_authorization(
+        &mut tx,
+        request_id,
+        &principal,
+        &session_data,
+        &session_policies,
+        &request_metadata,
+        Action::PutGroupPolicy,
+        &[resource_arn],
+        &SessionData::new(),
+    )
+    .await
+    {
+        // Dropping the transaction rolls it back.
+        return *response;
+    }
+
+    // The write reports a group that does not exist as `NoSuchEntity` itself, and a document that
+    // does not parse as `MalformedPolicyDocument`, so neither case needs separate handling here.
+    let response = match request.execute(&mut tx, request_id).await {
+        Ok(()) => PutGroupPolicyResponseEnvelope::builder().request_id(request_id).build().respond(),
+        // Dropping the transaction rolls back a partial write.
+        Err(e) => return e.respond(),
+    };
+
+    if let Err(e) = tx.commit().await {
+        log::error!("{request_id}: Could not commit database transaction: {e}");
+        return internal_failure(request_id);
+    }
+
+    response
+}

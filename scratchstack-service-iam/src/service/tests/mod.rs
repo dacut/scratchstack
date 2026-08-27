@@ -194,6 +194,80 @@ fn create_group_parameters(group_name: Option<&str>, path: Option<&str>) -> Stri
     serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
 }
 
+/// Build the query parameters for an `AttachGroupPolicy` request, naming a group and a managed
+/// policy or leaving either off.
+fn attach_group_policy_parameters(group_name: Option<&str>, policy_arn: Option<&str>) -> String {
+    group_policy_attachment_parameters("AttachGroupPolicy", group_name, policy_arn)
+}
+
+/// Build the query parameters for a `DetachGroupPolicy` request, naming a group and a managed
+/// policy or leaving either off.
+fn detach_group_policy_parameters(group_name: Option<&str>, policy_arn: Option<&str>) -> String {
+    group_policy_attachment_parameters("DetachGroupPolicy", group_name, policy_arn)
+}
+
+/// Build the query parameters for a request naming a group and the managed policy attached to or
+/// detached from it, leaving either off when the caller does not supply one so that a request
+/// missing a required one can be exercised.
+///
+/// The parameters are form-encoded rather than interpolated: a policy ARN carries colons and
+/// slashes that the query string would otherwise be read as its own.
+fn group_policy_attachment_parameters(action: &str, group_name: Option<&str>, policy_arn: Option<&str>) -> String {
+    let mut parameters = vec![("Action", action), ("Version", "2010-05-08")];
+
+    if let Some(group_name) = group_name {
+        parameters.push(("GroupName", group_name));
+    }
+    if let Some(policy_arn) = policy_arn {
+        parameters.push(("PolicyArn", policy_arn));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `PutGroupPolicy` request naming the group, the inline policy,
+/// and the document to write, leaving any of the three off.
+fn put_group_policy_parameters(
+    group_name: Option<&str>,
+    policy_name: Option<&str>,
+    policy_document: Option<&str>,
+) -> String {
+    group_policy_parameters("PutGroupPolicy", group_name, policy_name, policy_document)
+}
+
+/// Build the query parameters for a `DeleteGroupPolicy` request naming the group and the inline
+/// policy, or leaving either off.
+fn delete_group_policy_parameters(group_name: Option<&str>, policy_name: Option<&str>) -> String {
+    group_policy_parameters("DeleteGroupPolicy", group_name, policy_name, None)
+}
+
+/// Build the query parameters for a request naming a group and one of its inline policies,
+/// leaving any part off when the caller does not supply one so that a request missing a required
+/// one can be exercised.
+///
+/// The parameters are form-encoded rather than interpolated: a policy document is JSON, which the
+/// query string would otherwise read as its own punctuation.
+fn group_policy_parameters(
+    action: &str,
+    group_name: Option<&str>,
+    policy_name: Option<&str>,
+    policy_document: Option<&str>,
+) -> String {
+    let mut parameters = vec![("Action", action), ("Version", "2010-05-08")];
+
+    if let Some(group_name) = group_name {
+        parameters.push(("GroupName", group_name));
+    }
+    if let Some(policy_name) = policy_name {
+        parameters.push(("PolicyName", policy_name));
+    }
+    if let Some(policy_document) = policy_document {
+        parameters.push(("PolicyDocument", policy_document));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
 /// Build the query parameters for an `AddUserToGroup` request naming the group and the user, or
 /// leaving either off.
 fn add_user_to_group_parameters(group_name: Option<&str>, user_name: Option<&str>) -> String {
@@ -1456,6 +1530,52 @@ impl TestDatabase {
     /// `user/Broad-Reader`, and so on.
     fn arn(&self, resource: &str) -> String {
         format!("arn:aws:iam::{}:{resource}", self.account_id)
+    }
+
+    /// The names of the managed policies attached to the group `group_name`, ordered by name.
+    ///
+    /// The IAM API for this is `ListAttachedGroupPolicies`, which has no service handler yet, so
+    /// a test that needs to see what an attach or a detach actually did reads it from the
+    /// database directly. The group name is matched case-insensitively, as the operations do.
+    async fn group_attached_policy_names(&self, group_name: &str) -> Vec<String> {
+        query(
+            "SELECT p.managed_policy_name_cased \
+             FROM iam.group_attached_policies AS a \
+             JOIN iam.groups AS g ON g.group_id = a.group_id \
+             JOIN iam.managed_policies AS p ON p.managed_policy_id = a.managed_policy_id \
+             WHERE g.account_id = $1 AND g.group_name_lower = $2 \
+             ORDER BY p.managed_policy_name_lower ASC",
+        )
+        .bind(&self.account_id)
+        .bind(group_name.to_ascii_lowercase())
+        .fetch_all(&*self.svc_state.db)
+        .await
+        .expect("failed to read group attached policies")
+        .iter()
+        .map(|row| row.get(0))
+        .collect()
+    }
+
+    /// Read the document stored under the inline policy `policy_name` on the group `group_name`,
+    /// or `None` if the group carries no policy by that name.
+    ///
+    /// The IAM API for reading an inline group policy is `GetGroupPolicy`, which has no service
+    /// handler yet, so a test that needs to see what a write actually stored reads it from the
+    /// database directly. Both names are matched case-insensitively, as the operations do.
+    async fn group_inline_policy_document(&self, group_name: &str, policy_name: &str) -> Option<String> {
+        query(
+            "SELECT policy_document \
+             FROM iam.group_inline_policies AS p \
+             JOIN iam.groups AS g ON g.group_id = p.group_id \
+             WHERE g.account_id = $1 AND g.group_name_lower = $2 AND p.policy_name_lower = $3",
+        )
+        .bind(&self.account_id)
+        .bind(group_name.to_ascii_lowercase())
+        .bind(policy_name.to_ascii_lowercase())
+        .fetch_optional(&*self.svc_state.db)
+        .await
+        .expect("failed to read group inline policy")
+        .map(|row| row.get(0))
     }
 
     /// Read the document stored under the inline policy `policy_name` on the role `role_name`,
