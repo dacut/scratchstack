@@ -194,6 +194,66 @@ fn create_group_parameters(group_name: Option<&str>, path: Option<&str>) -> Stri
     serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
 }
 
+/// Build the query parameters for a `ListAttachedGroupPolicies` request, naming a group or
+/// leaving `GroupName` off, filtering by the path of the policies reported, and carrying the
+/// pagination arguments the caller supplies.
+fn list_attached_group_policies_parameters(
+    group_name: Option<&str>,
+    path_prefix: Option<&str>,
+    max_items: Option<i32>,
+    marker: Option<&str>,
+) -> String {
+    group_list_parameters("ListAttachedGroupPolicies", group_name, path_prefix, max_items, marker)
+}
+
+/// Build the query parameters for a `ListGroupPolicies` request, naming a group or leaving
+/// `GroupName` off, and carrying the pagination arguments the caller supplies.
+fn list_group_policies_parameters(group_name: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
+    group_list_parameters("ListGroupPolicies", group_name, None, max_items, marker)
+}
+
+/// Build the query parameters for a `ListGroups` request, filtering by the path of the groups
+/// reported and carrying the pagination arguments the caller supplies.
+fn list_groups_parameters(path_prefix: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
+    group_list_parameters("ListGroups", None, path_prefix, max_items, marker)
+}
+
+/// Build the query parameters for a `ListGroupsForUser` request, naming the user whose
+/// memberships are listed or leaving `UserName` off, and carrying the pagination arguments the
+/// caller supplies.
+fn list_groups_for_user_parameters(user_name: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
+    list_parameters("ListGroupsForUser", user_name, None, max_items, marker)
+}
+
+/// Build the query parameters for a paginated listing that names a group, leaving off the
+/// parameters the caller does not supply so that a request missing a required one can be
+/// exercised. A listing that takes no group name or no path prefix passes `None`.
+fn group_list_parameters(
+    action: &str,
+    group_name: Option<&str>,
+    path_prefix: Option<&str>,
+    max_items: Option<i32>,
+    marker: Option<&str>,
+) -> String {
+    let max_items = max_items.map(|max_items| max_items.to_string());
+    let mut parameters = vec![("Action", action), ("Version", "2010-05-08")];
+
+    if let Some(group_name) = group_name {
+        parameters.push(("GroupName", group_name));
+    }
+    if let Some(path_prefix) = path_prefix {
+        parameters.push(("PathPrefix", path_prefix));
+    }
+    if let Some(max_items) = max_items.as_deref() {
+        parameters.push(("MaxItems", max_items));
+    }
+    if let Some(marker) = marker {
+        parameters.push(("Marker", marker));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
 /// Build the query parameters for an `AttachGroupPolicy` request, naming a group and a managed
 /// policy or leaving either off.
 fn attach_group_policy_parameters(group_name: Option<&str>, policy_arn: Option<&str>) -> String {

@@ -10,6 +10,10 @@ mod delete_group;
 mod delete_group_policy;
 mod detach_group_policy;
 mod get_group;
+mod list_attached_group_policies;
+mod list_group_policies;
+mod list_groups;
+mod list_groups_for_user;
 mod put_group_policy;
 mod remove_user_from_group;
 mod update_group;
@@ -17,8 +21,9 @@ mod update_group;
 pub(crate) use {
     add_user_to_group::add_user_to_group, attach_group_policy::attach_group_policy, create_group::create_group,
     delete_group::delete_group, delete_group_policy::delete_group_policy, detach_group_policy::detach_group_policy,
-    get_group::get_group, put_group_policy::put_group_policy, remove_user_from_group::remove_user_from_group,
-    update_group::update_group,
+    get_group::get_group, list_attached_group_policies::list_attached_group_policies,
+    list_group_policies::list_group_policies, list_groups::list_groups, list_groups_for_user::list_groups_for_user,
+    put_group_policy::put_group_policy, remove_user_from_group::remove_user_from_group, update_group::update_group,
 };
 
 use {
