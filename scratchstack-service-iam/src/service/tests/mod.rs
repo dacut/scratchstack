@@ -516,8 +516,8 @@ fn delete_role_parameters(role_name: Option<&str>) -> String {
 /// Build the query parameters for a `PutRolePermissionsBoundary` request, naming a role and the
 /// managed policy to impose as its boundary, or leaving either off.
 ///
-/// The parameters are form-encoded rather than interpolated: a policy ARN carries colons and
-/// slashes that the query string would otherwise be read as its own.
+/// Values are URL/form-encoded (via `serde_urlencoded`) so special characters in inputs (e.g. `&`, `=`, `+`) are
+/// safely escaped when building the request parameters.
 fn put_role_permissions_boundary_parameters(role_name: Option<&str>, permissions_boundary: Option<&str>) -> String {
     let mut parameters = vec![("Action", "PutRolePermissionsBoundary"), ("Version", "2010-05-08")];
 
