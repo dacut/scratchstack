@@ -513,6 +513,30 @@ fn delete_role_parameters(role_name: Option<&str>) -> String {
     role_name_parameters("DeleteRole", role_name)
 }
 
+/// Build the query parameters for a `PutRolePermissionsBoundary` request, naming a role and the
+/// managed policy to impose as its boundary, or leaving either off.
+///
+/// The parameters are form-encoded rather than interpolated: a policy ARN carries colons and
+/// slashes that the query string would otherwise be read as its own.
+fn put_role_permissions_boundary_parameters(role_name: Option<&str>, permissions_boundary: Option<&str>) -> String {
+    let mut parameters = vec![("Action", "PutRolePermissionsBoundary"), ("Version", "2010-05-08")];
+
+    if let Some(role_name) = role_name {
+        parameters.push(("RoleName", role_name));
+    }
+    if let Some(permissions_boundary) = permissions_boundary {
+        parameters.push(("PermissionsBoundary", permissions_boundary));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `DeleteRolePermissionsBoundary` request naming a role, or
+/// leaving `RoleName` off.
+fn delete_role_permissions_boundary_parameters(role_name: Option<&str>) -> String {
+    role_name_parameters("DeleteRolePermissionsBoundary", role_name)
+}
+
 /// Build the query parameters for a request whose only argument is the name of the role it acts
 /// on, leaving `RoleName` off when the caller does not supply one so that a request missing it
 /// can be exercised.

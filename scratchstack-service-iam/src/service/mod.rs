@@ -7,9 +7,9 @@ use {
             set_default_policy_version, tag_policy, untag_policy,
         },
         role::{
-            attach_role_policy, create_role, delete_role, delete_role_policy, detach_role_policy, get_role,
-            list_attached_role_policies, list_role_policies, list_roles, put_role_policy, tag_role, untag_role,
-            update_role, update_role_description,
+            attach_role_policy, create_role, delete_role, delete_role_permissions_boundary, delete_role_policy,
+            detach_role_policy, get_role, list_attached_role_policies, list_role_policies, list_roles,
+            put_role_permissions_boundary, put_role_policy, tag_role, untag_role, update_role, update_role_description,
         },
         user::{
             attach_user_policy, create_access_key, create_user, delete_access_key, delete_user,
@@ -190,6 +190,18 @@ pub(crate) async fn serve_request(
         Ok(Action::DeleteRole) => {
             delete_role(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
                 .await
+        }
+        Ok(Action::DeleteRolePermissionsBoundary) => {
+            delete_role_permissions_boundary(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
         }
         Ok(Action::DeleteRolePolicy) => {
             delete_role_policy(
@@ -418,6 +430,18 @@ pub(crate) async fn serve_request(
         Ok(Action::ListUsers) => {
             list_users(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
                 .await
+        }
+        Ok(Action::PutRolePermissionsBoundary) => {
+            put_role_permissions_boundary(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
         }
         Ok(Action::PutRolePolicy) => {
             put_role_policy(
