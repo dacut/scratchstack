@@ -36,8 +36,10 @@ use {
 /// over-privilege it.
 ///
 /// `GroupName` and `UserName` are both required, and both name entities in the caller's own
-/// account. Unlike the add, this is not idempotent: removing a user that is not in the group is
-/// reported as `NoSuchEntity` rather than succeeding.
+/// account. Both must exist, and a missing one is reported as `NoSuchEntity`; the membership
+/// itself need not, so removing a user that is not in the group succeeds and changes nothing, as
+/// it does on AWS. That makes the operation idempotent in the same way the add is, and lets a
+/// caller reconcile a group's membership without reading it first.
 pub(crate) async fn remove_user_from_group(
     svc_state: ServiceState,
     request_id: RequestId,
@@ -109,8 +111,9 @@ pub(crate) async fn remove_user_from_group(
         return *response;
     }
 
-    // The delete reports a group or a user that does not exist -- and a user that is not in the
-    // group -- as `NoSuchEntity` itself, so none of those cases needs separate handling here.
+    // The delete reports a group or a user that does not exist as `NoSuchEntity` itself, so
+    // neither missing case needs separate handling here. A user that is simply not in the group
+    // is not one of those cases: that is a no-op, and succeeds.
     let response = match request.execute(&mut tx, request_id).await {
         Ok(()) => RemoveUserFromGroupResponseEnvelope::builder().request_id(request_id).build().respond(),
         // Dropping the transaction rolls back a partial delete.

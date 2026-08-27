@@ -23,6 +23,10 @@ impl RequestExecutor for RemoveUserFromGroupInternalRequest {
 }
 
 /// Remove a user from a group in the database.
+///
+/// The group and the user must both exist, and a missing one is reported as
+/// `NoSuchEntityException`. The membership itself need not: removing a user that is not in the
+/// group succeeds and changes nothing, as it does on AWS.
 pub async fn remove_user_from_group(
     tx: &mut PgTransaction<'_>,
     account_id: &str,
@@ -88,8 +92,10 @@ pub async fn remove_user_from_group(
         }
     };
 
-    // Delete the membership.
-    let result = match query(indoc! {"
+    // Delete the membership. A user that is not in the group deletes no row, which is not an
+    // error: AWS treats removing a non-member as a no-op, so a caller reconciling a group's
+    // membership need not know which users are in it first.
+    if let Err(e) = query(indoc! {"
             DELETE FROM iam.group_memberships
             WHERE group_id = $1 AND user_id = $2
         "})
@@ -98,20 +104,9 @@ pub async fn remove_user_from_group(
     .execute(tx.as_mut())
     .await
     {
-        Ok(result) => result,
-        Err(e) => {
-            log::error!("Failed to remove user from group in database: {e}");
-            return Err(internal_failure(request_id).into());
-        }
-    };
-
-    if result.rows_affected() == 0 {
-        Err(NoSuchEntityException::builder()
-            .message(format!("The user with name {user_name} is not in the group {group_name}."))
-            .request_id(request_id)
-            .build()
-            .into())
-    } else {
-        Ok(())
+        log::error!("Failed to remove user from group in database: {e}");
+        return Err(internal_failure(request_id).into());
     }
+
+    Ok(())
 }

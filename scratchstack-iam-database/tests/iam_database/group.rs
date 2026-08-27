@@ -694,7 +694,8 @@ pub async fn test_remove_user_from_group(pool: &sqlx::PgPool) {
     assert_eq!(resp.groups.len(), 0, "Expected 0 groups for alice after removal");
 }
 
-/// Removing a user who is not a member of a group must fail.
+/// Removing a user who is not a member of a group is a no-op rather than a failure, as it is on
+/// AWS: the group and the user both exist, and only the membership is absent.
 pub async fn test_remove_user_from_group_not_member(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = RemoveUserFromGroupInternalRequest::builder()
@@ -706,7 +707,7 @@ pub async fn test_remove_user_from_group_not_member(pool: &sqlx::PgPool) {
         .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
-    assert!(result.is_err(), "Removing user who is not a group member must fail");
+    result.expect("Removing a user who is not a group member must succeed");
 }
 
 /// Removing a user from a nonexistent group must fail.
