@@ -73,6 +73,9 @@ pub(crate) const MSG_INTERNAL_FAILURE: &str = "Internal failure";
 /// Error message: `"The security token included in the request is invalid"`
 pub(crate) const MSG_SECURITY_TOKEN_INVALID: &str = "The security token included in the request is invalid";
 
+/// Operation name for GetGroup, which pages through the group's members.
+pub(crate) const OP_GET_GROUP: &str = "GetGroup";
+
 /// Operation name for ListAccessKeys
 pub(crate) const OP_LIST_ACCESS_KEYS: &str = "ListAccessKeys";
 

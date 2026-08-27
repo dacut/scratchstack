@@ -6,10 +6,11 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
-            AddUserToGroupInternalRequest, CreateGroupInternalRequest, DeleteGroupInternalRequest,
-            DeleteGroupPolicyInternalRequest, GetGroupInternalRequest, GetGroupPolicyInternalRequest,
-            ListGroupPoliciesInternalRequest, ListGroupsForUserInternalRequest, ListGroupsInternalRequest,
-            PutGroupPolicyInternalRequest, RemoveUserFromGroupInternalRequest, UpdateGroupInternalRequest,
+            AddUserToGroupInternalRequest, CreateGroupInternalRequest, CreateUserInternalRequest,
+            DeleteGroupInternalRequest, DeleteGroupPolicyInternalRequest, GetGroupInternalRequest,
+            GetGroupPolicyInternalRequest, ListGroupPoliciesInternalRequest, ListGroupsForUserInternalRequest,
+            ListGroupsInternalRequest, PutGroupPolicyInternalRequest, RemoveUserFromGroupInternalRequest,
+            UpdateGroupInternalRequest,
         },
     },
 };
@@ -171,6 +172,151 @@ pub async fn test_get_group_nonexistent(pool: &sqlx::PgPool) {
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Getting a nonexistent group must fail");
+}
+
+/// GetGroup reports the users belonging to the group, not just the group itself. The seeded
+/// group carries exactly one member, so what comes back is that member described the way every
+/// other listing describes a user -- ARN, id, path, and the permissions boundary set on it.
+pub async fn test_get_group_members(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetGroupInternalRequest::builder()
+        .group_name("Example-Group-1")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build GetGroupInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to get group");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.group.group_name, "Example-Group-1");
+    assert_eq!(resp.users.len(), 1, "Expected exactly one member, got {:?}", resp.users);
+
+    let member = &resp.users[0];
+    assert_eq!(member.user_name, "Example-User-1");
+    assert_eq!(member.path, "/");
+    assert!(member.user_id.starts_with("AIDA"), "Member id must start with AIDA prefix, got {}", member.user_id);
+    assert!(
+        member.arn.ends_with(":user/Example-User-1"),
+        "Member ARN must end with :user/Example-User-1, got {}",
+        member.arn
+    );
+
+    // The seeded member carries a permissions boundary, which the membership query reports
+    // through the same LEFT JOIN ListUsers uses rather than through a lookup per member.
+    let boundary = member.permissions_boundary.as_ref().expect("Member should report its permissions boundary");
+    assert!(
+        boundary.permissions_boundary_arn.as_deref().is_some_and(|arn| arn.contains(":policy/")),
+        "Boundary must name a managed policy, got {:?}",
+        boundary.permissions_boundary_arn
+    );
+
+    // A single page holding every member is not truncated and reports no marker to continue from.
+    assert!(resp.is_truncated.is_none_or(|truncated| !truncated), "Full page must not be truncated");
+    assert!(resp.marker.is_none(), "Full page must report no marker");
+}
+
+/// A group nobody belongs to reports an empty membership list rather than failing. The group is
+/// created inside the transaction and rolled back, so this holds however the tests before it left
+/// the shared database.
+pub async fn test_get_group_no_members(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateGroupInternalRequest::builder()
+        .group_name("Get-Group-Empty")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build CreateGroupInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to create group");
+
+    let resp = GetGroupInternalRequest::builder()
+        .group_name("Get-Group-Empty")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build GetGroupInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to get group");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(resp.group.group_name, "Get-Group-Empty");
+    assert!(resp.users.is_empty(), "Expected no members, got {:?}", resp.users);
+    assert!(resp.marker.is_none(), "Empty page must report no marker");
+}
+
+/// The membership listing is paginated: MaxItems bounds a page and the marker it reports
+/// continues from where that page stopped. Members are ordered by name, so the pages divide at a
+/// known point. The whole fixture is built inside the transaction and rolled back.
+pub async fn test_get_group_members_pagination(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateGroupInternalRequest::builder()
+        .group_name("Get-Group-Paged")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build CreateGroupInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to create group");
+
+    for user_name in ["gg-page-alice", "gg-page-bob", "gg-page-carol"] {
+        CreateUserInternalRequest::builder()
+            .user_name(user_name)
+            .account_id("123456789012")
+            .build()
+            .expect("Failed to build CreateUserInternalRequest")
+            .execute(&mut tx, RequestId::new())
+            .await
+            .expect("Failed to create user");
+
+        AddUserToGroupInternalRequest::builder()
+            .group_name("Get-Group-Paged")
+            .user_name(user_name)
+            .account_id("123456789012")
+            .build()
+            .expect("Failed to build AddUserToGroupInternalRequest")
+            .execute(&mut tx, RequestId::new())
+            .await
+            .expect("Failed to add user to group");
+    }
+
+    let first = GetGroupInternalRequest::builder()
+        .group_name("Get-Group-Paged")
+        .account_id("123456789012")
+        .max_items(2)
+        .build()
+        .expect("Failed to build GetGroupInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to get group");
+
+    assert_eq!(first.users.len(), 2, "Expected a page of two, got {:?}", first.users);
+    assert_eq!(first.users[0].user_name, "gg-page-alice");
+    assert_eq!(first.users[1].user_name, "gg-page-bob");
+    assert_eq!(first.is_truncated, Some(true), "A bounded page with more to come must be truncated");
+    let marker = first.marker.clone().expect("Truncated page must report a marker");
+
+    // The group itself is reported in full on every page: it is the group being read rather than
+    // an element of the listing.
+    assert_eq!(first.group.group_name, "Get-Group-Paged");
+
+    let second = GetGroupInternalRequest::builder()
+        .group_name("Get-Group-Paged")
+        .account_id("123456789012")
+        .max_items(2)
+        .marker(marker)
+        .build()
+        .expect("Failed to build GetGroupInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to get group");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert_eq!(second.users.len(), 1, "Expected the remaining member, got {:?}", second.users);
+    assert_eq!(second.users[0].user_name, "gg-page-carol");
+    assert!(second.is_truncated.is_none_or(|truncated| !truncated), "Last page must not be truncated");
+    assert!(second.marker.is_none(), "Last page must report no marker");
+    assert_eq!(second.group.group_name, "Get-Group-Paged");
 }
 
 /// List groups in an account.
