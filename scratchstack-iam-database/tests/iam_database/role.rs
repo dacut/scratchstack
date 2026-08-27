@@ -1157,6 +1157,29 @@ pub async fn test_tag_role_upsert(pool: &sqlx::PgPool) {
 }
 
 /// Tagging a nonexistent role must fail with NoSuchEntityException.
+pub async fn test_tag_role_duplicate_keys(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = TagRoleInternalRequest::builder()
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .set_tags(vec![
+            Tag::builder().key("Dept").value("Finance").build().expect("Failed to build tag"),
+            // Tag keys are compared case-insensitively, so this is the same key asking for a
+            // second value rather than a second tag.
+            Tag::builder().key("dept").value("Engineering").build().expect("Failed to build tag"),
+        ])
+        .build()
+        .expect("Failed to build TagRoleInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let Err(e) = result else {
+        panic!("Tagging with two tags sharing a key must fail");
+    };
+    assert!(e.to_string().contains("Duplicate tag keys found"), "Expected a duplicate tag key error, got: {e}");
+}
+
 pub async fn test_tag_role_nonexistent_role(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = TagRoleInternalRequest::builder()

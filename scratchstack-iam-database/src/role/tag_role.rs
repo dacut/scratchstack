@@ -6,7 +6,7 @@ use {
         constants::*,
         internal_failure,
         role::validate_role_name,
-        tag::{validate_tag_key, validate_tag_value},
+        tag::{validate_tag_key, validate_tag_keys_unique, validate_tag_value},
     },
     indoc::indoc,
     scratchstack_core::RequestId,
@@ -57,6 +57,11 @@ pub async fn tag_role(
         validate_tag_key(&tag.key, request_id)?;
         validate_tag_value(&tag.value, request_id)?;
     }
+
+    // Two tags with the same key ask for two values for one tag. The upsert below would take the
+    // last one and report success, which is not what the caller asked for, so the request is
+    // rejected as tag_user rejects it.
+    validate_tag_keys_unique(tags.iter().map(|tag| tag.key.as_str()), request_id)?;
 
     // Verify the role exists and get the role_id.
     let role_id: String = match query(indoc! {"
