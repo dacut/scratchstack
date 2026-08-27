@@ -83,12 +83,38 @@ jobs:
       env:
         RUST_LOG: debug
       run: cargo llvm-cov --tests --html --output-dir coverage-report
+    - name: Upload coverage report to AWS
+      run: aws s3 sync coverage-report/html s3://${{ secrets.COVERAGE_S3_BUCKET }}/coverage/scratchstack/${{ github.run_number }} --no-progress
+
+  doctest:
+    name: Documentation tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RUSTFLAGS: '-Ccodegen-units=1 -Cinstrument-coverage -Copt-level=0'
+      RUSTDOCFLAGS: '-Ccodegen-units=1 -Cinstrument-coverage -Copt-level=0'
+    steps:
+    - uses: actions/checkout@v6
+    - id: aws_creds
+      name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v6.0.0
+      with:
+        role-to-assume: arn:aws:iam::557925715019:role/github-scratchstack-actions
+        role-session-name: github-scratchstack-actions
+        aws-region: ${{ env.AWS_REGION }}
+    - name: Install Rust nightly
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: nightly
+        components: "llvm-tools"
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2.9.1
+      with:
+        shared-key: scratchstack-ci-${{ github.head_ref || github.ref_name }}
     - name: Run doctests
       env:
         RUST_LOG: debug
       run: cargo test --workspace --doc
-    - name: Upload coverage report to AWS
-      run: aws s3 sync coverage-report/html s3://${{ secrets.COVERAGE_S3_BUCKET }}/coverage/scratchstack/${{ github.run_number }} --no-progress
 
   doc:
     name: Documentation
