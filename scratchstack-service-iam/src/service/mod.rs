@@ -8,7 +8,8 @@ use {
         },
         role::{
             attach_role_policy, create_role, delete_role, delete_role_policy, detach_role_policy, get_role,
-            list_attached_role_policies, list_role_policies, list_roles, put_role_policy, update_role,
+            list_attached_role_policies, list_role_policies, list_roles, put_role_policy, tag_role, untag_role,
+            update_role, update_role_description,
         },
         user::{
             attach_user_policy, create_access_key, create_user, delete_access_key, delete_user,
@@ -470,6 +471,10 @@ pub(crate) async fn serve_request(
             tag_policy(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
                 .await
         }
+        Ok(Action::TagRole) => {
+            tag_role(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
+                .await
+        }
         Ok(Action::TagUser) => {
             tag_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
                 .await
@@ -485,6 +490,10 @@ pub(crate) async fn serve_request(
                 &parameters,
             )
             .await
+        }
+        Ok(Action::UntagRole) => {
+            untag_role(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
+                .await
         }
         Ok(Action::UntagUser) => {
             untag_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
@@ -505,6 +514,18 @@ pub(crate) async fn serve_request(
         Ok(Action::UpdateRole) => {
             update_role(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
                 .await
+        }
+        Ok(Action::UpdateRoleDescription) => {
+            update_role_description(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
         }
         Ok(Action::UpdateUser) => {
             update_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)

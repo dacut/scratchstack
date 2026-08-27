@@ -8,4 +8,7 @@ mod list_attached_role_policies;
 mod list_role_policies;
 mod list_roles;
 mod put_role_policy;
+mod tag_role;
+mod untag_role;
 mod update_role;
+mod update_role_description;
