@@ -3,7 +3,7 @@ use {
     crate::{
         RequestExecutor, internal_failure,
         policy::{lookup_managed_policy_id, parse_policy_arn},
-        tag::{validate_tag_key, validate_tag_value},
+        tag::{validate_tag_key, validate_tag_keys_unique, validate_tag_value},
     },
     indoc::indoc,
     scratchstack_core::RequestId,
@@ -68,6 +68,12 @@ pub async fn tag_policy(
         validate_tag_key(&tag.key, request_id)?;
         validate_tag_value(&tag.value, request_id)?;
     }
+
+    // Two tags with the same key ask for two values for one tag. The upsert below would take the
+    // last one and report success, which is not what the caller asked for, so the request is
+    // rejected as tag_user and tag_role reject it. Keys are compared case-insensitively, which is
+    // how this implementation stores them; see the note on tag key case sensitivity above.
+    validate_tag_keys_unique(tags.iter().map(|tag| tag.key.as_str()), request_id)?;
 
     let parts = parse_policy_arn(policy_arn, request_id)?;
     let managed_policy_id = lookup_managed_policy_id(tx, &parts, request_id).await?;
