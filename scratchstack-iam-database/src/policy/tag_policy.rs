@@ -25,6 +25,29 @@ impl RequestExecutor for TagPolicyRequest {
 }
 
 /// Add or update tags on a managed policy by ARN.
+///
+/// # Tag key case sensitivity
+///
+/// This deliberately departs from IAM. AWS folds tag keys to lower case on users and roles only,
+/// and treats them as case sensitive everywhere else, customer managed policies included:
+/// <https://docs.aws.amazon.com/IAM/latest/UserGuide/id_tags.html#case-sensitivity>
+///
+/// Here they are folded on policies too, so `Dept` and `dept` are one tag.
+///
+/// The reason is that AWS's own combination is a trap. Condition key names *are* case insensitive
+/// -- `aws:ResourceTag/Dept` and `aws:ResourceTag/dept` are the same key -- so a policy carrying
+/// two spellings can be reached by a condition naming either, matching a value its author did not
+/// intend. AWS documents this outcome as "unexpected condition failures" and offers only a naming
+/// convention as the remedy. Folding the key removes the trap instead of documenting it: the two
+/// spellings cannot both exist, so no condition can be surprised by which one it found.
+///
+/// The cost is that a policy tagged `Dept` here cannot also be tagged `dept`, and a request
+/// asking for the second overwrites the first. That is a narrower behaviour than IAM's, not a
+/// wider one, so a caller written against IAM cannot do anything here that IAM would refuse.
+///
+/// Change this only with the condition-key half in view: making keys case sensitive without also
+/// making `aws:ResourceTag/${TagKey}` lookups case sensitive reintroduces exactly the ambiguity
+/// above, and the lookup is case insensitive by AWS's own rule.
 pub async fn tag_policy(
     tx: &mut PgTransaction<'_>,
     policy_arn: &str,
