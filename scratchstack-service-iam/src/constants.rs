@@ -8,6 +8,9 @@
 
 pub(crate) use scratchstack_service_common::constants::*;
 
+/// The ARN resource type for IAM groups.
+pub(crate) const ARN_RESOURCE_TYPE_GROUP: &str = "group";
+
 /// The ARN resource type for IAM managed policies.
 pub(crate) const ARN_RESOURCE_TYPE_POLICY: &str = "policy";
 
