@@ -3,7 +3,8 @@ use {
         constants::*,
         group::{
             add_user_to_group, attach_group_policy, create_group, delete_group, delete_group_policy,
-            detach_group_policy, get_group, put_group_policy, remove_user_from_group, update_group,
+            detach_group_policy, get_group, list_attached_group_policies, list_group_policies, list_groups,
+            list_groups_for_user, put_group_policy, remove_user_from_group, update_group,
         },
         policy::{
             create_policy, create_policy_version, delete_policy, delete_policy_version, get_policy, get_policy_version,
@@ -395,6 +396,18 @@ pub(crate) async fn serve_request(
             )
             .await
         }
+        Ok(Action::ListAttachedGroupPolicies) => {
+            list_attached_group_policies(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
         Ok(Action::ListAttachedRolePolicies) => {
             list_attached_role_policies(
                 svc_state,
@@ -421,6 +434,34 @@ pub(crate) async fn serve_request(
         }
         Ok(Action::ListEntitiesForPolicy) => {
             list_entities_for_policy(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
+        Ok(Action::ListGroupPolicies) => {
+            list_group_policies(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
+        Ok(Action::ListGroups) => {
+            list_groups(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
+                .await
+        }
+        Ok(Action::ListGroupsForUser) => {
+            list_groups_for_user(
                 svc_state,
                 request_id,
                 principal,
