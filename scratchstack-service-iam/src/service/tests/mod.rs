@@ -28,6 +28,7 @@ use {
     tokio::sync::Mutex,
 };
 
+mod group;
 mod policy;
 mod role;
 mod user;
@@ -176,6 +177,78 @@ const AUTHZ_TEST_DATA: &str = r#"
     INSERT INTO iam.managed_policy_versions(managed_policy_id, managed_policy_version, policy_document) VALUES
     ('SVCTESTSESSPOL01', 1, '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:*","Resource":"*"}]}');
 "#;
+
+/// Build the query parameters for a `CreateGroup` request naming `group_name`, optionally under
+/// a path, and leaving `GroupName` off when the caller does not supply one so that a request
+/// missing it can be exercised.
+fn create_group_parameters(group_name: Option<&str>, path: Option<&str>) -> String {
+    let mut parameters = vec![("Action", "CreateGroup"), ("Version", "2010-05-08")];
+
+    if let Some(group_name) = group_name {
+        parameters.push(("GroupName", group_name));
+    }
+    if let Some(path) = path {
+        parameters.push(("Path", path));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `DeleteGroup` request naming a group, or leaving `GroupName`
+/// off.
+fn delete_group_parameters(group_name: Option<&str>) -> String {
+    group_name_parameters("DeleteGroup", group_name)
+}
+
+/// Build the query parameters for a `GetGroup` request naming the group to read or leaving
+/// `GroupName` off, and carrying the pagination arguments that bound the membership listing.
+fn get_group_parameters(group_name: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
+    let max_items = max_items.map(|max_items| max_items.to_string());
+    let mut parameters = vec![("Action", "GetGroup"), ("Version", "2010-05-08")];
+
+    if let Some(group_name) = group_name {
+        parameters.push(("GroupName", group_name));
+    }
+    if let Some(max_items) = max_items.as_deref() {
+        parameters.push(("MaxItems", max_items));
+    }
+    if let Some(marker) = marker {
+        parameters.push(("Marker", marker));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for an `UpdateGroup` request naming the group to rename or move and
+/// the name and path to give it, leaving any of the three off.
+fn update_group_parameters(group_name: Option<&str>, new_group_name: Option<&str>, new_path: Option<&str>) -> String {
+    let mut parameters = vec![("Action", "UpdateGroup"), ("Version", "2010-05-08")];
+
+    if let Some(group_name) = group_name {
+        parameters.push(("GroupName", group_name));
+    }
+    if let Some(new_group_name) = new_group_name {
+        parameters.push(("NewGroupName", new_group_name));
+    }
+    if let Some(new_path) = new_path {
+        parameters.push(("NewPath", new_path));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a request whose only argument is the name of the group it acts
+/// on, leaving `GroupName` off when the caller does not supply one so that a request missing it
+/// can be exercised.
+fn group_name_parameters(action: &str, group_name: Option<&str>) -> String {
+    let mut parameters = vec![("Action", action), ("Version", "2010-05-08")];
+
+    if let Some(group_name) = group_name {
+        parameters.push(("GroupName", group_name));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
 
 /// Build the query parameters for a `GetUser` request, naming a user or leaving `UserName`
 /// off so it defaults to the caller.

@@ -1,6 +1,7 @@
 use {
     crate::{
         constants::*,
+        group::{create_group, delete_group, get_group, update_group},
         policy::{
             create_policy, create_policy_version, delete_policy, delete_policy_version, get_policy, get_policy_version,
             list_entities_for_policy, list_policies, list_policy_tags, list_policy_versions,
@@ -119,6 +120,18 @@ pub(crate) async fn serve_request(
             )
             .await
         }
+        Ok(Action::CreateGroup) => {
+            create_group(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
         Ok(Action::CreatePolicy) => {
             create_policy(
                 svc_state,
@@ -153,6 +166,18 @@ pub(crate) async fn serve_request(
         }
         Ok(Action::DeleteAccessKey) => {
             delete_access_key(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
+        Ok(Action::DeleteGroup) => {
+            delete_group(
                 svc_state,
                 request_id,
                 principal,
@@ -266,6 +291,10 @@ pub(crate) async fn serve_request(
                 &parameters,
             )
             .await
+        }
+        Ok(Action::GetGroup) => {
+            get_group(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
+                .await
         }
         Ok(Action::GetPolicy) => {
             get_policy(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
@@ -537,6 +566,18 @@ pub(crate) async fn serve_request(
         }
         Ok(Action::UpdateAccessKey) => {
             update_access_key(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
+        Ok(Action::UpdateGroup) => {
+            update_group(
                 svc_state,
                 request_id,
                 principal,
