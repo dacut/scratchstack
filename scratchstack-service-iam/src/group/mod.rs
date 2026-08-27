@@ -3,13 +3,16 @@
 //! Each operation lives in its own module and is dispatched to by
 //! [`crate::service::serve_request`].
 
+mod add_user_to_group;
 mod create_group;
 mod delete_group;
 mod get_group;
+mod remove_user_from_group;
 mod update_group;
 
 pub(crate) use {
-    create_group::create_group, delete_group::delete_group, get_group::get_group, update_group::update_group,
+    add_user_to_group::add_user_to_group, create_group::create_group, delete_group::delete_group, get_group::get_group,
+    remove_user_from_group::remove_user_from_group, update_group::update_group,
 };
 
 use {

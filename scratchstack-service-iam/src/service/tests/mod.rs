@@ -194,6 +194,33 @@ fn create_group_parameters(group_name: Option<&str>, path: Option<&str>) -> Stri
     serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
 }
 
+/// Build the query parameters for an `AddUserToGroup` request naming the group and the user, or
+/// leaving either off.
+fn add_user_to_group_parameters(group_name: Option<&str>, user_name: Option<&str>) -> String {
+    group_membership_parameters("AddUserToGroup", group_name, user_name)
+}
+
+/// Build the query parameters for a `RemoveUserFromGroup` request naming the group and the user,
+/// or leaving either off.
+fn remove_user_from_group_parameters(group_name: Option<&str>, user_name: Option<&str>) -> String {
+    group_membership_parameters("RemoveUserFromGroup", group_name, user_name)
+}
+
+/// Build the query parameters for a request naming a group and a user, leaving either off when
+/// the caller does not supply one so that a request missing a required name can be exercised.
+fn group_membership_parameters(action: &str, group_name: Option<&str>, user_name: Option<&str>) -> String {
+    let mut parameters = vec![("Action", action), ("Version", "2010-05-08")];
+
+    if let Some(group_name) = group_name {
+        parameters.push(("GroupName", group_name));
+    }
+    if let Some(user_name) = user_name {
+        parameters.push(("UserName", user_name));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
 /// Build the query parameters for a `DeleteGroup` request naming a group, or leaving `GroupName`
 /// off.
 fn delete_group_parameters(group_name: Option<&str>) -> String {

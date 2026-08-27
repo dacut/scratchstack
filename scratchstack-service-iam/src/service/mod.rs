@@ -1,7 +1,7 @@
 use {
     crate::{
         constants::*,
-        group::{create_group, delete_group, get_group, update_group},
+        group::{add_user_to_group, create_group, delete_group, get_group, remove_user_from_group, update_group},
         policy::{
             create_policy, create_policy_version, delete_policy, delete_policy_version, get_policy, get_policy_version,
             list_entities_for_policy, list_policies, list_policy_tags, list_policy_versions,
@@ -84,6 +84,18 @@ pub(crate) async fn serve_request(
     }
 
     match action.parse::<Action>() {
+        Ok(Action::AddUserToGroup) => {
+            add_user_to_group(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
         Ok(Action::AttachRolePolicy) => {
             attach_role_policy(
                 svc_state,
@@ -510,6 +522,18 @@ pub(crate) async fn serve_request(
         }
         Ok(Action::PutUserPolicy) => {
             put_user_policy(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
+        Ok(Action::RemoveUserFromGroup) => {
+            remove_user_from_group(
                 svc_state,
                 request_id,
                 principal,
