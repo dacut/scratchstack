@@ -6,12 +6,14 @@
 mod attach_role_policy;
 mod create_role;
 mod delete_role;
+mod delete_role_permissions_boundary;
 mod delete_role_policy;
 mod detach_role_policy;
 mod get_role;
 mod list_attached_role_policies;
 mod list_role_policies;
 mod list_roles;
+mod put_role_permissions_boundary;
 mod put_role_policy;
 mod tag_role;
 mod untag_role;
@@ -20,10 +22,12 @@ mod update_role_description;
 
 pub(crate) use {
     attach_role_policy::attach_role_policy, create_role::create_role, delete_role::delete_role,
-    delete_role_policy::delete_role_policy, detach_role_policy::detach_role_policy, get_role::get_role,
+    delete_role_permissions_boundary::delete_role_permissions_boundary, delete_role_policy::delete_role_policy,
+    detach_role_policy::detach_role_policy, get_role::get_role,
     list_attached_role_policies::list_attached_role_policies, list_role_policies::list_role_policies,
-    list_roles::list_roles, put_role_policy::put_role_policy, tag_role::tag_role, untag_role::untag_role,
-    update_role::update_role, update_role_description::update_role_description,
+    list_roles::list_roles, put_role_permissions_boundary::put_role_permissions_boundary,
+    put_role_policy::put_role_policy, tag_role::tag_role, untag_role::untag_role, update_role::update_role,
+    update_role_description::update_role_description,
 };
 
 use {
