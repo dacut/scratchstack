@@ -60,6 +60,50 @@ struct GetGroupMemberRow {
     pb_name_cased: Option<String>,
 }
 
+/// Look up the path and stored name of a group, without reading anything else about it.
+///
+/// [`get_group`] reports the group's members too, which means paging through
+/// `iam.group_memberships` and joining `iam.users`. A caller that only needs to name the group --
+/// to build the ARN an operation is authorized against, say -- would pay for a membership listing
+/// it then throws away, so that lookup is available on its own here.
+///
+/// The name comes back with the casing the group was created under rather than the casing the
+/// caller spelled, since that is the casing the group's ARN carries; group names themselves are
+/// matched case-insensitively.
+///
+/// Returns `Ok(None)` when no such group exists. That is not an error at this level: a caller
+/// looking a group up in order to authorize against it still has to authorize a request naming a
+/// group that does not exist, and decides for itself what to name in that case.
+pub async fn get_group_path_and_name(
+    tx: &mut PgTransaction<'_>,
+    account_id: &str,
+    group_name: &str,
+    request_id: RequestId,
+) -> Result<Option<(String, String)>, IamError> {
+    validate_account_id(account_id, request_id)?;
+    let account_id = match account_id {
+        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
+        account_id => account_id,
+    };
+    validate_group_name(group_name, request_id)?;
+
+    let row = query(indoc! {"
+            SELECT path, group_name_cased
+            FROM iam.groups
+            WHERE account_id = $1 AND group_name_lower = $2
+        "})
+    .bind(account_id)
+    .bind(group_name.to_lowercase())
+    .fetch_optional(tx.as_mut())
+    .await
+    .map_err(|e| {
+        log::error!("Failed to fetch group from database: {e}");
+        internal_failure(request_id)
+    })?;
+
+    Ok(row.map(|row| (row.get(0), row.get(1))))
+}
+
 /// Get a group and the users belonging to it from the database. Returns NoSuchEntity if the group
 /// does not exist.
 ///

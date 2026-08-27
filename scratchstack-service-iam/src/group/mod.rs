@@ -20,10 +20,8 @@ use {
         axum::{body::Body, response::Response},
         response::Responder as _,
     },
-    scratchstack_iam_database::{RequestExecutor as _, partition::get_current_partition_or_fail},
-    scratchstack_shapes_iam::{error_meta::Error as IamError, operation::GetGroupInternalRequest},
+    scratchstack_iam_database::{group::get_group_path_and_name, partition::get_current_partition_or_fail},
     sqlx::postgres::PgTransaction,
-    std::str::FromStr as _,
 };
 
 /// Build the ARN naming the IAM group `group_name` under `path` in `account_id`.
@@ -83,7 +81,8 @@ pub(crate) async fn group_arn(
 /// Authorization is still evaluated when no such group exists, so that a caller allowed the
 /// action broadly is told the group does not exist while one allowed it only on specific groups
 /// learns nothing at all. There is no group to read a path from in that case, so the root path is
-/// assumed; the operation itself then reports the missing group.
+/// assumed and the name is taken as the request spelled it; the operation itself then reports the
+/// missing group.
 ///
 /// Returns the ready-to-send error response if the lookup failed for any reason other than the
 /// group not existing.
@@ -93,27 +92,16 @@ pub(crate) async fn group_resource(
     account_id: &str,
     group_name: &str,
 ) -> Result<Arn, Box<Response<Body>>> {
-    let request =
-        match GetGroupInternalRequest::builder().account_id(account_id.to_string()).group_name(group_name).build() {
-            Ok(request) => request,
-            Err(mut e) => {
-                e.request_id = Some(request_id.to_string());
-                return Err(Box::new(e.respond()));
-            }
-        };
-
-    let group = match request.execute(tx, request_id).await {
-        Ok(response) => response.group,
-        Err(IamError::NoSuchEntityException(_)) => {
-            return group_arn(tx, request_id, account_id, "/", group_name).await;
-        }
+    // The lookup reads the group's path and stored name and nothing else. `GetGroup` would answer
+    // the same question, but it reports the group's members as well, and an operation that only
+    // needs to name the group would be paying for a membership listing it throws away.
+    let (path, group_name) = match get_group_path_and_name(tx, account_id, group_name, request_id).await {
+        Ok(Some(found)) => found,
+        Ok(None) => ("/".to_string(), group_name.to_string()),
         Err(e) => return Err(Box::new(e.respond())),
     };
 
-    Arn::from_str(&group.arn).map_err(|e| {
-        log::error!("{request_id}: Group {group_name} has an unparseable ARN {}: {e}", group.arn);
-        Box::new(internal_failure(request_id))
-    })
+    group_arn(tx, request_id, account_id, &path, &group_name).await
 }
 
 /// Split the resource half of a group's ARN into the path and the group name it spells.

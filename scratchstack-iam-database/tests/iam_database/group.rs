@@ -2,7 +2,7 @@
 use {
     pretty_assertions::assert_eq,
     scratchstack_core::RequestId,
-    scratchstack_iam_database::RequestExecutor,
+    scratchstack_iam_database::{RequestExecutor, group::get_group_path_and_name},
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
@@ -338,6 +338,44 @@ pub async fn test_get_group_members_pagination(pool: &sqlx::PgPool) {
     assert!(second.is_truncated.is_none_or(|truncated| !truncated), "Last page must not be truncated");
     assert!(second.marker.is_none(), "Last page must report no marker");
     assert_eq!(second.group.group_name, "Get-Group-Paged");
+}
+
+/// The cheap lookup behind an authorization check reports the group's path and the name with the
+/// casing it was created under, without reading the membership GetGroup pages through. Group
+/// names are matched case-insensitively, so a caller may spell the name any way it likes.
+pub async fn test_get_group_path_and_name(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let found = get_group_path_and_name(&mut tx, "123456789012", "dEvElOpErS", RequestId::new())
+        .await
+        .expect("Failed to look up group");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let (path, group_name) = found.expect("Expected the group to be found");
+    assert_eq!(path, "/engineering/");
+    assert_eq!(group_name, "Developers");
+}
+
+/// A group that does not exist is reported as absent rather than as an error: the caller looking
+/// it up to authorize against it still has to authorize the request, and decides for itself what
+/// to name in that case.
+pub async fn test_get_group_path_and_name_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let found = get_group_path_and_name(&mut tx, "123456789012", "NonexistentGroup", RequestId::new())
+        .await
+        .expect("Looking up a nonexistent group must not fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert!(found.is_none(), "Expected no group, got {found:?}");
+}
+
+/// A name that cannot name a group is rejected rather than queried.
+pub async fn test_get_group_path_and_name_invalid_name(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = get_group_path_and_name(&mut tx, "123456789012", "Not/A/Group-Name", RequestId::new()).await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let err = result.expect_err("An invalid group name must be rejected");
+    assert!(matches!(err, IamError::ValidationError(_)), "Expected ValidationError, got: {err:?}");
 }
 
 /// List groups in an account.
