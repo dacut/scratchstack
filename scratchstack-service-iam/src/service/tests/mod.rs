@@ -549,6 +549,53 @@ fn update_role_parameters(
     serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
 }
 
+/// Build the query parameters for an `UpdateRoleDescription` request naming the role to retitle
+/// and the description to give it, leaving either off.
+fn update_role_description_parameters(role_name: Option<&str>, description: Option<&str>) -> String {
+    let mut parameters = vec![("Action", "UpdateRoleDescription"), ("Version", "2010-05-08")];
+
+    if let Some(role_name) = role_name {
+        parameters.push(("RoleName", role_name));
+    }
+    if let Some(description) = description {
+        parameters.push(("Description", description));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for a `TagRole` request, naming a role or leaving `RoleName` off,
+/// and carrying the tags to apply.
+fn tag_role_parameters(role_name: Option<&str>, tags: &[(&str, &str)]) -> String {
+    let mut parameters = action_parameters("TagRole");
+
+    if let Some(role_name) = role_name {
+        parameters.push(("RoleName".to_string(), role_name.to_string()));
+    }
+
+    append_tag_parameters(&mut parameters, tags);
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
+/// Build the query parameters for an `UntagRole` request, naming a role or leaving `RoleName`
+/// off, and carrying the tag keys to remove.
+fn untag_role_parameters(role_name: Option<&str>, tag_keys: &[&str]) -> String {
+    let mut parameters = action_parameters("UntagRole");
+
+    if let Some(role_name) = role_name {
+        parameters.push(("RoleName".to_string(), role_name.to_string()));
+    }
+
+    // A list of scalars is indexed the same way a list of structures is, with no field name
+    // after the index.
+    for (index, key) in tag_keys.iter().enumerate() {
+        let index = index + 1;
+        parameters.push((format!("TagKeys.member.{index}"), key.to_string()));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
 /// Build the query parameters for a `ListRoles` request, filtering by the path of the roles
 /// reported and carrying the pagination arguments the caller supplies.
 fn list_roles_parameters(path_prefix: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
