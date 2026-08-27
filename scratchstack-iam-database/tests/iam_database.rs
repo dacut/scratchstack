@@ -394,6 +394,9 @@ async fn subtest_get_group(pool: &PgPool) {
     group::test_get_group_simple(pool).await;
     group::test_get_group_with_path(pool).await;
     group::test_get_group_nonexistent(pool).await;
+    group::test_get_group_members(pool).await;
+    group::test_get_group_no_members(pool).await;
+    group::test_get_group_members_pagination(pool).await;
 }
 
 /// ListGroupsInternalRequest
