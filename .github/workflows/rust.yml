@@ -86,8 +86,8 @@ jobs:
     - name: Upload coverage report to AWS
       run: |
         aws s3 sync coverage-report/html s3://${{ secrets.COVERAGE_S3_BUCKET }}/coverage/scratchstack/${{ github.run_number }} --no-progress
-        echo "<html><head><meta http-equiv=\"refresh\" content=\"0; url=./${{ github.run_number }}/index.html\"></head><body></body></  html>" > target/doc/redirect.html
-        aws s3 cp target/doc/redirect.html s3://${{ secrets.COVERAGE_S3_BUCKET }}/coverage/scratchstack/index.html --no-progress
+        echo "<html><head><meta http-equiv=\"refresh\" content=\"0; url=./${{ github.run_number }}/index.html\"></head><body></body></  html>" > target/redirect.html
+        aws s3 cp target/redirect.html s3://${{ secrets.COVERAGE_S3_BUCKET }}/coverage/scratchstack/index.html --no-progress
 
 
   doctest:
