@@ -385,6 +385,7 @@ async fn subtest_create_group(pool: &PgPool) {
     group::test_create_group_simple(pool).await;
     group::test_create_group_with_path(pool).await;
     group::test_create_group_duplicate_name(pool).await;
+    group::test_create_group_duplicate_name_different_case(pool).await;
     group::test_create_group_nonexistent_account(pool).await;
     group::test_create_group_max_length_name(pool).await;
 }
@@ -410,6 +411,7 @@ async fn subtest_update_group(pool: &PgPool) {
     group::test_update_group_rename(pool).await;
     group::test_update_group_change_path(pool).await;
     group::test_update_group_nonexistent(pool).await;
+    group::test_update_group_rename_to_existing(pool).await;
 }
 
 /// AddUserToGroupInternalRequest / RemoveUserFromGroupInternalRequest

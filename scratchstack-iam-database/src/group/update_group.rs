@@ -1,13 +1,19 @@
 //! UpdateGroup database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, group::validate_group_name, internal_failure,
+        RequestExecutor,
+        account::validate_account_id,
+        constants::*,
+        group::{is_group_name_unique_violation, validate_group_name},
+        internal_failure,
         path::validate_path,
     },
     indoc::indoc,
     scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
-        error_meta::Error as IamError, operation::UpdateGroupInternalRequest, types::error::NoSuchEntityException,
+        error_meta::Error as IamError,
+        operation::UpdateGroupInternalRequest,
+        types::error::{EntityAlreadyExistsException, NoSuchEntityException},
     },
     sqlx::{postgres::PgTransaction, query},
 };
@@ -74,6 +80,16 @@ pub async fn update_group(
     {
         Ok(result) => result,
         Err(e) => {
+            if is_group_name_unique_violation(&e) {
+                // The rename asked for a name another group in the account already carries. The
+                // new name is what collided, so that is the name the caller is told about.
+                let message = format!("Group with name {} already exists.", new_group_name.unwrap_or(group_name));
+                return Err(EntityAlreadyExistsException::builder()
+                    .message(message)
+                    .request_id(request_id)
+                    .build()
+                    .into());
+            }
             log::error!("Failed to update group in database: {e}");
             return Err(internal_failure(request_id).into());
         }

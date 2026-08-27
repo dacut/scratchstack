@@ -25,6 +25,26 @@ pub use {
 
 use {scratchstack_arn::validate_iam_resource_name, scratchstack_core::RequestId};
 
+/// Name of the unique constraint that enforces group-name uniqueness on
+/// `iam.groups(account_id, group_name_lower)`. Used to distinguish a name collision from the
+/// other unique violation the table can raise -- a primary-key collision on `group_id`, whose
+/// generated ids [`crate::id::IamId::new`] does not guarantee to be unique.
+pub(crate) const GROUP_NAME_UNIQUE_CONSTRAINT: &str = "uk_ig_acctid_gname";
+
+/// Returns true if `e` is a Postgres unique-violation error specifically against the unique
+/// constraint on `iam.groups(account_id, group_name_lower)`.
+///
+/// A unique violation on any other constraint of the table -- notably a `group_id` primary-key
+/// collision -- is not a name collision and must not be reported as one.
+pub(crate) fn is_group_name_unique_violation(e: &sqlx::Error) -> bool {
+    if let sqlx::Error::Database(db_err) = e {
+        db_err.code().as_deref() == Some(SQLSTATE_UNIQUE_VIOLATION)
+            && db_err.constraint() == Some(GROUP_NAME_UNIQUE_CONSTRAINT)
+    } else {
+        false
+    }
+}
+
 /// Return an ARN resource string for a group with the given path and name.
 ///
 /// The path is expected to start and end with a slash, but this function will trim extra slashes
