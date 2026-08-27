@@ -7,6 +7,7 @@ mod detach_role_policy;
 mod get_role;
 mod list_attached_role_policies;
 mod list_role_policies;
+mod list_role_tags;
 mod list_roles;
 mod put_role_permissions_boundary;
 mod put_role_policy;
