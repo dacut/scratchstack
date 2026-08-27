@@ -246,6 +246,28 @@ async fn test_tag_policy_authorization() {
     assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
     assert!(body.contains("<Code>ValidationError</Code>"), "unexpected body: {body}");
 
+    // Two tags in one request sharing a key ask for two values for one tag. The upsert would take
+    // the last and report success, so the request is refused instead -- as it is for users and
+    // roles. Keys are compared case-insensitively, so the pair below is one key twice.
+    let (principal, session_data) = database.user_identity("SVCTGPBROAD00001", "Broad-Tagger");
+    let (status, body) = call(
+        &svc_state,
+        principal,
+        session_data,
+        &tag_policy_parameters(Some(&main_policy), &[("Owner", "Platform"), ("owner", "Finance")]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "unexpected response: {body}");
+    assert!(body.contains("<Code>InvalidInput</Code>"), "unexpected body: {body}");
+
+    // The rejected request wrote neither tag.
+    let (principal, session_data) = database.user_identity("SVCTGPBROAD00001", "Broad-Tagger");
+    let (status, body) =
+        call(&svc_state, principal, session_data, &list_policy_tags_parameters(Some(&main_policy), None, None)).await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+    assert!(!body.contains("<Key>Owner</Key>"), "unexpected body: {body}");
+    assert!(!body.contains("<Key>owner</Key>"), "unexpected body: {body}");
+
     // A policy that does not exist is reported as missing.
     let (principal, session_data) = database.user_identity("SVCTGPBROAD00001", "Broad-Tagger");
     let (status, body) = call(

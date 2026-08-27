@@ -856,6 +856,30 @@ pub async fn test_tag_policy_upsert(pool: &sqlx::PgPool) {
     assert_eq!(env_value, "Staging");
 }
 
+pub async fn test_tag_policy_duplicate_keys(pool: &sqlx::PgPool) {
+    let arn = "arn:test-partition:iam::123456789012:policy/TestPolicy";
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = TagPolicyRequest::builder()
+        .policy_arn(arn.to_string())
+        .set_tags(vec![
+            Tag::builder().key("Dept").value("Finance").build().expect("Tag build failed"),
+            // This implementation folds policy tag keys the way it folds user and role keys, so
+            // this is the same key asking for a second value rather than a second tag.
+            Tag::builder().key("dept").value("Engineering").build().expect("Tag build failed"),
+        ])
+        .build()
+        .expect("Failed to build TagPolicyRequest")
+        .execute(&mut tx, RequestId::new())
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let Err(e) = result else {
+        panic!("Tagging with two tags sharing a key must fail");
+    };
+    assert!(e.to_string().contains("Duplicate tag keys found"), "Expected a duplicate tag key error, got: {e}");
+}
+
 pub async fn test_tag_policy_empty(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let err = TagPolicyRequest::builder()

@@ -581,6 +581,7 @@ async fn subtest_set_default_policy_version(pool: &PgPool) {
 async fn subtest_tag_untag_policy(pool: &PgPool) {
     policy_crud::test_tag_policy_simple(pool).await;
     policy_crud::test_tag_policy_upsert(pool).await;
+    policy_crud::test_tag_policy_duplicate_keys(pool).await;
     policy_crud::test_tag_policy_empty(pool).await;
     policy_crud::test_tag_policy_nonexistent(pool).await;
     policy_crud::test_untag_policy_simple(pool).await;
