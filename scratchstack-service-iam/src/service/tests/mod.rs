@@ -723,6 +723,12 @@ fn list_role_policies_parameters(role_name: Option<&str>, max_items: Option<i32>
     role_list_parameters("ListRolePolicies", role_name, None, max_items, marker)
 }
 
+/// Build the query parameters for a `ListRoleTags` request, naming the role whose tags are
+/// listed or leaving `RoleName` off, and carrying the pagination arguments the caller supplies.
+fn list_role_tags_parameters(role_name: Option<&str>, max_items: Option<i32>, marker: Option<&str>) -> String {
+    role_list_parameters("ListRoleTags", role_name, None, max_items, marker)
+}
+
 /// Build the query parameters for a paginated listing request naming a role, leaving off the
 /// parameters the caller does not supply so that a request missing a required one can be
 /// exercised. A listing that takes no path prefix passes `None`.
