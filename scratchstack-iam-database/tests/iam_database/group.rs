@@ -68,7 +68,28 @@ pub async fn test_create_group_duplicate_name(pool: &sqlx::PgPool) {
         .execute(&mut tx, RequestId::new())
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
-    assert!(result.is_err(), "Creating a duplicate group name must fail");
+
+    // A name collision is the caller's to fix, so it must be reported as EntityAlreadyExists
+    // rather than as the internal failure any other unique violation would be.
+    let err = result.expect_err("Creating a duplicate group name must fail");
+    assert!(matches!(err, IamError::EntityAlreadyExistsException(_)), "Expected EntityAlreadyExists, got: {err:?}");
+}
+
+/// Creating a group whose name differs from an existing one only in casing must collide with it:
+/// group names are compared case-insensitively.
+pub async fn test_create_group_duplicate_name_different_case(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let result = CreateGroupInternalRequest::builder()
+        .group_name("aDmInS")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build CreateGroupInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let err = result.expect_err("Creating a group differing only in casing must fail");
+    assert!(matches!(err, IamError::EntityAlreadyExistsException(_)), "Expected EntityAlreadyExists, got: {err:?}");
 }
 
 /// Creating a group in an account that does not exist must fail.
@@ -426,6 +447,36 @@ pub async fn test_update_group_nonexistent(pool: &sqlx::PgPool) {
         .await;
     tx.rollback().await.expect("Failed to rollback transaction");
     assert!(result.is_err(), "Updating a nonexistent group must fail");
+}
+
+/// Renaming a group to a name another group in the account already carries must be reported as
+/// EntityAlreadyExists, not as an internal failure: the collision is the caller's to fix. The
+/// whole fixture is built inside the transaction and rolled back.
+pub async fn test_update_group_rename_to_existing(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    for group_name in ["UG-Collide-From", "UG-Collide-To"] {
+        CreateGroupInternalRequest::builder()
+            .group_name(group_name)
+            .account_id("123456789012")
+            .build()
+            .expect("Failed to build CreateGroupInternalRequest")
+            .execute(&mut tx, RequestId::new())
+            .await
+            .expect("Failed to create group");
+    }
+
+    let result = UpdateGroupInternalRequest::builder()
+        .group_name("UG-Collide-From")
+        .new_group_name("UG-Collide-To")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build UpdateGroupInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await;
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    let err = result.expect_err("Renaming to an existing group name must fail");
+    assert!(matches!(err, IamError::EntityAlreadyExistsException(_)), "Expected EntityAlreadyExists, got: {err:?}");
 }
 
 /// Delete the group with the maximum-length (128-character) name.

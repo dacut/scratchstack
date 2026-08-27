@@ -4,7 +4,7 @@ use {
         RequestExecutor,
         account::validate_account_id,
         constants::*,
-        group::{group_arn_resource, validate_group_name},
+        group::{group_arn_resource, is_group_name_unique_violation, validate_group_name},
         id::IamId,
         internal_failure,
         partition::get_current_partition_or_fail,
@@ -17,7 +17,7 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{CreateGroupInternalRequest, CreateGroupResponse},
-        types::Group,
+        types::{Group, error::EntityAlreadyExistsException},
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
 };
@@ -68,6 +68,14 @@ pub async fn create_group(
     {
         Ok(result) => result,
         Err(e) => {
+            if is_group_name_unique_violation(&e) {
+                let message = format!("Group with name {group_name} already exists.");
+                return Err(EntityAlreadyExistsException::builder()
+                    .message(message)
+                    .request_id(request_id)
+                    .build()
+                    .into());
+            }
             log::error!("Failed to insert group into database: {e}");
             return Err(internal_failure(request_id).into());
         }
