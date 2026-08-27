@@ -1156,7 +1156,7 @@ pub async fn test_tag_role_upsert(pool: &sqlx::PgPool) {
     assert_eq!(resp.tags[1].value, "Finance");
 }
 
-/// Tagging a nonexistent role must fail with NoSuchEntityException.
+/// Tagging a role with duplicate tag keys must fail.
 pub async fn test_tag_role_duplicate_keys(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let result = TagRoleInternalRequest::builder()
