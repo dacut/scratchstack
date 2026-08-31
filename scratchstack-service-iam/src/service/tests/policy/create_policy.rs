@@ -6,7 +6,9 @@ const POLICY_DOCUMENT: &str =
     r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#;
 
 /// Seed data for the `CreatePolicy` authorization tests. The callers carry grants scoped by the
-/// path the new policy is created under and by the tags the request asks to apply.
+/// path the new policy is created under and by the tags the request asks to apply, through
+/// `aws:RequestTag`, `aws:ResourceTag`, and `iam:ResourceTag` alike -- the last of these being one
+/// the IAM documentation does not list for CreatePolicy but the service supplies anyway.
 /// `Create-Only-Creator` is allowed `iam:CreatePolicy` and nothing else, so it shows that tagging
 /// a policy at creation is gated separately. `Broad-Creator` is allowed to read policies as well,
 /// so that what a request left behind can be read back.
@@ -18,6 +20,8 @@ const CREATE_POLICY_TEST_DATA: &str = r#"
     ('SVCCREPOLBROAD01', '%ACCOUNT_ID%', 'broad-creator', 'Broad-Creator', '/'),
     ('SVCCREPOLPATH001', '%ACCOUNT_ID%', 'path-creator', 'Path-Creator', '/'),
     ('SVCCREPOLTAG0001', '%ACCOUNT_ID%', 'tag-creator', 'Tag-Creator', '/'),
+    ('SVCCREPOLRTAG001', '%ACCOUNT_ID%', 'resource-tag-creator', 'Resource-Tag-Creator', '/'),
+    ('SVCCREPOLITAG001', '%ACCOUNT_ID%', 'iam-resource-tag-creator', 'Iam-Resource-Tag-Creator', '/'),
     ('SVCCREPOLONLY001', '%ACCOUNT_ID%', 'create-only-creator', 'Create-Only-Creator', '/'),
     ('SVCCREPOLNONE001', '%ACCOUNT_ID%', 'no-grant-creator', 'No-Grant-Creator', '/');
 
@@ -31,6 +35,12 @@ const CREATE_POLICY_TEST_DATA: &str = r#"
     ('SVCCREPOLTAG0001', 'allow-create-engineering', 'Allow-Create-Engineering',
         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:CreatePolicy","iam:TagPolicy"],
         "Resource":"*","Condition":{"StringEquals":{"aws:RequestTag/department":"Engineering"}}}]}'),
+    ('SVCCREPOLRTAG001', 'allow-create-engineering-resource', 'Allow-Create-Engineering-Resource',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:CreatePolicy","iam:TagPolicy"],
+        "Resource":"*","Condition":{"StringEquals":{"aws:ResourceTag/department":"Engineering"}}}]}'),
+    ('SVCCREPOLITAG001', 'allow-create-engineering-iam-resource', 'Allow-Create-Engineering-Iam-Resource',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:CreatePolicy","iam:TagPolicy"],
+        "Resource":"*","Condition":{"StringEquals":{"iam:ResourceTag/department":"Engineering"}}}]}'),
     ('SVCCREPOLONLY001', 'allow-create-only', 'Allow-Create-Only',
         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:CreatePolicy","Resource":"*"}]}');
 "#;
@@ -201,6 +211,90 @@ async fn test_create_policy_authorization() {
         principal,
         session_data,
         &create_policy_parameters(Some("Bare-Policy"), Some(POLICY_DOCUMENT), None, None, &[]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+    assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+    // CreatePolicy reports the tags the request asks for through aws:ResourceTag as well as
+    // aws:RequestTag, even though the policy does not exist yet -- confirmed against the service,
+    // as it is for CreateUser and CreateRole.
+    let (principal, session_data) = database.user_identity("SVCCREPOLRTAG001", "Resource-Tag-Creator");
+    let (status, body) = call(
+        &svc_state,
+        principal,
+        session_data,
+        &create_policy_parameters(
+            Some("Resource-Tagged-Policy"),
+            Some(POLICY_DOCUMENT),
+            None,
+            None,
+            &[("Department", "Engineering")],
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+    assert!(body.contains("<Key>Department</Key>"), "unexpected body: {body}");
+    assert!(body.contains("<Value>Engineering</Value>"), "unexpected body: {body}");
+
+    // The value still has to match.
+    let (principal, session_data) = database.user_identity("SVCCREPOLRTAG001", "Resource-Tag-Creator");
+    let (status, body) = call(
+        &svc_state,
+        principal,
+        session_data,
+        &create_policy_parameters(
+            Some("Resource-Sales-Policy"),
+            Some(POLICY_DOCUMENT),
+            None,
+            None,
+            &[("Department", "Sales")],
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+    assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+    // CreatePolicy also supplies IAM's own iam:ResourceTag/${TagKey} spelling, so a grant written
+    // against it is satisfied too.
+    //
+    // The IAM documentation lists the iam: condition keys for CreateUser and CreateRole but not
+    // for CreatePolicy. The service does not agree with its own documentation, and this follows
+    // the service: verified against live IAM that a grant conditioned on iam:ResourceTag allows
+    // CreatePolicy when the requested tag matches and denies it when it does not. An absent key
+    // could not produce that, since StringEquals on a key that is not there never matches. The
+    // scratchstack-e2e suite re-checks this against live IAM in tests/test_authz_policy.py.
+    let (principal, session_data) = database.user_identity("SVCCREPOLITAG001", "Iam-Resource-Tag-Creator");
+    let (status, body) = call(
+        &svc_state,
+        principal,
+        session_data,
+        &create_policy_parameters(
+            Some("Iam-Resource-Tagged-Policy"),
+            Some(POLICY_DOCUMENT),
+            None,
+            None,
+            &[("Department", "Engineering")],
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+    assert!(body.contains("<Key>Department</Key>"), "unexpected body: {body}");
+
+    // The value still has to match, which is what shows the key is being compared rather than
+    // ignored: a request the condition does not name is denied.
+    let (principal, session_data) = database.user_identity("SVCCREPOLITAG001", "Iam-Resource-Tag-Creator");
+    let (status, body) = call(
+        &svc_state,
+        principal,
+        session_data,
+        &create_policy_parameters(
+            Some("Iam-Resource-Sales-Policy"),
+            Some(POLICY_DOCUMENT),
+            None,
+            None,
+            &[("Department", "Sales")],
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");

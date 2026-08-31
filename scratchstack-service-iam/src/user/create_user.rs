@@ -1,6 +1,6 @@
 use {
     crate::{
-        authz::{check_authorization, created_entity_tag_context, permissions_boundary_context},
+        authz::{check_authorization, created_resource_tag_context, permissions_boundary_context},
         constants::*,
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
         user::user_arn,
@@ -96,10 +96,10 @@ pub(crate) async fn create_user(
     // The tags and the permissions boundary are properties the request asks for rather than
     // properties of an existing resource. CreateUser reports the requested tags through the
     // resource-tag condition keys as well as the request-tag ones -- see
-    // [`created_entity_tag_context`] -- while the boundary backs `iam:PermissionsBoundary`, which
+    // [`created_resource_tag_context`] -- while the boundary backs `iam:PermissionsBoundary`, which
     // is what lets a policy require that users be created only under a boundary, so a caller
     // cannot create a user more privileged than itself.
-    let mut request_context = created_entity_tag_context(&request.tags);
+    let mut request_context = created_resource_tag_context(&request.tags);
     request_context.extend(&permissions_boundary_context(request.permissions_boundary.as_deref()));
 
     // Tagging a user is a separately authorized action, and doing it as part of creating the user

@@ -1,6 +1,6 @@
 use {
     crate::{
-        authz::{check_authorization, request_tag_context},
+        authz::{check_authorization, created_resource_tag_context},
         constants::*,
         policy::policy_arn,
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
@@ -106,8 +106,11 @@ pub(crate) async fn create_policy(
     };
 
     // The tags are properties the request asks for rather than properties of an existing
-    // resource, so they back `aws:RequestTag/${TagKey}` and `aws:TagKeys`.
-    let request_context = request_tag_context(request.tags.iter().map(|tag| (tag.key.as_str(), tag.value.as_str())));
+    // resource. CreatePolicy reports them through both resource-tag spellings as well as
+    // `aws:RequestTag/${TagKey}` and `aws:TagKeys` -- including `iam:ResourceTag/${TagKey}`, which
+    // the IAM documentation does not list for this operation but the service supplies anyway; see
+    // [`created_resource_tag_context`] for the experiment that established it.
+    let request_context = created_resource_tag_context(&request.tags);
 
     // Tagging a policy is a separately authorized action, and doing it as part of creating the
     // policy does not change that: a caller allowed to create policies is not thereby allowed to
