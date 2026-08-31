@@ -1,11 +1,12 @@
 use {crate::service::tests::*, pretty_assertions::assert_eq, scratchstack_core::axum::http::StatusCode};
 
 /// Seed data for the `CreateUser` authorization tests. The callers carry grants scoped by the
-/// path the new user is created under, by the tags the request asks to apply, by the tag keys
-/// it may name at all, and by the permissions boundary it asks to attach; `Boundary-Policy` is
-/// the managed policy the boundary-scoped grant names. `Create-Only-Creator` is allowed
-/// `iam:CreateUser` and nothing else, so it shows that tagging a user at creation is gated
-/// separately while attaching a permissions boundary is not.
+/// path the new user is created under, by the tags the request asks to apply -- through the
+/// request-tag keys and through the resource-tag keys alike -- by the tag keys it may name at
+/// all, and by the permissions boundary it asks to attach; `Boundary-Policy` is the managed
+/// policy the boundary-scoped grant names. `Create-Only-Creator` is allowed `iam:CreateUser` and
+/// nothing else, so it shows that tagging a user at creation is gated separately while attaching
+/// a permissions boundary is not.
 const CREATE_USER_TEST_DATA: &str = r#"
     INSERT INTO iam.accounts(account_id, email, alias) VALUES
     ('%ACCOUNT_ID%', 'create-user-test@example.com', 'create-user-test');
@@ -14,6 +15,8 @@ const CREATE_USER_TEST_DATA: &str = r#"
     ('SVCCREUSERBROAD', '%ACCOUNT_ID%', 'broad-creator', 'Broad-Creator', '/'),
     ('SVCCREUSERPATH1', '%ACCOUNT_ID%', 'path-creator', 'Path-Creator', '/'),
     ('SVCCREUSERTAG01', '%ACCOUNT_ID%', 'tag-creator', 'Tag-Creator', '/'),
+    ('SVCCREUSERRTAG1', '%ACCOUNT_ID%', 'resource-tag-creator', 'Resource-Tag-Creator', '/'),
+    ('SVCCREUSERITAG1', '%ACCOUNT_ID%', 'iam-resource-tag-creator', 'Iam-Resource-Tag-Creator', '/'),
     ('SVCCREUSERKEYS1', '%ACCOUNT_ID%', 'tag-key-creator', 'Tag-Key-Creator', '/'),
     ('SVCCREUSERPB001', '%ACCOUNT_ID%', 'boundary-creator', 'Boundary-Creator', '/'),
     ('SVCCREUSERNONE1', '%ACCOUNT_ID%', 'no-grant-creator', 'No-Grant-Creator', '/'),
@@ -39,6 +42,12 @@ const CREATE_USER_TEST_DATA: &str = r#"
     ('SVCCREUSERTAG01', 'allow-create-engineering', 'Allow-Create-Engineering',
         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:CreateUser","iam:TagUser"],
         "Resource":"*","Condition":{"StringEquals":{"aws:RequestTag/department":"Engineering"}}}]}'),
+    ('SVCCREUSERRTAG1', 'allow-create-engineering-resource', 'Allow-Create-Engineering-Resource',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:CreateUser","iam:TagUser"],
+        "Resource":"*","Condition":{"StringEquals":{"aws:ResourceTag/department":"Engineering"}}}]}'),
+    ('SVCCREUSERITAG1', 'allow-create-engineering-iam-resource', 'Allow-Create-Engineering-Iam-Resource',
+        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:CreateUser","iam:TagUser"],
+        "Resource":"*","Condition":{"StringEquals":{"iam:ResourceTag/department":"Engineering"}}}]}'),
     ('SVCCREUSERKEYS1', 'allow-create-with-known-tags', 'Allow-Create-With-Known-Tags',
         '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:CreateUser","iam:TagUser"],
         "Resource":"*","Condition":{"ForAllValues:StringEquals":
@@ -157,6 +166,67 @@ async fn test_create_user_authorization() {
     let (principal, session_data) = database.user_identity("SVCCREUSERTAG01", "Tag-Creator");
     let (status, body) =
         call(&svc_state, principal, session_data, &create_user_parameters("Bare-User", None, &[], None)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+    assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+    // CreateUser reports the tags the request asks for through the resource-tag condition keys
+    // as well as the request-tag ones, even though the user does not exist yet -- confirmed
+    // against the service. A grant conditioned on aws:ResourceTag therefore governs creating a
+    // user just as it governs tagging one that already exists. Supplying only the request-tag
+    // keys would leave this grant dormant and deny the request.
+    let (principal, session_data) = database.user_identity("SVCCREUSERRTAG1", "Resource-Tag-Creator");
+    let (status, body) = call(
+        &svc_state,
+        principal,
+        session_data,
+        &create_user_parameters("Resource-Tagged-User", None, &[("Department", "Engineering")], None),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+    assert!(body.contains("<Key>Department</Key>"), "unexpected body: {body}");
+    assert!(body.contains("<Value>Engineering</Value>"), "unexpected body: {body}");
+
+    // The value still has to match: the keys carry what the request asked for, not a wildcard.
+    let (principal, session_data) = database.user_identity("SVCCREUSERRTAG1", "Resource-Tag-Creator");
+    let (status, body) = call(
+        &svc_state,
+        principal,
+        session_data,
+        &create_user_parameters("Resource-Sales-User", None, &[("Department", "Sales")], None),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+    assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+    // A request naming no tags leaves the key absent, so the grant does not apply rather than
+    // matching an empty value.
+    let (principal, session_data) = database.user_identity("SVCCREUSERRTAG1", "Resource-Tag-Creator");
+    let (status, body) =
+        call(&svc_state, principal, session_data, &create_user_parameters("Resource-Bare-User", None, &[], None)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
+    assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
+
+    // IAM's own iam:ResourceTag spelling of the same key behaves identically, so a policy
+    // written against either one governs user creation.
+    let (principal, session_data) = database.user_identity("SVCCREUSERITAG1", "Iam-Resource-Tag-Creator");
+    let (status, body) = call(
+        &svc_state,
+        principal,
+        session_data,
+        &create_user_parameters("Iam-Resource-Tagged-User", None, &[("Department", "Engineering")], None),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+    assert!(body.contains("<Key>Department</Key>"), "unexpected body: {body}");
+
+    let (principal, session_data) = database.user_identity("SVCCREUSERITAG1", "Iam-Resource-Tag-Creator");
+    let (status, body) = call(
+        &svc_state,
+        principal,
+        session_data,
+        &create_user_parameters("Iam-Resource-Sales-User", None, &[("Department", "Sales")], None),
+    )
+    .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "unexpected response: {body}");
     assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
 
