@@ -1,6 +1,6 @@
 use {
     crate::{
-        authz::{check_authorization, permissions_boundary_context, request_tag_context},
+        authz::{check_authorization, created_resource_tag_context, permissions_boundary_context},
         constants::*,
         role::{encode_trust_policy, role_arn},
         service::{RequestMetadata, ServiceState, internal_failure, malformed_input},
@@ -105,11 +105,12 @@ pub(crate) async fn create_role(
         };
 
     // The tags and the permissions boundary are properties the request asks for rather than
-    // properties of an existing resource, so they back `aws:RequestTag/${TagKey}` and
-    // `iam:PermissionsBoundary`. The latter is what lets a policy require that roles be created
-    // only under a boundary, so a caller cannot create a role more privileged than itself.
-    let mut request_context =
-        request_tag_context(request.tags.iter().map(|tag| (tag.key.as_str(), tag.value.as_str())));
+    // properties of an existing resource. CreateRole reports the requested tags through the
+    // resource-tag condition keys as well as the request-tag ones, as CreateUser does -- see
+    // [`created_resource_tag_context`] -- while the boundary backs `iam:PermissionsBoundary`, which
+    // is what lets a policy require that roles be created only under a boundary, so a caller
+    // cannot create a role more privileged than itself.
+    let mut request_context = created_resource_tag_context(&request.tags);
     request_context.extend(&permissions_boundary_context(request.permissions_boundary.as_deref()));
 
     // Tagging a role is a separately authorized action, and doing it as part of creating the role
