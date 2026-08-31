@@ -75,7 +75,7 @@ fn string_like_match(
     for el in allowed.iter() {
         let el = context.matcher(el, pv, false)?;
         let is_match = el.is_match(value);
-        log::trace!("regex={:?} value={:?} is_match={:?}", el, value, is_match);
+        sensitive_trace!("regex={:?} value={:?} is_match={:?}", el, value, is_match);
 
         if is_match {
             return Ok(true);

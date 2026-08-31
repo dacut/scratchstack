@@ -198,6 +198,8 @@ impl Statement {
     /// assert_eq!(statement.evaluate(&context, PolicyVersion::V2012_10_17).unwrap(), Decision::DefaultDeny);
     /// ```
     pub fn evaluate(&self, context: &Context, pv: PolicyVersion) -> Result<Decision, AspenError> {
+        sensitive_trace!("Evaluating statement {self:?} in context {context:?} (policy version {pv})");
+
         // Does the action match the context?
         if let Some(actions) = self.action() {
             let mut matched = false;
@@ -209,6 +211,7 @@ impl Statement {
             }
 
             if !matched {
+                sensitive_trace!("No matching action found for context {context:?}; returning DefaultDeny");
                 return Ok(Decision::DefaultDeny);
             }
         } else if let Some(actions) = self.not_action() {
@@ -221,10 +224,12 @@ impl Statement {
             }
 
             if matched {
+                sensitive_trace!("Context {context:?} matched a NotAction; returning DefaultDeny");
                 return Ok(Decision::DefaultDeny);
             }
         } else {
-            unreachable!("Statement must have either an Action or NotAction");
+            log::error!("Statement must have either an Action or NotAction; returning DefaultDeny");
+            return Ok(Decision::DefaultDeny);
         }
 
         // Does the resource match the context?
@@ -237,9 +242,17 @@ impl Statement {
         let denying = *self.effect() == Effect::Deny;
         if let Some(resources) = self.resource() {
             let candidates = context.resources();
+
+            sensitive_trace!(
+                "Evaluating resources for context {context:?}; candidates = {candidates:?}, statement resources = {resources:?}"
+            );
+
             if candidates.is_empty() {
                 // We need a resource statement that is a wildcard.
                 if !resources.iter().any(|r| r.is_any()) {
+                    sensitive_trace!(
+                        "No candidate resources and no wildcard resource found in statement; returning DefaultDeny"
+                    );
                     return Ok(Decision::DefaultDeny);
                 }
             } else if denying {
@@ -248,6 +261,9 @@ impl Statement {
                 'candidates: for candidate in candidates {
                     for resource in resources.iter() {
                         if resource.matches(context, pv, candidate)? {
+                            sensitive_trace!(
+                                "Candidate resource {candidate:?} matched statement resource {resource:?}; returning DefaultDeny"
+                            );
                             any_matched = true;
                             break 'candidates;
                         }
@@ -271,16 +287,21 @@ impl Statement {
                     }
 
                     if !candidate_matched {
+                        sensitive_trace!(
+                            "Candidate resource {candidate:?} did not match any statement resource; returning DefaultDeny"
+                        );
                         return Ok(Decision::DefaultDeny);
                     }
                 }
             }
         } else if let Some(resources) = self.not_resource() {
             let candidates = context.resources();
-            log::trace!("NotResource: candidates = {:?}", candidates);
             if candidates.is_empty() {
                 // We cannot have a resource statement that is a wildcard.
                 if resources.iter().any(|r| r.is_any()) {
+                    sensitive_trace!(
+                        "No candidate resources and statement contains a wildcard NotResource; returning DefaultDeny"
+                    );
                     return Ok(Decision::DefaultDeny);
                 }
             } else if denying {
@@ -291,34 +312,39 @@ impl Statement {
                     let mut candidate_matched = false;
                     for resource in resources {
                         if resource.matches(context, pv, candidate)? {
+                            sensitive_trace!("Candidate {candidate:?} matched NotResource {resource:?}");
                             candidate_matched = true;
                             break;
                         }
                     }
 
                     if !candidate_matched {
+                        sensitive_trace!("Candidate {candidate:?} did not match any NotResource; marking as outside");
                         any_outside = true;
                         break;
                     }
                 }
 
                 if !any_outside {
+                    sensitive_trace!("All candidates matched some NotResource; returning DefaultDeny");
                     return Ok(Decision::DefaultDeny);
                 }
             } else {
                 // Allow: the statement applies only if no candidate matches any NotResource
                 // entry.
                 for candidate in candidates {
-                    log::trace!("NotResource: candidate = {:?}", candidate);
+                    sensitive_trace!("NotResource: candidate = {:?}", candidate);
                     for resource in resources {
                         if resource.matches(context, pv, candidate)? {
-                            log::trace!("NotResource: candidate {:?} matched resource {:?}", candidate, resource);
+                            sensitive_trace!(
+                                "Candidate {candidate:?} matched NotResource {resource:?}; returning DefaultDeny"
+                            );
                             return Ok(Decision::DefaultDeny);
                         }
                     }
                 }
 
-                log::trace!("NotResource: no matches");
+                sensitive_trace!("NotResource: no matches");
             }
         }
         // A statement with a principal clause may omit both Resource and NotResource (the
@@ -332,24 +358,38 @@ impl Statement {
         if let Some(principal) = self.principal()
             && !principal.matches(context.actor())
         {
+            sensitive_trace!(
+                "Principal {principal:?} did not match context actor {context_actor:?}; returning DefaultDeny",
+                context_actor = context.actor()
+            );
             return Ok(Decision::DefaultDeny);
         } else if let Some(principal) = self.not_principal()
             && principal.matches(context.actor())
         {
+            sensitive_trace!(
+                "NotPrincipal {principal:?} matched context actor {context_actor:?}; returning DefaultDeny",
+                context_actor = context.actor()
+            );
             return Ok(Decision::DefaultDeny);
         }
         // We're allowed to not have a principal if this is a principal-based policy.
 
         // Do the conditions match?
         if let Some(conditions) = self.condition() {
+            sensitive_trace!("Evaluating conditions {conditions:?} in context {context:?} (policy version {pv})");
             for (key, values) in conditions.iter() {
+                sensitive_trace!("Evaluating condition key {key:?} with values {values:?}");
                 if !key.matches(values, context, pv)? {
+                    sensitive_trace!(
+                        "Condition key {key:?} did not match values {values:?} in context {context:?} (policy version {pv}); returning DefaultDeny"
+                    );
                     return Ok(Decision::DefaultDeny);
                 }
             }
         }
 
         // Everything matches here. Return the effect.
+        sensitive_trace!("All checks passed for statement {:?}; returning effect {:?}", self, self.effect());
         match self.effect() {
             Effect::Allow => Ok(Decision::Allow),
             Effect::Deny => Ok(Decision::Deny),

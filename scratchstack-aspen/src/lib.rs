@@ -13,6 +13,9 @@
 )]
 #![cfg_attr(doc, feature(doc_cfg))]
 
+#[macro_use]
+pub(crate) mod macros;
+
 pub(crate) mod action;
 pub(crate) mod authz;
 pub(crate) mod condition;
@@ -27,6 +30,11 @@ pub(crate) mod statement;
 
 #[macro_use]
 pub(crate) mod serutil;
+
+/// Re-export of the [`log`] crate for use by the `sensitive_*` logging macros, which must name it
+/// through `$crate` so they expand correctly outside this crate.
+#[doc(hidden)]
+pub use log as __log;
 
 pub use {
     action::{Action, ActionList, SpecificActionDetails, SpecificActionDetailsBuilder},
