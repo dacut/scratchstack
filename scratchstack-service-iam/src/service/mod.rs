@@ -3,8 +3,8 @@ use {
         constants::*,
         group::{
             add_user_to_group, attach_group_policy, create_group, delete_group, delete_group_policy,
-            detach_group_policy, get_group, list_attached_group_policies, list_group_policies, list_groups,
-            list_groups_for_user, put_group_policy, remove_user_from_group, update_group,
+            detach_group_policy, get_group, get_group_policy, list_attached_group_policies, list_group_policies,
+            list_groups, list_groups_for_user, put_group_policy, remove_user_from_group, update_group,
         },
         policy::{
             create_policy, create_policy_version, delete_policy, delete_policy_version, get_policy, get_policy_version,
@@ -13,8 +13,9 @@ use {
         },
         role::{
             attach_role_policy, create_role, delete_role, delete_role_permissions_boundary, delete_role_policy,
-            detach_role_policy, get_role, list_attached_role_policies, list_role_policies, list_role_tags, list_roles,
-            put_role_permissions_boundary, put_role_policy, tag_role, untag_role, update_role, update_role_description,
+            detach_role_policy, get_role, get_role_policy, list_attached_role_policies, list_role_policies,
+            list_role_tags, list_roles, put_role_permissions_boundary, put_role_policy, tag_role, untag_role,
+            update_role, update_role_description,
         },
         user::{
             attach_user_policy, create_access_key, create_user, delete_access_key, delete_user,
@@ -348,6 +349,18 @@ pub(crate) async fn serve_request(
             get_group(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
                 .await
         }
+        Ok(Action::GetGroupPolicy) => {
+            get_group_policy(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
         Ok(Action::GetPolicy) => {
             get_policy(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
                 .await
@@ -367,6 +380,18 @@ pub(crate) async fn serve_request(
         Ok(Action::GetRole) => {
             get_role(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
                 .await
+        }
+        Ok(Action::GetRolePolicy) => {
+            get_role_policy(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
         }
         Ok(Action::GetUser) => {
             get_user(svc_state, request_id, principal, session_data, session_policies, request_metadata, &parameters)
