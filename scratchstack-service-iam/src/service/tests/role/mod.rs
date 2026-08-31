@@ -5,6 +5,7 @@ mod delete_role_permissions_boundary;
 mod delete_role_policy;
 mod detach_role_policy;
 mod get_role;
+mod get_role_policy;
 mod list_attached_role_policies;
 mod list_role_policies;
 mod list_role_tags;

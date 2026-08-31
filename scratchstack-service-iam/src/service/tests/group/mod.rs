@@ -5,6 +5,7 @@ mod delete_group;
 mod delete_group_policy;
 mod detach_group_policy;
 mod get_group;
+mod get_group_policy;
 mod list_attached_group_policies;
 mod list_group_policies;
 mod list_groups;
