@@ -370,14 +370,8 @@ mod tests {
         assert_eq!(context.get(SESSION_KEY_AWS_TAG_KEYS), None);
     }
 
-    /// Creating a managed policy reports its tags through the service-agnostic keys, the
-    /// Creating a managed policy supplies no `iam:` condition key at all -- confirmed against the
-    /// service. IAM defines `iam:ResourceTag/${TagKey}` for its entities, not for managed
-    /// policies, so a policy guarding CreatePolicy through it never matches; supplying it would
-    /// make a `StringEquals` guard match, and a `StringNotEquals` deny guard fire, where IAM
-    /// The `iam:ResourceTag/${TagKey}` spelling is what separates creating an entity from
-    /// Creating a managed policy reports the same keys creating a user or a role does, the
-    /// `iam:ResourceTag/${TagKey}` spelling included.
+    /// Creating a managed policy reports the same keys as creating a user or a role, including the
+    /// `iam:ResourceTag/${TagKey}` spelling.
     ///
     /// The IAM documentation lists the `iam:` keys for CreateUser and CreateRole but not for
     /// CreatePolicy. The service does not agree with its own documentation here, and this
