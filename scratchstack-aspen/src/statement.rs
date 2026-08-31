@@ -262,7 +262,7 @@ impl Statement {
                     for resource in resources.iter() {
                         if resource.matches(context, pv, candidate)? {
                             sensitive_trace!(
-                                "Candidate resource {candidate:?} matched statement resource {resource:?}; returning DefaultDeny"
+                                "Candidate resource {candidate:?} matched statement resource {resource:?}"
                             );
                             any_matched = true;
                             break 'candidates;
@@ -271,6 +271,7 @@ impl Statement {
                 }
 
                 if !any_matched {
+                    sensitive_trace!("No candidate resource matched any statement resource; returning DefaultDeny");
                     return Ok(Decision::DefaultDeny);
                 }
             } else {
@@ -281,6 +282,9 @@ impl Statement {
 
                     for resource in resources.iter() {
                         if resource.matches(context, pv, candidate)? {
+                            sensitive_trace!(
+                                "Candidate resource {candidate:?} matched statement resource {resource:?}"
+                            );
                             candidate_matched = true;
                             break;
                         }
