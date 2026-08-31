@@ -136,6 +136,41 @@ pub(crate) async fn check_authorization(
     .map_err(|error| Box::new(error_response(request_id, error)))
 }
 
+/// Build the condition keys describing the tags a request asks to attach to the entity it
+/// creates, for the `request_context` argument of [`check_authorization`].
+///
+/// These are request-supplied tags naming an entity that does not exist yet, so
+/// `aws:RequestTag/${TagKey}` and `aws:TagKeys` describe them as they would for any tagging
+/// request. IAM additionally reports them through the resource-tag keys --
+/// `aws:ResourceTag/${TagKey}` and `iam:ResourceTag/${TagKey}` -- even though there is as yet no
+/// resource carrying them; this was confirmed against the service. A policy that guards tagging
+/// through the resource-tag keys therefore governs entity creation as well, and omitting them
+/// here leaves such a guard dormant on exactly the request that establishes the tags.
+///
+/// An operation tagging an entity that already exists supplies the resource-tag keys from the
+/// entity instead, through [`resource_tag_context`] or [`EntityResource::context`].
+///
+/// The resource-tag keys are inserted here rather than merged in from [`resource_tag_context`]:
+/// [`SessionData`] can only be extended from a borrowed one, so merging would build a second map
+/// only to clone every entry out of it and drop it again.
+pub(crate) fn created_entity_tag_context(tags: &[Tag]) -> SessionData {
+    let mut context = request_tag_context(tags.iter().map(|tag| (tag.key.as_str(), tag.value.as_str())));
+    context.reserve(tags.len() * 2);
+
+    for tag in tags {
+        context.insert(
+            &format!("{SESSION_KEY_PREFIX_AWS_RESOURCE_TAG}{}", tag.key),
+            SessionValue::String(tag.value.clone()),
+        );
+        context.insert(
+            &format!("{SESSION_KEY_PREFIX_IAM_RESOURCE_TAG}{}", tag.key),
+            SessionValue::String(tag.value.clone()),
+        );
+    }
+
+    context
+}
+
 /// Build the condition keys describing the tags attached to the resource a request operates on,
 /// for the `request_context` argument of [`check_authorization`].
 ///
@@ -210,5 +245,120 @@ fn error_response(request_id: RequestId, error: AuthorizationError) -> Response<
         // can make sense of the error as it stands.
         AuthorizationError::Database(e) => e.respond(),
         AuthorizationError::InternalFailure => internal_failure(request_id),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::{created_entity_tag_context, resource_tag_context},
+        crate::constants::*,
+        pretty_assertions::assert_eq,
+        scratchstack_aws_principal::SessionValue,
+        scratchstack_shapes_iam::types::Tag,
+    };
+
+    /// Build the tags a request would name.
+    fn tags(pairs: &[(&str, &str)]) -> Vec<Tag> {
+        pairs.iter().map(|(key, value)| Tag::builder().key(*key).value(*value).build().unwrap()).collect()
+    }
+
+    /// Creating an entity with tags reports them through the resource-tag condition keys as well
+    /// as the request-tag ones, even though the entity does not exist yet.
+    ///
+    /// This is the whole reason [`created_entity_tag_context`] exists rather than the plain
+    /// `request_tag_context` every other tagging operation uses: a policy guarding tags through
+    /// `aws:ResourceTag/${TagKey}` or `iam:ResourceTag/${TagKey}` would otherwise lie dormant on
+    /// the one request that establishes those tags.
+    #[test]
+    fn creating_an_entity_reports_its_tags_as_resource_tags() {
+        let context = created_entity_tag_context(&tags(&[("Department", "Engineering"), ("Project", "Scratchstack")]));
+
+        assert_eq!(
+            context.get(&format!("{SESSION_KEY_PREFIX_AWS_RESOURCE_TAG}Department")),
+            Some(&SessionValue::String("Engineering".to_string()))
+        );
+        assert_eq!(
+            context.get(&format!("{SESSION_KEY_PREFIX_IAM_RESOURCE_TAG}Department")),
+            Some(&SessionValue::String("Engineering".to_string()))
+        );
+        assert_eq!(
+            context.get(&format!("{SESSION_KEY_PREFIX_AWS_RESOURCE_TAG}Project")),
+            Some(&SessionValue::String("Scratchstack".to_string()))
+        );
+        assert_eq!(
+            context.get(&format!("{SESSION_KEY_PREFIX_IAM_RESOURCE_TAG}Project")),
+            Some(&SessionValue::String("Scratchstack".to_string()))
+        );
+    }
+
+    /// The resource-tag keys are reported alongside the request-tag ones, not instead of them: a
+    /// policy conditioned on `aws:RequestTag/${TagKey}` or on `aws:TagKeys` governs entity
+    /// creation as it governs any other tagging request.
+    #[test]
+    fn creating_an_entity_also_reports_its_tags_as_request_tags() {
+        let context = created_entity_tag_context(&tags(&[("Department", "Engineering"), ("Project", "Scratchstack")]));
+
+        assert_eq!(
+            context.get(&format!("{SESSION_KEY_PREFIX_AWS_REQUEST_TAG}Department")),
+            Some(&SessionValue::String("Engineering".to_string()))
+        );
+        assert_eq!(
+            context.get(&format!("{SESSION_KEY_PREFIX_AWS_REQUEST_TAG}Project")),
+            Some(&SessionValue::String("Scratchstack".to_string()))
+        );
+
+        // The keys are reported as the request spelled them: the `ForAllValues:`/`ForAnyValue:`
+        // set operators compare them the way the operator they qualify does.
+        assert_eq!(
+            context.get(SESSION_KEY_AWS_TAG_KEYS),
+            Some(&SessionValue::List(vec![
+                SessionValue::String("Department".to_string()),
+                SessionValue::String("Project".to_string()),
+            ]))
+        );
+    }
+
+    /// Tag keys are compared case-insensitively, which `SessionData` provides by lower-casing
+    /// keys as they are inserted -- so a policy naming a tag key in any casing reaches the value.
+    #[test]
+    fn created_entity_tag_keys_are_case_insensitive() {
+        let context = created_entity_tag_context(&tags(&[("Department", "Engineering")]));
+
+        assert_eq!(context.get("aws:requesttag/department"), Some(&SessionValue::String("Engineering".to_string())));
+        assert_eq!(context.get("aws:resourcetag/DEPARTMENT"), Some(&SessionValue::String("Engineering".to_string())));
+        assert_eq!(context.get("IAM:ResourceTag/Department"), Some(&SessionValue::String("Engineering".to_string())));
+    }
+
+    /// A request naming no tags supplies none of these keys, so a policy conditioned on a tag the
+    /// request does not carry does not match rather than matching an empty string -- and an empty
+    /// `aws:TagKeys` is not reported, which says no more than an absent one.
+    #[test]
+    fn creating_an_entity_without_tags_supplies_no_tag_keys() {
+        let context = created_entity_tag_context(&[]);
+
+        assert_eq!(context.get(&format!("{SESSION_KEY_PREFIX_AWS_REQUEST_TAG}Department")), None);
+        assert_eq!(context.get(&format!("{SESSION_KEY_PREFIX_AWS_RESOURCE_TAG}Department")), None);
+        assert_eq!(context.get(&format!("{SESSION_KEY_PREFIX_IAM_RESOURCE_TAG}Department")), None);
+        assert_eq!(context.get(SESSION_KEY_AWS_TAG_KEYS), None);
+    }
+
+    /// The tags already on an entity are reported through the resource-tag keys alone: an
+    /// operation acting on an existing entity is not asking for those tags, so nothing about it
+    /// is a request tag.
+    #[test]
+    fn existing_entity_tags_are_not_request_tags() {
+        let context = resource_tag_context(&tags(&[("Department", "Engineering")]));
+
+        assert_eq!(
+            context.get(&format!("{SESSION_KEY_PREFIX_AWS_RESOURCE_TAG}Department")),
+            Some(&SessionValue::String("Engineering".to_string()))
+        );
+        assert_eq!(
+            context.get(&format!("{SESSION_KEY_PREFIX_IAM_RESOURCE_TAG}Department")),
+            Some(&SessionValue::String("Engineering".to_string()))
+        );
+        assert_eq!(context.get(&format!("{SESSION_KEY_PREFIX_AWS_REQUEST_TAG}Department")), None);
+        assert_eq!(context.get(SESSION_KEY_AWS_TAG_KEYS), None);
     }
 }

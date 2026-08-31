@@ -370,11 +370,20 @@ impl ConditionOp {
         pv: PolicyVersion,
     ) -> Result<bool, AspenError> {
         for (key, allowed) in condition.iter() {
-            let value = context.session_data().get(key).unwrap_or(&NULL);
+            let value = context.session_data().get(&key).unwrap_or(&NULL);
 
             if !self.matches_key(context, pv, allowed, value)? {
+                sensitive_trace!(
+                    "Condition key {key:?} with allowed values {allowed:?} did not match session_data={:?}",
+                    context.session_data()
+                );
                 return Ok(false);
             }
+
+            sensitive_trace!(
+                "Condition key {key:?} with allowed values {allowed:?} matched session_data={:?}",
+                context.session_data()
+            );
         }
 
         Ok(true)

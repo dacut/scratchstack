@@ -1,7 +1,4 @@
-use {
-    crate::{AspenError, Context, Decision, PolicySet, PolicySource},
-    log::debug,
-};
+use crate::{AspenError, Context, Decision, PolicySet, PolicySource};
 
 /// The result of an [`authorize`] call: the final decision and the policy sources that determined
 /// it.
@@ -57,7 +54,12 @@ impl<'a> AuthorizationResult<'a> {
 /// substitution). Callers performing access control should treat this as a denial.
 pub fn authorize<'a>(context: &Context, policy_set: &'a PolicySet) -> Result<AuthorizationResult<'a>, AspenError> {
     if context.actor().as_root_user().is_some() {
-        debug!("Implicitly allowing root user {:?} to invoke {}:{}", context.actor(), context.service(), context.api());
+        sensitive_trace!(
+            "Implicitly allowing root user {:?} to invoke {}:{}",
+            context.actor(),
+            context.service(),
+            context.api()
+        );
         return Ok(AuthorizationResult {
             decision: Decision::Allow,
             sources: Vec::new(),
@@ -66,7 +68,7 @@ pub fn authorize<'a>(context: &Context, policy_set: &'a PolicySet) -> Result<Aut
 
     if context.resources().is_empty() {
         let (decision, sources) = policy_set.evaluate_all(context)?;
-        debug!("{}:{} with no resources: {}", context.service(), context.api(), decision);
+        sensitive_trace!("{}:{} with no resources: {}", context.service(), context.api(), decision);
         return Ok(AuthorizationResult {
             decision,
             sources: if decision == Decision::DefaultDeny {
@@ -84,7 +86,7 @@ pub fn authorize<'a>(context: &Context, policy_set: &'a PolicySet) -> Result<Aut
     for resource in context.resources() {
         let resource_context = context.with_resources(vec![resource.clone()]);
         let (decision, sources) = policy_set.evaluate_all(&resource_context)?;
-        debug!("{}:{} on {}: {}", context.service(), context.api(), resource, decision);
+        sensitive_trace!("{}:{} on {}: {}", context.service(), context.api(), resource, decision);
 
         match decision {
             Decision::Allow => {

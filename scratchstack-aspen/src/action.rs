@@ -1,7 +1,6 @@
 use {
     crate::{AspenError, eval::regex_from_glob, serutil::StringLikeList},
     bon::bon,
-    log::debug,
     std::{
         fmt::{Display, Formatter, Result as FmtResult},
         str::FromStr,
@@ -234,23 +233,23 @@ pub(crate) fn validate_action_literal(service: &str, api: &str) -> Result<(), As
 /// `allow_wildcards` is set.
 fn validate_action(service: &str, api: &str, allow_wildcards: bool) -> Result<(), AspenError> {
     if service.is_empty() {
-        debug!("Action '{service}:{api}' has an empty service.");
+        sensitive_trace!("Action '{service}:{api}' has an empty service.");
         return Err(AspenError::InvalidAction(format!("{service}:{api}")));
     }
 
     if api.is_empty() {
-        debug!("Action '{service}:{api}' has an empty API.");
+        sensitive_trace!("Action '{service}:{api}' has an empty API.");
         return Err(AspenError::InvalidAction(format!("{service}:{api}")));
     }
 
     if !service.is_ascii() || !api.is_ascii() {
-        debug!("Action '{service}:{api}' is not ASCII.");
+        sensitive_trace!("Action '{service}:{api}' is not ASCII.");
         return Err(AspenError::InvalidAction(format!("{service}:{api}")));
     }
 
     for (i, c) in service.bytes().enumerate() {
         if !c.is_ascii_alphanumeric() && !(i > 0 && i < service.len() - 1 && (c == b'-' || c == b'_')) {
-            debug!("Action '{service}:{api}' has an invalid service.");
+            sensitive_trace!("Action '{service}:{api}' has an invalid service.");
             return Err(AspenError::InvalidAction(format!("{service}:{api}")));
         }
     }
@@ -258,7 +257,7 @@ fn validate_action(service: &str, api: &str, allow_wildcards: bool) -> Result<()
     for (i, c) in api.bytes().enumerate() {
         let wildcard = allow_wildcards && (c == b'*' || c == b'?');
         if !c.is_ascii_alphanumeric() && !wildcard && !(i > 0 && i < api.len() - 1 && (c == b'-' || c == b'_')) {
-            debug!("Action '{service}:{api}' has an invalid API.");
+            sensitive_trace!("Action '{service}:{api}' has an invalid API.");
             return Err(AspenError::InvalidAction(format!("{service}:{api}")));
         }
     }

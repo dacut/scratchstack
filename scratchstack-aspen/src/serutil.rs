@@ -1,5 +1,5 @@
 use {
-    log::{debug, error},
+    log::error,
     serde::{
         Deserialize, Serialize,
         de::{
@@ -84,7 +84,7 @@ macro_rules! from_str_json {
                 match ::serde_json::from_str::<Self>(s) {
                     Ok(result) => Ok(result),
                     Err(e) => {
-                        ::log::debug!("Failed to parse: {}: {:?}", s, e);
+                        $crate::sensitive_trace!("Failed to parse: {}: {:?}", s, e);
                         Err(e)
                     }
                 }
@@ -394,7 +394,7 @@ where
                 })
             }
             Err(e) => {
-                debug!("Failed to deserialize string list: {:?}", e);
+                sensitive_trace!("Failed to deserialize string list: {:?}", e);
                 Err(<A::Error as de::Error>::invalid_value(Unexpected::Seq, &self))
             }
         }

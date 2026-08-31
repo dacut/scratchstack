@@ -8,7 +8,6 @@ pub use {
 
 use {
     crate::display_json,
-    log::debug,
     scratchstack_aws_principal::Principal as PrincipalActor,
     serde::{
         Deserialize, Serialize,
@@ -90,7 +89,7 @@ impl<'de> Visitor<'de> for PrincipalVisitor {
         match SpecifiedPrincipal::deserialize(deserializer) {
             Ok(pm) => Ok(Principal::Specified(pm)),
             Err(e) => {
-                debug!("Failed to deserialize statement: {:?}", e);
+                sensitive_trace!("Failed to deserialize statement: {:?}", e);
                 Err(e)
             }
         }
