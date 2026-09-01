@@ -39,16 +39,13 @@ pub enum IamResourceType {
     /// This does not appear to be used within IAM.
     ManagedPolicyVersion,
 
-    /// The prefix for IAM public keys: `APKA`.
-    PublicKey,
-
     /// The prefix for IAM roles: `AROA`.
     Role,
 
     /// A session token encryption key. This is a Scratchstack-specific resource type: `STEK`.
     SessionTokenEncryptionKey,
 
-    /// SSH public key (`APKA`).
+    /// The prefix for IAM SSH public keys and CloudFront key pairs: `APKA`.
     SshPublicKey,
 
     /// The prefix for IAM temporary access keys: `ASIA`.
@@ -82,7 +79,6 @@ impl IamResourceType {
             Self::InstanceProfile => "AIPA",
             Self::ManagedPolicy => "ANPA",
             Self::ManagedPolicyVersion => "ANVA",
-            Self::PublicKey => "APKA",
             Self::Role => "AROA",
             Self::SessionTokenEncryptionKey => "STEK",
             Self::SshPublicKey => "APKA",
@@ -264,11 +260,12 @@ pub fn validate_dns<F: FnOnce(String) -> PrincipalError>(
 #[cfg(test)]
 mod test {
     use {
-        super::{IamResourceType, validate_dns, validate_identifier, validate_name},
+        super::{IamResourceType, InvalidIamResourceType, validate_dns, validate_identifier, validate_name},
         crate::PrincipalError,
         std::{
             collections::hash_map::DefaultHasher,
             hash::{Hash, Hasher},
+            str::FromStr,
         },
     };
 
@@ -379,6 +376,34 @@ mod test {
     }
 
     #[test]
+    fn check_id_prefix_round_trips() {
+        // Every variant must parse back from its own string. This failed for the former PublicKey
+        // variant, which shared the APKA prefix with SshPublicKey and so parsed back as the latter.
+        for t in [
+            IamResourceType::AccessKey,
+            IamResourceType::BearerToken,
+            IamResourceType::Certificate,
+            IamResourceType::ContextSpecificCredential,
+            IamResourceType::Group,
+            IamResourceType::InstanceProfile,
+            IamResourceType::ManagedPolicy,
+            IamResourceType::ManagedPolicyVersion,
+            IamResourceType::Role,
+            IamResourceType::SessionTokenEncryptionKey,
+            IamResourceType::SshPublicKey,
+            IamResourceType::TemporaryAccessKey,
+            IamResourceType::User,
+        ] {
+            assert_eq!(IamResourceType::from_str(t.as_str()), Ok(t), "{t:?} did not round-trip");
+            assert_eq!(t.to_string(), t.as_str());
+            assert_eq!(t.as_ref(), t.as_str());
+        }
+
+        assert_eq!(IamResourceType::from_str("NOPE"), Err(InvalidIamResourceType("NOPE".to_string())));
+        assert_eq!(InvalidIamResourceType("NOPE".to_string()).to_string(), "Invalid IAM resource type: NOPE");
+    }
+
+    #[test]
     fn check_id_prefix_derived() {
         let prefixes = [
             IamResourceType::AccessKey,
@@ -389,8 +414,9 @@ mod test {
             IamResourceType::InstanceProfile,
             IamResourceType::ManagedPolicy,
             IamResourceType::ManagedPolicyVersion,
-            IamResourceType::PublicKey,
             IamResourceType::Role,
+            IamResourceType::SessionTokenEncryptionKey,
+            IamResourceType::SshPublicKey,
             IamResourceType::TemporaryAccessKey,
             IamResourceType::User,
         ];
