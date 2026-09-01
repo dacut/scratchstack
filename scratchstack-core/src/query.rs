@@ -43,6 +43,9 @@ const PARAMETER_PREFIX: &str = "parameter ";
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct QueryError(String);
 
+/// The segment a wrapped list's elements are addressed through: `List.member.1`.
+const MEMBER_SEGMENT: &str = "member.";
+
 /// A node in the parameter tree rebuilt from the flattened query parameters.
 #[derive(Debug)]
 enum Node {
@@ -82,6 +85,11 @@ struct NodeMapAccess<'a> {
 struct NodeSeqAccess<'a> {
     /// The elements remaining to be visited, each with the 1-based index it was addressed by.
     elements: VecIntoIter<(u32, &'a Node)>,
+
+    /// What sits between the list's name and an element's index in the parameter the caller sent:
+    /// [`MEMBER_SEGMENT`] for a wrapped list, empty for a flattened one. Used to name the element
+    /// an error came from without inventing a spelling the caller did not use.
+    index_prefix: &'static str,
 }
 
 /// The value companion to the key most recently yielded by [`NodeMapAccess`].
@@ -257,16 +265,18 @@ impl<'de> Deserializer<'de> for NodeDeserializer<'_> {
         };
 
         // Lists normally arrive wrapped in a `member` segment (`List.member.1`); accept the
-        // unwrapped (flattened) form as well.
-        let entries = match map.get("member") {
-            Some(Node::Map(inner)) if map.len() == 1 => inner,
-            _ => map,
+        // unwrapped (flattened) form as well. Which one it was decides how an element is spelled
+        // when an error has to name it.
+        let (entries, index_prefix) = match map.get("member") {
+            Some(Node::Map(inner)) if map.len() == 1 => (inner, MEMBER_SEGMENT),
+            _ => (map, ""),
         };
 
         let mut elements: Vec<(u32, &Node)> = Vec::with_capacity(entries.len());
         for (key, node) in entries {
             let Ok(index) = key.parse::<u32>() else {
-                return Err(de::Error::custom(format_args!("invalid list index {key}")));
+                let err: QueryError = de::Error::custom("invalid list index");
+                return Err(err.in_parameter(&format!("{index_prefix}{key}")));
             };
             elements.push((index, node));
         }
@@ -275,6 +285,7 @@ impl<'de> Deserializer<'de> for NodeDeserializer<'_> {
 
         visitor.visit_seq(NodeSeqAccess {
             elements: elements.into_iter(),
+            index_prefix,
         })
     }
 
@@ -379,7 +390,7 @@ impl<'de> SeqAccess<'de> for NodeSeqAccess<'_> {
             None => Ok(None),
             Some((index, node)) => seed
                 .deserialize(NodeDeserializer(node))
-                .map_err(|err| err.in_parameter(&format!("member.{index}")))
+                .map_err(|err| err.in_parameter(&format!("{}{index}", self.index_prefix)))
                 .map(Some),
         }
     }
@@ -403,6 +414,8 @@ impl<'de> Deserializer<'de> for AbsentFieldDeserializer {
     fn deserialize_seq<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, QueryError> {
         visitor.visit_seq(NodeSeqAccess {
             elements: Vec::new().into_iter(),
+            // The list is empty, so no element is ever named and the prefix is never consulted.
+            index_prefix: MEMBER_SEGMENT,
         })
     }
 
@@ -555,6 +568,32 @@ mod tests {
             err.to_string(),
             "parameter PolicyArns.member.1.arn: expected a string, found a structured parameter"
         );
+    }
+
+    #[test_log::test]
+    fn test_flattened_lists_are_named_as_the_caller_spelled_them() {
+        // deserialize_seq accepts a list without the `member` segment. An error from such a list
+        // has to be named the way the caller wrote it, not rewritten into the wrapped spelling --
+        // naming a parameter that is not in the request is worse than naming none at all.
+        let err = from_query_str::<AssumeRoleLikeRequest>("RoleArn=x&Tags.1=oops").expect_err("expected an error");
+        assert_eq!(err.to_string(), "parameter Tags.1: expected a structure, found a scalar parameter");
+
+        let err =
+            from_query_str::<AssumeRoleLikeRequest>("RoleArn=x&Tags.member.1=oops").expect_err("expected an error");
+        assert_eq!(err.to_string(), "parameter Tags.member.1: expected a structure, found a scalar parameter");
+    }
+
+    #[test_log::test]
+    fn test_unparsable_list_index_names_the_segment() {
+        // The bad segment is not an index, so it cannot be reported as one; it is still the
+        // parameter at fault and is named as sent, in either spelling.
+        let err = from_query_str::<AssumeRoleLikeRequest>("RoleArn=x&TransitiveTagKeys.member.foo=k")
+            .expect_err("expected an error");
+        assert_eq!(err.to_string(), "parameter TransitiveTagKeys.member.foo: invalid list index");
+
+        let err = from_query_str::<AssumeRoleLikeRequest>("RoleArn=x&TransitiveTagKeys.foo=k")
+            .expect_err("expected an error");
+        assert_eq!(err.to_string(), "parameter TransitiveTagKeys.foo: invalid list index");
     }
 
     #[test_log::test]
