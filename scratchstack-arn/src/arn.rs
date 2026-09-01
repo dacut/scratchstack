@@ -90,9 +90,15 @@ impl Arn {
 
     /// Create a new ARN from the specified components, bypassing any validation.
     ///
-    /// This is the unvalidated counterpart to [`Arn::new`]; the accessors ([`Arn::partition`], [`Arn::service`], and
-    /// friends) rely on the components not containing embedded colons, so passing components that violate the
-    /// constraints below yields an `Arn` whose accessors return nonsense.
+    /// This is the unvalidated counterpart to [`Arn::new`]. Component boundaries are recorded from the lengths of the
+    /// arguments rather than by searching the formatted string, so [`Arn::partition`] and the other accessors return
+    /// exactly what was passed here even when it violates the constraints below.
+    ///
+    /// What an invalid component costs is the ARN string itself. A component containing a `:` formats into a string
+    /// that [`Arn::from_str`] splits at different boundaries, so the value no longer round-trips through its own
+    /// [`Display`] output: `new_unchecked("a:b", "ec2", ...)` renders as `arn:a:b:ec2:...`, which reparses with
+    /// `partition` of `a` and `service` of `b`. Components that are merely ill-formed (uppercase, say) round-trip as
+    /// text but produce an ARN that [`Arn::from_str`] rejects outright.
     ///
     /// # Safety
     ///
@@ -554,6 +560,41 @@ mod test {
 
         let arn_err = serde_json::from_str::<Arn>(r#"{}"#);
         assert_eq!(arn_err.unwrap_err().to_string(), "invalid type: map, expected a string at line 1 column 0");
+    }
+
+    // ── new_unchecked ────────────────────────────────────────────────────────
+
+    #[test]
+    fn new_unchecked_preserves_components() {
+        // Boundaries are recorded from the argument lengths rather than by splitting the formatted
+        // string, so the accessors return exactly what was passed, colons and all.
+        let arn = unsafe { Arn::new_unchecked("a:b", "ec2", "us-east-1", "123456789012", "res:with:colons") };
+        assert_eq!(arn.partition(), "a:b");
+        assert_eq!(arn.service(), "ec2");
+        assert_eq!(arn.region(), "us-east-1");
+        assert_eq!(arn.account_id(), "123456789012");
+        assert_eq!(arn.resource(), "res:with:colons");
+    }
+
+    #[test]
+    fn new_unchecked_invalid_component_breaks_round_trip() {
+        // What an invalid component costs is the ARN string: it no longer denotes those components.
+        let arn = unsafe { Arn::new_unchecked("a:b", "ec2", "us-east-1", "123456789012", "res") };
+        assert_eq!(arn.to_string(), "arn:a:b:ec2:us-east-1:123456789012:res");
+        assert_ne!(Arn::from_str(&arn.to_string()).ok().as_ref(), Some(&arn));
+
+        // A merely ill-formed component round-trips as text, but the ARN is rejected on reparse.
+        let arn = unsafe { Arn::new_unchecked("AWS", "ec2", "us-east-1", "123456789012", "res") };
+        assert_eq!(arn.partition(), "AWS");
+        assert_eq!(Arn::from_str(&arn.to_string()), Err(ArnError::InvalidPartition("AWS".to_string())));
+    }
+
+    #[test]
+    fn colons_in_resource_round_trip() {
+        // Colons are legitimate in a resource; validated ARNs carrying them round-trip fine.
+        let arn = Arn::new("aws", "ec2", "us-east-1", "123456789012", "res:with:colons").unwrap();
+        assert_eq!(arn.resource(), "res:with:colons");
+        assert_eq!(Arn::from_str(&arn.to_string()).unwrap(), arn);
     }
 
     // ── ArnBuilder ───────────────────────────────────────────────────────────
