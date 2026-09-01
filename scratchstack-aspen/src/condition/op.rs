@@ -55,7 +55,7 @@ pub enum ConditionCmp {
     /// Operators on numeric values.
     Numeric(NumericCmp, Variant),
 
-    /// Operators on string vaules.
+    /// Operators on string values.
     String(StringCmp, Variant),
 }
 
@@ -355,14 +355,14 @@ impl ConditionOp {
         Self::new(self.comparison, SetOperator::ForAnyValue)
     }
 
-    /// Indicates whether this condition operator matches the request [Context].
+    /// Indicates whether this condition operator matches the request [`Context`].
     ///
-    /// Any variables in the condition are resolved according to the specified [PolicyVersion].
+    /// Any variables in the condition are resolved according to the specified [`PolicyVersion`].
     ///
     /// # Errors
     ///
-    /// If a condition clause contains a malformed variable reference and [PolicyVersion::V2012_10_17] or later is
-    /// used, [AspenError::InvalidSubstitution] is returned.
+    /// If a condition clause contains a malformed variable reference and [`PolicyVersion::V2012_10_17`] or later is
+    /// used, [`AspenError::InvalidSubstitution`] is returned.
     pub fn matches(
         &self,
         condition: &BTreeMap<String, StringLikeList<String>>,

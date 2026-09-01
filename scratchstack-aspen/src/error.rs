@@ -15,7 +15,7 @@ pub enum AspenError {
     /// An invalid policy version was specified in a policy. The string contains the invalid version.
     InvalidPolicyVersion(String),
 
-    /// An invalid principal was specified ina policy. The string contains the invalid principal.
+    /// An invalid principal was specified in a policy. The string contains the invalid principal.
     InvalidPrincipal(String),
 
     /// An invalid resource was specified in a policy. The string contains the invalid resource.

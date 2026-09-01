@@ -27,7 +27,7 @@ pub enum Resource {
 }
 
 impl Resource {
-    /// If this is [Resource::Any], returns true.
+    /// If this is [`Resource::Any`], returns true.
     #[inline]
     pub fn is_any(&self) -> bool {
         matches!(self, Self::Any)

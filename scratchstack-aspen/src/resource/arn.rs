@@ -140,7 +140,7 @@ impl ResourceArn {
 impl FromStr for ResourceArn {
     type Err = AspenError;
 
-    /// Create an [ResourceArn] from a string.
+    /// Create a [`ResourceArn`] from a string.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.splitn(6, ':').collect();
         if parts.len() != 6 || parts[0] != "arn" {

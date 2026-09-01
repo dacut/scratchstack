@@ -15,7 +15,7 @@ pub struct Context {
     /// The API being invoked.
     api: String,
 
-    /// The [Principal] actor making the request.
+    /// The [`Principal`] actor making the request.
     actor: Principal,
 
     /// The resources associated with the request.
@@ -80,7 +80,7 @@ impl Context {
         &self.api
     }
 
-    /// Returns the [Principal] actor making the request.
+    /// Returns the [`Principal`] actor making the request.
     #[inline]
     pub fn actor(&self) -> &Principal {
         &self.actor
@@ -95,7 +95,7 @@ impl Context {
         &self.resources
     }
 
-    /// Returrns the session data associated with the request.
+    /// Returns the session data associated with the request.
     #[inline]
     pub fn session_data(&self) -> &SessionData {
         &self.session_data
@@ -131,8 +131,8 @@ impl Context {
     ///
     /// # Errors
     ///
-    /// If the string contains a malformed variable reference and [PolicyVersion::V2012_10_17] or later is used,
-    /// [AspenError::InvalidSubstitution] is returned.
+    /// If the string contains a malformed variable reference and [`PolicyVersion::V2012_10_17`] or later is used,
+    /// [`AspenError::InvalidSubstitution`] is returned.
     pub fn matcher<T: AsRef<str>>(&self, s: T, pv: PolicyVersion, case_insensitive: bool) -> Result<Regex, AspenError> {
         match pv {
             PolicyVersion::None | PolicyVersion::V2008_10_17 => Ok(regex_from_glob(s.as_ref(), case_insensitive)),
@@ -150,8 +150,8 @@ impl Context {
     ///
     /// # Errors
     ///
-    /// If the string contains a malformed variable reference and [PolicyVersion::V2012_10_17] or later is used,
-    /// [AspenError::InvalidSubstitution] is returned.
+    /// If the string contains a malformed variable reference and [`PolicyVersion::V2012_10_17`] or later is used,
+    /// [`AspenError::InvalidSubstitution`] is returned.
     fn subst_vars(&self, s: &str, case_insensitive: bool) -> Result<Regex, AspenError> {
         let mut i = s.chars();
         let mut pattern = String::with_capacity(s.len() + 2);
@@ -202,8 +202,8 @@ impl Context {
     ///
     /// # Errors
     ///
-    /// If the string contains a malformed variable reference and [PolicyVersion::V2012_10_17] or later is used,
-    /// [AspenError::InvalidSubstitution] is returned.
+    /// If the string contains a malformed variable reference and [`PolicyVersion::V2012_10_17`] or later is used,
+    /// [`AspenError::InvalidSubstitution`] is returned.
     pub fn subst_vars_plain(&self, s: &str) -> Result<String, AspenError> {
         let mut i = s.chars();
         let mut result = String::new();

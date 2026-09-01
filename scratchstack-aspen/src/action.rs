@@ -65,13 +65,13 @@ impl Action {
         Ok(Action::Specific(SpecificActionDetails::builder().service(service).api(api).build()?))
     }
 
-    /// Returns true if this action is [Action::Any].
+    /// Returns true if this action is [`Action::Any`].
     #[inline]
     pub fn is_any(&self) -> bool {
         matches!(self, Self::Any)
     }
 
-    /// If the action is [Action::Specific], returns the service and action.
+    /// If the action is [`Action::Specific`], returns the service and action.
     #[inline]
     pub fn specific(&self) -> Option<(&str, &str)> {
         match self {
@@ -80,7 +80,7 @@ impl Action {
         }
     }
 
-    /// Returns the service for this action or "*" if this action is [Action::Any].
+    /// Returns the service for this action or "*" if this action is [`Action::Any`].
     #[inline]
     pub fn service(&self) -> &str {
         match self {
@@ -92,7 +92,7 @@ impl Action {
         }
     }
 
-    /// Returns the API for this action or "*" if this action is [Action::Any].
+    /// Returns the API for this action or "*" if this action is [`Action::Any`].
     #[inline]
     pub fn api(&self) -> &str {
         match self {
