@@ -129,6 +129,10 @@ impl Context {
     /// variables `${*}`, `${$}`, and `${?}` are converted to literal `*`, `$`, and `?` characters, respectively, then
     /// regex-escaped.
     ///
+    /// A variable the session data does not hold expands to nothing, so `${aws:username}/*`
+    /// becomes `/*` for a request that carries no `aws:username`. Nothing distinguishes that from
+    /// a variable that is set to the empty string.
+    ///
     /// # Errors
     ///
     /// If the string contains a malformed variable reference and [`PolicyVersion::V2012_10_17`] or later is used,
@@ -148,10 +152,14 @@ impl Context {
     /// as necessary. The special variables `${*}`, `${$}`, and `${?}` are converted to literal `*`, `$`, and `?`
     /// characters, respectively, then regex-escaped.
     ///
+    /// A variable the session data does not hold expands to nothing, so `${aws:username}/*`
+    /// becomes `/*` for a request that carries no `aws:username`. Nothing distinguishes that from
+    /// a variable that is set to the empty string.
+    ///
     /// # Errors
     ///
-    /// If the string contains a malformed variable reference and [`PolicyVersion::V2012_10_17`] or later is used,
-    /// [`AspenError::InvalidSubstitution`] is returned.
+    /// If the string contains a malformed variable reference, [`AspenError::InvalidSubstitution`] is returned. A
+    /// reference is malformed if `$` is not followed by `{`, or if no `}` closes it before the end of the string.
     fn subst_vars(&self, s: &str, case_insensitive: bool) -> Result<Regex, AspenError> {
         let mut i = s.chars();
         let mut pattern = String::with_capacity(s.len() + 2);
@@ -198,12 +206,22 @@ impl Context {
         Ok(build_anchored(&pattern, case_insensitive))
     }
 
-    /// Substitutes variables from the given string, returning the resulting string.
+    /// Substitutes variables in the given string, returning the resulting string.
+    ///
+    /// Wildcards are left alone; this is for the operators that compare a value rather than glob
+    /// it. The special variables `${*}`, `${$}`, and `${?}` become literal `*`, `$`, and `?`.
+    ///
+    /// A variable the session data does not hold expands to nothing, so `${aws:username}/*`
+    /// becomes `/*` for a request that carries no `aws:username`. Nothing distinguishes that from
+    /// a variable that is set to the empty string.
+    ///
+    /// Substitution is unconditional. The caller decides whether the policy version calls for it,
+    /// as a policy older than [`PolicyVersion::V2012_10_17`] has no variables.
     ///
     /// # Errors
     ///
-    /// If the string contains a malformed variable reference and [`PolicyVersion::V2012_10_17`] or later is used,
-    /// [`AspenError::InvalidSubstitution`] is returned.
+    /// If the string contains a malformed variable reference, [`AspenError::InvalidSubstitution`] is returned. A
+    /// reference is malformed if `$` is not followed by `{`, or if no `}` closes it before the end of the string.
     pub fn subst_vars_plain(&self, s: &str) -> Result<String, AspenError> {
         let mut i = s.chars();
         let mut result = String::new();
@@ -429,6 +447,68 @@ mod test {
 
         // A newline may not be smuggled past the anchors on the substituted side either.
         assert!(!re.is_match("x\nuser/a"));
+    }
+
+    /// A variable the session data does not hold expands to nothing, in both substituting paths.
+    ///
+    /// This is worth pinning because it is not obviously the right answer -- an unresolved
+    /// variable silently widening or narrowing a pattern is a surprise -- and because the two
+    /// paths, one building a regex and one building a plain string, have to agree.
+    #[test_log::test]
+    fn test_unset_variables_expand_to_nothing() {
+        let actor = Principal::from(
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("user").build().unwrap(),
+        );
+        let context = Context::builder()
+            .api("RunInstances")
+            .actor(actor)
+            .session_data(SessionData::from([("aws:username", SessionValue::from("user"))]))
+            .service("ec2")
+            .build()
+            .unwrap();
+
+        // The plain path: the reference disappears, leaving the text around it.
+        assert_eq!(context.subst_vars_plain("a/${aws:username}/b").unwrap(), "a/user/b");
+        assert_eq!(context.subst_vars_plain("a/${aws:PrincipalTag/team}/b").unwrap(), "a//b");
+        assert_eq!(context.subst_vars_plain("${aws:nothing}").unwrap(), "");
+
+        // Nothing distinguishes an unset variable from one set to the empty string.
+        let empty = Context::builder()
+            .api("RunInstances")
+            .actor(Principal::from(
+                User::builder().partition("aws").account_id("123456789012").path("/").user_name("u").build().unwrap(),
+            ))
+            .session_data(SessionData::from([("aws:PrincipalTag/team", SessionValue::from(""))]))
+            .service("ec2")
+            .build()
+            .unwrap();
+        assert_eq!(empty.subst_vars_plain("a/${aws:PrincipalTag/team}/b").unwrap(), "a//b");
+
+        // The matcher path agrees: the pattern is the one the plain path would have produced.
+        let re = context.matcher("a/${aws:PrincipalTag/team}/b", PolicyVersion::V2012_10_17, false).unwrap();
+        assert!(re.is_match("a//b"));
+        assert!(!re.is_match("a/team/b"));
+
+        // The special variables are literals, not lookups, so they survive an empty session.
+        assert_eq!(context.subst_vars_plain("${*}${$}${?}").unwrap(), "*$?");
+        let re = context.matcher("${*}", PolicyVersion::V2012_10_17, false).unwrap();
+        assert!(re.is_match("*"), "${{*}} should match a literal asterisk, not act as a wildcard");
+        assert!(!re.is_match("anything"));
+
+        // A malformed reference is an error rather than a silent expansion.
+        for bad in ["${", "$", "$x", "a${b"] {
+            assert_eq!(
+                context.subst_vars_plain(bad).unwrap_err(),
+                AspenError::InvalidSubstitution(bad.to_string()),
+                "expected {bad} to be rejected"
+            );
+            assert!(context.matcher(bad, PolicyVersion::V2012_10_17, false).is_err(), "expected {bad} to be rejected");
+        }
+
+        // Older policy versions have no variables, so the text is matched as written.
+        let re = context.matcher("a/${aws:username}/b", PolicyVersion::V2008_10_17, false).unwrap();
+        assert!(re.is_match("a/${aws:username}/b"));
+        assert!(!re.is_match("a/user/b"));
     }
 
     #[test_log::test]
