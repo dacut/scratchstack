@@ -1,6 +1,6 @@
 use {
     super::{
-        setop::{OperatorNames, SetOperator, display_names},
+        setop::{SetOperator, VariantNames, display_names, variant_names},
         variant::Variant,
     },
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
@@ -11,16 +11,20 @@ use {
 /// A comparison between the number a request carries and one the policy lists.
 type NumericOp = fn(i64, i64) -> bool;
 
-/// Numeric operation names.
-pub(super) const NUMERIC_DISPLAY_NAMES: [OperatorNames; 12] = display_names![
-    "NumericEquals",
-    "NumericEqualsIfExists",
-    "NumericNotEquals",
-    "NumericNotEqualsIfExists",
+/// The names `NumericEquals` goes by.
+const NUMERIC_EQUALS_NAMES: VariantNames =
+    variant_names!["NumericEquals", "NumericEqualsIfExists", "NumericNotEquals", "NumericNotEqualsIfExists",];
+
+/// The names `NumericLessThan` goes by. Negated, it is `NumericGreaterThanEquals`.
+const NUMERIC_LESS_THAN_NAMES: VariantNames = variant_names![
     "NumericLessThan",
     "NumericLessThanIfExists",
     "NumericGreaterThanEquals",
     "NumericGreaterThanEqualsIfExists",
+];
+
+/// The names `NumericLessThanEquals` goes by. Negated, it is `NumericGreaterThan`.
+const NUMERIC_LESS_THAN_EQUALS_NAMES: VariantNames = variant_names![
     "NumericLessThanEquals",
     "NumericLessThanEqualsIfExists",
     "NumericGreaterThan",
@@ -34,24 +38,30 @@ pub(super) const NUMERIC_DISPLAY_NAMES: [OperatorNames; 12] = display_names![
 /// `NumericGreaterThanEquals` is [`LessThan`][`NumericCmp::LessThan`] negated, and
 /// `NumericGreaterThan` is [`LessThanEquals`][`NumericCmp::LessThanEquals`] negated.
 ///
-/// The discriminants index the table of names the operators are written with, leaving
-/// room for the [`Variant`] that follows each comparison.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[repr(u8)]
 pub enum NumericCmp {
     /// The comparison written `NumericEquals`, or `NumericNotEquals` when negated.
-    Equals = 0,
+    Equals,
 
     /// The comparison written `NumericLessThan`, or `NumericGreaterThanEquals` when negated.
-    LessThan = 4,
+    LessThan,
 
     /// The comparison written `NumericLessThanEquals`, or `NumericGreaterThan` when negated.
-    LessThanEquals = 8,
+    LessThanEquals,
 }
 
 impl NumericCmp {
+    /// Returns the names this comparison goes by, one per [`Variant`].
+    const fn names(&self) -> &'static VariantNames {
+        match self {
+            Self::Equals => &NUMERIC_EQUALS_NAMES,
+            Self::LessThan => &NUMERIC_LESS_THAN_NAMES,
+            Self::LessThanEquals => &NUMERIC_LESS_THAN_EQUALS_NAMES,
+        }
+    }
+
     pub(super) const fn display_name(&self, set_op: SetOperator, variant: &Variant) -> &'static str {
-        NUMERIC_DISPLAY_NAMES[*self as usize | variant.as_usize()].name(set_op)
+        self.names().name(*variant, set_op)
     }
 }
 

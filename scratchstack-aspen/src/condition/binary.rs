@@ -1,6 +1,6 @@
 use {
     super::{
-        setop::{OperatorNames, display_names},
+        setop::{IfExistsNames, display_names, if_exists_names},
         variant::IfExists,
     },
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
@@ -8,8 +8,8 @@ use {
     scratchstack_aws_principal::SessionValue,
 };
 
-/// Binary operation names.
-pub(super) const BINARY_DISPLAY_NAMES: [OperatorNames; 2] = display_names!["BinaryEquals", "BinaryEqualsIfExists"];
+/// The names the binary comparison goes by. AWS defines no negated form.
+pub(super) const BINARY_DISPLAY_NAMES: IfExistsNames = if_exists_names!["BinaryEquals", "BinaryEqualsIfExists"];
 
 pub(super) fn binary_match(
     _context: &Context,

@@ -1,14 +1,14 @@
 use {
     super::{
-        setop::{OperatorNames, display_names},
+        setop::{IfExistsNames, display_names, if_exists_names},
         variant::IfExists,
     },
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
     scratchstack_aws_principal::SessionValue,
 };
 
-/// Boolean operation names.
-pub(super) const BOOL_DISPLAY_NAMES: [OperatorNames; 2] = display_names!["Bool", "BoolIfExists"];
+/// The names the boolean comparison goes by. AWS defines no negated form.
+pub(super) const BOOL_DISPLAY_NAMES: IfExistsNames = if_exists_names!["Bool", "BoolIfExists"];
 
 pub(super) fn bool_match(
     context: &Context,

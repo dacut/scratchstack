@@ -1,6 +1,6 @@
 use {
     super::{
-        setop::{OperatorNames, display_names},
+        setop::{VariantNames, display_names, variant_names},
         variant::Variant,
     },
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
@@ -9,9 +9,9 @@ use {
     std::net::IpAddr,
 };
 
-/// IP address operation names.
-pub(super) const IP_ADDRESS_DISPLAY_NAMES: [OperatorNames; 4] =
-    display_names!["IpAddress", "IpAddressIfExists", "NotIpAddress", "NotIpAddressIfExists"];
+/// The names the IP address comparison goes by.
+pub(super) const IP_ADDRESS_DISPLAY_NAMES: VariantNames =
+    variant_names!["IpAddress", "IpAddressIfExists", "NotIpAddress", "NotIpAddressIfExists"];
 
 pub(super) fn ip_address_match(
     context: &Context,
