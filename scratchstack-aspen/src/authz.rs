@@ -241,6 +241,33 @@ mod tests {
         assert!(result.sources().is_empty());
     }
 
+    /// A resource carrying a newline must not slip past a `Deny` on a wildcard resource.
+    ///
+    /// ARNs accept a newline -- an S3 object key may contain almost any UTF-8 -- and a glob's `*`
+    /// has to cover it. If it does not, an object named across two lines is reachable despite a
+    /// policy that denies the whole bucket.
+    #[test_log::test]
+    fn test_deny_covers_resources_containing_newlines() {
+        let policy_set = policy_set(&[
+            r#"{"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": "s3:*", "Resource": "*"}]}"#,
+            r#"{"Version": "2012-10-17", "Statement": [{"Effect": "Deny", "Action": "s3:*", "Resource": "arn:aws:s3:::bucket-a/*"}]}"#,
+        ]);
+
+        let evil = Arn::from_str("arn:aws:s3:::bucket-a/ev\nil").expect("an ARN may carry a newline");
+        assert_eq!(evil.resource(), "bucket-a/ev\nil");
+
+        let result = authorize(&context("GetObject", vec![evil]), &policy_set).unwrap();
+        assert_eq!(result.decision(), Decision::Deny, "a newline in the key evaded the deny");
+
+        // The ordinary key is denied too, so the test is not passing for want of a match.
+        let plain = Arn::from_str("arn:aws:s3:::bucket-a/evil").unwrap();
+        assert_eq!(authorize(&context("GetObject", vec![plain]), &policy_set).unwrap().decision(), Decision::Deny);
+
+        // And a key outside the denied bucket is still allowed.
+        let other = Arn::from_str("arn:aws:s3:::bucket-b/ev\nil").unwrap();
+        assert_eq!(authorize(&context("GetObject", vec![other]), &policy_set).unwrap().decision(), Decision::Allow);
+    }
+
     #[test_log::test]
     fn test_permissions_boundary() {
         const BOUNDARY: &str = r#"{"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": "s3:*", "Resource": "arn:aws:s3:::bucket-a"}]}"#;

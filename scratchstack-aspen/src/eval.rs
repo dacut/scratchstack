@@ -192,10 +192,7 @@ impl Context {
         }
 
         pattern.push('$');
-        Ok(RegexBuilder::new(&pattern)
-            .case_insensitive(case_insensitive)
-            .build()
-            .expect("regex builds should not fail"))
+        Ok(build_anchored(&pattern, case_insensitive))
     }
 
     /// Substitutes variables from the given string, returning the resulting string.
@@ -265,7 +262,25 @@ pub(crate) fn regex_from_glob(s: &str, case_insensitive: bool) -> Regex {
         }
     }
     pattern.push('$');
-    RegexBuilder::new(&pattern).case_insensitive(case_insensitive).build().expect("regex builds should not fail")
+    build_anchored(&pattern, case_insensitive)
+}
+
+/// Compiles a pattern assembled by [`regex_from_glob`] or [`Context::subst_vars`].
+///
+/// `.` is made to match a newline as well. A glob's `*` and `?` become `.*` and `.`, and the
+/// regex crate excludes `\n` from `.` by default -- so without this, `*` would mean "any string
+/// with no newline in it". A value carrying one would then slip past a `Deny` statement whose
+/// resource or condition pattern was written to cover everything, and ARNs, S3 object keys, and
+/// tag values can all carry a newline.
+///
+/// The pattern is already anchored by its caller with `^` and `$`, which match only at the ends of
+/// the haystack: the regex crate gives `$` no trailing-newline exemption.
+fn build_anchored(pattern: &str, case_insensitive: bool) -> Regex {
+    RegexBuilder::new(pattern)
+        .case_insensitive(case_insensitive)
+        .dot_matches_new_line(true)
+        .build()
+        .expect("regex builds should not fail")
 }
 
 /// The outcome of a policy evaluation.
@@ -298,9 +313,9 @@ impl Display for Decision {
 #[cfg(test)]
 mod test {
     use {
-        crate::{AspenError, Context, Decision},
+        crate::{AspenError, Context, Decision, PolicyVersion, eval::regex_from_glob},
         pretty_assertions::assert_eq,
-        scratchstack_aws_principal::{Principal, SessionData, User},
+        scratchstack_aws_principal::{Principal, SessionData, SessionValue, User},
     };
 
     #[test_log::test]
@@ -363,6 +378,54 @@ mod test {
             assert_eq!(context.service(), service);
             assert_eq!(context.api(), api);
         }
+    }
+
+    /// A glob's `*` and `?` have to cover a newline like any other character.
+    ///
+    /// The regex crate excludes `\n` from `.` by default, which would make `*` mean "any string
+    /// with no newline in it" -- and a value carrying one would then slip past a `Deny` statement
+    /// whose pattern was written to cover everything.
+    #[test_log::test]
+    fn test_wildcards_match_newlines() {
+        let star = regex_from_glob("*", false);
+        assert!(star.is_match("alpha\nbeta"), "`*` did not match a value containing a newline");
+        assert!(star.is_match("\n"), "`*` did not match a lone newline");
+        assert!(star.is_match(""), "`*` did not match the empty string");
+
+        let prefix = regex_from_glob("alpha*", false);
+        assert!(prefix.is_match("alpha\nbeta"));
+
+        let single = regex_from_glob("a?b", false);
+        assert!(single.is_match("a\nb"), "`?` did not match a newline");
+
+        // The anchors still bind the whole value: a newline does not open up a partial match.
+        let literal = regex_from_glob("abc", false);
+        assert!(literal.is_match("abc"));
+        assert!(!literal.is_match("abc\n"));
+        assert!(!literal.is_match("\nabc"));
+        assert!(!literal.is_match("xabc\nyabc"));
+    }
+
+    /// The same holds for a pattern that went through variable substitution.
+    #[test_log::test]
+    fn test_substituted_wildcards_match_newlines() {
+        let actor = Principal::from(
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("user").build().unwrap(),
+        );
+        let context = Context::builder()
+            .api("RunInstances")
+            .actor(actor)
+            .session_data(SessionData::from([("aws:username", SessionValue::from("user"))]))
+            .service("ec2")
+            .build()
+            .unwrap();
+
+        let re = context.matcher("${aws:username}/*", PolicyVersion::V2012_10_17, false).unwrap();
+        assert!(re.is_match("user/a\nb"), "a substituted pattern did not match across a newline");
+        assert!(!re.is_match("other/a\nb"));
+
+        // A newline may not be smuggled past the anchors on the substituted side either.
+        assert!(!re.is_match("x\nuser/a"));
     }
 
     #[test_log::test]
