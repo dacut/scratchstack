@@ -60,8 +60,14 @@ impl Display for ArnError {
 /// Errors that can be raised by [`ArnBuilder::build`][crate::ArnBuilder::build].
 ///
 /// This mirrors [`ArnError`], adding the `Missing*` variants for required components that were never set on the
-/// builder. The `InvalidArn`, `InvalidScheme`, and `InvalidResource` variants exist only so that any [`ArnError`] can
-/// be converted into an `ArnBuilderError`; `build` itself never produces them.
+/// builder. The `InvalidArn`, `InvalidScheme`, and `InvalidResource` variants exist only to give the
+/// `From<ArnError>` conversion a counterpart for every error it accepts; `build` itself never produces them.
+#[cfg_attr(
+    feature = "iam",
+    doc = "",
+    doc = " The IAM-specific variants of [`ArnError`] are the exception: they have no counterpart here, and",
+    doc = " converting one panics. See the `# Panics` section on that conversion."
+)]
 #[derive(Debug, PartialEq, Eq)]
 pub enum ArnBuilderError {
     /// Invalid AWS account id. The argument contains the specified account id.
