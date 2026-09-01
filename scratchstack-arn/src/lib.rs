@@ -35,4 +35,23 @@ mod iam;
 pub use iam::*;
 
 /// Validation utilities used internally, but may be useful elsewhere.
+///
+/// # ASCII only
+///
+/// Every validator here rejects non-ASCII input. Partition, region, and service names accept only ASCII lowercase
+/// letters, ASCII digits, and `-`; account IDs are ASCII digits; IAM names and paths are printable ASCII. This matches
+/// AWS, whose partition, region, and service names have always been drawn from that set.
+///
+/// The restriction is deliberate rather than incidental. ARN components are compared byte-for-byte to make
+/// authorization decisions, so admitting the full Unicode range would let distinct-but-indistinguishable names
+/// coexist:
+///
+/// *   **Homographs.** `aws` and `аws` (with a Cyrillic `а`, `U+0430`) render identically in logs and consoles, yet
+///     are different strings and therefore different partitions.
+/// *   **Multiple encodings of the same text.** `가나` written as precomposed Hangul syllables and as conjoining jamo
+///     are canonically equivalent and render identically, but do not compare equal. Validating either form would
+///     require normalizing first, and normalization is not something a validator can do on a borrowed `&str`.
+///
+/// Restricting to ASCII removes both problems outright, and makes character counts and byte counts interchangeable,
+/// so length limits are unambiguous.
 pub mod utils;

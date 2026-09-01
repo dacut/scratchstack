@@ -390,19 +390,20 @@ mod test {
     }
 
     #[test]
-    fn check_unicode() {
-        let arn = Arn::from_str("arn:aws-中国:één:日本-東京-1:123456789012:instance/i-1234567890abcdef0").unwrap();
-        assert_eq!(arn.partition(), "aws-中国");
-        assert_eq!(arn.service(), "één");
-        assert_eq!(arn.region(), "日本-東京-1");
+    fn check_unicode_rejected() {
+        // Partition, service, and region are ASCII-only; see the scratchstack_arn::utils module docs.
+        let err = Arn::from_str("arn:aws-中国:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0").unwrap_err();
+        assert_eq!(err, ArnError::InvalidPartition("aws-中国".to_string()));
 
-        let arn = Arn::from_str(
-            "arn:việtnam:nœrøyfjorden:ap-southeast-7-hòa-hiệp-bắc-3:123456789012:instance/i-1234567890abcdef0",
-        )
-        .unwrap();
-        assert_eq!(arn.partition(), "việtnam");
-        assert_eq!(arn.service(), "nœrøyfjorden");
-        assert_eq!(arn.region(), "ap-southeast-7-hòa-hiệp-bắc-3");
+        let err = Arn::from_str("arn:aws:één:us-east-1:123456789012:instance/i-1234567890abcdef0").unwrap_err();
+        assert_eq!(err, ArnError::InvalidService("één".to_string()));
+
+        let err = Arn::from_str("arn:aws:ec2:日本-東京-1:123456789012:instance/i-1234567890abcdef0").unwrap_err();
+        assert_eq!(err, ArnError::InvalidRegion("日本-東京-1".to_string()));
+
+        // The resource is service-specific and is not validated, so it may still hold non-ASCII text.
+        let arn = Arn::from_str("arn:aws:s3:::bucket/日本").unwrap();
+        assert_eq!(arn.resource(), "bucket/日本");
     }
 
     #[test]
