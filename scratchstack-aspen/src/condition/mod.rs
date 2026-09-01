@@ -132,7 +132,7 @@ impl Condition {
         self.map.clear();
     }
 
-    /// Returns `true` if the condition clause contains a value for the specified [ConditionOp] operator.
+    /// Returns `true` if the condition clause contains a value for the specified [`ConditionOp`] operator.
     ///
     /// # Examples
     ///
@@ -155,7 +155,7 @@ impl Condition {
         self.map.contains_key(key)
     }
 
-    /// Gets the given [ConditionOp] operator's corresponding entry in the map for in-place manipulation.
+    /// Gets the given [`ConditionOp`] operator's corresponding entry in the map for in-place manipulation.
     ///
     /// # Examples
     ///
@@ -178,7 +178,7 @@ impl Condition {
         self.map.entry(key)
     }
 
-    /// Returns a reference to the [ConditionMap] corresponding to the [ConditionOp] operator.
+    /// Returns a reference to the [`ConditionMap`] corresponding to the [`ConditionOp`] operator.
     ///
     /// The key may be any borrowed form of the map's key type, but the ordering
     /// on the borrowed form *must* match the ordering on the key type.
@@ -206,7 +206,7 @@ impl Condition {
     }
 
     /// Returns the `(ConditionOp, ConditionMap)` key-value pair corresponding to the supplied
-    /// [ConditionOp] operator.
+    /// [`ConditionOp`] operator.
     ///
     /// # Examples
     ///
@@ -228,7 +228,7 @@ impl Condition {
         self.map.get_key_value(key)
     }
 
-    /// Returns a mutable reference to the [ConditionMap] corresponding to the [ConditionOp] operator.
+    /// Returns a mutable reference to the [`ConditionMap`] corresponding to the [`ConditionOp`] operator.
     ///
     /// # Examples
     ///
@@ -372,7 +372,7 @@ impl Condition {
         self.map.iter()
     }
 
-    /// Gets an mutable iterator over the `(&ConditionOp, &mut ConditionMap)` entries of the condition clause, sorted
+    /// Gets a mutable iterator over the `(&ConditionOp, &mut ConditionMap)` entries of the condition clause, sorted
     /// by [`ConditionOp`] operator.
     ///
     /// # Examples
@@ -404,7 +404,7 @@ impl Condition {
         self.map.iter_mut()
     }
 
-    /// Gets an iterator over the [ConditionOp] operator keys of the map, in sorted order.
+    /// Gets an iterator over the [`ConditionOp`] operator keys of the map, in sorted order.
     ///
     /// # Examples
     ///

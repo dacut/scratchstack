@@ -20,7 +20,7 @@ pub enum PolicySource {
 
     /// A managed policy that is attached to an IAM entity (user, role).
     EntityAttachedPolicy {
-        /// The ARN of the of the policy.
+        /// The ARN of the policy.
         policy_arn: String,
 
         /// The IAM ID of the policy.
@@ -30,7 +30,7 @@ pub enum PolicySource {
         version: String,
     },
 
-    /// An inline policy directly attached to an IAM group that an IAM user ia a member of.
+    /// An inline policy directly attached to an IAM group that an IAM user is a member of.
     GroupInline {
         /// The ARN of the IAM group.
         group_arn: String,
@@ -44,13 +44,13 @@ pub enum PolicySource {
 
     /// A managed policy that is attached to an IAM group that an IAM user is a member of.
     GroupAttachedPolicy {
-        /// The ARN of the of IAM group.
+        /// The ARN of the IAM group.
         group_arn: String,
 
         /// The IAM ID of the group.
         group_id: String,
 
-        /// The ARN of the of the policy.
+        /// The ARN of the policy.
         policy_arn: String,
 
         /// The IAM ID of the policy.
@@ -71,7 +71,7 @@ pub enum PolicySource {
 
     /// A permissions boundary attached to an IAM entity (user, role).
     PermissionBoundary {
-        /// The ARN of the the policy used as a permissions boundary.
+        /// The ARN of the policy used as a permissions boundary.
         policy_arn: String,
 
         /// The IAM ID of the policy used as a permissions boundary.
@@ -81,9 +81,9 @@ pub enum PolicySource {
         version: String,
     },
 
-    /// An service control policy attached to an account or organizational unit.
+    /// A service control policy attached to an account or organizational unit.
     OrgServiceControl {
-        /// The ARN of the the policy used as a service control policy.
+        /// The ARN of the policy used as a service control policy.
         policy_arn: String,
 
         /// The name of the policy used as a service control policy.
@@ -98,7 +98,7 @@ pub enum PolicySource {
 }
 
 impl PolicySource {
-    /// Indicates whether the policy is being used permissions boundary.
+    /// Indicates whether the policy is being used as a permissions boundary.
     ///
     /// Permissions boundaries are used to limit the permissions in effect. Allow effects in a permissions boundary
     /// do not grant permissions, but must be combined with an allow effect in a non-permissions boundary policy to

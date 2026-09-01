@@ -15,7 +15,7 @@ use {
 /// Aspen policy versions as represented in an Aspen policy document.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub enum PolicyVersion {
-    /// No policy version specified. Equivalent to [PolicyVersion::V2008_10_17], but is not serialized in the policy
+    /// No policy version specified. Equivalent to [`PolicyVersion::V2008_10_17`], but is not serialized in the policy
     /// document.
     #[default]
     None,
