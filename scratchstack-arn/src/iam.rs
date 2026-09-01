@@ -50,6 +50,15 @@ impl FromStr for IamResourceArn {
 impl TryFrom<Arn> for IamResourceArn {
     type Error = ArnError;
 
+    /// Split the resource component of an IAM ARN into its type, path, and name.
+    ///
+    /// # Errors
+    ///
+    /// * If the service is not `iam`, [`ArnError::InvalidService`] is returned.
+    /// * If the resource does not have the form `type/path/name`, [`ArnError::InvalidResource`] is returned,
+    ///   carrying the whole resource.
+    /// * If the path or the name is itself malformed, [`ArnError::InvalidIamResourcePath`] or
+    ///   [`ArnError::InvalidIamResourceName`] is returned, carrying just that component.
     fn try_from(arn: Arn) -> Result<Self, Self::Error> {
         if arn.service() != SERVICE_KEY_IAM {
             return Err(ArnError::InvalidService(arn.service().to_string()));
@@ -84,9 +93,10 @@ impl IamResourceArn {
     /// * If `arn_str` is not a well-formed ARN, the corresponding [`ArnError`] from [`Arn::from_str`] is returned.
     /// * If the service is not `iam`, [`ArnError::InvalidService`] is returned.
     /// * If the resource does not have the form `type/path/name`, or the resource type does not match
-    ///   `expected_resource_type`, [`ArnError::InvalidResource`] is returned.
-    /// * If the path or name are malformed, [`ArnError::InvalidIamResourcePath`] or
-    ///   [`ArnError::InvalidIamResourceName`] is returned.
+    ///   `expected_resource_type`, [`ArnError::InvalidResource`] is returned, carrying the whole resource.
+    /// * If the resource splits correctly but the path or the name is itself malformed,
+    ///   [`ArnError::InvalidIamResourcePath`] or [`ArnError::InvalidIamResourceName`] is returned, carrying just
+    ///   that component.
     pub fn expect_resource_type(arn_str: impl AsRef<str>, expected_resource_type: &str) -> Result<Self, ArnError> {
         let arn = Arn::from_str(arn_str.as_ref())?;
         let iam_arn = Self::try_from(arn)?;
@@ -163,7 +173,8 @@ impl IamResourceArn {
 ///
 /// # Errors
 ///
-/// Returns [`ArnError::InvalidResource`] if `path` does not meet the requirements above.
+/// Returns [`ArnError::InvalidIamResourcePath`] if `path` does not meet the requirements above, carrying `path`
+/// itself rather than the resource it may have come from.
 ///
 /// ## References
 /// * [AWS CreateGroup](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateGroup.html)
@@ -177,21 +188,21 @@ pub fn validate_iam_path(path: impl AsRef<str>) -> Result<(), ArnError> {
 
 fn validate_iam_path_inner(path: &str) -> Result<(), ArnError> {
     if path.is_empty() || path.len() > 512 {
-        return Err(ArnError::InvalidResource(path.to_string()));
+        return Err(ArnError::InvalidIamResourcePath(path.to_string()));
     }
 
     let mut last_was_slash = false;
 
     for c in path.chars() {
         if c < '\x21' || c > '\x7e' {
-            return Err(ArnError::InvalidResource(path.to_string()));
+            return Err(ArnError::InvalidIamResourcePath(path.to_string()));
         }
 
         last_was_slash = c == '/';
     }
 
     if !last_was_slash {
-        return Err(ArnError::InvalidResource(path.to_string()));
+        return Err(ArnError::InvalidIamResourcePath(path.to_string()));
     }
 
     Ok(())
@@ -206,8 +217,8 @@ fn validate_iam_path_inner(path: &str) -> Result<(), ArnError> {
 ///
 /// # Errors
 ///
-/// Returns [`ArnError::InvalidIamResourcePath`] if `path_prefix` does not meet the requirements above. Note that this
-/// differs from [`validate_iam_path`], which reports [`ArnError::InvalidResource`].
+/// Returns [`ArnError::InvalidIamResourcePath`] if `path_prefix` does not meet the requirements above, as
+/// [`validate_iam_path`] does.
 #[inline(always)]
 pub fn validate_iam_path_prefix(path_prefix: impl AsRef<str>) -> Result<(), ArnError> {
     validate_iam_path_prefix_inner(path_prefix.as_ref())
@@ -289,16 +300,58 @@ mod tests {
 
     #[test]
     fn test_invalid_resource_arns() {
+        // Wrong service.
         let arn = Arn::from_str("arn:aws:s3:::my_corporate_bucket").unwrap();
-        assert!(IamResourceArn::try_from(arn).is_err());
+        assert_eq!(IamResourceArn::try_from(arn), Err(ArnError::InvalidService("s3".to_string())));
 
-        let arn = Arn::from_str("arn:aws:iam::123456789012:role").unwrap();
-        assert!(IamResourceArn::try_from(arn).is_err());
+        // Structural failures carry the whole resource.
+        for resource in ["role", "role/", "role/path/to/"] {
+            let arn = Arn::from_str(&format!("arn:aws:iam::123456789012:{resource}")).unwrap();
+            assert_eq!(
+                IamResourceArn::try_from(arn),
+                Err(ArnError::InvalidResource(resource.to_string())),
+                "for {resource:?}"
+            );
+        }
+    }
 
-        let arn = Arn::from_str("arn:aws:iam::123456789012:role/").unwrap();
-        assert!(IamResourceArn::try_from(arn).is_err());
+    #[test]
+    fn test_component_errors_carry_only_that_component() {
+        // A malformed path reports the path, not the resource it came from.
+        let arn = Arn::from_str("arn:aws:iam::123456789012:role/bad path/Deployer").unwrap();
+        assert_eq!(IamResourceArn::try_from(arn), Err(ArnError::InvalidIamResourcePath("/bad path/".to_string())));
 
-        let arn = Arn::from_str("arn:aws:iam::123456789012:role/path/to/").unwrap();
-        assert!(IamResourceArn::try_from(arn).is_err());
+        // Likewise for a malformed name.
+        let arn = Arn::from_str("arn:aws:iam::123456789012:role/eng/Deploy!er").unwrap();
+        assert_eq!(IamResourceArn::try_from(arn), Err(ArnError::InvalidIamResourceName("Deploy!er".to_string())));
+    }
+
+    #[test]
+    fn test_expect_resource_type() {
+        let arn = IamResourceArn::expect_resource_type("arn:aws:iam::123456789012:role/eng/Deployer", "role").unwrap();
+        assert_eq!(arn.resource_name(), "Deployer");
+
+        // A type mismatch reports the whole resource.
+        assert_eq!(
+            IamResourceArn::expect_resource_type("arn:aws:iam::123456789012:user/eng/Deployer", "role"),
+            Err(ArnError::InvalidResource("user/eng/Deployer".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_path_validators_agree_on_their_error() {
+        // validate_iam_path and validate_iam_path_prefix are siblings and report the same variant.
+        assert_eq!(
+            validate_iam_path("no-trailing-slash"),
+            Err(ArnError::InvalidIamResourcePath("no-trailing-slash".to_string()))
+        );
+        assert_eq!(
+            validate_iam_path_prefix("bad prefix"),
+            Err(ArnError::InvalidIamResourcePath("bad prefix".to_string()))
+        );
+
+        // The prefix form differs only in not requiring the trailing slash.
+        assert!(validate_iam_path_prefix("/eng").is_ok());
+        assert!(validate_iam_path("/eng/").is_ok());
     }
 }
