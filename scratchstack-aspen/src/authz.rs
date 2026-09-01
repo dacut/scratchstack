@@ -38,15 +38,23 @@ impl<'a> AuthorizationResult<'a> {
 
 /// Evaluate `policy_set` against `context` using AWS request-evaluation semantics.
 ///
-/// * The account root user is implicitly allowed: identity-based policies and permissions
-///   boundaries do not constrain the root user. (Service control policies and resource-based
-///   policies, which can constrain the root user, are not evaluated here.)
+/// * The account root user is allowed before any policy is looked at, so nothing in the set
+///   constrains it -- an explicit deny included.
+///
+///   That matches AWS for identity-based policies and permissions boundaries, neither of which
+///   can constrain the root user. It does **not** match AWS for the three sources that can: a
+///   [`PolicySource::OrgServiceControl`], [`PolicySource::Session`], or [`PolicySource::Resource`]
+///   entry denying the request is skipped along with everything else, though each is evaluated
+///   normally for every other principal. A caller relying on a service control policy to bound
+///   the root user must apply it itself; [`PolicySet::evaluate_all`] does evaluate one against a
+///   root actor, and will report the denial this function passes over.
 /// * If the context has no resources — an operation without resource-level permissions — the
 ///   policy set is evaluated once; statements must then specify `Resource: "*"` to apply.
 /// * Otherwise, the policy set is evaluated once per resource. Each resource must be allowed by
 ///   some policy and denied by none; a single denied resource denies the entire request.
-/// * An explicit deny always overrides an allow, and permissions boundaries must allow the
-///   request for it to be granted (see [`PolicySource::is_boundary`]).
+/// * For every principal but the root user, an explicit deny always overrides an allow, and
+///   permissions boundaries must allow the request for it to be granted (see
+///   [`PolicySource::is_boundary`]).
 ///
 /// # Errors
 ///
@@ -190,6 +198,67 @@ mod tests {
         assert_eq!(result.decision(), Decision::Allow);
         assert!(result.is_allowed());
         assert!(result.sources().is_empty());
+    }
+
+    /// The root user is allowed past a deny from every policy source, including the three that
+    /// would constrain it in AWS.
+    ///
+    /// `authorize` returns before any policy is looked at, so the effect does not depend on what
+    /// the set holds. The identity and boundary rows match AWS, which does not let either
+    /// constrain the root user. The service-control, session, and resource rows do not: AWS
+    /// applies all three to root. The last assertion shows the divergence is in this function and
+    /// not in the evaluator, which reports the denial on the same input.
+    #[test_log::test]
+    fn test_root_user_is_allowed_past_every_deny() {
+        const DENY_ALL: &str =
+            r#"{"Version": "2012-10-17", "Statement": [{"Effect": "Deny", "Action": "*", "Resource": "*"}]}"#;
+
+        let root = || {
+            let actor =
+                PrincipalActor::from(RootUser::builder().partition("aws").account_id("123456789012").build().unwrap());
+            Context::builder()
+                .api("GetObject")
+                .actor(actor)
+                .resources(vec![Arn::from_str("arn:aws:s3:::bucket-a/key").unwrap()])
+                .service("s3")
+                .session_data(SessionData::new())
+                .build()
+                .unwrap()
+        };
+        let scp = || {
+            PolicySource::new_org_service_control(
+                "arn:aws:organizations::123456789012:policy/p-1",
+                "SCP",
+                "arn:aws:organizations::123456789012:account/o-1/123456789012",
+            )
+        };
+
+        for (label, source) in [
+            ("identity inline", PolicySource::new_entity_inline("arn:aws:iam::123456789012:root", "AIDA", "p")),
+            (
+                "permissions boundary",
+                PolicySource::new_permission_boundary("arn:aws:iam::123456789012:policy/B", "ANPA", "v1"),
+            ),
+            ("service control policy", scp()),
+            ("session policy", PolicySource::new_session()),
+            ("resource policy", PolicySource::new_resource("arn:aws:s3:::bucket-a", Some("p"))),
+        ] {
+            let mut policy_set = PolicySet::new();
+            policy_set.add_policy(source, Policy::from_str(DENY_ALL).unwrap());
+
+            let result = authorize(&root(), &policy_set).unwrap();
+            assert_eq!(result.decision(), Decision::Allow, "a deny from {label} reached the root user");
+            assert!(result.sources().is_empty(), "{label} was reported as a source");
+        }
+
+        // The same deny does apply to any other principal, so the set is not inert.
+        let mut policy_set = PolicySet::new();
+        policy_set.add_policy(scp(), Policy::from_str(DENY_ALL).unwrap());
+        let not_root = context("GetObject", vec![Arn::from_str("arn:aws:s3:::bucket-a/key").unwrap()]);
+        assert_eq!(authorize(&not_root, &policy_set).unwrap().decision(), Decision::Deny);
+
+        // And the evaluator underneath reports the denial for root too: only authorize skips it.
+        assert_eq!(policy_set.evaluate_all(&root()).unwrap().0, Decision::Deny);
     }
 
     #[test_log::test]
