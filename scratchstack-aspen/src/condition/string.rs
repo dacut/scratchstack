@@ -23,11 +23,22 @@ const STRING_DISPLAY_NAMES: [OperatorNames; 12] = display_names![
     "StringNotLikeIfExists",
 ];
 
+/// The comparison a string condition operator performs.
+///
+/// The discriminants index the table of names the operators are written with, leaving
+/// room for the [`Variant`] that follows each comparison.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum StringCmp {
+    /// Equality: `StringEquals`, or `StringNotEquals` when negated.
     Equals = 0,
+
+    /// Equality ignoring case: `StringEqualsIgnoreCase`, or `StringNotEqualsIgnoreCase` when
+    /// negated.
     EqualsIgnoreCase = 4,
+
+    /// A glob match, in which `*` stands for any run of characters and `?` for any one of them:
+    /// `StringLike`, or `StringNotLike` when negated.
     Like = 8,
 }
 

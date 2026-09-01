@@ -9,10 +9,21 @@ use {
     std::str::FromStr,
 };
 
+/// The comparison an ARN condition operator performs.
+///
+/// The two behave identically: `ArnEquals` globs the policy's pattern against the value's six
+/// components exactly as `ArnLike` does, matching AWS. The distinction is carried so that an
+/// operator round-trips to the name the policy was written with.
+///
+/// The discriminants index the table of names the operators are written with, leaving
+/// room for the [`Variant`] that follows each comparison.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum ArnCmp {
+    /// The comparison written `ArnEquals`, or `ArnNotEquals` when negated.
     Equals = 0,
+
+    /// The comparison written `ArnLike`, or `ArnNotLike` when negated.
     Like = 4,
 }
 

@@ -28,11 +28,25 @@ pub(super) const DATE_DISPLAY_NAMES: [OperatorNames; 12] = display_names![
     "DateGreaterThanIfExists",
 ];
 
+/// The comparison a date condition operator performs.
+///
+/// AWS names six date operators; three are represented here, because a negated ordering comparison
+/// is another one of the six rather than an operator of its own. `DateGreaterThanEquals` is
+/// [`LessThan`][`DateCmp::LessThan`] negated, and `DateGreaterThan` is
+/// [`LessThanEquals`][`DateCmp::LessThanEquals`] negated.
+///
+/// The discriminants index the table of names the operators are written with, leaving
+/// room for the [`Variant`] that follows each comparison.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum DateCmp {
+    /// The comparison written `DateEquals`, or `DateNotEquals` when negated.
     Equals = 0,
+
+    /// The comparison written `DateLessThan`, or `DateGreaterThanEquals` when negated.
     LessThan = 4,
+
+    /// The comparison written `DateLessThanEquals`, or `DateGreaterThan` when negated.
     LessThanEquals = 8,
 }
 

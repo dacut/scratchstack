@@ -19,8 +19,12 @@ mod string;
 mod variant;
 
 pub use {
+    arn::ArnCmp,
+    date::DateCmp,
+    numeric::NumericCmp,
     op::{ConditionCmp, ConditionOp},
     setop::SetOperator,
+    string::StringCmp,
     variant::{IfExists, Variant},
 };
 

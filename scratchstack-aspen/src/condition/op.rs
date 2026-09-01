@@ -915,4 +915,46 @@ mod tests {
         sorted.dedup();
         assert_eq!(sorted.len(), names.len(), "two operators share a name");
     }
+    /// An operator can be taken apart using only the names the crate root exports.
+    ///
+    /// `ConditionCmp` is public and is what `ConditionOp::comparison` hands back, but its payload
+    /// types lived in private modules: a caller outside the crate could compare a comparison and
+    /// nothing else, because there was no path by which to name `StringCmp` and no way to write
+    /// the pattern that would destructure it. This test uses only crate-root paths, which is what
+    /// such a caller has.
+    #[test_log::test]
+    fn test_comparisons_can_be_taken_apart_from_outside() {
+        use crate::{ArnCmp, ConditionCmp, ConditionIfExists, ConditionVariant, DateCmp, NumericCmp, StringCmp};
+
+        let described = |op: ConditionOp| -> String {
+            match op.comparison() {
+                ConditionCmp::Arn(ArnCmp::Equals, ConditionVariant::None) => "arn equals".to_string(),
+                ConditionCmp::Binary(ConditionIfExists::Yes) => "binary, key optional".to_string(),
+                ConditionCmp::Bool(ConditionIfExists::No) => "bool, key required".to_string(),
+                ConditionCmp::Date(DateCmp::LessThan, ConditionVariant::Negated) => "date >=".to_string(),
+                ConditionCmp::IpAddress(ConditionVariant::Negated) => "not an ip".to_string(),
+                ConditionCmp::Null => "null".to_string(),
+                ConditionCmp::Numeric(NumericCmp::LessThanEquals, ConditionVariant::None) => "numeric <=".to_string(),
+                ConditionCmp::String(StringCmp::Like, ConditionVariant::IfExistsNegated) => {
+                    "string not like, key optional".to_string()
+                }
+                other => format!("something else: {other:?}"),
+            }
+        };
+
+        assert_eq!(described(condop::ArnEquals), "arn equals");
+        assert_eq!(described(condop::BinaryEqualsIfExists), "binary, key optional");
+        assert_eq!(described(condop::Bool), "bool, key required");
+        assert_eq!(described(condop::DateGreaterThanEquals), "date >=");
+        assert_eq!(described(condop::NotIpAddress), "not an ip");
+        assert_eq!(described(condop::Null), "null");
+        assert_eq!(described(condop::NumericLessThanEquals), "numeric <=");
+        assert_eq!(described(condop::StringNotLikeIfExists), "string not like, key optional");
+
+        // And one can be built back up from the parts, not merely read.
+        assert_eq!(
+            ConditionOp::plain(ConditionCmp::String(StringCmp::EqualsIgnoreCase, ConditionVariant::Negated)),
+            condop::StringNotEqualsIgnoreCase
+        );
+    }
 }
