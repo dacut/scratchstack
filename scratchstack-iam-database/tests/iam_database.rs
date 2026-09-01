@@ -737,6 +737,9 @@ async fn subtest_update_role(pool: &PgPool) {
     role::test_update_role_description_simple(pool).await;
     role::test_update_role_description_empty(pool).await;
     role::test_update_role_description_nonexistent(pool).await;
+    role::test_update_assume_role_policy_simple(pool).await;
+    role::test_update_assume_role_policy_nonexistent(pool).await;
+    role::test_update_assume_role_policy_malformed(pool).await;
     role::test_update_role_description_invalid_name();
 }
 

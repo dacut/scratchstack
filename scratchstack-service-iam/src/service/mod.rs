@@ -15,7 +15,7 @@ use {
             attach_role_policy, create_role, delete_role, delete_role_permissions_boundary, delete_role_policy,
             detach_role_policy, get_role, get_role_policy, list_attached_role_policies, list_role_policies,
             list_role_tags, list_roles, put_role_permissions_boundary, put_role_policy, tag_role, untag_role,
-            update_role, update_role_description,
+            update_assume_role_policy, update_role, update_role_description,
         },
         user::{
             attach_user_policy, create_access_key, create_user, delete_access_key, delete_user,
@@ -707,6 +707,18 @@ pub(crate) async fn serve_request(
         }
         Ok(Action::UpdateAccessKey) => {
             update_access_key(
+                svc_state,
+                request_id,
+                principal,
+                session_data,
+                session_policies,
+                request_metadata,
+                &parameters,
+            )
+            .await
+        }
+        Ok(Action::UpdateAssumeRolePolicy) => {
+            update_assume_role_policy(
                 svc_state,
                 request_id,
                 principal,

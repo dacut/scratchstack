@@ -20,7 +20,7 @@ use {
             GetRoleInternalRequest, GetRolePolicyInternalRequest, ListRolePoliciesInternalRequest,
             ListRoleTagsInternalRequest, ListRolesInternalRequest, PutRolePermissionsBoundaryInternalRequest,
             PutRolePolicyInternalRequest, TagRoleInternalRequest, UntagRoleInternalRequest,
-            UpdateRoleDescriptionInternalRequest, UpdateRoleInternalRequest,
+            UpdateAssumeRolePolicyInternalRequest, UpdateRoleDescriptionInternalRequest, UpdateRoleInternalRequest,
         },
         types::{PermissionsBoundaryAttachmentType, Tag},
     },
@@ -2452,4 +2452,69 @@ pub async fn test_role_aws_managed_permissions_boundary(pool: &sqlx::PgPool) {
         .await
         .expect("Failed to delete AWS-managed boundary policy");
     tx.commit().await.expect("Failed to commit transaction");
+}
+
+/// UpdateAssumeRolePolicy replaces the trust policy on a role outright.
+pub async fn test_update_assume_role_policy_simple(pool: &sqlx::PgPool) {
+    const TRUST: &str = r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}"#;
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UpdateAssumeRolePolicyInternalRequest::builder()
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .policy_document(TRUST)
+        .build()
+        .expect("Failed to build UpdateAssumeRolePolicyInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to update the LambdaExecutor trust policy");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let get_resp = GetRoleInternalRequest::builder()
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build GetRoleInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to get LambdaExecutor after UpdateAssumeRolePolicy");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert_eq!(get_resp.role.assume_role_policy_document.as_deref(), Some(TRUST));
+}
+
+/// UpdateAssumeRolePolicy on a nonexistent role must fail with NoSuchEntity.
+pub async fn test_update_assume_role_policy_nonexistent(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = UpdateAssumeRolePolicyInternalRequest::builder()
+        .role_name("NoSuchTrustPolicyRole")
+        .account_id("123456789012")
+        .policy_document(r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}"#)
+        .build()
+        .expect("Failed to build UpdateAssumeRolePolicyInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("UpdateAssumeRolePolicy on a nonexistent role must fail");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+}
+
+/// A trust policy that is not a valid policy document is rejected as MalformedPolicyDocument,
+/// before the role is touched.
+pub async fn test_update_assume_role_policy_malformed(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = UpdateAssumeRolePolicyInternalRequest::builder()
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .policy_document("not a policy at all")
+        .build()
+        .expect("Failed to build UpdateAssumeRolePolicyInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("A malformed trust policy must be rejected");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(
+        matches!(err, IamError::MalformedPolicyDocumentException(_)),
+        "Expected MalformedPolicyDocument, got: {err:?}"
+    );
 }

@@ -19,6 +19,7 @@ mod put_role_permissions_boundary;
 mod put_role_policy;
 mod tag_role;
 mod untag_role;
+mod update_assume_role_policy;
 mod update_role;
 mod update_role_description;
 
@@ -29,7 +30,8 @@ pub(crate) use {
     list_attached_role_policies::list_attached_role_policies, list_role_policies::list_role_policies,
     list_role_tags::list_role_tags, list_roles::list_roles,
     put_role_permissions_boundary::put_role_permissions_boundary, put_role_policy::put_role_policy, tag_role::tag_role,
-    untag_role::untag_role, update_role::update_role, update_role_description::update_role_description,
+    untag_role::untag_role, update_assume_role_policy::update_assume_role_policy, update_role::update_role,
+    update_role_description::update_role_description,
 };
 
 use {

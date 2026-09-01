@@ -807,6 +807,21 @@ fn update_role_parameters(
     serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
 }
 
+/// Build the query parameters for an `UpdateAssumeRolePolicy` request naming the role whose trust
+/// policy is being replaced and the document to replace it with, leaving either off.
+fn update_assume_role_policy_parameters(role_name: Option<&str>, policy_document: Option<&str>) -> String {
+    let mut parameters = vec![("Action", "UpdateAssumeRolePolicy"), ("Version", "2010-05-08")];
+
+    if let Some(role_name) = role_name {
+        parameters.push(("RoleName", role_name));
+    }
+    if let Some(policy_document) = policy_document {
+        parameters.push(("PolicyDocument", policy_document));
+    }
+
+    serde_urlencoded::to_string(parameters).expect("failed to encode parameters")
+}
+
 /// Build the query parameters for an `UpdateRoleDescription` request naming the role to retitle
 /// and the description to give it, leaving either off.
 fn update_role_description_parameters(role_name: Option<&str>, description: Option<&str>) -> String {
