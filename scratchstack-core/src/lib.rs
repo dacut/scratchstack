@@ -1,8 +1,34 @@
 //! Scratchstack core types.
 //!
-//! This crate provides the core types shared across Scratchstack libraries and services: the
-//! error traits and types, the `RequestId` type, and
-//! TLS support for serving Axum applications.
+//! This crate provides the core types shared across Scratchstack libraries and services:
+//!
+//! * [`error`] -- the error traits and the [`GenericError`] type;
+//! * [`request_id`] -- the [`RequestId`] type, a UUIDv7 carrying the time the request arrived;
+//! * [`query`] -- deserialization of AWS query-protocol request parameters;
+//! * [`xml`] -- serialization of responses as the query protocol's XML;
+#![cfg_attr(
+    feature = "axum",
+    doc = " * [`response`] -- the response envelopes and Axum response construction, behind the `axum` feature;"
+)]
+#![cfg_attr(
+    not(feature = "axum"),
+    doc = " * `response` -- the response envelopes and Axum response construction, behind the `axum` feature, which is"
+)]
+#![cfg_attr(not(feature = "axum"), doc = "   not enabled here;")]
+#![cfg_attr(
+    feature = "tls",
+    doc = " * [`tls`] -- TLS support for serving Axum applications, behind the `tls` feature."
+)]
+#![cfg_attr(
+    not(feature = "tls"),
+    doc = " * `tls` -- TLS support for serving Axum applications, behind the `tls` feature, which is not enabled here."
+)]
+//!
+//! # Features
+//!
+//! `axum` is enabled by default and brings in the `response` module along with the `quick-xml` serializer that
+//! [`xml`] wraps. `tls` adds the `tls` module. The remaining features (`form`, `http1`, `http2`, `macros`,
+//! `original-uri`, `query`, `tokio`, `tower-log`, `tracing`) forward to the Axum features of the same name.
 
 #![warn(clippy::all)]
 #![allow(clippy::manual_range_contains)]
