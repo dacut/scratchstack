@@ -1,6 +1,6 @@
 use {
     crate::PrincipalError,
-    scratchstack_arn::validate_iam_path,
+    scratchstack_arn::{validate_iam_path, validate_iam_resource_name},
     std::{
         error::Error as StdError,
         fmt::{Display, Formatter, Result as FmtResult},
@@ -132,7 +132,9 @@ impl StdError for InvalidIamResourceType {}
 /// The [AWS requirements](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html) are similar for
 /// these names:
 /// *   The name must contain between 1 and `max_length` characters.
-/// *   The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
+/// *   The name must be composed of ASCII alphanumeric characters or one of `+ = , . @ - _`, matching the IAM API
+///     model's `^[\w+=,.@-]+$` pattern. The character rules are those of [`validate_iam_resource_name`], which this
+///     delegates to; only the length check is applied here, because the limit varies by resource type.
 ///
 /// The `max_length` argument is specified as an argument to this function, but should be
 /// [128 for instance profiles](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateInstanceProfile.html),
@@ -140,34 +142,22 @@ impl StdError for InvalidIamResourceType {}
 /// [64 for IAM roles](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html), and
 /// [64 for IAM users](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateUser.html).
 ///
-/// If `name` meets these requirements, `Ok(())` is returned. Otherwise, `Err(map_err(name.to_string()))` is returned.
+/// Callers that also enforce a minimum length above 1, such as session and federated user names, apply that check
+/// themselves.
+///
+/// # Errors
+///
+/// Returns `map_err(name.to_string())` if `name` does not meet these requirements.
 pub fn validate_name<F: FnOnce(String) -> PrincipalError>(
     name: &str,
     max_length: usize,
     map_err: F,
 ) -> Result<(), PrincipalError> {
-    let n_bytes = name.as_bytes();
-    let n_len = n_bytes.len();
-
-    if n_len == 0 || n_len > max_length {
+    if name.is_empty() || name.len() > max_length {
         return Err(map_err(name.to_string()));
     }
 
-    // Check that all characters are alphanumeric or , - . = @ _
-    for c in n_bytes {
-        if !(c.is_ascii_alphanumeric()
-            || *c == b','
-            || *c == b'-'
-            || *c == b'.'
-            || *c == b'='
-            || *c == b'@'
-            || *c == b'_')
-        {
-            return Err(map_err(name.to_string()));
-        }
-    }
-
-    Ok(())
+    validate_iam_resource_name(name).map_err(|_| map_err(name.to_string()))
 }
 
 /// Verify that an instance profile id, group id, role id, or user id meets AWS requirements.

@@ -43,11 +43,11 @@ impl AssumedRole {
     /// * `role_name`: The name of the role being assumed. This must meet the following requirements or a
     ///   [`PrincipalError::InvalidRoleName`] error will be returned:
     ///   * The name must contain between 1 and 64 characters.
-    ///   * The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
+    ///   * The name must be composed of ASCII alphanumeric characters or one of `+ = , . @ - _`.
     /// * `session_name`: A name to assign to the session. This must meet the following requirements or a
     ///   [`PrincipalError::InvalidSessionName`] error will be returned:
     ///   * The session name must contain between 2 and 64 characters.
-    ///   * The session name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
+    ///   * The session name must be composed of ASCII alphanumeric characters or one of `+ = , . @ - _`.
     ///
     /// # Example
     ///
@@ -103,11 +103,11 @@ impl AssumedRole {
     /// * `role_name`: The name of the role being assumed. This must meet the following requirements or a
     ///   [`PrincipalError::InvalidRoleName`] error will be returned:
     ///   * The name must contain between 1 and 64 characters.
-    ///   * The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
+    ///   * The name must be composed of ASCII alphanumeric characters or one of `+ = , . @ - _`.
     /// * `session_name`: A name to assign to the session. This must meet the following requirements or a
     ///   [`PrincipalError::InvalidSessionName`] error will be returned:
     ///   * The session name must contain between 2 and 64 characters.
-    ///   * The session name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
+    ///   * The session name must be composed of ASCII alphanumeric characters or one of `+ = , . @ - _`.
     ///
     /// # Return value
     ///
@@ -460,6 +460,24 @@ mod tests {
     }
 
     #[test]
+    fn check_plus_is_accepted_in_names() {
+        // The IAM model's pattern for role and session names is ^[\w+=,.@-]+$, so every one of
+        // these characters is legal. '+' was rejected until the character check was delegated to
+        // scratchstack_arn::validate_iam_resource_name.
+        for name in ["role+name", "role=name", "role,name", "role.name", "role@name", "role-name", "role_name"] {
+            let role = AssumedRole::builder()
+                .partition("aws")
+                .account_id("123456789012")
+                .role_name(name)
+                .session_name(name)
+                .build()
+                .unwrap_or_else(|e| panic!("rejected {name:?}: {e}"));
+            assert_eq!(role.role_name(), name);
+            assert_eq!(role.session_name(), name);
+        }
+    }
+
+    #[test]
     fn check_invalid_assumed_roles() {
         let err = AssumedRole::builder()
             .partition("")
@@ -571,14 +589,16 @@ mod tests {
             r#"Invalid role name: "role-name-with-65-characters=====================================""#
         );
 
+        // A name containing an invalid character. Note that '+' is NOT invalid; see
+        // check_plus_is_accepted_in_names.
         let err = AssumedRole::builder()
             .partition("aws")
             .account_id("123456789012")
-            .role_name("role+name")
+            .role_name("role!name")
             .session_name("session-name")
             .build()
             .unwrap_err();
-        assert_eq!(err.to_string(), r#"Invalid role name: "role+name""#);
+        assert_eq!(err.to_string(), r#"Invalid role name: "role!name""#);
 
         let err = AssumedRole::builder()
             .partition("aws")
@@ -615,10 +635,10 @@ mod tests {
             .partition("aws")
             .account_id("123456789012")
             .role_name("role-name")
-            .session_name("session+name")
+            .session_name("session!name")
             .build()
             .unwrap_err();
-        assert_eq!(err.to_string(), r#"Invalid session name: "session+name""#);
+        assert_eq!(err.to_string(), r#"Invalid session name: "session!name""#);
 
         let err =
             AssumedRole::from_str("arn:aws:iam::123456789012:assumed-role/role/role-name/session-name").unwrap_err();

@@ -51,7 +51,7 @@ impl User {
     /// * `user_name`: The name of the user. This must meet the following requirements or a
     ///   [`PrincipalError::InvalidUserName`] error will be returned:
     ///   * The name must contain between 1 and 64 characters.
-    ///   * The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
+    ///   * The name must be composed of ASCII alphanumeric characters or one of `+ = , . @ - _`.
     ///
     /// # Example
     ///
@@ -112,7 +112,7 @@ impl User {
     /// * `user_name`: The name of the user. This must meet the following requirements or a
     ///   [`PrincipalError::InvalidUserName`] error will be returned:
     ///   * The name must contain between 1 and 64 characters.
-    ///   * The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
+    ///   * The name must be composed of ASCII alphanumeric characters or one of `+ = , . @ - _`.
     ///
     /// # Return value
     ///

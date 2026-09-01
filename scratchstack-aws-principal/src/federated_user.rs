@@ -37,7 +37,7 @@ impl FederatedUser {
     /// * `user_name`: The name of the federated user. This must meet the following requirements or a
     ///   [`PrincipalError::InvalidFederatedUserName`] error will be returned:
     ///   * The name must contain between 2 and 32 characters.
-    ///   * The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
+    ///   * The name must be composed of ASCII alphanumeric characters or one of `+ = , . @ - _`.
     ///
     /// # Example
     ///
@@ -84,7 +84,7 @@ impl FederatedUser {
     /// * `user_name`: The name of the federated user. This must meet the following requirements or a
     ///   [`PrincipalError::InvalidFederatedUserName`] error will be returned:
     ///   * The name must contain between 2 and 32 characters.
-    ///   * The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
+    ///   * The name must be composed of ASCII alphanumeric characters or one of `+ = , . @ - _`.
     ///
     /// If all of the requirements are met, a [`FederatedUser`] object is returned. Otherwise, a [`PrincipalError`] error
     /// is returned.
