@@ -268,6 +268,46 @@ mod tests {
         assert_eq!(authorize(&context("GetObject", vec![other]), &policy_set).unwrap().decision(), Decision::Allow);
     }
 
+    /// `authorize` and the single-document evaluators genuinely differ on a multi-resource
+    /// request, which is what their documentation claims.
+    ///
+    /// `authorize` evaluates one resource at a time, so two resources allowed by two different
+    /// statements are allowed together. `Policy::evaluate` and `PolicySet::evaluate_all` match a
+    /// statement against every resource at once, so neither statement covers the pair and the
+    /// request falls through to a default deny.
+    #[test_log::test]
+    fn test_per_resource_semantics_differ_from_whole_context_semantics() {
+        const BOTH_BUCKETS: &str = r#"{"Version": "2012-10-17", "Statement": [
+            {"Effect": "Allow", "Action": "s3:*", "Resource": "arn:aws:s3:::bucket-a"},
+            {"Effect": "Allow", "Action": "s3:*", "Resource": "arn:aws:s3:::bucket-b"}
+        ]}"#;
+
+        let context = context(
+            "ListBucket",
+            vec![Arn::from_str("arn:aws:s3:::bucket-a").unwrap(), Arn::from_str("arn:aws:s3:::bucket-b").unwrap()],
+        );
+        let policy = Policy::from_str(BOTH_BUCKETS).unwrap();
+        let policy_set = policy_set(&[BOTH_BUCKETS]);
+
+        // Per-resource: each resource is covered by one of the two statements.
+        assert_eq!(authorize(&context, &policy_set).unwrap().decision(), Decision::Allow);
+
+        // Whole-context: neither statement covers both resources, so neither applies.
+        assert_eq!(policy.evaluate(&context).unwrap(), Decision::DefaultDeny);
+        assert_eq!(policy_set.evaluate_all(&context).unwrap().0, Decision::DefaultDeny);
+        assert_eq!(policy_set.evaluate(&context).unwrap().0, Decision::DefaultDeny);
+
+        // With one resource they agree, so the difference is the multi-resource handling and not
+        // something else about the policy.
+        let single = context.with_resources(vec![Arn::from_str("arn:aws:s3:::bucket-a").unwrap()]);
+        assert_eq!(authorize(&single, &policy_set).unwrap().decision(), Decision::Allow);
+        assert_eq!(policy.evaluate(&single).unwrap(), Decision::Allow);
+
+        // A Deny is the other half of the claim: it applies if it covers *any* resource named.
+        let deny = Policy::from_str(DENY_BUCKET_B).unwrap();
+        assert_eq!(deny.evaluate(&context).unwrap(), Decision::Deny);
+    }
+
     #[test_log::test]
     fn test_permissions_boundary() {
         const BOUNDARY: &str = r#"{"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": "s3:*", "Resource": "arn:aws:s3:::bucket-a"}]}"#;
