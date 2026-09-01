@@ -1,6 +1,6 @@
 use {
     crate::{
-        ArnBuilderError, ArnError,
+        ArnError,
         utils::{validate_account_id, validate_partition, validate_region, validate_service},
     },
     serde::{Deserialize, Serialize, de},
@@ -288,20 +288,19 @@ impl ArnBuilder {
     ///
     /// # Errors
     ///
-    /// * If the partition was never set, [`ArnBuilderError::MissingPartition`] is returned.
-    /// * If the service was never set, [`ArnBuilderError::MissingService`] is returned.
-    /// * Otherwise, any validation failure from [`Arn::new`] is returned as the corresponding `ArnBuilderError`
-    ///   variant.
-    pub fn build(self) -> Result<Arn, ArnBuilderError> {
+    /// * If the partition was never set, [`ArnError::MissingPartition`] is returned.
+    /// * If the service was never set, [`ArnError::MissingService`] is returned.
+    /// * Otherwise, any validation failure from [`Arn::new`] is returned unchanged.
+    pub fn build(self) -> Result<Arn, ArnError> {
         let Some(partition) = self.partition else {
-            return Err(ArnBuilderError::MissingPartition);
+            return Err(ArnError::MissingPartition);
         };
 
         let Some(service) = self.service else {
-            return Err(ArnBuilderError::MissingService);
+            return Err(ArnError::MissingService);
         };
 
-        Ok(Arn::new(&partition, &service, &self.region, &self.account_id, &self.resource)?)
+        Arn::new(&partition, &service, &self.region, &self.account_id, &self.resource)
     }
 }
 
@@ -310,7 +309,7 @@ mod test {
     use {
         super::Arn,
         crate::{
-            ArnBuilderError, ArnError,
+            ArnError,
             utils::{validate_account_id, validate_region},
         },
         pretty_assertions::assert_eq,
@@ -649,7 +648,7 @@ mod test {
             .resource("instance/i-1234567890abcdef0")
             .build()
             .unwrap_err();
-        assert_eq!(err, ArnBuilderError::MissingPartition);
+        assert_eq!(err, ArnError::MissingPartition);
         assert_eq!(err.to_string(), "Missing partition");
     }
 
@@ -662,7 +661,7 @@ mod test {
             .resource("instance/i-1234567890abcdef0")
             .build()
             .unwrap_err();
-        assert_eq!(err, ArnBuilderError::MissingService);
+        assert_eq!(err, ArnError::MissingService);
         assert_eq!(err.to_string(), "Missing service");
     }
 
@@ -674,7 +673,7 @@ mod test {
             .resource("instance/i-1234567890abcdef0")
             .build()
             .unwrap_err();
-        assert_eq!(err, ArnBuilderError::InvalidPartition("Aws".to_string()));
+        assert_eq!(err, ArnError::InvalidPartition("Aws".to_string()));
     }
 
     #[test]
@@ -685,7 +684,7 @@ mod test {
             .resource("instance/i-1234567890abcdef0")
             .build()
             .unwrap_err();
-        assert_eq!(err, ArnBuilderError::InvalidService("Ec2".to_string()));
+        assert_eq!(err, ArnError::InvalidService("Ec2".to_string()));
     }
 
     #[test]
@@ -698,7 +697,7 @@ mod test {
             .resource("instance/i-1234567890abcdef0")
             .build()
             .unwrap_err();
-        assert_eq!(err, ArnBuilderError::InvalidRegion("us-east-1-".to_string()));
+        assert_eq!(err, ArnError::InvalidRegion("us-east-1-".to_string()));
     }
 
     #[test]
@@ -711,6 +710,6 @@ mod test {
             .resource("instance/i-1234567890abcdef0")
             .build()
             .unwrap_err();
-        assert_eq!(err, ArnBuilderError::InvalidAccountId("bad-account".to_string()));
+        assert_eq!(err, ArnError::InvalidAccountId("bad-account".to_string()));
     }
 }
