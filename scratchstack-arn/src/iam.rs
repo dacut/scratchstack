@@ -12,9 +12,12 @@ pub(crate) const SERVICE_KEY_IAM: &str = "iam";
 
 /// An IAM resource ARN, split into its resource type, path, and name.
 ///
-/// The resource component of an IAM ARN has the form `type/path/name`, where `path` may be empty and `name` may not.
-/// For example, in `arn:aws:iam::123456789012:role/engineering/admins/Deployer`, the resource type is `role`, the
-/// path is `/engineering/admins/`, and the name is `Deployer`.
+/// The resource component of an IAM ARN has the form `type/path/name`. The path runs from the first slash through the
+/// last, so it always both begins and ends with one and is never empty: a resource with no path segments has a path
+/// of `/`, matching how AWS reports one. The name is never empty either.
+///
+/// For example, `arn:aws:iam::123456789012:role/engineering/admins/Deployer` has resource type `role`, path
+/// `/engineering/admins/`, and name `Deployer`, while `arn:aws:iam::123456789012:role/Deployer` has path `/`.
 ///
 /// Build one from an existing [`Arn`] with [`TryFrom`], or parse one directly with [`FromStr`].
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -129,7 +132,9 @@ impl IamResourceArn {
         &self.arn.resource()[..self.resource_path_start]
     }
 
-    /// Returns the path component of this ARN, including the leading slash.
+    /// Returns the path component of this ARN, including the leading and trailing slashes.
+    ///
+    /// This is never empty; a resource with no path segments, such as `role/Deployer`, has a path of `/`.
     #[inline(always)]
     pub fn resource_path(&self) -> &str {
         &self.arn.resource()[self.resource_path_start..self.resource_name_start]
@@ -267,6 +272,19 @@ mod tests {
         assert_eq!(iam_arn.resource_type(), "policy");
         assert_eq!(iam_arn.resource_path(), "/path/to/");
         assert_eq!(iam_arn.resource_name(), "policy");
+    }
+
+    #[test]
+    fn test_resource_arn_without_path_segments() {
+        // The path spans the first slash through the last, so a resource with no path segments
+        // reports "/" rather than an empty string.
+        let iam_arn = IamResourceArn::from_str("arn:aws:iam::123456789012:role/Deployer").unwrap();
+        assert_eq!(iam_arn.resource_type(), "role");
+        assert_eq!(iam_arn.resource_path(), "/");
+        assert_eq!(iam_arn.resource_name(), "Deployer");
+        assert_eq!(iam_arn.resource_name_lower(), "deployer");
+        assert_eq!(iam_arn.resource(), "role/Deployer");
+        assert_eq!(iam_arn.to_string(), "arn:aws:iam::123456789012:role/Deployer");
     }
 
     #[test]
