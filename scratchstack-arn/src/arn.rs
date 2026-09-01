@@ -58,9 +58,10 @@ impl Arn {
     /// * `account_id` - The account ID the resource belongs to (optional). This is the 12-digit account ID or the
     ///   string `aws` for certain AWS-owned resources. Some resources (such as S3 buckets and objects) do not need
     ///   the account ID (the bucket name is globally unique within a partition), so this may be empty.
-    /// * `resource` - The resource name (required). The formatting is service-specific, so it is not validated here
-    ///   beyond being a Rust string (and therefore valid UTF-8). It may contain colons; everything after the fifth
-    ///   colon of an ARN is part of the resource.
+    /// * `resource` - The resource name (optional). The formatting is service-specific, so it is not validated here
+    ///   beyond being a Rust string (and therefore valid UTF-8). It may contain colons -- everything after the
+    ///   fifth colon of an ARN is part of the resource -- and it may be empty, which is what [`ArnBuilder`]
+    ///   produces when the resource is never set. No AWS service issues an ARN with an empty resource.
     ///
     /// # Errors
     ///
@@ -586,6 +587,19 @@ mod test {
         let arn = unsafe { Arn::new_unchecked("AWS", "ec2", "us-east-1", "123456789012", "res") };
         assert_eq!(arn.partition(), "AWS");
         assert_eq!(Arn::from_str(&arn.to_string()), Err(ArnError::InvalidPartition("AWS".to_string())));
+    }
+
+    #[test]
+    fn empty_resource_is_accepted() {
+        // The resource is not validated, so an empty one is permitted by both constructors even
+        // though no AWS service issues such an ARN.
+        let arn = Arn::new("aws", "s3", "", "", "").unwrap();
+        assert_eq!(arn.resource(), "");
+        assert_eq!(arn.to_string(), "arn:aws:s3:::");
+        assert_eq!(Arn::from_str(&arn.to_string()).unwrap(), arn);
+
+        // ArnBuilder defaults the resource to empty, so omitting it yields the same ARN.
+        assert_eq!(Arn::builder().partition("aws").service("s3").build().unwrap(), arn);
     }
 
     #[test]
