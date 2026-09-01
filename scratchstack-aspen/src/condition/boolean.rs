@@ -1,7 +1,7 @@
 use {
     super::{
         setop::{OperatorNames, display_names},
-        variant::Variant,
+        variant::IfExists,
     },
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
     scratchstack_aws_principal::SessionValue,
@@ -15,10 +15,10 @@ pub(super) fn bool_match(
     pv: PolicyVersion,
     allowed: &StringLikeList<String>,
     value: &SessionValue,
-    variant: Variant,
+    if_exists: IfExists,
 ) -> Result<bool, AspenError> {
     match value {
-        SessionValue::Null => Ok(variant.if_exists()),
+        SessionValue::Null => Ok(if_exists.if_exists()),
         SessionValue::Bool(value) => {
             let mut allowed_bool = Vec::with_capacity(2);
             for el in allowed.iter() {

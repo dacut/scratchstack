@@ -9,7 +9,7 @@ use {
         numeric::{NumericCmp, numeric_match},
         setop::{FOR_ALL_VALUES_PREFIX, FOR_ANY_VALUE_PREFIX, SetOperator},
         string::{StringCmp, string_match},
-        variant::Variant,
+        variant::{IfExists, Variant},
     },
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
     scratchstack_aws_principal::SessionValue,
@@ -35,11 +35,13 @@ pub enum ConditionCmp {
     /// Operators for ARNs.
     Arn(ArnCmp, Variant),
 
-    /// Operators for binary values. Variant here is only allowed to be [Variant::None] or [Variant::IfExists].
-    Binary(Variant),
+    /// Operators for binary values. AWS defines no negated form, so this carries an [`IfExists`]
+    /// rather than a [`Variant`].
+    Binary(IfExists),
 
-    /// Operators on boolean values. Variant here is only allowed to be [Variant::None] or [Variant::IfExists].
-    Bool(Variant),
+    /// Operators on boolean values. AWS defines no negated form, so this carries an [`IfExists`]
+    /// rather than a [`Variant`].
+    Bool(IfExists),
 
     /// Operators for date/time values.
     Date(DateCmp, Variant),
@@ -112,16 +114,16 @@ pub const ArnNotLikeIfExists: ConditionOp =
     ConditionOp::plain(ConditionCmp::Arn(ArnCmp::Like, Variant::IfExistsNegated));
 
 /// The `BinaryEquals` operator.
-pub const BinaryEquals: ConditionOp = ConditionOp::plain(ConditionCmp::Binary(Variant::None));
+pub const BinaryEquals: ConditionOp = ConditionOp::plain(ConditionCmp::Binary(IfExists::No));
 
 /// The `BinaryEqualsIfExists` operator.
-pub const BinaryEqualsIfExists: ConditionOp = ConditionOp::plain(ConditionCmp::Binary(Variant::IfExists));
+pub const BinaryEqualsIfExists: ConditionOp = ConditionOp::plain(ConditionCmp::Binary(IfExists::Yes));
 
 /// The `Bool` operator.
-pub const Bool: ConditionOp = ConditionOp::plain(ConditionCmp::Bool(Variant::None));
+pub const Bool: ConditionOp = ConditionOp::plain(ConditionCmp::Bool(IfExists::No));
 
 /// The `BoolIfExists` operator.
-pub const BoolIfExists: ConditionOp = ConditionOp::plain(ConditionCmp::Bool(Variant::IfExists));
+pub const BoolIfExists: ConditionOp = ConditionOp::plain(ConditionCmp::Bool(IfExists::Yes));
 
 /// The `DateEquals` operator.
 pub const DateEquals: ConditionOp = ConditionOp::plain(ConditionCmp::Date(DateCmp::Equals, Variant::None));
@@ -331,11 +333,9 @@ impl ConditionOp {
     ///
     /// The name carries the set operator's prefix, if any: `ForAllValues:StringEquals`.
     ///
-    /// # Panics
-    ///
-    /// Panics if the operator pairs a comparison with a variant it has no name for --
-    /// [`ConditionCmp::Binary`] or [`ConditionCmp::Bool`] with a negated [`Variant`], neither of
-    /// which AWS defines. [`ConditionOp::from_str`] never produces one.
+    /// Every operator has a name. The comparisons AWS defines in fewer than four forms carry a
+    /// variant type with no more values than they have names -- see [`ConditionCmp::Binary`] --
+    /// so there is no combination left for this to fail on.
     #[inline]
     pub const fn as_str(&self) -> &'static str {
         self.comparison.display_name(self.set_op)
@@ -442,7 +442,7 @@ impl ConditionOp {
                 // A key with no values has nothing to match, so the condition fails -- unless the
                 // comparison carries the IfExists variant, whose whole purpose is to pass over a
                 // key the request did not supply.
-                Ok(values.is_empty() && self.comparison.variant().if_exists())
+                Ok(values.is_empty() && self.comparison.if_exists())
             }
         }
     }
@@ -464,8 +464,8 @@ impl ConditionCmp {
     const fn display_name(&self, set_op: SetOperator) -> &'static str {
         match self {
             Self::Arn(cmp, variant) => cmp.display_name(set_op, variant),
-            Self::Binary(variant) => BINARY_DISPLAY_NAMES[variant.as_usize()].name(set_op),
-            Self::Bool(variant) => BOOL_DISPLAY_NAMES[variant.as_usize()].name(set_op),
+            Self::Binary(if_exists) => BINARY_DISPLAY_NAMES[if_exists.as_usize()].name(set_op),
+            Self::Bool(if_exists) => BOOL_DISPLAY_NAMES[if_exists.as_usize()].name(set_op),
             Self::Date(cmp, variant) => cmp.display_name(set_op, variant),
             Self::IpAddress(variant) => IP_ADDRESS_DISPLAY_NAMES[variant.as_usize()].name(set_op),
             Self::Null => NULL_DISPLAY_NAMES.name(set_op),
@@ -474,19 +474,20 @@ impl ConditionCmp {
         }
     }
 
-    /// Returns the variant this comparison carries.
+    /// Indicates whether this comparison carries the `IfExists` suffix, which passes over a key
+    /// the request did not supply.
     ///
-    /// [`ConditionCmp::Null`] has no variants of its own; it reports [`Variant::None`].
-    fn variant(&self) -> Variant {
+    /// [`ConditionCmp::Null`] asks whether the key is present at all, so `IfExists` has nothing to
+    /// add to it and it reports `false`.
+    fn if_exists(&self) -> bool {
         match self {
             Self::Arn(_, variant)
-            | Self::Binary(variant)
-            | Self::Bool(variant)
             | Self::Date(_, variant)
             | Self::IpAddress(variant)
             | Self::Numeric(_, variant)
-            | Self::String(_, variant) => *variant,
-            Self::Null => Variant::None,
+            | Self::String(_, variant) => variant.if_exists(),
+            Self::Binary(if_exists) | Self::Bool(if_exists) => if_exists.if_exists(),
+            Self::Null => false,
         }
     }
 
@@ -501,8 +502,8 @@ impl ConditionCmp {
     ) -> Result<bool, AspenError> {
         match self {
             Self::Arn(cmp, variant) => arn_match(context, pv, allowed, value, *cmp, *variant),
-            Self::Binary(variant) => binary_match(context, pv, allowed, value, *variant),
-            Self::Bool(variant) => bool_match(context, pv, allowed, value, *variant),
+            Self::Binary(if_exists) => binary_match(context, pv, allowed, value, *if_exists),
+            Self::Bool(if_exists) => bool_match(context, pv, allowed, value, *if_exists),
             Self::Date(cmp, variant) => date_match(context, pv, allowed, value, *cmp, *variant),
             Self::IpAddress(variant) => ip_address_match(context, pv, allowed, value, *variant),
             Self::Null => null_match(context, pv, allowed, value),
@@ -605,7 +606,7 @@ mod tests {
                 op::{ConditionCmp, ConditionOp},
                 setop::SetOperator,
                 string::StringCmp,
-                variant::Variant,
+                variant::{IfExists, Variant},
             },
             condop,
         },
@@ -629,10 +630,10 @@ mod tests {
             (ConditionCmp::Arn(ArnCmp::Like, Variant::IfExists), "Arn(Like, IfExists)"),
             (ConditionCmp::Arn(ArnCmp::Like, Variant::Negated), "Arn(Like, Negated)"),
             (ConditionCmp::Arn(ArnCmp::Like, Variant::IfExistsNegated), "Arn(Like, IfExistsNegated)"),
-            (ConditionCmp::Binary(Variant::None), "Binary(None)"),
-            (ConditionCmp::Binary(Variant::IfExists), "Binary(IfExists)"),
-            (ConditionCmp::Bool(Variant::None), "Bool(None)"),
-            (ConditionCmp::Bool(Variant::IfExists), "Bool(IfExists)"),
+            (ConditionCmp::Binary(IfExists::No), "Binary(No)"),
+            (ConditionCmp::Binary(IfExists::Yes), "Binary(Yes)"),
+            (ConditionCmp::Bool(IfExists::No), "Bool(No)"),
+            (ConditionCmp::Bool(IfExists::Yes), "Bool(Yes)"),
             (ConditionCmp::Date(DateCmp::Equals, Variant::None), "Date(Equals, None)"),
             (ConditionCmp::Date(DateCmp::Equals, Variant::IfExists), "Date(Equals, IfExists)"),
             (ConditionCmp::Date(DateCmp::Equals, Variant::Negated), "Date(Equals, Negated)"),
@@ -857,5 +858,61 @@ mod tests {
                 "expected {name} to be rejected"
             );
         }
+    }
+    /// Every operator that can be built has a name, and that name parses back to it.
+    ///
+    /// `as_str` indexes a table of names by the comparison and its variant, so a comparison paired
+    /// with a variant the table has no row for would panic. The comparisons AWS defines in fewer
+    /// than four forms carry a variant type with no more values than they have names -- `Binary`
+    /// and `Bool` take an `IfExists`, not a `Variant` -- so there is no such pairing to build.
+    /// `ConditionCmp::Binary(Variant::Negated)` does not compile.
+    ///
+    /// The round trip also pins the display tables to the order the discriminants index them in:
+    /// a row out of place would name some other operator, and parse back to something else.
+    #[test_log::test]
+    fn test_every_operator_has_a_name_that_parses_back() {
+        let mut comparisons = vec![ConditionCmp::Null];
+
+        for variant in [Variant::None, Variant::IfExists, Variant::Negated, Variant::IfExistsNegated] {
+            for arn in [ArnCmp::Equals, ArnCmp::Like] {
+                comparisons.push(ConditionCmp::Arn(arn, variant));
+            }
+            for date in [DateCmp::Equals, DateCmp::LessThan, DateCmp::LessThanEquals] {
+                comparisons.push(ConditionCmp::Date(date, variant));
+            }
+            for numeric in [NumericCmp::Equals, NumericCmp::LessThan, NumericCmp::LessThanEquals] {
+                comparisons.push(ConditionCmp::Numeric(numeric, variant));
+            }
+            for string in [StringCmp::Equals, StringCmp::EqualsIgnoreCase, StringCmp::Like] {
+                comparisons.push(ConditionCmp::String(string, variant));
+            }
+            comparisons.push(ConditionCmp::IpAddress(variant));
+        }
+
+        for if_exists in [IfExists::No, IfExists::Yes] {
+            comparisons.push(ConditionCmp::Binary(if_exists));
+            comparisons.push(ConditionCmp::Bool(if_exists));
+        }
+
+        // 1 Null + 4 variants * (2 Arn + 3 Date + 3 Numeric + 3 String + 1 IpAddress) + 2 Binary
+        // + 2 Bool.
+        assert_eq!(comparisons.len(), 53);
+
+        let mut names = Vec::with_capacity(comparisons.len() * 3);
+        for comparison in comparisons {
+            for set_op in [SetOperator::None, SetOperator::ForAllValues, SetOperator::ForAnyValue] {
+                let op = ConditionOp::new(comparison, set_op);
+                let name = op.as_str();
+                assert!(!name.is_empty(), "{op:?} has an empty name");
+                assert_eq!(ConditionOp::from_str(name).unwrap(), op, "{name} did not parse back to {op:?}");
+                names.push(name);
+            }
+        }
+
+        // No two operators answer to the same name.
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), names.len(), "two operators share a name");
     }
 }

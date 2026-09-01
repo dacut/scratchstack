@@ -1,3 +1,36 @@
+/// Whether an operator carries the `IfExists` suffix, for the comparisons that admit nothing else.
+///
+/// `Binary` and `Bool` are defined by AWS in two forms apiece -- `BinaryEquals` and
+/// `BinaryEqualsIfExists`, `Bool` and `BoolIfExists` -- with no negated form. They carry this
+/// rather than a [`Variant`] so that the combinations AWS gives no name to cannot be built at all,
+/// and [`ConditionOp::as_str`][crate::ConditionOp::as_str] is therefore total.
+///
+/// The offsets used in the representation are used to index into the operation names.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(u8)]
+pub enum IfExists {
+    /// The plain operator: the condition fails when the key is absent.
+    #[default]
+    No = 0,
+
+    /// The `IfExists` operator: the condition passes over a key the request did not supply.
+    Yes = 1,
+}
+
+impl IfExists {
+    /// Return the index into the operation names for this variant.
+    #[inline]
+    pub(super) const fn as_usize(self) -> usize {
+        self as usize
+    }
+
+    /// Indicates whether this is [`IfExists::Yes`].
+    #[inline]
+    pub(super) fn if_exists(self) -> bool {
+        matches!(self, Self::Yes)
+    }
+}
+
 /// The variant on an operation.
 ///
 /// The offsets used in the representation are used to index into the operation names.

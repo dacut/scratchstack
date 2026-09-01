@@ -21,7 +21,7 @@ mod variant;
 pub use {
     op::{ConditionCmp, ConditionOp},
     setop::SetOperator,
-    variant::Variant,
+    variant::{IfExists, Variant},
 };
 
 use {
