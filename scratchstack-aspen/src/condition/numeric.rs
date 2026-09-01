@@ -41,6 +41,14 @@ impl NumericCmp {
     }
 }
 
+/// Indicates whether the number a condition key holds satisfies this comparison against the
+/// numbers the policy lists.
+///
+/// A key holding a string is compared as the number it spells. One that spells no number is
+/// nothing to compare against: only `NumericNotEquals` has an answer for it, and the answer is
+/// that the value does indeed differ from every number the policy lists. The ordering comparisons
+/// do not match, in either direction -- an unparsable value is neither less than nor greater than
+/// a number -- which is why the negated ones cannot simply return the opposite.
 pub(super) fn numeric_match(
     context: &Context,
     pv: PolicyVersion,
@@ -54,7 +62,10 @@ pub(super) fn numeric_match(
         SessionValue::Integer(value) => numeric_match_i64(context, pv, allowed, *value, cmp, variant),
         SessionValue::String(value) => match i64::from_str(value) {
             Ok(value) => numeric_match_i64(context, pv, allowed, value, cmp, variant),
-            Err(_) => Ok(false),
+            Err(_) => match cmp {
+                NumericCmp::Equals => Ok(variant.negated()),
+                NumericCmp::LessThan | NumericCmp::LessThanEquals => Ok(false),
+            },
         },
         _ => Ok(false),
     }

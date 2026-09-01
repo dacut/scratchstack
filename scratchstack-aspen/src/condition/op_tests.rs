@@ -2204,3 +2204,43 @@ fn test_ordering_operators_or_their_values() {
         .insert("aws:CurrentDate", SessionValue::from(DateTime::parse_from_rfc3339("2012-10-16T00:00:00Z").unwrap()));
     assert!(!session_matches(&cmap, &session_data));
 }
+
+/// A condition key holding a string that spells no number, and no timestamp, is answered the same
+/// way by the numeric and date comparisons.
+///
+/// The two are structurally the same function, so they have to agree. Only the `NotEquals` form has
+/// an answer -- a value that is not a number differs from every number the policy lists -- and the
+/// ordering comparisons match in neither direction.
+#[test_log::test]
+fn test_unparsable_string_answers_agree_across_comparisons() {
+    let mut session_data = SessionData::new();
+    session_data.insert("hello", SessionValue::from("not-a-number-or-a-date"));
+
+    // The NotEquals forms match: the value does differ from everything listed.
+    for op in ["NumericNotEquals", "DateNotEquals", "StringNotEquals"] {
+        let cmap = Condition::from_str(&format!(r#"{{"{op}": {{"hello": ["5", "2012-10-17T00:00:00Z"]}}}}"#)).unwrap();
+        assert!(session_matches(&cmap, &session_data), "{op} did not match an unparsable value");
+    }
+
+    // The plain Equals forms do not.
+    for op in ["NumericEquals", "DateEquals"] {
+        let cmap = Condition::from_str(&format!(r#"{{"{op}": {{"hello": ["5", "2012-10-17T00:00:00Z"]}}}}"#)).unwrap();
+        assert!(!session_matches(&cmap, &session_data), "{op} matched an unparsable value");
+    }
+
+    // Nor do the ordering comparisons, in either direction: an unparsable value is neither below
+    // nor above a number, so the negated form is not simply the opposite of the plain one.
+    for op in [
+        "NumericLessThan",
+        "NumericGreaterThanEquals",
+        "NumericLessThanEquals",
+        "NumericGreaterThan",
+        "DateLessThan",
+        "DateGreaterThanEquals",
+        "DateLessThanEquals",
+        "DateGreaterThan",
+    ] {
+        let cmap = Condition::from_str(&format!(r#"{{"{op}": {{"hello": ["5", "2012-10-17T00:00:00Z"]}}}}"#)).unwrap();
+        assert!(!session_matches(&cmap, &session_data), "{op} matched an unparsable value");
+    }
+}
