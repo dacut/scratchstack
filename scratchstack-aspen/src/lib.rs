@@ -29,6 +29,10 @@
 //! explicit deny beating any allow, permissions boundaries constraining what an identity policy
 //! may grant -- and reports which policies decided the outcome.
 //!
+//! With one exception, which comes first: the account root user is allowed without any policy in
+//! the set being evaluated, so an explicit deny never reaches it. That is not the whole of what
+//! AWS does, and [`authorize`] says where the two part company.
+//!
 //! ```
 //! # use scratchstack_aspen::{authorize, Context, Decision, Policy, PolicySet, PolicySource};
 //! # use scratchstack_arn::Arn;
