@@ -1,6 +1,6 @@
 [package]
 name = "scratchstack-aspen"
-description = "AWS IAM policy language (Aspen) parser and internal representation"
+description = "AWS IAM policy language (Aspen) parser, representation, and evaluator"
 keywords = ["AWS", "IAM", "Aspen"]
 
 authors.workspace = true
