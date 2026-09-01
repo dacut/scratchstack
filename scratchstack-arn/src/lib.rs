@@ -3,6 +3,14 @@
 //!
 //! ARNs here represent fully-qualified resources in the form `arn:partition:service:region:account-id:resource`.
 //! No wildcards are allowed in this representation.
+//!
+//! The main type is [`Arn`], which can be parsed with [`FromStr`][std::str::FromStr] or assembled component-by-
+//! component with [`ArnBuilder`]. The [`utils`] module holds the per-component validators that back both paths.
+//!
+//! # Features
+//!
+//! * `iam` (enabled by default) - Adds `IamResourceArn`, which splits the resource component of an IAM ARN into its
+//!   type, path, and name, along with the IAM name and path validators.
 
 #![warn(clippy::all)]
 #![allow(clippy::manual_range_contains)]
