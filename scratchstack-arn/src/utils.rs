@@ -1,51 +1,42 @@
 use crate::ArnError;
 
-/// The maximum number of characters allowed in a partition name.
+/// The maximum number of characters allowed in a partition name. As only ASCII is accepted, this is equivalently a
+/// limit on the number of bytes.
 const MAX_PARTITION_LENGTH: usize = 32;
 
 /// Verify that a partition name meets the naming requirements.
 ///
 /// AWS does not publish a formal specification for partition names. In this validator, we require:
 ///
-/// *   The partition must be composed of Unicode alphabetic non-uppercase characters, ASCII digits, or `-`
-///     (`U+002D`).
+/// *   The partition must be composed of ASCII lowercase letters (`a`-`z`), ASCII digits (`0`-`9`), or `-`.
 /// *   The partition must have between 1 and 32 characters.
 /// *   A `-` cannot appear in the first or last position, nor can it appear in two consecutive characters.
 ///
-/// "Non-uppercase" is the same as "lowercase" for most Western scripts, but other scripts do not have a concept of
-/// uppercase and lowercase.
-///
-/// The value must be in a composed (NFC or NFKC) normalized form for validation of accented characters to succeed.
-/// For example, `ç` written as the single codepoint `U+00E7` ("Latin small letter c with cedilla") is valid, but
-/// `U+0063 U+0327` ("Latin small letter c" followed by "combining cedilla") is not: the combining cedilla is not
-/// itself an alphabetic character.
+/// Non-ASCII characters are rejected. See the [module documentation][crate::utils] for why.
 ///
 /// Examples of valid partition names:
 ///
 /// *   `aws`
+/// *   `aws-cn`
+/// *   `aws-us-gov`
 /// *   `local`
 /// *   `1`
 /// *   `intranet-1`
-/// *   `aws-中国`
-/// *   `việtnam`
 ///
 /// # Errors
 ///
 /// Returns [`ArnError::InvalidPartition`] if `partition` does not meet the requirements above.
 pub fn validate_partition(partition: &str) -> Result<(), ArnError> {
-    if partition.is_empty() {
+    // Only ASCII is accepted, so the byte length is the character length for anything that validates.
+    if partition.is_empty() || partition.len() > MAX_PARTITION_LENGTH {
         return Err(ArnError::InvalidPartition(partition.to_string()));
     }
 
     let mut last_was_dash = true;
-    for (i, c) in partition.chars().enumerate() {
-        if i >= MAX_PARTITION_LENGTH {
-            return Err(ArnError::InvalidPartition(partition.to_string()));
-        }
-
-        if (c.is_alphabetic() && !c.is_uppercase()) || c.is_ascii_digit() {
+    for c in partition.bytes() {
+        if c.is_ascii_lowercase() || c.is_ascii_digit() {
             last_was_dash = false;
-        } else if c == '-' {
+        } else if c == b'-' {
             if last_was_dash {
                 return Err(ArnError::InvalidPartition(partition.to_string()));
             }
@@ -105,22 +96,21 @@ enum RegionParseSection {
 ///
 /// AWS does not publish a formal specification for region names. In this validator, we require:
 ///
-/// *   The region is either the literal name `local`, or one or more `-`-separated groups of Unicode alphabetic
-///     non-uppercase characters, followed by a `-` and one or more ASCII digits. For example, `prod-west-1`.
+/// *   The region is either the literal name `local`, or one or more `-`-separated groups of ASCII lowercase letters
+///     (`a`-`z`), followed by a `-` and one or more ASCII digits (`0`-`9`). For example, `prod-west-1`.
 /// *   The region may have a local region appended to it: a `-`, followed by a second region of the same form. For
 ///     example, `prod-east-1-dca-2`. At most one local region may be appended.
 /// *   A `-` cannot appear in the first or last position, nor can it appear in two consecutive characters.
+/// *   No maximum length is enforced.
 ///
-/// "Non-uppercase" is the same as "lowercase" for most Western scripts, but other scripts do not have a concept of
-/// uppercase and lowercase.
+/// Non-ASCII characters are rejected. See the [module documentation][crate::utils] for why.
 ///
 /// Examples of valid region names:
+/// *   `us-east-1`
 /// *   `test-1`
 /// *   `prod-west-1`
 /// *   `prod-east-1-dca-2`
-/// *   `sverige-söder-1`
-/// *   `ap-southeast-7-hòa-hiệp-bắc-3`
-/// *   `日本-東京-1`
+/// *   `local`
 ///
 /// # Errors
 ///
@@ -134,8 +124,8 @@ pub fn validate_region(region: &str) -> Result<(), ArnError> {
     let mut section = RegionParseSection::Region;
     let mut state = RegionParseState::Start;
 
-    for c in region.chars() {
-        if c == '-' {
+    for c in region.bytes() {
+        if c == b'-' {
             match state {
                 RegionParseState::Start | RegionParseState::LastWasDash => {
                     return Err(ArnError::InvalidRegion(region.to_string()));
@@ -153,7 +143,7 @@ pub fn validate_region(region: &str) -> Result<(), ArnError> {
                     }
                 },
             }
-        } else if c.is_alphabetic() && !c.is_uppercase() {
+        } else if c.is_ascii_lowercase() {
             match state {
                 RegionParseState::Start | RegionParseState::LastWasDash | RegionParseState::LastWasAlpha => {
                     state = RegionParseState::LastWasAlpha;
@@ -187,13 +177,11 @@ pub fn validate_region(region: &str) -> Result<(), ArnError> {
 ///
 /// AWS does not publish a formal specification for service names. In this validator, we require:
 ///
-/// *   The service must be composed of one or more Unicode non-uppercase alphanumeric characters or `-` (`U+002D`).
-///     Note that, unlike [`validate_partition`], this accepts non-ASCII digits.
+/// *   The service must be composed of one or more ASCII lowercase letters (`a`-`z`), ASCII digits (`0`-`9`), or `-`.
 /// *   A `-` cannot appear in the first or last position, nor can it appear in two consecutive characters.
 /// *   No maximum length is enforced.
 ///
-/// "Non-uppercase" is the same as "lowercase" for most Western scripts, but other scripts do not have a concept of
-/// uppercase and lowercase.
+/// Non-ASCII characters are rejected. See the [module documentation][crate::utils] for why.
 ///
 /// # Errors
 ///
@@ -205,10 +193,10 @@ pub fn validate_service(service: &str) -> Result<(), ArnError> {
 
     let mut last_was_dash = true;
 
-    for c in service.chars() {
-        if c.is_alphanumeric() && !c.is_uppercase() {
+    for c in service.bytes() {
+        if c.is_ascii_lowercase() || c.is_ascii_digit() {
             last_was_dash = false;
-        } else if c == '-' {
+        } else if c == b'-' {
             if last_was_dash {
                 return Err(ArnError::InvalidService(service.to_string()));
             }
@@ -238,17 +226,15 @@ mod test {
         assert!(validate_partition("local").is_ok());
         assert!(validate_partition("1").is_ok());
         assert!(validate_partition("intranet-1").is_ok());
-        assert!(validate_partition("aws-中国").is_ok());
-        assert!(validate_partition("việtnam").is_ok());
+        assert!(validate_partition("aws-cn").is_ok());
+        assert!(validate_partition("aws-us-gov").is_ok());
     }
 
     #[test]
     fn partition_at_max_length() {
-        // 32 characters is the maximum, for ASCII and multi-byte characters alike.
-        assert!(validate_partition("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1").is_ok());
-
-        let p = "中".repeat(31) + "1";
-        assert_eq!(p.chars().count(), 32);
+        // 32 characters is the maximum. Only ASCII validates, so this is also 32 bytes.
+        let p = "a".repeat(31) + "1";
+        assert_eq!(p.len(), 32);
         assert!(validate_partition(&p).is_ok());
     }
 
@@ -259,13 +245,29 @@ mod test {
     }
 
     #[test]
-    fn partition_too_long_multibyte() {
-        // The length limit counts characters, not bytes. These are over the limit by character count
-        // even though a multi-byte character straddles byte offset 32.
-        for p in ["a".repeat(31) + "中" + "a", "a".repeat(30) + "中" + "aaaa", "中".repeat(32) + "1"] {
-            assert!(p.chars().count() > 32);
-            assert_eq!(validate_partition(&p), Err(ArnError::InvalidPartition(p.clone())), "accepted {p:?}");
+    fn partition_non_ascii() {
+        // Non-ASCII is rejected outright. In particular, names that are indistinguishable from a valid
+        // ASCII name, or from each other, must not validate -- ARN components drive authorization
+        // decisions and are compared byte-for-byte.
+        for p in [
+            "aws-中国",
+            "việtnam",
+            "\u{0430}ws",                       // Cyrillic a, a homograph of "aws"
+            "\u{AC00}\u{B098}",                 // precomposed Hangul syllables
+            "\u{1100}\u{1161}\u{1102}\u{1161}", // the same text as conjoining jamo
+            "\u{0915}\u{0940}",                 // Devanagari, whose vowel signs are Other_Alphabetic
+            "c\u{0327}",                        // c followed by a combining cedilla
+        ] {
+            assert_eq!(validate_partition(p), Err(ArnError::InvalidPartition(p.to_string())), "accepted {p:?}");
         }
+    }
+
+    #[test]
+    fn partition_non_ascii_over_byte_limit() {
+        // Under 32 characters but over 32 bytes: rejected for being non-ASCII, not for its length.
+        let p = "中".repeat(20);
+        assert!(p.chars().count() < 32 && p.len() > 32);
+        assert_eq!(validate_partition(&p), Err(ArnError::InvalidPartition(p)));
     }
 
     #[test]
@@ -350,7 +352,14 @@ mod test {
         assert!(validate_region("us-west-2").is_ok());
         assert!(validate_region("test-1").is_ok());
         assert!(validate_region("us-east-1-bos-1").is_ok());
-        assert!(validate_region("ap-southeast-7-hòa-hiệp-bắc-3").is_ok());
+        assert!(validate_region("ap-southeast-7-dca-3").is_ok());
+    }
+
+    #[test]
+    fn region_non_ascii() {
+        for r in ["sverige-söder-1", "ap-southeast-7-hòa-hiệp-bắc-3", "日本-東京-1", "us-e\u{0430}st-1"] {
+            assert_eq!(validate_region(r), Err(ArnError::InvalidRegion(r.to_string())), "accepted {r:?}");
+        }
     }
 
     #[test]
@@ -417,6 +426,15 @@ mod test {
         assert!(validate_service("ec2").is_ok());
         assert!(validate_service("kafka-cluster").is_ok());
         assert!(validate_service("execute-api").is_ok());
+        assert!(validate_service("s3outposts").is_ok());
+    }
+
+    #[test]
+    fn service_non_ascii() {
+        // Includes a non-ASCII digit, which the previous Unicode-alphanumeric rule accepted.
+        for svc in ["één", "nœrøyfjorden", "ec\u{0662}", "\u{0435}c2"] {
+            assert_eq!(validate_service(svc), Err(ArnError::InvalidService(svc.to_string())), "accepted {svc:?}");
+        }
     }
 
     #[test]
