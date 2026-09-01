@@ -1,5 +1,6 @@
 use {
     crate::PrincipalError,
+    scratchstack_arn::validate_iam_path,
     std::{
         error::Error as StdError,
         fmt::{Display, Formatter, Result as FmtResult},
@@ -196,34 +197,16 @@ pub fn validate_identifier<F: FnOnce(String) -> PrincipalError>(
 
 /// Verify that a path meets AWS requirements.
 ///
-/// The [AWS requirements for a path](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html) specify:
-/// *   The path must contain between 1 and 512 characters.
-/// *   The path must start and end with `/`.
-/// *   All characters in the path must be in the ASCII range 0x21 (`!`) through 0x7E (`~`). The AWS documentation
-///     erroneously indicates that 0x7F (DEL) is acceptable; however, the IAM APIs reject this character.
+/// The rules are those of [`validate_iam_path`], which this delegates to: the path must be between 1 and 512
+/// characters, must begin and end with `/`, and may contain only characters in the ASCII range 0x21 (`!`) through
+/// 0x7E (`~`). The AWS documentation erroneously indicates that 0x7F (DEL) is acceptable; the IAM APIs reject it,
+/// and so does this.
 ///
-/// If `path` meets these requirements, Ok. Otherwise, a [PrincipalError::InvalidPath] error is returned.
+/// # Errors
+///
+/// Returns [`PrincipalError::InvalidPath`] if `path` does not meet those requirements.
 pub fn validate_path(path: &str) -> Result<(), PrincipalError> {
-    let p_bytes = path.as_bytes();
-    let p_len = p_bytes.len();
-
-    if p_len == 0 || p_len > 512 {
-        return Err(PrincipalError::InvalidPath(path.to_string()));
-    }
-
-    // Must begin and end with a slash
-    if p_bytes[0] != b'/' || p_bytes[p_len - 1] != b'/' {
-        return Err(PrincipalError::InvalidPath(path.to_string()));
-    }
-
-    // Check that all characters fall in the fange u+0021 - u+007e
-    for c in p_bytes {
-        if *c < 0x21 || *c > 0x7e {
-            return Err(PrincipalError::InvalidPath(path.to_string()));
-        }
-    }
-
-    Ok(())
+    validate_iam_path(path).map_err(|_| PrincipalError::InvalidPath(path.to_string()))
 }
 
 /// Verify that a DNS name meets Scratchstack requirements.
