@@ -480,3 +480,149 @@ impl<E: SerError> Serializer for KeySerializer<E> {
         Ok(value.to_string())
     }
 }
+
+// The wrapped serializer these exercise is quick-xml, which arrives with the `axum` feature.
+#[cfg(all(test, feature = "axum"))]
+mod tests {
+    use {
+        super::QuerySerializer, pretty_assertions::assert_eq, quick_xml::se::Serializer as QuickXmlSerializer,
+        serde::Serialize, std::collections::BTreeMap,
+    };
+
+    fn to_xml<T: Serialize + ?Sized>(value: &T) -> String {
+        let mut xml = String::new();
+        value.serialize(QuerySerializer::new(QuickXmlSerializer::new(&mut xml))).expect("failed to serialize");
+        xml
+    }
+
+    #[derive(Serialize)]
+    struct Response {
+        #[serde(rename = "Tags")]
+        tags: Vec<String>,
+
+        #[serde(rename = "Name")]
+        name: String,
+    }
+
+    #[derive(Serialize)]
+    struct WithMap {
+        #[serde(rename = "Meta")]
+        meta: BTreeMap<String, String>,
+    }
+
+    #[derive(Serialize)]
+    struct Outer {
+        #[serde(rename = "Inner")]
+        inner: Vec<Inner>,
+    }
+
+    #[derive(Serialize)]
+    struct Inner {
+        #[serde(rename = "Vals")]
+        vals: Vec<u32>,
+    }
+
+    #[test_log::test]
+    fn list_of_one_survives() {
+        // The case serde loses on its own: without the wrapper the single element is taken for the
+        // field element and its text is dropped.
+        let response = Response {
+            tags: vec!["a".to_string()],
+            name: "n".to_string(),
+        };
+        assert_eq!(to_xml(&response), "<Response><Tags><member>a</member></Tags><Name>n</Name></Response>");
+    }
+
+    #[test_log::test]
+    fn empty_list_is_an_empty_element_not_a_missing_one() {
+        let response = Response {
+            tags: vec![],
+            name: "n".to_string(),
+        };
+        assert_eq!(to_xml(&response), "<Response><Tags/><Name>n</Name></Response>");
+    }
+
+    #[test_log::test]
+    fn list_of_several_repeats_member() {
+        let response = Response {
+            tags: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+            name: "n".to_string(),
+        };
+        assert_eq!(
+            to_xml(&response),
+            "<Response><Tags><member>a</member><member>b</member><member>c</member></Tags><Name>n</Name></Response>"
+        );
+    }
+
+    #[test_log::test]
+    fn map_renders_entry_key_value() {
+        // A pair reaches SerializeMap as two calls; the key is held until its value arrives.
+        let mut meta = BTreeMap::new();
+        meta.insert("k1".to_string(), "v1".to_string());
+        meta.insert("k2".to_string(), "v2".to_string());
+
+        assert_eq!(
+            to_xml(&WithMap {
+                meta
+            }),
+            "<WithMap><Meta><entry><key>k1</key><value>v1</value></entry><entry><key>k2</key><value>v2</value></entry></Meta></WithMap>"
+        );
+    }
+
+    #[test_log::test]
+    fn empty_map_is_an_empty_element() {
+        assert_eq!(
+            to_xml(&WithMap {
+                meta: BTreeMap::new()
+            }),
+            "<WithMap><Meta/></WithMap>"
+        );
+    }
+
+    #[test_log::test]
+    fn collections_are_wrapped_at_every_depth() {
+        // A list of structures each carrying a list of their own: the adapter has to re-enter for
+        // the inner lists, not just the outer one.
+        let outer = Outer {
+            inner: vec![
+                Inner {
+                    vals: vec![1, 2],
+                },
+                Inner {
+                    vals: vec![],
+                },
+            ],
+        };
+        assert_eq!(
+            to_xml(&outer),
+            "<Outer><Inner><member><Vals><member>1</member><member>2</member></Vals></member><member><Vals/></member></Inner></Outer>"
+        );
+    }
+
+    #[test_log::test]
+    fn scalars_are_forwarded_unchanged() {
+        // Everything that is not a collection reaches the wrapped serializer untouched.
+        #[derive(Serialize)]
+        struct Scalars {
+            #[serde(rename = "Count")]
+            count: u32,
+
+            #[serde(rename = "Flag")]
+            flag: bool,
+
+            #[serde(rename = "Opt")]
+            opt: Option<String>,
+
+            #[serde(rename = "Absent")]
+            absent: Option<String>,
+        }
+
+        let scalars = Scalars {
+            count: 7,
+            flag: true,
+            opt: Some("x".to_string()),
+            absent: None,
+        };
+        assert_eq!(to_xml(&scalars), "<Scalars><Count>7</Count><Flag>true</Flag><Opt>x</Opt><Absent/></Scalars>");
+    }
+}
