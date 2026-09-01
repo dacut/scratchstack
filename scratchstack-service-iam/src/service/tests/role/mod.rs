@@ -14,5 +14,6 @@ mod put_role_permissions_boundary;
 mod put_role_policy;
 mod tag_role;
 mod untag_role;
+mod update_assume_role_policy;
 mod update_role;
 mod update_role_description;
