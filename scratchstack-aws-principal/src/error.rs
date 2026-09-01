@@ -6,7 +6,9 @@ use {
     },
 };
 
-/// Errors that can be raised during the parsing of principals.
+/// Errors raised while parsing, constructing, or validating a principal.
+///
+/// Variants are ordered alphabetically.
 #[derive(Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum PrincipalError {
@@ -25,26 +27,23 @@ pub enum PrincipalError {
     /// Invalid ARN. The argument contains the specified ARN.
     InvalidArn(String),
 
-    /// Invalid Canonical User Id. The argument contains the spcified canonical user id.
-    InvalidCanonicalUserId(String),
-
-    /// Invalid partition. The argument contains the specified partition.
-    InvalidPartition(String),
-
     /// Invalid federated user name. The argument contains the specified user name.
     InvalidFederatedUserName(String),
-
-    /// Invalid group name. The argument contains the specified group name.
-    InvalidGroupName(String),
 
     /// Invalid group id. The argument contains the specified group id.
     InvalidGroupId(String),
 
-    /// Invalid instance profile name. The argument contains the specified instance profile name.
-    InvalidInstanceProfileName(String),
+    /// Invalid group name. The argument contains the specified group name.
+    InvalidGroupName(String),
 
     /// Invalid instance profile id. The argument contains the specified instance profile id.
     InvalidInstanceProfileId(String),
+
+    /// Invalid instance profile name. The argument contains the specified instance profile name.
+    InvalidInstanceProfileName(String),
+
+    /// Invalid partition. The argument contains the specified partition.
+    InvalidPartition(String),
 
     /// Invalid IAM path. The argument contains the specified path.
     InvalidPath(String),
@@ -61,11 +60,11 @@ pub enum PrincipalError {
     /// Invalid resource path. The argument contains the specified resource path.
     InvalidResourcePath(String),
 
-    /// Invalid role name. The argument contains the specified role name.
-    InvalidRoleName(String),
-
     /// Invalid role id. The argument contains the specified role id.
     InvalidRoleId(String),
+
+    /// Invalid role name. The argument contains the specified role name.
+    InvalidRoleName(String),
 
     /// Invalid scheme. The argument contains the specified scheme.
     InvalidScheme(String),
@@ -76,11 +75,11 @@ pub enum PrincipalError {
     /// Invalid session name. The argument contains the specified session name.
     InvalidSessionName(String),
 
-    /// Invalid user name. The argument contains the specified user name.
-    InvalidUserName(String),
-
     /// Invalid user id. The argument contains the specified user id.
     InvalidUserId(String),
+
+    /// Invalid user name. The argument contains the specified user name.
+    InvalidUserName(String),
 
     /// A required field was not set on a builder. The argument contains the name of the field.
     MissingField(&'static str),
@@ -100,23 +99,20 @@ impl Display for PrincipalError {
         match self {
             Self::Arn(err) => Display::fmt(err, f),
             Self::CannotConvertToArn => f.write_str("Cannot convert entity to ARN"),
-            Self::InvalidArn(arn) => write!(f, "Invalid ARN: {arn:#?}"),
             Self::InvalidAccountId(account_id) => write!(f, "Invalid account id: {account_id:#?}"),
-            Self::InvalidCanonicalUserId(canonical_user_id) => {
-                write!(f, "Invalid canonical user id: {canonical_user_id:#?}")
-            }
+            Self::InvalidArn(arn) => write!(f, "Invalid ARN: {arn:#?}"),
             Self::InvalidFederatedUserName(user_name) => {
                 write!(f, "Invalid federated user name: {user_name:#?}")
             }
+            Self::InvalidGroupId(group_id) => write!(f, "Invalid group id: {group_id:#?}"),
             Self::InvalidGroupName(group_name) => {
                 write!(f, "Invalid group name: {group_name:#?}")
             }
-            Self::InvalidGroupId(group_id) => write!(f, "Invalid group id: {group_id:#?}"),
-            Self::InvalidInstanceProfileName(instance_profile_name) => {
-                write!(f, "Invalid instance profile name: {instance_profile_name:#?}")
-            }
             Self::InvalidInstanceProfileId(instance_profile_id) => {
                 write!(f, "Invalid instance profile id: {instance_profile_id:#?}")
+            }
+            Self::InvalidInstanceProfileName(instance_profile_name) => {
+                write!(f, "Invalid instance profile name: {instance_profile_name:#?}")
             }
             Self::InvalidPartition(partition) => write!(f, "Invalid partition: {partition:#?}"),
             Self::InvalidPath(path) => write!(f, "Invalid path: {path:#?}"),
@@ -128,8 +124,8 @@ impl Display for PrincipalError {
             Self::InvalidResourcePath(resource_path) => {
                 write!(f, "Invalid resource path: {resource_path:#?}")
             }
-            Self::InvalidRoleName(role_name) => write!(f, "Invalid role name: {role_name:#?}"),
             Self::InvalidRoleId(role_id) => write!(f, "Invalid role id: {role_id:#?}"),
+            Self::InvalidRoleName(role_name) => write!(f, "Invalid role name: {role_name:#?}"),
             Self::InvalidScheme(scheme) => write!(f, "Invalid scheme: {scheme:#?}"),
             Self::InvalidService(service_name) => {
                 write!(f, "Invalid service name: {service_name:#?}")
@@ -137,8 +133,8 @@ impl Display for PrincipalError {
             Self::InvalidSessionName(session_name) => {
                 write!(f, "Invalid session name: {session_name:#?}")
             }
-            Self::InvalidUserName(user_name) => write!(f, "Invalid user name: {user_name:#?}"),
             Self::InvalidUserId(user_id) => write!(f, "Invalid user id: {user_id:#?}"),
+            Self::InvalidUserName(user_name) => write!(f, "Invalid user name: {user_name:#?}"),
             Self::MissingField(field) => write!(f, "Missing required field: {field}"),
         }
     }
