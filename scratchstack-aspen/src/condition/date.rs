@@ -1,6 +1,6 @@
 use {
     super::{
-        setop::{OperatorNames, SetOperator, display_names},
+        setop::{SetOperator, VariantNames, display_names, variant_names},
         variant::Variant,
     },
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
@@ -12,21 +12,17 @@ use {
 /// A comparison between the timestamp a request carries and one the policy lists.
 type DateOp = fn(DateTime<Utc>, DateTime<Utc>) -> bool;
 
-/// Date operation names.
-pub(super) const DATE_DISPLAY_NAMES: [OperatorNames; 12] = display_names![
-    "DateEquals",
-    "DateEqualsIfExists",
-    "DateNotEquals",
-    "DateNotEqualsIfExists",
-    "DateLessThan",
-    "DateLessThanIfExists",
-    "DateGreaterThanEquals",
-    "DateGreaterThanEqualsIfExists",
-    "DateLessThanEquals",
-    "DateLessThanEqualsIfExists",
-    "DateGreaterThan",
-    "DateGreaterThanIfExists",
-];
+/// The names `DateEquals` goes by.
+const DATE_EQUALS_NAMES: VariantNames =
+    variant_names!["DateEquals", "DateEqualsIfExists", "DateNotEquals", "DateNotEqualsIfExists"];
+
+/// The names `DateLessThan` goes by. Negated, it is `DateGreaterThanEquals`.
+const DATE_LESS_THAN_NAMES: VariantNames =
+    variant_names!["DateLessThan", "DateLessThanIfExists", "DateGreaterThanEquals", "DateGreaterThanEqualsIfExists",];
+
+/// The names `DateLessThanEquals` goes by. Negated, it is `DateGreaterThan`.
+const DATE_LESS_THAN_EQUALS_NAMES: VariantNames =
+    variant_names!["DateLessThanEquals", "DateLessThanEqualsIfExists", "DateGreaterThan", "DateGreaterThanIfExists",];
 
 /// The comparison a date condition operator performs.
 ///
@@ -35,24 +31,30 @@ pub(super) const DATE_DISPLAY_NAMES: [OperatorNames; 12] = display_names![
 /// [`LessThan`][`DateCmp::LessThan`] negated, and `DateGreaterThan` is
 /// [`LessThanEquals`][`DateCmp::LessThanEquals`] negated.
 ///
-/// The discriminants index the table of names the operators are written with, leaving
-/// room for the [`Variant`] that follows each comparison.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[repr(u8)]
 pub enum DateCmp {
     /// The comparison written `DateEquals`, or `DateNotEquals` when negated.
-    Equals = 0,
+    Equals,
 
     /// The comparison written `DateLessThan`, or `DateGreaterThanEquals` when negated.
-    LessThan = 4,
+    LessThan,
 
     /// The comparison written `DateLessThanEquals`, or `DateGreaterThan` when negated.
-    LessThanEquals = 8,
+    LessThanEquals,
 }
 
 impl DateCmp {
+    /// Returns the names this comparison goes by, one per [`Variant`].
+    const fn names(&self) -> &'static VariantNames {
+        match self {
+            Self::Equals => &DATE_EQUALS_NAMES,
+            Self::LessThan => &DATE_LESS_THAN_NAMES,
+            Self::LessThanEquals => &DATE_LESS_THAN_EQUALS_NAMES,
+        }
+    }
+
     pub(super) const fn display_name(&self, set_op: SetOperator, variant: &Variant) -> &'static str {
-        DATE_DISPLAY_NAMES[*self as usize | variant.as_usize()].name(set_op)
+        self.names().name(*variant, set_op)
     }
 }
 

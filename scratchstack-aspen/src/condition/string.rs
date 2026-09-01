@@ -1,50 +1,56 @@
 use {
     super::{
-        setop::{OperatorNames, SetOperator, display_names},
+        setop::{SetOperator, VariantNames, display_names, variant_names},
         variant::Variant,
     },
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
     scratchstack_aws_principal::SessionValue,
 };
 
-/// String operation names.
-const STRING_DISPLAY_NAMES: [OperatorNames; 12] = display_names![
-    "StringEquals",
-    "StringEqualsIfExists",
-    "StringNotEquals",
-    "StringNotEqualsIfExists",
+/// The names `StringEquals` goes by.
+const STRING_EQUALS_NAMES: VariantNames =
+    variant_names!["StringEquals", "StringEqualsIfExists", "StringNotEquals", "StringNotEqualsIfExists",];
+
+/// The names `StringEqualsIgnoreCase` goes by.
+const STRING_EQUALS_IGNORE_CASE_NAMES: VariantNames = variant_names![
     "StringEqualsIgnoreCase",
     "StringEqualsIgnoreCaseIfExists",
     "StringNotEqualsIgnoreCase",
     "StringNotEqualsIgnoreCaseIfExists",
-    "StringLike",
-    "StringLikeIfExists",
-    "StringNotLike",
-    "StringNotLikeIfExists",
 ];
+
+/// The names `StringLike` goes by.
+const STRING_LIKE_NAMES: VariantNames =
+    variant_names!["StringLike", "StringLikeIfExists", "StringNotLike", "StringNotLikeIfExists"];
 
 /// The comparison a string condition operator performs.
 ///
-/// The discriminants index the table of names the operators are written with, leaving
-/// room for the [`Variant`] that follows each comparison.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[repr(u8)]
 pub enum StringCmp {
     /// Equality: `StringEquals`, or `StringNotEquals` when negated.
-    Equals = 0,
+    Equals,
 
     /// Equality ignoring case: `StringEqualsIgnoreCase`, or `StringNotEqualsIgnoreCase` when
     /// negated.
-    EqualsIgnoreCase = 4,
+    EqualsIgnoreCase,
 
     /// A glob match, in which `*` stands for any run of characters and `?` for any one of them:
     /// `StringLike`, or `StringNotLike` when negated.
-    Like = 8,
+    Like,
 }
 
 impl StringCmp {
+    /// Returns the names this comparison goes by, one per [`Variant`].
+    const fn names(&self) -> &'static VariantNames {
+        match self {
+            Self::Equals => &STRING_EQUALS_NAMES,
+            Self::EqualsIgnoreCase => &STRING_EQUALS_IGNORE_CASE_NAMES,
+            Self::Like => &STRING_LIKE_NAMES,
+        }
+    }
+
     pub(super) const fn display_name(&self, set_op: SetOperator, variant: &Variant) -> &'static str {
-        STRING_DISPLAY_NAMES[*self as usize | variant.as_usize()].name(set_op)
+        self.names().name(*variant, set_op)
     }
 }
 

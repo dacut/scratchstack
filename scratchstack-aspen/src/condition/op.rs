@@ -464,10 +464,10 @@ impl ConditionCmp {
     const fn display_name(&self, set_op: SetOperator) -> &'static str {
         match self {
             Self::Arn(cmp, variant) => cmp.display_name(set_op, variant),
-            Self::Binary(if_exists) => BINARY_DISPLAY_NAMES[if_exists.as_usize()].name(set_op),
-            Self::Bool(if_exists) => BOOL_DISPLAY_NAMES[if_exists.as_usize()].name(set_op),
+            Self::Binary(if_exists) => BINARY_DISPLAY_NAMES.name(*if_exists, set_op),
+            Self::Bool(if_exists) => BOOL_DISPLAY_NAMES.name(*if_exists, set_op),
             Self::Date(cmp, variant) => cmp.display_name(set_op, variant),
-            Self::IpAddress(variant) => IP_ADDRESS_DISPLAY_NAMES[variant.as_usize()].name(set_op),
+            Self::IpAddress(variant) => IP_ADDRESS_DISPLAY_NAMES.name(*variant, set_op),
             Self::Null => NULL_DISPLAY_NAMES.name(set_op),
             Self::Numeric(cmp, variant) => cmp.display_name(set_op, variant),
             Self::String(cmp, variant) => cmp.display_name(set_op, variant),

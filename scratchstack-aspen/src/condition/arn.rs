@@ -1,6 +1,6 @@
 use {
     super::{
-        setop::{OperatorNames, SetOperator, display_names},
+        setop::{SetOperator, VariantNames, display_names, variant_names},
         variant::Variant,
     },
     crate::{AspenError, Context, PolicyVersion, eval::regex_from_glob, serutil::StringLikeList},
@@ -15,38 +15,35 @@ use {
 /// components exactly as `ArnLike` does, matching AWS. The distinction is carried so that an
 /// operator round-trips to the name the policy was written with.
 ///
-/// The discriminants index the table of names the operators are written with, leaving
-/// room for the [`Variant`] that follows each comparison.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[repr(u8)]
 pub enum ArnCmp {
     /// The comparison written `ArnEquals`, or `ArnNotEquals` when negated.
-    Equals = 0,
+    Equals,
 
     /// The comparison written `ArnLike`, or `ArnNotLike` when negated.
-    Like = 4,
+    Like,
 }
+
+/// The names `ArnEquals` goes by.
+const ARN_EQUALS_NAMES: VariantNames =
+    variant_names!["ArnEquals", "ArnEqualsIfExists", "ArnNotEquals", "ArnNotEqualsIfExists"];
+
+/// The names `ArnLike` goes by.
+const ARN_LIKE_NAMES: VariantNames = variant_names!["ArnLike", "ArnLikeIfExists", "ArnNotLike", "ArnNotLikeIfExists"];
 
 impl ArnCmp {
+    /// Returns the names this comparison goes by, one per [`Variant`].
+    const fn names(&self) -> &'static VariantNames {
+        match self {
+            Self::Equals => &ARN_EQUALS_NAMES,
+            Self::Like => &ARN_LIKE_NAMES,
+        }
+    }
+
     pub(super) const fn display_name(&self, set_op: SetOperator, variant: &Variant) -> &'static str {
-        ARN_DISPLAY_NAMES[*self as usize | variant.as_usize()].name(set_op)
+        self.names().name(*variant, set_op)
     }
 }
-
-// The order is important here. For a given operation, the if-exists variant must follow, then the negated variant,
-// then the negated if-exists variant.
-
-/// ARN operation names.
-const ARN_DISPLAY_NAMES: [OperatorNames; 8] = display_names![
-    "ArnEquals",
-    "ArnEqualsIfExists",
-    "ArnNotEquals",
-    "ArnNotEqualsIfExists",
-    "ArnLike",
-    "ArnLikeIfExists",
-    "ArnNotLike",
-    "ArnNotLikeIfExists",
-];
 
 pub(super) fn arn_match(
     context: &Context,
