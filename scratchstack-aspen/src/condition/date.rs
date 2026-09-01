@@ -42,6 +42,14 @@ impl DateCmp {
     }
 }
 
+/// Indicates whether the timestamp a condition key holds satisfies this comparison against the
+/// timestamps the policy lists.
+///
+/// A key holding a string is compared as the timestamp it spells. One that spells no timestamp is
+/// nothing to compare against: only `DateNotEquals` has an answer for it, and the answer is that
+/// the value does indeed differ from every timestamp the policy lists. The ordering comparisons do
+/// not match, in either direction -- an unparsable value is neither before nor after a timestamp
+/// -- which is why the negated ones cannot simply return the opposite.
 pub(super) fn date_match(
     context: &Context,
     pv: PolicyVersion,
@@ -55,7 +63,7 @@ pub(super) fn date_match(
         SessionValue::String(value) => match DateTime::parse_from_rfc3339(value) {
             Err(_) => match cmp {
                 DateCmp::Equals => Ok(variant.negated()),
-                _ => Ok(false),
+                DateCmp::LessThan | DateCmp::LessThanEquals => Ok(false),
             },
             Ok(value) => {
                 let value = DateTime::<Utc>::from(value);
