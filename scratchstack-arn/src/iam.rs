@@ -1,4 +1,4 @@
-//! IAM related utilities for ARNs.
+//! IAM-related ARN types and validators, available with the `iam` feature (enabled by default).
 use {
     crate::{Arn, ArnError},
     std::{
@@ -10,7 +10,13 @@ use {
 /// The service component for IAM ARNs.
 pub(crate) const SERVICE_KEY_IAM: &str = "iam";
 
-/// The components from an IAM resource ARN
+/// An IAM resource ARN, split into its resource type, path, and name.
+///
+/// The resource component of an IAM ARN has the form `type/path/name`, where `path` may be empty and `name` may not.
+/// For example, in `arn:aws:iam::123456789012:role/engineering/admins/Deployer`, the resource type is `role`, the
+/// path is `/engineering/admins/`, and the name is `Deployer`.
+///
+/// Build one from an existing [`Arn`] with [`TryFrom`], or parse one directly with [`FromStr`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IamResourceArn {
     /// The base ARN for this resource.
@@ -65,9 +71,19 @@ impl TryFrom<Arn> for IamResourceArn {
 }
 
 impl IamResourceArn {
-    /// Parse a string into an `IamResourceArn`, returning an error if the string is not a valid,
-    /// ARN, the service is not `iam`, the resource does not contain a valid type, path, and name,
-    /// or the resource type is not as expected.
+    /// Parse a string into an [`IamResourceArn`], requiring the resource type to be `expected_resource_type`.
+    ///
+    /// * `arn_str` - The ARN to parse, e.g. `arn:aws:iam::123456789012:role/engineering/Deployer`.
+    /// * `expected_resource_type` - The resource type the ARN must carry, e.g. `role` or `policy`.
+    ///
+    /// # Errors
+    ///
+    /// * If `arn_str` is not a well-formed ARN, the corresponding [`ArnError`] from [`Arn::from_str`] is returned.
+    /// * If the service is not `iam`, [`ArnError::InvalidService`] is returned.
+    /// * If the resource does not have the form `type/path/name`, or the resource type does not match
+    ///   `expected_resource_type`, [`ArnError::InvalidResource`] is returned.
+    /// * If the path or name are malformed, [`ArnError::InvalidIamResourcePath`] or
+    ///   [`ArnError::InvalidIamResourceName`] is returned.
     pub fn expect_resource_type(arn_str: impl AsRef<str>, expected_resource_type: &str) -> Result<Self, ArnError> {
         let arn = Arn::from_str(arn_str.as_ref())?;
         let iam_arn = Self::try_from(arn)?;
@@ -132,10 +148,17 @@ impl IamResourceArn {
     }
 }
 
-/// Validate that the resource path is valid according to AWS IAM rules.
+/// Validate that a resource path is valid according to AWS IAM rules.
 ///
-/// Paths must be between 1 and 512 characters long, start and end with a slash, and can contain any printable
-/// ASCII character except for space (i.e. character codes 33 through 126).
+/// Paths must be between 1 and 512 characters long, end with a slash (`/`), and contain only printable ASCII
+/// characters other than space (character codes 33 through 126).
+///
+/// AWS additionally requires paths to *begin* with a slash; that is not checked here, because callers such as
+/// [`IamResourceArn`] slice the path out of an ARN starting at the first slash and so always satisfy it.
+///
+/// # Errors
+///
+/// Returns [`ArnError::InvalidResource`] if `path` does not meet the requirements above.
 ///
 /// ## References
 /// * [AWS CreateGroup](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateGroup.html)
@@ -169,9 +192,17 @@ fn validate_iam_path_inner(path: &str) -> Result<(), ArnError> {
     Ok(())
 }
 
-/// Validate that the path prefix is valid.
+/// Validate that a path prefix — a path used to filter IAM resources, such as the `PathPrefix` parameter of the AWS
+/// `ListRoles` API — is valid.
 ///
-/// Unlike `validate_iam_path`, this function does not require the path to end with a slash.
+/// The rules are those of [`validate_iam_path`], except that the prefix need not end with a slash: it must be between
+/// 1 and 512 characters long and contain only printable ASCII characters other than space (character codes 33 through
+/// 126).
+///
+/// # Errors
+///
+/// Returns [`ArnError::InvalidIamResourcePath`] if `path_prefix` does not meet the requirements above. Note that this
+/// differs from [`validate_iam_path`], which reports [`ArnError::InvalidResource`].
 #[inline(always)]
 pub fn validate_iam_path_prefix(path_prefix: impl AsRef<str>) -> Result<(), ArnError> {
     validate_iam_path_prefix_inner(path_prefix.as_ref())
@@ -191,13 +222,16 @@ fn validate_iam_path_prefix_inner(path_prefix: &str) -> Result<(), ArnError> {
     Ok(())
 }
 
-/// Validate that the resource name is valid according to AWS IAM rules.
+/// Validate that a resource name is valid according to AWS IAM rules.
 ///
-/// Resource names can consist of any alphanumeric character and the following symbols: `+=,.@-_`.
-/// They cannot be empty and cannot be longer than the specified maximum length.
+/// Resource names must be non-empty and consist only of ASCII alphanumeric characters and the symbols `+=,.@-_`.
 ///
-/// Resource names have a maximum length that varies by the resource type; this function does not
-/// perform length validation as a result.
+/// The maximum length of a resource name varies by resource type (for example, 64 characters for a user and 128 for a
+/// role), so this function does not check length at all; callers must apply their own limit.
+///
+/// # Errors
+///
+/// Returns [`ArnError::InvalidIamResourceName`] if `resource_name` does not meet the requirements above.
 pub fn validate_iam_resource_name(resource_name: impl AsRef<str>) -> Result<(), ArnError> {
     validate_iam_resource_name_inner(resource_name.as_ref())
 }

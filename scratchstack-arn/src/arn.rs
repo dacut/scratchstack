@@ -29,7 +29,11 @@ pub struct Arn {
     resource_start: usize,
 }
 
-/// A builder for programmatically constructing ARNs.
+/// A builder for programmatically constructing [`Arn`] values.
+///
+/// [`partition`][ArnBuilder::partition] and [`service`][ArnBuilder::service] are required; the region, account ID, and
+/// resource default to the empty string. Obtain one from [`Arn::builder`] and finish with
+/// [`build`][ArnBuilder::build].
 #[derive(Clone, Debug, Default)]
 pub struct ArnBuilder {
     partition: Option<String>,
@@ -47,22 +51,23 @@ impl Arn {
     ///   non-AWS resources.
     /// * `service` - The service the resource belongs to (required). This is a service name like `ec2` or `s3`.
     ///   Non-AWS resources must conform to the naming rules specified in [`validate_service`].
-    /// * `region` - The region the resource is in (optional). If the resource is regional (and may other regions
-    ///   may have the resources with the same name), this is the region name. If the resource is global, this is
+    /// * `region` - The region the resource is in (optional). If the resource is regional (so that other regions may
+    ///   hold different resources with the same name), this is the region name; if the resource is global, this is
     ///   empty. This is usually a region name like `us-east-1` or `us-west-2`, but may be any string meeting the
     ///   rules specified in [`validate_region`].
     /// * `account_id` - The account ID the resource belongs to (optional). This is the 12-digit account ID or the
     ///   string `aws` for certain AWS-owned resources. Some resources (such as S3 buckets and objects) do not need
     ///   the account ID (the bucket name is globally unique within a partition), so this may be empty.
-    /// * `resource` - The resource name (required). This is the name of the resource. The formatting is
-    ///   service-specific, but must be a valid UTF-8 string.
+    /// * `resource` - The resource name (required). The formatting is service-specific, so it is not validated here
+    ///   beyond being a Rust string (and therefore valid UTF-8). It may contain colons; everything after the fifth
+    ///   colon of an ARN is part of the resource.
     ///
     /// # Errors
     ///
     /// * If the partition is invalid, [`ArnError::InvalidPartition`] is returned.
     /// * If the service is invalid, [`ArnError::InvalidService`] is returned.
-    /// * If the region is invalid, [`ArnError::InvalidRegion`] is returned.
-    /// * If the account ID is invalid, [`ArnError::InvalidAccountId`] is returned.
+    /// * If the region is non-empty and invalid, [`ArnError::InvalidRegion`] is returned.
+    /// * If the account ID is non-empty and invalid, [`ArnError::InvalidAccountId`] is returned.
     pub fn new(
         partition: &str,
         service: &str,
@@ -84,6 +89,10 @@ impl Arn {
     }
 
     /// Create a new ARN from the specified components, bypassing any validation.
+    ///
+    /// This is the unvalidated counterpart to [`Arn::new`]; the accessors ([`Arn::partition`], [`Arn::service`], and
+    /// friends) rely on the components not containing embedded colons, so passing components that violate the
+    /// constraints below yields an `Arn` whose accessors return nonsense.
     ///
     /// # Safety
     ///
@@ -164,16 +173,19 @@ impl FromStr for Arn {
     /// [`ArnError`] is returned if the string is not a valid ARN.
     type Err = ArnError;
 
-    /// Parse an ARN from a string.
+    /// Parse an ARN of the form `arn:partition:service:region:account-id:resource`.
+    ///
+    /// The string is split into at most 6 colon-separated components, so any additional colons become part of the
+    /// resource.
     ///
     /// # Errors
     ///
-    /// * If the ARN is not composed of 6 colon-separated components, [`ArnError::InvalidArn`] is returned.
-    /// * If the ARN does not start with `arn:`, [`ArnError::InvalidArn`] is returned.
+    /// * If the ARN has fewer than 6 colon-separated components, [`ArnError::InvalidArn`] is returned.
+    /// * If the first component is not `arn`, [`ArnError::InvalidScheme`] is returned.
     /// * If the partition is invalid, [`ArnError::InvalidPartition`] is returned.
     /// * If the service is invalid, [`ArnError::InvalidService`] is returned.
-    /// * If the region is invalid, [`ArnError::InvalidRegion`] is returned.
-    /// * If the account ID is invalid, [`ArnError::InvalidAccountId`] is returned.
+    /// * If the region is non-empty and invalid, [`ArnError::InvalidRegion`] is returned.
+    /// * If the account ID is non-empty and invalid, [`ArnError::InvalidAccountId`] is returned.
     fn from_str(s: &str) -> Result<Self, ArnError> {
         let parts: Vec<&str> = s.splitn(6, ':').collect();
         if parts.len() != 6 {
@@ -236,37 +248,44 @@ impl Serialize for Arn {
 }
 
 impl ArnBuilder {
-    /// Set the partition on this ARN.
+    /// Set the partition of the ARN being built. Required.
     pub fn partition(mut self, partition: impl Into<String>) -> Self {
         self.partition = Some(partition.into());
         self
     }
 
-    /// Set the service on this ARN.
+    /// Set the service of the ARN being built. Required.
     pub fn service(mut self, service: impl Into<String>) -> Self {
         self.service = Some(service.into());
         self
     }
 
-    /// Set the region on this ARN.
+    /// Set the region of the ARN being built. Defaults to empty, for global resources.
     pub fn region(mut self, region: impl Into<String>) -> Self {
         self.region = region.into();
         self
     }
 
-    /// Set the account ID on this ARN.
+    /// Set the account ID of the ARN being built. Defaults to empty, for resources that do not need one.
     pub fn account_id(mut self, account_id: impl Into<String>) -> Self {
         self.account_id = account_id.into();
         self
     }
 
-    /// Set the resource on this ARN.
+    /// Set the resource of the ARN being built. Defaults to empty.
     pub fn resource(mut self, resource: impl Into<String>) -> Self {
         self.resource = resource.into();
         self
     }
 
-    /// Build the ARN, returning an [`ArnBuilderError`] if any required fields are missing or invalid.
+    /// Build the ARN, validating the components as [`Arn::new`] does.
+    ///
+    /// # Errors
+    ///
+    /// * If the partition was never set, [`ArnBuilderError::MissingPartition`] is returned.
+    /// * If the service was never set, [`ArnBuilderError::MissingService`] is returned.
+    /// * Otherwise, any validation failure from [`Arn::new`] is returned as the corresponding `ArnBuilderError`
+    ///   variant.
     pub fn build(self) -> Result<Arn, ArnBuilderError> {
         let Some(partition) = self.partition else {
             return Err(ArnBuilderError::MissingPartition);

@@ -3,7 +3,7 @@ use std::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
 };
 
-/// Errors that can be raise during the parsing of ARNs.
+/// Errors that can be raised while parsing or validating an [`Arn`][crate::Arn].
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ArnError {
@@ -57,7 +57,11 @@ impl Display for ArnError {
     }
 }
 
-/// Errors that can be raise during the parsing of ARNs.
+/// Errors that can be raised by [`ArnBuilder::build`][crate::ArnBuilder::build].
+///
+/// This mirrors [`ArnError`], adding the `Missing*` variants for required components that were never set on the
+/// builder. The `InvalidArn`, `InvalidScheme`, and `InvalidResource` variants exist only so that any [`ArnError`] can
+/// be converted into an `ArnBuilderError`; `build` itself never produces them.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ArnBuilderError {
     /// Invalid AWS account id. The argument contains the specified account id.
@@ -107,6 +111,16 @@ impl Display for ArnBuilderError {
 }
 
 impl From<ArnError> for ArnBuilderError {
+    /// Convert an [`ArnError`] into the corresponding `ArnBuilderError` variant.
+    #[cfg_attr(
+        feature = "iam",
+        doc = "",
+        doc = " # Panics",
+        doc = "",
+        doc = " Panics if `err` is one of the IAM-specific variants (`InvalidIamResourceName` or",
+        doc = " `InvalidIamResourcePath`, added by the `iam` feature). These have no `ArnBuilderError` counterpart and",
+        doc = " are never produced by the code paths that build an [`Arn`][crate::Arn]."
+    )]
     fn from(err: ArnError) -> Self {
         match err {
             ArnError::InvalidAccountId(account_id) => Self::InvalidAccountId(account_id),

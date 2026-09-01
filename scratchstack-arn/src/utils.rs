@@ -1,20 +1,24 @@
 use crate::ArnError;
 
+/// The maximum number of characters allowed in a partition name.
+const MAX_PARTITION_LENGTH: usize = 32;
+
 /// Verify that a partition name meets the naming requirements.
 ///
 /// AWS does not publish a formal specification for partition names. In this validator, we require:
 ///
-/// *   The partition must be composed of Unicode alphabetic non-uppercase characters, ASCII numeric
-///     characters, or `-` (codepoint `\u{0x002d}`).
+/// *   The partition must be composed of Unicode alphabetic non-uppercase characters, ASCII digits, or `-`
+///     (`U+002D`).
 /// *   The partition must have between 1 and 32 characters.
 /// *   A `-` cannot appear in the first or last position, nor can it appear in two consecutive characters.
 ///
 /// "Non-uppercase" is the same as "lowercase" for most Western scripts, but other scripts do not have a concept of
 /// uppercase and lowercase.
 ///
-/// The value must be in NFKC normalized form for validation on accented characters to succeed. For example, `ç`
-/// represented as the codepoint `\u{0231}` ("Latin small letter c with cedilla") is valid, but `\u{0063}\u{0327}`
-/// ("Latin small letter c" followed by "combining cedilla") is not.
+/// The value must be in a composed (NFC or NFKC) normalized form for validation of accented characters to succeed.
+/// For example, `ç` written as the single codepoint `U+00E7` ("Latin small letter c with cedilla") is valid, but
+/// `U+0063 U+0327` ("Latin small letter c" followed by "combining cedilla") is not: the combining cedilla is not
+/// itself an alphabetic character.
 ///
 /// Examples of valid partition names:
 ///
@@ -25,15 +29,17 @@ use crate::ArnError;
 /// *   `aws-中国`
 /// *   `việtnam`
 ///
-/// If `partition` meets the requirements, Ok is returned. Otherwise, a [ArnError::InvalidPartition] error is returned.
+/// # Errors
+///
+/// Returns [`ArnError::InvalidPartition`] if `partition` does not meet the requirements above.
 pub fn validate_partition(partition: &str) -> Result<(), ArnError> {
     if partition.is_empty() {
         return Err(ArnError::InvalidPartition(partition.to_string()));
     }
 
     let mut last_was_dash = true;
-    for (i, c) in partition.char_indices() {
-        if i == 32 {
+    for (i, c) in partition.chars().enumerate() {
+        if i >= MAX_PARTITION_LENGTH {
             return Err(ArnError::InvalidPartition(partition.to_string()));
         }
 
@@ -61,8 +67,9 @@ pub fn validate_partition(partition: &str) -> Result<(), ArnError> {
 ///
 /// An account id must be 12 ASCII digits or the string `aws`.
 ///
-/// If `account_id` meets this requirement, Ok is returned. Otherwise, an
-/// [`InvalidAccountId`][ArnError::InvalidAccountId] error is returned.
+/// # Errors
+///
+/// Returns [`ArnError::InvalidAccountId`] if `account_id` does not meet this requirement.
 pub fn validate_account_id(account_id: &str) -> Result<(), ArnError> {
     if account_id != "aws" {
         let a_bytes = account_id.as_bytes();
@@ -98,10 +105,10 @@ enum RegionParseSection {
 ///
 /// AWS does not publish a formal specification for region names. In this validator, we require:
 ///
-/// *   The region must be composed of Unicode alphabetic non-uppercase characters or `-` (codepoint 45/0x002d),
-///     followed by a `-` and one or more ASCII digits, or the name `local`.
-/// *   The region can have a local region appended to it: after the region, a '-', one or more Unicode alphabetic
-///     non-uppercase characters or `-`, followed by a `-` and one or more ASCII digits.
+/// *   The region is either the literal name `local`, or one or more `-`-separated groups of Unicode alphabetic
+///     non-uppercase characters, followed by a `-` and one or more ASCII digits. For example, `prod-west-1`.
+/// *   The region may have a local region appended to it: a `-`, followed by a second region of the same form. For
+///     example, `prod-east-1-dca-2`. At most one local region may be appended.
 /// *   A `-` cannot appear in the first or last position, nor can it appear in two consecutive characters.
 ///
 /// "Non-uppercase" is the same as "lowercase" for most Western scripts, but other scripts do not have a concept of
@@ -115,7 +122,9 @@ enum RegionParseSection {
 /// *   `ap-southeast-7-hòa-hiệp-bắc-3`
 /// *   `日本-東京-1`
 ///
-/// If `region` meets the requirements, Ok is returned. Otherwise, a [ArnError::InvalidRegion] error is returned.
+/// # Errors
+///
+/// Returns [`ArnError::InvalidRegion`] if `region` does not meet the requirements above.
 pub fn validate_region(region: &str) -> Result<(), ArnError> {
     // As a special case, we accept the region "local"
     if region == "local" {
@@ -176,16 +185,19 @@ pub fn validate_region(region: &str) -> Result<(), ArnError> {
 
 /// Verify that a service name meets the naming requirements.
 ///
-/// AWS does not publish a formal specification for service names. In this validator, we specify:
-/// *   The service must be composed of at least one or more Unicode non-uppercase alphabetic characeters, numeric
-/// *   characters, or `-`.
+/// AWS does not publish a formal specification for service names. In this validator, we require:
+///
+/// *   The service must be composed of one or more Unicode non-uppercase alphanumeric characters or `-` (`U+002D`).
+///     Note that, unlike [`validate_partition`], this accepts non-ASCII digits.
 /// *   A `-` cannot appear in the first or last position, nor can it appear in two consecutive characters.
+/// *   No maximum length is enforced.
 ///
 /// "Non-uppercase" is the same as "lowercase" for most Western scripts, but other scripts do not have a concept of
 /// uppercase and lowercase.
 ///
-/// If `service` meets the requirements, Ok is returned. Otherwise, a [ArnError::InvalidService] error is
-/// returned.
+/// # Errors
+///
+/// Returns [`ArnError::InvalidService`] if `service` does not meet the requirements above.
 pub fn validate_service(service: &str) -> Result<(), ArnError> {
     if service.is_empty() {
         return Err(ArnError::InvalidService(service.to_string()));
@@ -232,14 +244,28 @@ mod test {
 
     #[test]
     fn partition_at_max_length() {
-        // 32 chars is the maximum (checked at byte index 32, so a 32-char ASCII name is valid).
+        // 32 characters is the maximum, for ASCII and multi-byte characters alike.
         assert!(validate_partition("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1").is_ok());
+
+        let p = "中".repeat(31) + "1";
+        assert_eq!(p.chars().count(), 32);
+        assert!(validate_partition(&p).is_ok());
     }
 
     #[test]
     fn partition_too_long() {
         let p = "a".repeat(33);
         assert_eq!(validate_partition(&p), Err(ArnError::InvalidPartition(p)));
+    }
+
+    #[test]
+    fn partition_too_long_multibyte() {
+        // The length limit counts characters, not bytes. These are over the limit by character count
+        // even though a multi-byte character straddles byte offset 32.
+        for p in ["a".repeat(31) + "中" + "a", "a".repeat(30) + "中" + "aaaa", "中".repeat(32) + "1"] {
+            assert!(p.chars().count() > 32);
+            assert_eq!(validate_partition(&p), Err(ArnError::InvalidPartition(p.clone())), "accepted {p:?}");
+        }
     }
 
     #[test]
