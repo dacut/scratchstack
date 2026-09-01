@@ -10,6 +10,10 @@ use {
 /// The service component for IAM ARNs.
 pub(crate) const SERVICE_KEY_IAM: &str = "iam";
 
+/// The maximum length, in characters, of an IAM path or path prefix. As only ASCII is accepted, this is equivalently
+/// a limit on the number of bytes.
+const MAX_IAM_PATH_LENGTH: usize = 512;
+
 /// An IAM resource ARN, split into its resource type, path, and name.
 ///
 /// The resource component of an IAM ARN has the form `type/path/name`. The path runs from the first slash through the
@@ -165,11 +169,12 @@ impl IamResourceArn {
 
 /// Validate that a resource path is valid according to AWS IAM rules.
 ///
-/// Paths must be between 1 and 512 characters long, end with a slash (`/`), and contain only printable ASCII
-/// characters other than space (character codes 33 through 126).
+/// Paths must be between 1 and 512 characters long, begin and end with a slash (`/`), and contain only printable
+/// ASCII characters other than space (character codes 33 through 126). A path of just `/`, for a resource with no
+/// path segments, is valid.
 ///
-/// AWS additionally requires paths to *begin* with a slash; that is not checked here, because callers such as
-/// [`IamResourceArn`] slice the path out of an ARN starting at the first slash and so always satisfy it.
+/// This implements the `pathType` shape of the IAM API model, whose pattern is
+/// `^(\u{002F})|(\u{002F}[\u{0021}-\u{007E}]+\u{002F})$` with a length of 1 to 512.
 ///
 /// # Errors
 ///
@@ -187,22 +192,22 @@ pub fn validate_iam_path(path: impl AsRef<str>) -> Result<(), ArnError> {
 }
 
 fn validate_iam_path_inner(path: &str) -> Result<(), ArnError> {
-    if path.is_empty() || path.len() > 512 {
+    let bytes = path.as_bytes();
+
+    if bytes.is_empty() || bytes.len() > MAX_IAM_PATH_LENGTH {
         return Err(ArnError::InvalidIamResourcePath(path.to_string()));
     }
 
-    let mut last_was_slash = false;
+    // A trailing multi-byte character leaves a continuation byte here, which is never b'/', so this
+    // test does not depend on the character range check below having run first.
+    if bytes[0] != b'/' || bytes[bytes.len() - 1] != b'/' {
+        return Err(ArnError::InvalidIamResourcePath(path.to_string()));
+    }
 
-    for c in path.chars() {
-        if c < '\x21' || c > '\x7e' {
+    for c in bytes {
+        if *c < 0x21 || *c > 0x7e {
             return Err(ArnError::InvalidIamResourcePath(path.to_string()));
         }
-
-        last_was_slash = c == '/';
-    }
-
-    if !last_was_slash {
-        return Err(ArnError::InvalidIamResourcePath(path.to_string()));
     }
 
     Ok(())
@@ -212,8 +217,12 @@ fn validate_iam_path_inner(path: &str) -> Result<(), ArnError> {
 /// `ListRoles` API — is valid.
 ///
 /// The rules are those of [`validate_iam_path`], except that the prefix need not end with a slash: it must be between
-/// 1 and 512 characters long and contain only printable ASCII characters other than space (character codes 33 through
-/// 126).
+/// 1 and 512 characters long, begin with a slash (`/`), and contain only printable ASCII characters other than space
+/// (character codes 33 through 126).
+///
+/// This implements the `pathPrefixType` shape of the IAM API model, whose pattern is
+/// `^\u{002F}[\u{0021}-\u{007F}]*$` with a length of 1 to 512. That range admits `\u{007F}` (DEL), which the IAM
+/// APIs reject in practice; it is rejected here too, matching [`validate_iam_path`].
 ///
 /// # Errors
 ///
@@ -225,12 +234,18 @@ pub fn validate_iam_path_prefix(path_prefix: impl AsRef<str>) -> Result<(), ArnE
 }
 
 fn validate_iam_path_prefix_inner(path_prefix: &str) -> Result<(), ArnError> {
-    if path_prefix.is_empty() || path_prefix.len() > 512 {
+    let bytes = path_prefix.as_bytes();
+
+    if bytes.is_empty() || bytes.len() > MAX_IAM_PATH_LENGTH {
         return Err(ArnError::InvalidIamResourcePath(path_prefix.to_string()));
     }
 
-    for c in path_prefix.chars() {
-        if c < '\x21' || c > '\x7e' {
+    if bytes[0] != b'/' {
+        return Err(ArnError::InvalidIamResourcePath(path_prefix.to_string()));
+    }
+
+    for c in bytes {
+        if *c < 0x21 || *c > 0x7e {
             return Err(ArnError::InvalidIamResourcePath(path_prefix.to_string()));
         }
     }
@@ -336,6 +351,63 @@ mod tests {
             IamResourceArn::expect_resource_type("arn:aws:iam::123456789012:user/eng/Deployer", "role"),
             Err(ArnError::InvalidResource("user/eng/Deployer".to_string()))
         );
+    }
+
+    #[test]
+    fn test_paths_require_a_leading_slash() {
+        // pathType: ^(/)|(/[!-~]+/)$
+        for good in ["/", "/eng/", "/eng/admins/"] {
+            assert!(validate_iam_path(good).is_ok(), "rejected {good:?}");
+        }
+        for bad in ["eng/", "eng/admins/", "", "/eng", "/e ng/", "/日本/"] {
+            assert_eq!(
+                validate_iam_path(bad),
+                Err(ArnError::InvalidIamResourcePath(bad.to_string())),
+                "accepted {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_path_prefixes_require_a_leading_slash_but_no_trailing_one() {
+        // pathPrefixType: ^/[!-~]*$ -- no trailing slash required.
+        for good in ["/", "/eng", "/eng/", "/eng/admins"] {
+            assert!(validate_iam_path_prefix(good).is_ok(), "rejected {good:?}");
+        }
+        for bad in ["eng", "", "/e ng", "/日本"] {
+            assert_eq!(
+                validate_iam_path_prefix(bad),
+                Err(ArnError::InvalidIamResourcePath(bad.to_string())),
+                "accepted {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_path_length_limits() {
+        let at_limit = format!("/{}/", "a".repeat(510));
+        assert_eq!(at_limit.len(), 512);
+        assert!(validate_iam_path(&at_limit).is_ok());
+        assert!(validate_iam_path_prefix(&at_limit).is_ok());
+
+        let over = format!("/{}/", "a".repeat(511));
+        assert_eq!(over.len(), 513);
+        assert_eq!(validate_iam_path(&over), Err(ArnError::InvalidIamResourcePath(over.clone())));
+        assert_eq!(validate_iam_path_prefix(&over), Err(ArnError::InvalidIamResourcePath(over)));
+    }
+
+    #[test]
+    fn test_iam_resource_arn_paths_still_validate() {
+        // TryFrom slices the path from the first slash, so it always satisfies the leading-slash
+        // requirement added to validate_iam_path.
+        for (arn, path) in [
+            ("arn:aws:iam::123456789012:role/Deployer", "/"),
+            ("arn:aws:iam::123456789012:role/eng/Deployer", "/eng/"),
+            ("arn:aws:iam::123456789012:role/eng/admins/Deployer", "/eng/admins/"),
+        ] {
+            let iam_arn = IamResourceArn::from_str(arn).unwrap();
+            assert_eq!(iam_arn.resource_path(), path);
+        }
     }
 
     #[test]
