@@ -9,7 +9,7 @@ use {
         numeric::{NumericCmp, numeric_match},
         setop::{FOR_ALL_VALUES_PREFIX, FOR_ANY_VALUE_PREFIX, SetOperator},
         string::{StringCmp, string_match},
-        variant::{IfExists, Variant},
+        variant::{Suffix, Variant},
     },
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
     scratchstack_aws_principal::SessionValue,
@@ -35,13 +35,13 @@ pub enum ConditionCmp {
     /// Operators for ARNs.
     Arn(ArnCmp, Variant),
 
-    /// Operators for binary values. AWS defines no negated form, so this carries an [`IfExists`]
+    /// Operators for binary values. AWS defines no negated form, so this carries a [`Suffix`]
     /// rather than a [`Variant`].
-    Binary(IfExists),
+    Binary(Suffix),
 
-    /// Operators on boolean values. AWS defines no negated form, so this carries an [`IfExists`]
+    /// Operators on boolean values. AWS defines no negated form, so this carries a [`Suffix`]
     /// rather than a [`Variant`].
-    Bool(IfExists),
+    Bool(Suffix),
 
     /// Operators for date/time values.
     Date(DateCmp, Variant),
@@ -114,16 +114,16 @@ pub const ArnNotLikeIfExists: ConditionOp =
     ConditionOp::plain(ConditionCmp::Arn(ArnCmp::Like, Variant::IfExistsNegated));
 
 /// The `BinaryEquals` operator.
-pub const BinaryEquals: ConditionOp = ConditionOp::plain(ConditionCmp::Binary(IfExists::No));
+pub const BinaryEquals: ConditionOp = ConditionOp::plain(ConditionCmp::Binary(Suffix::None));
 
 /// The `BinaryEqualsIfExists` operator.
-pub const BinaryEqualsIfExists: ConditionOp = ConditionOp::plain(ConditionCmp::Binary(IfExists::Yes));
+pub const BinaryEqualsIfExists: ConditionOp = ConditionOp::plain(ConditionCmp::Binary(Suffix::IfExists));
 
 /// The `Bool` operator.
-pub const Bool: ConditionOp = ConditionOp::plain(ConditionCmp::Bool(IfExists::No));
+pub const Bool: ConditionOp = ConditionOp::plain(ConditionCmp::Bool(Suffix::None));
 
 /// The `BoolIfExists` operator.
-pub const BoolIfExists: ConditionOp = ConditionOp::plain(ConditionCmp::Bool(IfExists::Yes));
+pub const BoolIfExists: ConditionOp = ConditionOp::plain(ConditionCmp::Bool(Suffix::IfExists));
 
 /// The `DateEquals` operator.
 pub const DateEquals: ConditionOp = ConditionOp::plain(ConditionCmp::Date(DateCmp::Equals, Variant::None));
@@ -464,8 +464,8 @@ impl ConditionCmp {
     const fn display_name(&self, set_op: SetOperator) -> &'static str {
         match self {
             Self::Arn(cmp, variant) => cmp.display_name(set_op, variant),
-            Self::Binary(if_exists) => BINARY_DISPLAY_NAMES.name(*if_exists, set_op),
-            Self::Bool(if_exists) => BOOL_DISPLAY_NAMES.name(*if_exists, set_op),
+            Self::Binary(suffix) => BINARY_DISPLAY_NAMES.name(*suffix, set_op),
+            Self::Bool(suffix) => BOOL_DISPLAY_NAMES.name(*suffix, set_op),
             Self::Date(cmp, variant) => cmp.display_name(set_op, variant),
             Self::IpAddress(variant) => IP_ADDRESS_DISPLAY_NAMES.name(*variant, set_op),
             Self::Null => NULL_DISPLAY_NAMES.name(set_op),
@@ -486,7 +486,7 @@ impl ConditionCmp {
             | Self::IpAddress(variant)
             | Self::Numeric(_, variant)
             | Self::String(_, variant) => variant.if_exists(),
-            Self::Binary(if_exists) | Self::Bool(if_exists) => if_exists.if_exists(),
+            Self::Binary(suffix) | Self::Bool(suffix) => suffix.if_exists(),
             Self::Null => false,
         }
     }
@@ -502,8 +502,8 @@ impl ConditionCmp {
     ) -> Result<bool, AspenError> {
         match self {
             Self::Arn(cmp, variant) => arn_match(context, pv, allowed, value, *cmp, *variant),
-            Self::Binary(if_exists) => binary_match(context, pv, allowed, value, *if_exists),
-            Self::Bool(if_exists) => bool_match(context, pv, allowed, value, *if_exists),
+            Self::Binary(suffix) => binary_match(context, pv, allowed, value, *suffix),
+            Self::Bool(suffix) => bool_match(context, pv, allowed, value, *suffix),
             Self::Date(cmp, variant) => date_match(context, pv, allowed, value, *cmp, *variant),
             Self::IpAddress(variant) => ip_address_match(context, pv, allowed, value, *variant),
             Self::Null => null_match(context, pv, allowed, value),
@@ -606,7 +606,7 @@ mod tests {
                 op::{ConditionCmp, ConditionOp},
                 setop::SetOperator,
                 string::StringCmp,
-                variant::{IfExists, Variant},
+                variant::{Suffix, Variant},
             },
             condop,
         },
@@ -630,10 +630,10 @@ mod tests {
             (ConditionCmp::Arn(ArnCmp::Like, Variant::IfExists), "Arn(Like, IfExists)"),
             (ConditionCmp::Arn(ArnCmp::Like, Variant::Negated), "Arn(Like, Negated)"),
             (ConditionCmp::Arn(ArnCmp::Like, Variant::IfExistsNegated), "Arn(Like, IfExistsNegated)"),
-            (ConditionCmp::Binary(IfExists::No), "Binary(No)"),
-            (ConditionCmp::Binary(IfExists::Yes), "Binary(Yes)"),
-            (ConditionCmp::Bool(IfExists::No), "Bool(No)"),
-            (ConditionCmp::Bool(IfExists::Yes), "Bool(Yes)"),
+            (ConditionCmp::Binary(Suffix::None), "Binary(None)"),
+            (ConditionCmp::Binary(Suffix::IfExists), "Binary(IfExists)"),
+            (ConditionCmp::Bool(Suffix::None), "Bool(None)"),
+            (ConditionCmp::Bool(Suffix::IfExists), "Bool(IfExists)"),
             (ConditionCmp::Date(DateCmp::Equals, Variant::None), "Date(Equals, None)"),
             (ConditionCmp::Date(DateCmp::Equals, Variant::IfExists), "Date(Equals, IfExists)"),
             (ConditionCmp::Date(DateCmp::Equals, Variant::Negated), "Date(Equals, Negated)"),
@@ -864,7 +864,7 @@ mod tests {
     /// `as_str` indexes a table of names by the comparison and its variant, so a comparison paired
     /// with a variant the table has no row for would panic. The comparisons AWS defines in fewer
     /// than four forms carry a variant type with no more values than they have names -- `Binary`
-    /// and `Bool` take an `IfExists`, not a `Variant` -- so there is no such pairing to build.
+    /// and `Bool` take a `Suffix`, not a `Variant` -- so there is no such pairing to build.
     /// `ConditionCmp::Binary(Variant::Negated)` does not compile.
     ///
     /// The round trip also pins the display tables to the order the discriminants index them in:
@@ -889,9 +889,9 @@ mod tests {
             comparisons.push(ConditionCmp::IpAddress(variant));
         }
 
-        for if_exists in [IfExists::No, IfExists::Yes] {
-            comparisons.push(ConditionCmp::Binary(if_exists));
-            comparisons.push(ConditionCmp::Bool(if_exists));
+        for suffix in [Suffix::None, Suffix::IfExists] {
+            comparisons.push(ConditionCmp::Binary(suffix));
+            comparisons.push(ConditionCmp::Bool(suffix));
         }
 
         // 1 Null + 4 variants * (2 Arn + 3 Date + 3 Numeric + 3 String + 1 IpAddress) + 2 Binary
@@ -924,13 +924,13 @@ mod tests {
     /// such a caller has.
     #[test_log::test]
     fn test_comparisons_can_be_taken_apart_from_outside() {
-        use crate::{ArnCmp, ConditionCmp, ConditionIfExists, ConditionVariant, DateCmp, NumericCmp, StringCmp};
+        use crate::{ArnCmp, ConditionCmp, ConditionSuffix, ConditionVariant, DateCmp, NumericCmp, StringCmp};
 
         let described = |op: ConditionOp| -> String {
             match op.comparison() {
                 ConditionCmp::Arn(ArnCmp::Equals, ConditionVariant::None) => "arn equals".to_string(),
-                ConditionCmp::Binary(ConditionIfExists::Yes) => "binary, key optional".to_string(),
-                ConditionCmp::Bool(ConditionIfExists::No) => "bool, key required".to_string(),
+                ConditionCmp::Binary(ConditionSuffix::IfExists) => "binary, key optional".to_string(),
+                ConditionCmp::Bool(ConditionSuffix::None) => "bool, key required".to_string(),
                 ConditionCmp::Date(DateCmp::LessThan, ConditionVariant::Negated) => "date >=".to_string(),
                 ConditionCmp::IpAddress(ConditionVariant::Negated) => "not an ip".to_string(),
                 ConditionCmp::Null => "null".to_string(),
@@ -956,5 +956,41 @@ mod tests {
             ConditionOp::plain(ConditionCmp::String(StringCmp::EqualsIgnoreCase, ConditionVariant::Negated)),
             condop::StringNotEqualsIgnoreCase
         );
+    }
+    /// An operator stays small enough to be free to carry around.
+    ///
+    /// A policy set under evaluation holds one of these per operator per condition clause, so the
+    /// representation is worth pinning rather than rediscovering. Every part is a fieldless enum,
+    /// which Rust packs into a byte, and every one is align-1, so nothing is padded: a whole
+    /// operator is its comparison plus a set operator, and a comparison is a discriminant plus at
+    /// most two one-byte modifiers.
+    ///
+    /// Spelling the modifiers as separate `bool` fields would be larger, not smaller -- two bools
+    /// occupy two bytes where a four-valued enum occupies one -- so the readable representation is
+    /// also the compact one.
+    #[test_log::test]
+    fn test_an_operator_is_four_bytes() {
+        use std::mem::{align_of, size_of};
+
+        for (name, size, align) in [
+            ("Variant", size_of::<Variant>(), align_of::<Variant>()),
+            ("Suffix", size_of::<Suffix>(), align_of::<Suffix>()),
+            ("SetOperator", size_of::<SetOperator>(), align_of::<SetOperator>()),
+            ("ArnCmp", size_of::<ArnCmp>(), align_of::<ArnCmp>()),
+            ("DateCmp", size_of::<DateCmp>(), align_of::<DateCmp>()),
+            ("NumericCmp", size_of::<NumericCmp>(), align_of::<NumericCmp>()),
+            ("StringCmp", size_of::<StringCmp>(), align_of::<StringCmp>()),
+        ] {
+            assert_eq!(size, 1, "{name} should occupy one byte");
+            assert_eq!(align, 1, "{name} should not force alignment");
+        }
+
+        // A discriminant plus at most two one-byte modifiers.
+        assert_eq!(size_of::<ConditionCmp>(), 3);
+        assert_eq!(align_of::<ConditionCmp>(), 1);
+
+        // The comparison plus the set operator qualifying it.
+        assert_eq!(size_of::<ConditionOp>(), 4);
+        assert_eq!(align_of::<ConditionOp>(), 1);
     }
 }

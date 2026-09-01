@@ -110,8 +110,9 @@ pub use {
     action::{Action, ActionList, SpecificActionDetails, SpecificActionDetailsBuilder},
     authz::{AuthorizationResult, authorize},
     condition::{
-        ArnCmp, Condition, ConditionCmp, ConditionMap, ConditionOp, DateCmp, IfExists as ConditionIfExists, NumericCmp,
-        SetOperator as ConditionSetOperator, StringCmp, Variant as ConditionVariant, op as condop,
+        ArnCmp, Condition, ConditionCmp, ConditionMap, ConditionOp, DateCmp, NumericCmp,
+        SetOperator as ConditionSetOperator, StringCmp, Suffix as ConditionSuffix, Variant as ConditionVariant,
+        op as condop,
     },
     effect::Effect,
     error::AspenError,

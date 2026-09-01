@@ -1,4 +1,4 @@
-use super::variant::{IfExists, Variant};
+use super::variant::{Suffix, Variant};
 
 /// The set operator qualifying a condition clause operator.
 ///
@@ -100,23 +100,23 @@ impl VariantNames {
 /// The names one comparison goes by, for a comparison AWS defines in two forms rather than four.
 ///
 /// The counterpart to [`VariantNames`] for `Binary` and `Bool`, which have no negated form. Their
-/// carrying an [`IfExists`] rather than a [`Variant`] is what makes naming them total.
+/// carrying a [`Suffix`] rather than a [`Variant`] is what makes naming them total.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct IfExistsNames {
-    /// The plain name: `BinaryEquals`.
-    pub(super) no: OperatorNames,
+pub(super) struct SuffixNames {
+    /// The name with no suffix: `BinaryEquals`.
+    pub(super) none: OperatorNames,
 
     /// The name carrying the `IfExists` suffix: `BinaryEqualsIfExists`.
-    pub(super) yes: OperatorNames,
+    pub(super) if_exists: OperatorNames,
 }
 
-impl IfExistsNames {
+impl SuffixNames {
     /// Returns the name the operator goes by under the given suffix and set operator.
     #[inline]
-    pub(super) const fn name(&self, if_exists: IfExists, set_op: SetOperator) -> &'static str {
-        match if_exists {
-            IfExists::No => self.no.name(set_op),
-            IfExists::Yes => self.yes.name(set_op),
+    pub(super) const fn name(&self, suffix: Suffix, set_op: SetOperator) -> &'static str {
+        match suffix {
+            Suffix::None => self.none.name(set_op),
+            Suffix::IfExists => self.if_exists.name(set_op),
         }
     }
 }
@@ -151,22 +151,22 @@ macro_rules! variant_names {
     };
 }
 
-/// Builds the [`IfExistsNames`] for one comparison: the plain name, then the `IfExists` one.
-macro_rules! if_exists_names {
-    ($no:literal, $yes:literal $(,)?) => {
-        $crate::condition::setop::IfExistsNames {
-            no: display_names!($no),
-            yes: display_names!($yes),
+/// Builds the [`SuffixNames`] for one comparison: the unsuffixed name, then the `IfExists` one.
+macro_rules! suffix_names {
+    ($none:literal, $if_exists:literal $(,)?) => {
+        $crate::condition::setop::SuffixNames {
+            none: display_names!($none),
+            if_exists: display_names!($if_exists),
         }
     };
 }
 
-pub(super) use {display_names, if_exists_names, variant_names};
+pub(super) use {display_names, suffix_names, variant_names};
 
 #[cfg(test)]
 mod tests {
     use {
-        super::{IfExists, SetOperator, Variant},
+        super::{SetOperator, Suffix, Variant},
         pretty_assertions::assert_eq,
     };
 
@@ -209,13 +209,13 @@ mod tests {
         assert_eq!(names.name(Variant::Negated, SetOperator::ForAllValues), "ForAllValues:StringNotEquals");
     }
 
-    /// The two-form comparisons select the same way, on an [`IfExists`] rather than a [`Variant`].
+    /// The two-form comparisons select the same way, on a [`Suffix`] rather than a [`Variant`].
     #[test_log::test]
-    fn test_if_exists_names() {
-        let names = if_exists_names!["Bool", "BoolIfExists"];
+    fn test_suffix_names() {
+        let names = suffix_names!["Bool", "BoolIfExists"];
 
-        assert_eq!(names.name(IfExists::No, SetOperator::None), "Bool");
-        assert_eq!(names.name(IfExists::Yes, SetOperator::None), "BoolIfExists");
-        assert_eq!(names.name(IfExists::Yes, SetOperator::ForAnyValue), "ForAnyValue:BoolIfExists");
+        assert_eq!(names.name(Suffix::None, SetOperator::None), "Bool");
+        assert_eq!(names.name(Suffix::IfExists, SetOperator::None), "BoolIfExists");
+        assert_eq!(names.name(Suffix::IfExists, SetOperator::ForAnyValue), "ForAnyValue:BoolIfExists");
     }
 }

@@ -1,24 +1,24 @@
 use {
     super::{
-        setop::{IfExistsNames, display_names, if_exists_names},
-        variant::IfExists,
+        setop::{SuffixNames, display_names, suffix_names},
+        variant::Suffix,
     },
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
     scratchstack_aws_principal::SessionValue,
 };
 
 /// The names the boolean comparison goes by. AWS defines no negated form.
-pub(super) const BOOL_DISPLAY_NAMES: IfExistsNames = if_exists_names!["Bool", "BoolIfExists"];
+pub(super) const BOOL_DISPLAY_NAMES: SuffixNames = suffix_names!["Bool", "BoolIfExists"];
 
 pub(super) fn bool_match(
     context: &Context,
     pv: PolicyVersion,
     allowed: &StringLikeList<String>,
     value: &SessionValue,
-    if_exists: IfExists,
+    suffix: Suffix,
 ) -> Result<bool, AspenError> {
     match value {
-        SessionValue::Null => Ok(if_exists.if_exists()),
+        SessionValue::Null => Ok(suffix.if_exists()),
         SessionValue::Bool(value) => {
             let mut allowed_bool = Vec::with_capacity(2);
             for el in allowed.iter() {

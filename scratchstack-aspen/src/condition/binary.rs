@@ -1,7 +1,7 @@
 use {
     super::{
-        setop::{IfExistsNames, display_names, if_exists_names},
-        variant::IfExists,
+        setop::{SuffixNames, display_names, suffix_names},
+        variant::Suffix,
     },
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
     base64::{Engine, engine::general_purpose::STANDARD},
@@ -9,17 +9,17 @@ use {
 };
 
 /// The names the binary comparison goes by. AWS defines no negated form.
-pub(super) const BINARY_DISPLAY_NAMES: IfExistsNames = if_exists_names!["BinaryEquals", "BinaryEqualsIfExists"];
+pub(super) const BINARY_DISPLAY_NAMES: SuffixNames = suffix_names!["BinaryEquals", "BinaryEqualsIfExists"];
 
 pub(super) fn binary_match(
     _context: &Context,
     _pv: PolicyVersion,
     allowed: &StringLikeList<String>,
     value: &SessionValue,
-    if_exists: IfExists,
+    suffix: Suffix,
 ) -> Result<bool, AspenError> {
     match value {
-        SessionValue::Null => Ok(if_exists.if_exists()),
+        SessionValue::Null => Ok(suffix.if_exists()),
         SessionValue::Binary(value) => {
             for el in allowed.iter() {
                 // Note: negated is not a valid variant here, so no need to check for !=.
