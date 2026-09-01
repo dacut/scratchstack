@@ -10,6 +10,12 @@ use {
 #[derive(Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum PrincipalError {
+    /// An error from [`scratchstack_arn`] with no more specific counterpart here.
+    ///
+    /// [`ArnError`] is `#[non_exhaustive]`, so variants added there in future are carried through unchanged rather
+    /// than being forced into an approximate translation.
+    Arn(ArnError),
+
     /// Entity does not have a valid ARN.
     CannotConvertToArn,
 
@@ -80,11 +86,19 @@ pub enum PrincipalError {
     MissingField(&'static str),
 }
 
-impl Error for PrincipalError {}
+impl Error for PrincipalError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Arn(err) => Some(err),
+            _ => None,
+        }
+    }
+}
 
 impl Display for PrincipalError {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
+            Self::Arn(err) => Display::fmt(err, f),
             Self::CannotConvertToArn => f.write_str("Cannot convert entity to ARN"),
             Self::InvalidArn(arn) => write!(f, "Invalid ARN: {arn:#?}"),
             Self::InvalidAccountId(account_id) => write!(f, "Invalid account id: {account_id:#?}"),
@@ -131,6 +145,10 @@ impl Display for PrincipalError {
 }
 
 impl From<ArnError> for PrincipalError {
+    /// Translate an [`ArnError`] into the closest [`PrincipalError`].
+    ///
+    /// Variants with no direct counterpart are wrapped in [`PrincipalError::Arn`]. [`ArnError`] is
+    /// `#[non_exhaustive]`, so this conversion must stay total no matter what is added to it.
     fn from(err: ArnError) -> Self {
         match err {
             ArnError::InvalidScheme(scheme) => Self::InvalidScheme(scheme),
@@ -142,7 +160,9 @@ impl From<ArnError> for PrincipalError {
             ArnError::InvalidArn(arn) => Self::InvalidArn(arn),
             ArnError::InvalidIamResourcePath(path) => Self::InvalidResourcePath(path),
             ArnError::InvalidIamResourceName(name) => Self::InvalidResourceName(name),
-            _ => unreachable!("Unexpected ArnError variant: {err:#?}"),
+            ArnError::MissingPartition => Self::MissingField("partition"),
+            ArnError::MissingService => Self::MissingField("service"),
+            err => Self::Arn(err),
         }
     }
 }
@@ -171,6 +191,25 @@ mod tests {
 
         // Ensure we can debug print the principal error.
         let _ = format!("{principal_err:?}");
+    }
+
+    #[test]
+    fn test_from_arn_error_missing_fields() {
+        // ArnBuilder's Missing* variants map onto PrincipalError's own MissingField.
+        assert_eq!(PrincipalError::from(ArnError::MissingPartition), PrincipalError::MissingField("partition"));
+        assert_eq!(PrincipalError::from(ArnError::MissingService), PrincipalError::MissingField("service"));
+    }
+
+    #[test]
+    fn test_arn_variant_displays_and_sources() {
+        use std::error::Error as _;
+
+        // ArnError is not Clone, so build two equal values.
+        let expected = ArnError::InvalidPartition("Aws".to_string()).to_string();
+        let principal_err = PrincipalError::Arn(ArnError::InvalidPartition("Aws".to_string()));
+        assert_eq!(principal_err.to_string(), expected);
+        assert!(principal_err.source().is_some());
+        assert!(PrincipalError::CannotConvertToArn.source().is_none());
     }
 
     #[test]
