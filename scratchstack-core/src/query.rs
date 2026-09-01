@@ -32,10 +32,14 @@ use {
     },
 };
 
+/// Prefix marking a [`QueryError`] message that already names the parameter at fault.
+const PARAMETER_PREFIX: &str = "parameter ";
+
 /// An error encountered while deserializing query-protocol parameters.
 ///
-/// The message is intended for the caller of the API: it identifies the offending parameter but
-/// never echoes parameter values back.
+/// The message is intended for the caller of the API: it names the offending parameter but never echoes parameter
+/// values back, so an error may be reported to the caller without leaking a credential or other sensitive input that
+/// happened to be malformed.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct QueryError(String);
 
@@ -76,7 +80,8 @@ struct NodeMapAccess<'a> {
 
 /// [`SeqAccess`] implementation over a list's elements, ordered by index.
 struct NodeSeqAccess<'a> {
-    elements: VecIntoIter<&'a Node>,
+    /// The elements remaining to be visited, each with the 1-based index it was addressed by.
+    elements: VecIntoIter<(u32, &'a Node)>,
 }
 
 /// The value companion to the key most recently yielded by [`NodeMapAccess`].
@@ -84,8 +89,8 @@ enum PendingValue<'a> {
     /// The field had no corresponding parameter.
     Absent(&'static str),
 
-    /// The field is present in the parameter tree.
-    Present(&'a Node),
+    /// The field is present in the parameter tree, under the given key.
+    Present(&'a str, &'a Node),
 }
 
 /// Deserialize a value from AWS query-protocol parameters.
@@ -135,6 +140,20 @@ fn insert(root: &mut BTreeMap<String, Node>, key: &str, value: String) -> Result
     Ok(())
 }
 
+impl QueryError {
+    /// Attribute this error to a parameter, or extend the name it already carries.
+    ///
+    /// Deserializing a structure walks its members through nested [`NodeMapAccess`] and [`NodeSeqAccess`] instances,
+    /// so an inner failure passes through every enclosing member on the way out. Each prepends its own segment,
+    /// rebuilding the dotted parameter name the caller actually sent.
+    fn in_parameter(self, segment: &str) -> Self {
+        match self.0.strip_prefix(PARAMETER_PREFIX) {
+            Some(rest) => Self(format!("{PARAMETER_PREFIX}{segment}.{rest}")),
+            None => Self(format!("{PARAMETER_PREFIX}{segment}: {}", self.0)),
+        }
+    }
+}
+
 impl Display for QueryError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.write_str(&self.0)
@@ -167,7 +186,7 @@ macro_rules! deserialize_parsed_scalar {
             let value = self.0.value($expected)?;
             match value.parse::<$type>() {
                 Ok(parsed) => visitor.$visit(parsed),
-                Err(_) => Err(de::Error::custom(concat!("invalid ", $expected))),
+                Err(_) => Err(de::Error::custom(concat!("invalid value, expected ", $expected))),
             }
         }
     };
@@ -255,7 +274,7 @@ impl<'de> Deserializer<'de> for NodeDeserializer<'_> {
         elements.sort_by_key(|(index, _)| *index);
 
         visitor.visit_seq(NodeSeqAccess {
-            elements: elements.into_iter().map(|(_, node)| node).collect::<Vec<_>>().into_iter(),
+            elements: elements.into_iter(),
         })
     }
 
@@ -328,7 +347,7 @@ impl<'de> MapAccess<'de> for NodeMapAccess<'_> {
 
     fn next_key_seed<K: DeserializeSeed<'de>>(&mut self, seed: K) -> Result<Option<K::Value>, QueryError> {
         if let Some((key, node)) = self.entries.next() {
-            self.pending = Some(PendingValue::Present(node));
+            self.pending = Some(PendingValue::Present(key, node));
             return seed.deserialize(StrDeserializer::new(key)).map(Some);
         }
 
@@ -343,7 +362,11 @@ impl<'de> MapAccess<'de> for NodeMapAccess<'_> {
     fn next_value_seed<V: DeserializeSeed<'de>>(&mut self, seed: V) -> Result<V::Value, QueryError> {
         match self.pending.take().expect("next_value_seed called before next_key_seed") {
             PendingValue::Absent(field) => seed.deserialize(AbsentFieldDeserializer(field)),
-            PendingValue::Present(node) => seed.deserialize(NodeDeserializer(node)),
+            // Name the parameter the failure came from. Nested failures are already named by the
+            // inner map, so only add this parameter's own name when nothing has named one yet.
+            PendingValue::Present(key, node) => {
+                seed.deserialize(NodeDeserializer(node)).map_err(|err| err.in_parameter(key))
+            }
         }
     }
 }
@@ -354,7 +377,10 @@ impl<'de> SeqAccess<'de> for NodeSeqAccess<'_> {
     fn next_element_seed<T: DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<T::Value>, QueryError> {
         match self.elements.next() {
             None => Ok(None),
-            Some(node) => seed.deserialize(NodeDeserializer(node)).map(Some),
+            Some((index, node)) => seed
+                .deserialize(NodeDeserializer(node))
+                .map_err(|err| err.in_parameter(&format!("member.{index}")))
+                .map(Some),
         }
     }
 
@@ -510,7 +536,38 @@ mod tests {
     fn test_invalid_integer() {
         let err =
             from_query_str::<AssumeRoleLikeRequest>("RoleArn=x&DurationSeconds=abc").expect_err("expected an error");
-        assert!(err.to_string().contains("integer"), "unexpected error: {err}");
+        assert_eq!(err.to_string(), "parameter DurationSeconds: invalid value, expected an integer");
+    }
+
+    #[test_log::test]
+    fn test_errors_name_the_parameter_path() {
+        // The name in the message is the dotted name the caller sent, rebuilt as the error passes
+        // back out through each enclosing structure and list.
+        let err = from_query_str::<AssumeRoleLikeRequest>(
+            "RoleArn=x&Tags.member.2.Key=K&Tags.member.2.Value=V&Tags.member.1=oops",
+        )
+        .expect_err("expected an error");
+        assert_eq!(err.to_string(), "parameter Tags.member.1: expected a structure, found a scalar parameter");
+
+        let err = from_query_str::<AssumeRoleLikeRequest>("RoleArn=x&PolicyArns.member.1.arn.nested=oops")
+            .expect_err("expected an error");
+        assert_eq!(
+            err.to_string(),
+            "parameter PolicyArns.member.1.arn: expected a string, found a structured parameter"
+        );
+    }
+
+    #[test_log::test]
+    fn test_errors_never_echo_values() {
+        // Error text reaches the API caller, so a malformed credential must not come back in it.
+        for query in [
+            "RoleArn=x&DurationSeconds=SUPERSECRET",
+            "RoleArn=x&Tags.member.1=SUPERSECRET",
+            "RoleArn=x&Tags=SUPERSECRET",
+        ] {
+            let err = from_query_str::<AssumeRoleLikeRequest>(query).expect_err("expected an error");
+            assert!(!err.to_string().contains("SUPERSECRET"), "leaked a value: {err}");
+        }
     }
 
     #[test_log::test]
