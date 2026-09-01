@@ -24,9 +24,10 @@ impl IfExists {
         self as usize
     }
 
-    /// Indicates whether this is [`IfExists::Yes`].
+    /// Indicates whether this is [`IfExists::Yes`]: the condition passes over a key the request
+    /// did not supply, rather than failing.
     #[inline]
-    pub(super) fn if_exists(self) -> bool {
+    pub fn if_exists(self) -> bool {
         matches!(self, Self::Yes)
     }
 }
@@ -57,34 +58,27 @@ impl Variant {
         self as usize
     }
 
-    /// Indicates if this is [Variant::IfExists] or [Variant::IfExistsNegated].
+    /// Indicates whether this carries the `IfExists` suffix: the condition passes over a key the
+    /// request did not supply, rather than failing.
     #[inline]
-    pub(super) fn if_exists(self) -> bool {
+    pub fn if_exists(self) -> bool {
         matches!(self, Self::IfExists | Self::IfExistsNegated)
     }
 
-    /// Indicates if this is [Variant::Negated] or [Variant::IfExistsNegated].
+    /// Indicates whether this is a negated operator: `StringNotEquals` rather than
+    /// `StringEquals`, `DateGreaterThanEquals` rather than `DateLessThan`.
     #[inline]
-    pub(super) fn negated(self) -> bool {
+    pub fn negated(self) -> bool {
         matches!(self, Self::Negated | Self::IfExistsNegated)
-    }
-}
-
-impl From<u8> for Variant {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => Self::None,
-            1 => Self::IfExists,
-            2 => Self::Negated,
-            3 => Self::IfExistsNegated,
-            _ => panic!("Invalid variant value: {value}"),
-        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::Variant, pretty_assertions::assert_eq, std::panic::catch_unwind};
+    use {
+        super::{IfExists, Variant},
+        pretty_assertions::assert_eq,
+    };
 
     #[test_log::test]
     fn test_clone() {
@@ -94,14 +88,33 @@ mod tests {
         assert_eq!(Variant::IfExistsNegated.clone(), Variant::IfExistsNegated);
     }
 
+    /// The discriminants are offsets into the tables of operator names, so a comparison reserves
+    /// four consecutive slots and the variant picks one of them.
+    ///
+    /// That the tables are laid out to match is covered by
+    /// `condition::op::tests::test_every_operator_has_a_name_that_parses_back`, which walks every
+    /// operator through both directions of the mapping.
     #[test_log::test]
-    fn test_variant_values() {
-        assert_eq!(Variant::None, Variant::from(0));
-        assert_eq!(Variant::IfExists, Variant::from(1));
-        assert_eq!(Variant::Negated, Variant::from(2));
-        assert_eq!(Variant::IfExistsNegated, Variant::from(3));
+    fn test_variant_offsets() {
+        assert_eq!(Variant::None.as_usize(), 0);
+        assert_eq!(Variant::IfExists.as_usize(), 1);
+        assert_eq!(Variant::Negated.as_usize(), 2);
+        assert_eq!(Variant::IfExistsNegated.as_usize(), 3);
 
-        let e = catch_unwind(|| Variant::from(4)).unwrap_err();
-        assert_eq!(e.downcast_ref::<String>().unwrap(), "Invalid variant value: 4");
+        assert_eq!(IfExists::No.as_usize(), 0);
+        assert_eq!(IfExists::Yes.as_usize(), 1);
+    }
+
+    /// The two questions a variant answers are independent, and each of the four values answers
+    /// them differently.
+    #[test_log::test]
+    fn test_variant_predicates() {
+        assert_eq!((Variant::None.if_exists(), Variant::None.negated()), (false, false));
+        assert_eq!((Variant::IfExists.if_exists(), Variant::IfExists.negated()), (true, false));
+        assert_eq!((Variant::Negated.if_exists(), Variant::Negated.negated()), (false, true));
+        assert_eq!((Variant::IfExistsNegated.if_exists(), Variant::IfExistsNegated.negated()), (true, true));
+
+        assert!(!IfExists::No.if_exists());
+        assert!(IfExists::Yes.if_exists());
     }
 }
