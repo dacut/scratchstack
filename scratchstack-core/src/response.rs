@@ -11,7 +11,7 @@ use {
     bon::Builder,
     http::{Response, StatusCode},
     log::error,
-    quick_xml::{SeError, se::Serializer as QuickXmlSerializer},
+    quick_xml::{SeError, escape::escape, se::Serializer as QuickXmlSerializer},
     serde::{
         Serialize,
         ser::{SerializeStruct as _, Serializer},
@@ -97,7 +97,9 @@ where
 
 /// Serializes a struct into an Axum XML response.
 ///
-/// If serialization fails, this returns an `InternalFailure` response instead.
+/// If serialization fails, this returns an `InternalFailure` response instead. That fallback envelope is assembled
+/// by hand rather than serialized, since serialization is what just failed, so the namespace and request id are
+/// escaped on the way in: an error path must not be the one that emits malformed XML.
 pub fn xml_response<E>(envelope: &E, status_code: StatusCode) -> Response<Body>
 where
     E: Serialize + ProvideRequestId + ProvideXmlNamespace + ?Sized,
@@ -114,10 +116,11 @@ where
             }
 
             let mut body = format!(
-                r#"<ErrorResponse xmlns="{xmlns}"><Error><Type>Receiver</Type><Code>InternalFailure</Code><Message>Internal failure</Message></Error>"#
+                r#"<ErrorResponse xmlns="{}"><Error><Type>Receiver</Type><Code>InternalFailure</Code><Message>Internal failure</Message></Error>"#,
+                escape(xmlns)
             );
             if let Some(request_id) = request_id {
-                body += &format!("<RequestId>{request_id}</RequestId>");
+                body += &format!("<RequestId>{}</RequestId>", escape(request_id));
             }
             body += "</ErrorResponse>";
 

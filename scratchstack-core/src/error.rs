@@ -13,7 +13,7 @@ use {
 
 /// Type of error that occurred when making a request.
 ///
-/// This is somewhat analagous to the Smithy `ErrorKind` type but is simplified and supports the
+/// This is somewhat analogous to the Smithy `ErrorKind` type but is simplified and supports the
 /// [`Deserialize`] and [`Serialize`] traits.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[non_exhaustive]
@@ -87,6 +87,10 @@ impl Display for GenericError {
 impl Error for GenericError {}
 
 impl ProvideErrorMetadata for GenericError {
+    /// Derives the error type from the HTTP status: a 4xx is the sender's fault, anything else is the receiver's.
+    ///
+    /// A [`GenericError`] carrying no status at all is reported as [`ErrorType::Receiver`], on the grounds that an
+    /// error we cannot classify is more likely ours than the caller's.
     fn error_type(&self) -> ErrorType {
         let Some(status) = self.http_status else {
             // Assume it's a server error if we don't have a status code.
