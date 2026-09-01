@@ -22,6 +22,10 @@ const PARTITION_START: usize = 4;
 /// * The `*` character matches any number of characters, including none, within a single segment of the ARN.
 /// * The `?` character matches any single character within a single segment of the ARN.
 ///
+/// "Any character" includes a newline. An ARN may carry one -- an S3 object key is nearly
+/// unrestricted UTF-8 -- and a pattern written to cover a whole bucket has to cover such a key too,
+/// or a `Deny` statement could be stepped around by naming the object across two lines.
+///
 /// `ResourceArn` objects are immutable.
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
 pub struct ResourceArn {
