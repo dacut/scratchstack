@@ -1,7 +1,7 @@
 //! AWS request id implementation.
 //!
-//! This implementation uses the UUIDv7 format the embed a timestamp in the UUID to make it easier to track down the
-//! request in the logs. This timestamp has a resolution of 1 microsecond.
+//! This implementation uses the UUIDv7 format to embed a timestamp in the UUID, to make it easier to track down the
+//! request in the logs. The timestamp has a resolution of 1 microsecond.
 
 use {
     chrono::{DateTime, TimeZone, Utc},
@@ -17,15 +17,21 @@ use {
 
 /// AWS request id implementation.
 ///
-/// This implementation uses the UUIDv7 format the embed a timestamp in the UUID to make it easier to track down the
-/// request in the logs. This timestamp has a resolution of 1s and is based on the system clock, so it's not guaranteed
-/// to be unique; thus, a random number is also embedded in the UUID.
+/// This implementation uses the UUIDv7 format to embed a timestamp in the UUID, to make it easier to track down the
+/// request in the logs. The timestamp has a resolution of 1 microsecond and is based on the system clock, so it is not
+/// guaranteed to be unique; a random number is embedded alongside it.
 ///
-/// The format of the UUID is as follows:
+/// The bit layout is:
 ///
-/// | 0-47           | 48-51      | 52-63      | 64-65    | 66-127 |
-/// | -------------- | ---------- | ---------- | -------- | ------ |
-/// | Timestamp (ms) | Ver (0111) | Microsecs  | Var (10) | Random |
+/// | 0-47           | 48-51      | 52-63     | 64-65    | 66-127 |
+/// | -------------- | ---------- | --------- | -------- | ------ |
+/// | Timestamp (ms) | Ver (0111) | Microsecs | Var (10) | Random |
+///
+/// The whole-millisecond part of the timestamp occupies the first 48 bits, and the remainder, 0 through 999
+/// microseconds, shares the following 16 bits with the version nibble. [`RequestId::microseconds`] recombines the two.
+///
+/// Timestamps before the Unix epoch are not representable: the layout has no sign bit, and negative inputs to the
+/// constructors below produce a request id whose accessors do not round-trip.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct RequestId {
     id: Uuid,
@@ -111,17 +117,23 @@ impl RequestId {
     /// this request id.
     #[inline(always)]
     pub fn unix_timestamp(&self) -> u64 {
-        let milliseconds = u64::from_be_bytes(self.id.as_bytes()[0..8].try_into().unwrap());
-        milliseconds / 1_000
+        self.milliseconds() / 1_000
     }
 
     /// Returns the microseconds from the Unix epoch (January 1, 1970 at 00:00:00 UTC) embedded in this request id.
     #[inline(always)]
     pub fn microseconds(&self) -> i64 {
-        let milliseconds = u64::from_be_bytes(self.id.as_bytes()[0..8].try_into().unwrap());
-        let ver_and_microseconds = u16::from_be_bytes(self.id.as_bytes()[8..10].try_into().unwrap());
+        let ver_and_microseconds = u16::from_be_bytes(self.id.as_bytes()[6..8].try_into().unwrap());
         let microseconds = (ver_and_microseconds & 0x0FFF) as i64;
-        (milliseconds as i64) * 1_000 + microseconds
+        (self.milliseconds() as i64) * 1_000 + microseconds
+    }
+
+    /// Returns the milliseconds from the Unix epoch held in the first 48 bits of this request id.
+    #[inline(always)]
+    fn milliseconds(&self) -> u64 {
+        let mut bytes = [0u8; 8];
+        bytes[2..8].copy_from_slice(&self.id.as_bytes()[0..6]);
+        u64::from_be_bytes(bytes)
     }
 
     /// Returns the timestamp embedded in this request id.
@@ -221,6 +233,50 @@ mod tests {
     fn test_create_request_id() {
         let request_id = RequestId::new();
         println!("Request ID: {request_id}");
+    }
+
+    #[test_log::test]
+    fn timestamp_accessors_round_trip() {
+        // 2024-01-01T00:00:00Z. These accessors read the milliseconds out of the first 48 bits and
+        // the microsecond remainder out of the next 16; reading the wrong ranges made
+        // unix_timestamp off by a factor of 65536 and made microseconds overflow.
+        let secs: i64 = 1_704_067_200;
+        let id = RequestId::from_timestamp_and_random(secs, 0x0123_4567_89AB_CDEF);
+
+        assert_eq!(id.unix_timestamp(), secs as u64);
+        assert_eq!(id.microseconds(), secs * 1_000_000);
+        assert_eq!(id.datetime().timestamp(), secs);
+
+        // Agree with the uuid crate's own view of the same bits.
+        assert_eq!(id.uuid().get_timestamp().unwrap().to_unix().0, secs as u64);
+    }
+
+    #[test_log::test]
+    fn sub_millisecond_component_survives() {
+        // The microsecond remainder shares its 16 bits with the version nibble, so it has to be
+        // masked back out rather than read whole.
+        let micros = 1_704_067_200_000_123;
+        let id = RequestId::from_microseconds(micros);
+
+        assert_eq!(id.microseconds(), micros);
+        assert_eq!(id.unix_timestamp(), 1_704_067_200);
+        assert_eq!(id.datetime().timestamp_micros(), micros);
+
+        // 999 is the largest remainder that fits; 1000 would carry into the milliseconds.
+        for remainder in [0, 1, 500, 999] {
+            let id = RequestId::from_microseconds(1_704_067_200_000_000 + remainder);
+            assert_eq!(id.microseconds(), 1_704_067_200_000_000 + remainder, "remainder {remainder}");
+        }
+    }
+
+    #[test_log::test]
+    fn accessors_agree_with_generated_ids() {
+        // A freshly generated id must also read back sensibly; new() is the common path.
+        let id = RequestId::new();
+        let from_micros = RequestId::from_microseconds(id.microseconds());
+        assert_eq!(from_micros.microseconds(), id.microseconds());
+        assert_eq!(from_micros.unix_timestamp(), id.unix_timestamp());
+        assert_eq!(id.datetime().timestamp_micros(), id.microseconds());
     }
 
     #[test_log::test]
