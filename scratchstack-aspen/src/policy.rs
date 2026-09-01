@@ -131,6 +131,18 @@ impl Policy {
     /// All statements are considered: an explicit deny overrides any allow, regardless of the
     /// order in which the statements appear.
     ///
+    /// This does not apply AWS per-resource semantics. When the context names more than one
+    /// resource, a statement is matched against all of them at once: an `Allow` applies only if it
+    /// covers every resource named, and a `Deny` applies if it covers any. AWS instead requires
+    /// each resource to be allowed on its own, possibly by different statements. Use
+    /// [`authorize`][crate::authorize] for that, which evaluates one resource at a time.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AspenError::InvalidSubstitution`] if a resource or condition pattern in the
+    /// policy contains a malformed variable reference. A caller making an access-control decision
+    /// should treat an error as a denial.
+    ///
     /// # Example
     /// ```
     /// # use scratchstack_aspen::{Action, Context, Decision, Effect, Policy, Resource, Statement, StatementList};

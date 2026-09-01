@@ -265,6 +265,22 @@ impl PolicySet {
     /// Evaluate the policy set. If a denial is found, return a [`Decision::Deny`] and the source
     /// immediately. Otherwise, if one or more approvals are found, return [`Decision::Allow`] and
     /// the relevant sources. Otherwise, return a [`Decision::DefaultDeny`] with no sources.
+    ///
+    /// Stopping at the first denial means the sources reported for a [`Decision::Deny`] name one
+    /// policy, not every policy that would have denied the request. Use [`PolicySet::evaluate_all`]
+    /// to collect them all.
+    ///
+    /// This does not apply AWS per-resource semantics. When the context names more than one
+    /// resource, a statement is matched against all of them at once: an `Allow` applies only if it
+    /// covers every resource named, and a `Deny` applies if it covers any. AWS instead requires
+    /// each resource to be allowed on its own, possibly by different statements. Use
+    /// [`authorize`][crate::authorize] for that, which evaluates one resource at a time.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AspenError::InvalidSubstitution`] if a resource or condition pattern in the
+    /// policy contains a malformed variable reference. A caller making an access-control decision
+    /// should treat an error as a denial.
     pub fn evaluate<'a>(&'a self, context: &'_ Context) -> Result<(Decision, Vec<&'a PolicySource>), AspenError> {
         self.evaluate_core(context, false)
     }
@@ -273,10 +289,17 @@ impl PolicySet {
     /// sources. Otherwise, if one or more approvals are found, return Allow and the relevant sources. Otherwise,
     /// return a DefaultDeny with no sources.
     ///
-    /// When the context contains multiple resources, statement matching is conservative: a single Allow statement
-    /// must cover every resource in the context, while a Deny statement applies if it matches any of them. For
-    /// exact AWS semantics — where each resource must be allowed individually, possibly by different statements —
-    /// use [`authorize`][crate::authorize], which evaluates one resource at a time.
+    /// This does not apply AWS per-resource semantics. When the context names more than one
+    /// resource, a statement is matched against all of them at once: an `Allow` applies only if it
+    /// covers every resource named, and a `Deny` applies if it covers any. AWS instead requires
+    /// each resource to be allowed on its own, possibly by different statements. Use
+    /// [`authorize`][crate::authorize] for that, which evaluates one resource at a time.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AspenError::InvalidSubstitution`] if a resource or condition pattern in the
+    /// policy contains a malformed variable reference. A caller making an access-control decision
+    /// should treat an error as a denial.
     pub fn evaluate_all<'a>(&'a self, context: &'_ Context) -> Result<(Decision, Vec<&'a PolicySource>), AspenError> {
         self.evaluate_core(context, true)
     }
