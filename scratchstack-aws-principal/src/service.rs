@@ -27,12 +27,18 @@ impl Service {
     ///
     /// # Fields
     ///
-    /// * `service_name`: The name of the service. This must meet the following requirements or a
-    ///   [`PrincipalError::InvalidService`] error will be returned:
+    /// * `service_name`: The name of the service, validated as a DNS name by [`validate_dns`]. This must meet the
+    ///   following requirements or a [`PrincipalError::InvalidService`] error will be returned:
     ///   * The name must contain between 1 and 32 characters.
-    ///   * The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
-    /// * `region`: The region the service is running in. If unset, the service is global.
-    /// * `dns_suffix`: The DNS suffix of the service. This is usually amazonaws.com.
+    ///   * The name is split into `.`-separated components, each of which must be between 1 and 63 characters and
+    ///     contain only ASCII alphanumeric characters, hyphens (`-`), or underscores (`_`).
+    ///   * A component may not begin or end with a hyphen, nor contain two consecutive hyphens.
+    /// * `region`: The region the service is running in. If unset, the service is global. When set, it must meet the
+    ///   rules of [`validate_region`][scratchstack_arn::utils::validate_region] or a
+    ///   [`PrincipalError::InvalidRegion`] error will be returned.
+    /// * `dns_suffix`: The DNS suffix of the service, usually `amazonaws.com`. This is validated by [`validate_dns`]
+    ///   under the same rules as `service_name` but with a maximum length of 128; a failure is reported as
+    ///   [`PrincipalError::InvalidService`], not as a suffix-specific error.
     ///
     /// # Example
     /// ```
@@ -80,14 +86,20 @@ impl Service {
     ///
     /// # Arguments
     ///
-    /// * `service_name`: The name of the service. This must meet the following requirements or a
-    ///   [`PrincipalError::InvalidService`] error will be returned:
+    /// * `service_name`: The name of the service, validated as a DNS name by [`validate_dns`]. This must meet the
+    ///   following requirements or a [`PrincipalError::InvalidService`] error will be returned:
     ///   * The name must contain between 1 and 32 characters.
-    ///   * The name must be composed to ASCII alphanumeric characters or one of `, - . = @ _`.
-    /// * `region`: The region the service is running in. If `None`, the service is global.
-    /// * `dns_suffix`: The DNS suffix of the service. This is usually amazonaws.com.
+    ///   * The name is split into `.`-separated components, each of which must be between 1 and 63 characters and
+    ///     contain only ASCII alphanumeric characters, hyphens (`-`), or underscores (`_`).
+    ///   * A component may not begin or end with a hyphen, nor contain two consecutive hyphens.
+    /// * `region`: The region the service is running in. If `None`, the service is global. When `Some`, it must meet
+    ///   the rules of [`validate_region`][scratchstack_arn::utils::validate_region] or a
+    ///   [`PrincipalError::InvalidRegion`] error will be returned.
+    /// * `dns_suffix`: The DNS suffix of the service, usually `amazonaws.com`. This is validated by [`validate_dns`]
+    ///   under the same rules as `service_name` but with a maximum length of 128; a failure is reported as
+    ///   [`PrincipalError::InvalidService`], not as a suffix-specific error.
     ///
-    /// If all of the requirements are met, a [`Service`] object is returned.  Otherwise, a [`PrincipalError`] error is
+    /// If all of the requirements are met, a [`Service`] object is returned. Otherwise, a [`PrincipalError`] error is
     /// returned.
     #[deprecated(since = "0.12.0", note = "Use Service::builder() instead.")]
     pub fn new(service_name: &str, region: Option<String>, dns_suffix: &str) -> Result<Self, PrincipalError> {
@@ -165,6 +177,70 @@ mod tests {
             hash::{Hash, Hasher},
         },
     };
+
+    #[test]
+    fn check_service_name_is_validated_as_dns() {
+        // service_name goes through validate_dns, not validate_name: ',', '=' and '@' are rejected,
+        // and hyphens may not lead, trail, or repeat. The docs previously described validate_name's
+        // rules, which promised all three of those characters.
+        for good in ["s3", "s3.foo", "s3_foo", "a-b", "execute-api"] {
+            Service::builder()
+                .service_name(good)
+                .dns_suffix("amazonaws.com")
+                .build()
+                .unwrap_or_else(|e| panic!("rejected {good:?}: {e}"));
+        }
+
+        for bad in ["s3,foo", "s3=foo", "s3@foo", "s3-", "-s3", "s3--foo", "", "s3..foo"] {
+            let err = Service::builder()
+                .service_name(bad)
+                .dns_suffix("amazonaws.com")
+                .build()
+                .expect_err(&format!("accepted {bad:?}"));
+            assert_eq!(err, PrincipalError::InvalidService(bad.to_string()));
+        }
+    }
+
+    #[test]
+    fn check_dns_suffix_is_validated() {
+        // The suffix is validated too, and reports InvalidService rather than a suffix-specific error.
+        let err = Service::builder()
+            .service_name("s3")
+            .dns_suffix("trailing-.com")
+            .build()
+            .expect_err("accepted a trailing hyphen in the suffix");
+        assert_eq!(err, PrincipalError::InvalidService("trailing-.com".to_string()));
+
+        // 128 characters is the suffix limit, versus 32 for the service name. Each component is
+        // separately capped at 63, so the limit has to be reached across several of them.
+        let at_limit = format!("{}.{}.com", "a".repeat(60), "b".repeat(63));
+        assert_eq!(at_limit.len(), 128);
+        Service::builder().service_name("s3").dns_suffix(&at_limit).build().unwrap();
+
+        let over = format!("{}.{}.com", "a".repeat(61), "b".repeat(63));
+        assert_eq!(over.len(), 129);
+        Service::builder().service_name("s3").dns_suffix(&over).build().expect_err("accepted a 129-byte suffix");
+
+        // A single component longer than 63 fails regardless of the total length.
+        let long_component = format!("{}.com", "a".repeat(64));
+        assert!(long_component.len() < 128);
+        Service::builder()
+            .service_name("s3")
+            .dns_suffix(&long_component)
+            .build()
+            .expect_err("accepted a 64-character component");
+    }
+
+    #[test]
+    fn check_region_is_validated() {
+        let err = Service::builder()
+            .service_name("s3")
+            .region("us-east-1-")
+            .dns_suffix("amazonaws.com")
+            .build()
+            .expect_err("accepted a trailing dash in the region");
+        assert_eq!(err, PrincipalError::InvalidRegion("us-east-1-".to_string()));
+    }
 
     #[test]
     fn check_components() {
