@@ -88,8 +88,17 @@ impl Context {
 
     /// Returns the resources associated with the request.
     ///
-    /// An empty slice means the operation has no resource-level permissions; a statement must then
-    /// name `Resource: "*"` to apply to it. See [`authorize`][crate::authorize].
+    /// An empty slice means the operation has no resource-level permissions -- `ListBuckets` names
+    /// nothing to be scoped against. A statement applies to such a request when its resource
+    /// clause has nothing to rule out, which is any of:
+    ///
+    /// * a `Resource` naming the literal `*`;
+    /// * a `NotResource` that does *not* name it;
+    /// * no resource clause at all, which only a statement carrying a principal clause may omit.
+    ///
+    /// A `Resource` naming anything else does not apply, an ARN of nothing but wildcards included:
+    /// `arn:aws:s3:::*` is a pattern to match a resource against, and here there is no resource to
+    /// match it against. See [`authorize`][crate::authorize].
     #[inline]
     pub fn resources(&self) -> &[Arn] {
         &self.resources

@@ -49,7 +49,10 @@ impl<'a> AuthorizationResult<'a> {
 ///   the root user must apply it itself; [`PolicySet::evaluate_all`] does evaluate one against a
 ///   root actor, and will report the denial this function passes over.
 /// * If the context has no resources — an operation without resource-level permissions — the
-///   policy set is evaluated once; statements must then specify `Resource: "*"` to apply.
+///   policy set is evaluated once. A statement applies only if its resource clause has nothing to
+///   rule out: a `Resource` naming the literal `*`, a `NotResource` that does not, or no resource
+///   clause at all. See [`Context::resources`] for why an ARN of wildcards is not the same as `*`
+///   here.
 /// * Otherwise, the policy set is evaluated once per resource. Each resource must be allowed by
 ///   some policy and denied by none; a single denied resource denies the entire request.
 /// * For every principal but the root user, an explicit deny always overrides an allow, and

@@ -814,28 +814,63 @@ mod tests {
         assert_eq!(statement.sid(), Some("Quoted\"Sid"));
     }
 
+    /// Which statements apply to a request that names no resource at all.
+    ///
+    /// An operation without resource-level permissions has nothing to be scoped against, so a
+    /// statement applies exactly when its resource clause has nothing to rule out. There are three
+    /// such shapes, not one: `Resource: "*"`, a `NotResource` that does not name `*`, and -- on a
+    /// statement carrying a principal clause -- no resource clause at all.
+    ///
+    /// The row worth reading twice is the ARN of nothing but wildcards. It does not apply: that is
+    /// a pattern to match a resource against, and there is no resource here to match it against.
+    /// Only the literal `*` means "any resource".
     #[test_log::test]
     fn test_context_without_resources() {
         let sb = || Statement::builder().effect(Effect::Allow).action(Action::Any);
-
-        let s = sb().resource(Resource::Any).build().unwrap();
         let actor = PrincipalActor::from(
             User::builder().partition("aws").account_id("123456789012").path("/").user_name("MyUser").build().unwrap(),
         );
-        let sd = SessionData::new();
-        let context =
-            Context::builder().api("DescribeInstances").actor(actor).service("ec2").session_data(sd).build().unwrap();
-
-        assert_eq!(s.evaluate(&context, PolicyVersion::None).unwrap(), Decision::Allow);
-
-        let s = sb()
-            .resource(Resource::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-01234567890abcdef").unwrap())
+        let context = Context::builder()
+            .api("DescribeInstances")
+            .actor(actor)
+            .service("ec2")
+            .session_data(SessionData::new())
             .build()
             .unwrap();
-        assert_eq!(s.evaluate(&context, PolicyVersion::None).unwrap(), Decision::DefaultDeny);
+        assert!(context.resources().is_empty());
 
-        let s = sb().not_resource(Resource::Any).build().unwrap();
-        assert_eq!(s.evaluate(&context, PolicyVersion::None).unwrap(), Decision::DefaultDeny);
+        let applies = |s: Statement| s.evaluate(&context, PolicyVersion::None).unwrap() != Decision::DefaultDeny;
+
+        // Resource: "*" -- nothing to rule out.
+        assert!(applies(sb().resource(Resource::Any).build().unwrap()));
+
+        // A resource clause naming anything else has a resource in mind, and there is none.
+        assert!(!applies(
+            sb().resource(Resource::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-0123").unwrap())
+                .build()
+                .unwrap()
+        ));
+        assert!(
+            !applies(sb().resource(Resource::from_str("arn:*:*:*:*:*").unwrap()).build().unwrap()),
+            "an ARN of wildcards is a pattern, not the `*` that means any resource"
+        );
+
+        // NotResource: "*" excludes everything, so it rules the statement out.
+        assert!(!applies(sb().not_resource(Resource::Any).build().unwrap()));
+
+        // A NotResource naming something else excludes nothing here, so the statement applies.
+        assert!(applies(
+            sb().not_resource(Resource::from_str("arn:aws:ec2:us-east-1:123456789012:instance/i-0123").unwrap())
+                .build()
+                .unwrap()
+        ));
+
+        // And a statement with a principal clause may carry no resource clause at all, which is
+        // the trust-policy shape; there is nothing to rule it out either.
+        let trust =
+            Statement::from_str(r#"{"Effect": "Allow", "Action": "*", "Principal": {"AWS": "123456789012"}}"#).unwrap();
+        assert!(trust.resource().is_none() && trust.not_resource().is_none());
+        assert!(applies(trust));
     }
 
     #[test_log::test]
