@@ -104,7 +104,16 @@ impl Action {
         }
     }
 
-    /// Indicates whether this action matches the given service and action.
+    /// Indicates whether this action covers the `service` and `api` a request is invoking.
+    ///
+    /// [`Action::Any`] covers everything. Otherwise the service must be equal and the API is
+    /// globbed against this action's pattern, in which `*` stands for any run of characters --
+    /// including none, and including a newline -- and `?` for any single one.
+    ///
+    /// Both comparisons are case-sensitive, so `s3:GetObject` does not cover a request for
+    /// `s3:getobject`. AWS matches action names without regard to case, so a policy written
+    /// against AWS evaluates more narrowly here, and a `NotAction` statement -- which inverts a
+    /// non-match -- correspondingly more widely. This is a known divergence.
     pub fn matches(&self, service: &str, api: &str) -> bool {
         match self {
             Self::Any => true,
@@ -279,6 +288,29 @@ mod tests {
         pretty_assertions::{assert_eq, assert_ne},
         std::{panic::catch_unwind, str::FromStr},
     };
+
+    /// Action matching is case-sensitive, on the service and on the API alike.
+    ///
+    /// AWS is not, so this pins a known divergence rather than a decision. A change here changes
+    /// authorization outcomes in both directions: a narrower `Action`, and a wider `NotAction`.
+    #[test_log::test]
+    fn test_matching_is_case_sensitive() {
+        let action = Action::from_str("s3:GetObject").unwrap();
+        assert!(action.matches("s3", "GetObject"));
+        assert!(!action.matches("s3", "getobject"));
+        assert!(!action.matches("s3", "GETOBJECT"));
+        assert!(!action.matches("S3", "GetObject"));
+
+        // The same holds through a wildcard: the literal part of the pattern still must match
+        // exactly.
+        let pattern = Action::from_str("s3:Get*").unwrap();
+        assert!(pattern.matches("s3", "GetObject"));
+        assert!(pattern.matches("s3", "Get"));
+        assert!(!pattern.matches("s3", "getObject"));
+
+        // Action::Any is unaffected -- it covers everything without comparing anything.
+        assert!(Action::Any.matches("S3", "getobject"));
+    }
 
     #[test_log::test]
     fn test_specific_action_details_builder() {
