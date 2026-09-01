@@ -160,23 +160,35 @@ pub fn validate_name<F: FnOnce(String) -> PrincipalError>(
     validate_iam_resource_name(name).map_err(|_| map_err(name.to_string()))
 }
 
+/// The minimum length of an IAM unique identifier, including its four-character type prefix.
+const MIN_IDENTIFIER_LENGTH: usize = 20;
+
 /// Verify that an instance profile id, group id, role id, or user id meets AWS requirements.
 ///
 /// AWS only stipulates the first four characters of the ID as a type identifier; however, all IDs follow a common
-/// convention of being 20+ character base-32 strings. We enforce the prefix, length, and base-32 requirements here.
+/// convention of being 20 or more character base-32 strings. We enforce the prefix, length, and base-32 requirements
+/// here.
 ///
-/// If `identifier` meets these requirements, Ok is returned. Otherwise, Err(map_err(id.to_string())) is returned.
+/// The base-32 alphabet is [RFC 4648](https://datatracker.ietf.org/doc/html/rfc4648#section-6)'s: the uppercase
+/// letters `A`-`Z` and the digits `2`-`7`. Lowercase letters are not part of it and are rejected, as are `0`, `1`,
+/// `8`, and `9`.
+///
+/// No maximum length is enforced, because AWS does not publish one.
+///
+/// # Errors
+///
+/// Returns `map_err(id.to_string())` if `id` does not meet these requirements.
 pub fn validate_identifier<F: FnOnce(String) -> PrincipalError>(
     id: &str,
     prefix: &str,
     map_err: F,
 ) -> Result<(), PrincipalError> {
-    if !id.starts_with(prefix) || id.len() < 20 {
+    if !id.starts_with(prefix) || id.len() < MIN_IDENTIFIER_LENGTH {
         Err(map_err(id.to_string()))
     } else {
         for c in id.as_bytes() {
-            // Must be base-32 encoded.
-            if !(c.is_ascii_alphabetic() || (b'2'..=b'7').contains(c)) {
+            // Must be base-32 encoded: RFC 4648's alphabet is A-Z and 2-7.
+            if !(c.is_ascii_uppercase() || (b'2'..=b'7').contains(c)) {
                 return Err(map_err(id.to_string()));
             }
         }
@@ -201,11 +213,15 @@ pub fn validate_path(path: &str) -> Result<(), PrincipalError> {
 
 /// Verify that a DNS name meets Scratchstack requirements.
 ///
-/// DNS names may have multiple components separated by a dot (`.`). Each component must be between 1 and 63 characters.
-/// The total length of the name must be less than the `max_length` argument.
+/// DNS names may have multiple components separated by a dot (`.`). Each component must be between 1 and 63
+/// characters. The total length of the name must be between 1 and `max_length` characters inclusive.
 ///
 /// Components may contain ASCII alphanumeric characters, hyphens (`-`), and underscores (`_`). A component may not
 /// begin or end with a hyphen, and may not contain two consecutive hyphens.
+///
+/// # Errors
+///
+/// Returns `map_err(name.to_string())` if `name` does not meet these requirements.
 pub fn validate_dns<F: FnOnce(String) -> PrincipalError>(
     name: &str,
     max_length: usize,
@@ -255,6 +271,51 @@ mod test {
             hash::{Hash, Hasher},
         },
     };
+
+    #[test]
+    fn check_identifier_alphabet_is_base32() {
+        // RFC 4648 base-32 is A-Z and 2-7. Lowercase was accepted until the check moved from
+        // is_ascii_alphabetic to is_ascii_uppercase.
+        assert!(validate_identifier("AROAAAAAAAAAAAAAAAAA", "AROA", PrincipalError::InvalidRoleId).is_ok());
+        assert!(validate_identifier("AROA2222222222222222", "AROA", PrincipalError::InvalidRoleId).is_ok());
+        assert!(validate_identifier("AROA7777777777777777", "AROA", PrincipalError::InvalidRoleId).is_ok());
+
+        for bad in [
+            "AROAaaaaaaaaaaaaaaaa", // lowercase is outside the alphabet
+            "AROA0000000000000000", // 0, 1, 8 and 9 are outside the alphabet
+            "AROA1111111111111111",
+            "AROA8888888888888888",
+            "AROA9999999999999999",
+            "AROAAAAAAAAAAAAAAAA",  // 19 characters, one short
+            "AIDAAAAAAAAAAAAAAAAA", // right shape, wrong prefix
+        ] {
+            assert_eq!(
+                validate_identifier(bad, "AROA", PrincipalError::InvalidRoleId),
+                Err(PrincipalError::InvalidRoleId(bad.to_string())),
+                "accepted {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn check_dns_length_bound_is_inclusive() {
+        // The maximum is inclusive: a name of exactly max_length is accepted.
+        let at_limit = "a".repeat(32);
+        assert!(validate_dns(&at_limit, 32, PrincipalError::InvalidService).is_ok());
+
+        let over = "a".repeat(33);
+        assert_eq!(
+            validate_dns(&over, 32, PrincipalError::InvalidService),
+            Err(PrincipalError::InvalidService(over.clone()))
+        );
+
+        // Each component is separately capped at 63, whatever max_length allows.
+        let long_component = format!("{}.com", "a".repeat(64));
+        assert_eq!(
+            validate_dns(&long_component, 128, PrincipalError::InvalidService),
+            Err(PrincipalError::InvalidService(long_component.clone()))
+        );
+    }
 
     #[test]
     fn check_names() {
