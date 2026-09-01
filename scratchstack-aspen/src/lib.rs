@@ -11,9 +11,13 @@
 //! applies to a request:
 //!
 //! * [`Action`], or its inverse `NotAction`: the `service:Api` patterns the statement covers.
-//! * [`Resource`], or its inverse `NotResource`: the ARN patterns it covers.
+//! * [`Resource`], or its inverse `NotResource`: the ARN patterns it covers. Required, except on a
+//!   statement that carries a principal clause -- see below.
 //! * [`Principal`], or its inverse `NotPrincipal`: who it covers. Identity-based policies leave
-//!   this out; resource-based policies use it in place of a resource clause.
+//!   this out. Resource-based policies carry it, and usually a resource clause as well: a bucket
+//!   policy names both. The resource clause may be left off only where the attachment already
+//!   identifies the resource, as a role trust policy does -- a principal clause relaxes the
+//!   requirement rather than standing in for the clause.
 //! * [`Condition`]: a two-level map from a [`ConditionOp`] to the condition keys it constrains and
 //!   the values it allows for each.
 //!

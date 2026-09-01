@@ -534,10 +534,11 @@ impl Statement {
             _ => (),
         }
 
-        // Resource-based policies (e.g. role trust policies) omit the resource clause entirely:
-        // the statement implicitly applies to the resource the policy is attached to. Such
-        // statements are recognizable by their principal clause, which identity-based policies
-        // must not carry.
+        // A principal clause marks a resource-based policy, and such a statement is allowed to
+        // omit the resource clause: a role trust policy applies to whatever role it is attached
+        // to, so there is nothing for it to name. That is a relaxation, not a substitution --
+        // most resource-based policies do name a resource, a bucket policy among them -- so
+        // carrying both is the ordinary case rather than an error.
         let has_principal_clause = self.principal.is_some() || self.not_principal.is_some();
         match (&self.resource, &self.not_resource) {
             (Some(_), Some(_)) => errors.push("Resource and NotResource cannot both be set."),
@@ -663,6 +664,73 @@ mod tests {
         } else {
             panic!("not_principal is not SpecifiedPrincipal");
         }
+    }
+
+    /// A principal clause permits the resource clause to be omitted. It does not replace it.
+    ///
+    /// Omitting the resource is the trust-policy shape, where the attachment already identifies
+    /// the resource. Most resource-based policies name both -- a bucket policy is the ordinary
+    /// example -- and the resource clause still scopes such a statement. Reading the permission as
+    /// a substitution would mean dropping resource scoping from a policy that needs it, which is
+    /// why both halves are asserted here.
+    #[test_log::test]
+    fn test_a_principal_clause_permits_omitting_the_resource_rather_than_replacing_it() {
+        const BUCKET_POLICY: &str = r#"{"Effect": "Allow", "Principal": {"AWS": "123456789012"},
+            "Action": "s3:GetObject", "Resource": "arn:aws:s3:::bucket-a/*"}"#;
+
+        for (label, json) in [
+            ("a principal alongside a resource", BUCKET_POLICY),
+            (
+                "a principal alongside a NotResource",
+                r#"{"Effect": "Allow", "Principal": {"AWS": "123456789012"}, "Action": "s3:*",
+                    "NotResource": "arn:aws:s3:::bucket-a/*"}"#,
+            ),
+            (
+                "a principal and no resource clause",
+                r#"{"Effect": "Allow", "Principal": {"AWS": "123456789012"}, "Action": "sts:AssumeRole"}"#,
+            ),
+            (
+                "a resource and no principal clause",
+                r#"{"Effect": "Allow", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::bucket-a/*"}"#,
+            ),
+        ] {
+            assert!(Statement::from_str(json).is_ok(), "{label} should be accepted");
+        }
+
+        // Neither clause is the one combination refused: without a principal, a resource is
+        // required.
+        let err = Statement::from_str(r#"{"Effect": "Allow", "Action": "s3:GetObject"}"#).unwrap_err();
+        assert!(err.to_string().contains("Either Resource or NotResource must be set"), "unexpected error: {err}");
+
+        // The resource clause still scopes a statement that also names a principal: the bucket
+        // policy above reaches its own bucket and not another.
+        let statement = Statement::from_str(BUCKET_POLICY).unwrap();
+        assert!(statement.principal().is_some());
+        assert!(statement.resource().is_some());
+
+        let actor = PrincipalActor::from(
+            User::builder().partition("aws").account_id("123456789012").path("/").user_name("u").build().unwrap(),
+        );
+        let context_for = |arn: &str| {
+            Context::builder()
+                .api("GetObject")
+                .actor(actor.clone())
+                .resources(vec![Arn::from_str(arn).unwrap()])
+                .service("s3")
+                .session_data(SessionData::new())
+                .build()
+                .unwrap()
+        };
+
+        assert_eq!(
+            statement.evaluate(&context_for("arn:aws:s3:::bucket-a/key"), PolicyVersion::V2012_10_17).unwrap(),
+            Decision::Allow
+        );
+        assert_eq!(
+            statement.evaluate(&context_for("arn:aws:s3:::bucket-b/key"), PolicyVersion::V2012_10_17).unwrap(),
+            Decision::DefaultDeny,
+            "the resource clause did not scope a statement that also names a principal"
+        );
     }
 
     /// A statement with a principal clause -- the resource-based policy form used by role trust
