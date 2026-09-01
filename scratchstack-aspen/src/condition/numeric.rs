@@ -27,11 +27,25 @@ pub(super) const NUMERIC_DISPLAY_NAMES: [OperatorNames; 12] = display_names![
     "NumericGreaterThanIfExists",
 ];
 
+/// The comparison a numeric condition operator performs.
+///
+/// AWS names six numeric operators; three are represented here, because a negated ordering
+/// comparison is another one of the six rather than an operator of its own.
+/// `NumericGreaterThanEquals` is [`LessThan`][`NumericCmp::LessThan`] negated, and
+/// `NumericGreaterThan` is [`LessThanEquals`][`NumericCmp::LessThanEquals`] negated.
+///
+/// The discriminants index the table of names the operators are written with, leaving
+/// room for the [`Variant`] that follows each comparison.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum NumericCmp {
+    /// The comparison written `NumericEquals`, or `NumericNotEquals` when negated.
     Equals = 0,
+
+    /// The comparison written `NumericLessThan`, or `NumericGreaterThanEquals` when negated.
     LessThan = 4,
+
+    /// The comparison written `NumericLessThanEquals`, or `NumericGreaterThan` when negated.
     LessThanEquals = 8,
 }
 

@@ -93,10 +93,22 @@ macro_rules! from_str_json {
     };
 }
 
-/// The JSON representation of a list-like type.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Which of the two JSON spellings a list-like Aspen field was written with.
+///
+/// Aspen lets a one-element list be written as the bare element. Which spelling a document used is
+/// carried alongside the elements so that serializing the value back reproduces the document it
+/// came from rather than normalizing it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum JsonRep {
+    /// The bare element, with no enclosing array: `"Resource": "*"`.
+    ///
+    /// A list-like value of this kind always holds exactly one element. Nothing in the public API
+    /// can produce one that does not: [`From<E>`][`From`] is the only constructor that sets this
+    /// kind, and deserialization sets it only on the single-element path.
     Single,
+
+    /// A JSON array: `"Resource": ["*"]`, of any length including zero.
+    #[default]
     List,
 }
 
@@ -479,11 +491,48 @@ where
 #[cfg(test)]
 mod tests {
     use {
-        super::{JsonRep, MapList, simple_type_name},
+        super::{JsonRep, MapList, StringLikeList, simple_type_name},
+        crate::Statement,
         indoc::indoc,
+        pretty_assertions::assert_eq,
         serde::{Deserialize, Serialize, ser::Serializer},
         std::panic::catch_unwind,
     };
+
+    /// Every path that produces a list-like value upholds the invariant `JsonRep::Single` states:
+    /// exactly one element.
+    ///
+    /// The `Debug`, `Display`, and `Serialize` impls index element zero directly when the kind is
+    /// `Single`, so a zero-element value of that kind would panic. Nothing can build one today;
+    /// this pins that down, since `kind` is now part of the public API.
+    #[test_log::test]
+    fn test_single_always_holds_exactly_one_element() {
+        let from_element: StringLikeList<String> = "a".to_string().into();
+        assert_eq!(from_element.kind(), JsonRep::Single);
+        assert_eq!(from_element.len(), 1);
+
+        let from_json: StringLikeList<String> = serde_json::from_str(r#""a""#).unwrap();
+        assert_eq!(from_json.kind(), JsonRep::Single);
+        assert_eq!(from_json.len(), 1);
+
+        let map_from_json: MapList<Statement> =
+            serde_json::from_str(r#"{"Effect": "Allow", "Action": "*", "Resource": "*"}"#).unwrap();
+        assert_eq!(map_from_json.kind(), JsonRep::Single);
+        assert_eq!(map_from_json.len(), 1);
+
+        // The array spellings are `List`, whatever their length -- including empty, which is the
+        // only way to get a list-like value with no elements at all.
+        let empty: StringLikeList<String> = serde_json::from_str("[]").unwrap();
+        assert_eq!(empty.kind(), JsonRep::List);
+        assert!(empty.is_empty());
+        assert_eq!(format!("{empty}"), "[]");
+
+        let one_element_array: StringLikeList<String> = serde_json::from_str(r#"["a"]"#).unwrap();
+        assert_eq!(one_element_array.kind(), JsonRep::List);
+
+        let from_vec: StringLikeList<String> = Vec::<String>::new().into();
+        assert_eq!(from_vec.kind(), JsonRep::List);
+    }
 
     #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
     struct SimpleMap {

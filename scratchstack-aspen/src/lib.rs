@@ -40,8 +40,8 @@ pub use {
     action::{Action, ActionList, SpecificActionDetails, SpecificActionDetailsBuilder},
     authz::{AuthorizationResult, authorize},
     condition::{
-        Condition, ConditionCmp, ConditionMap, ConditionOp, IfExists as ConditionIfExists,
-        SetOperator as ConditionSetOperator, Variant as ConditionVariant, op as condop,
+        ArnCmp, Condition, ConditionCmp, ConditionMap, ConditionOp, DateCmp, IfExists as ConditionIfExists, NumericCmp,
+        SetOperator as ConditionSetOperator, StringCmp, Variant as ConditionVariant, op as condop,
     },
     effect::Effect,
     error::AspenError,
@@ -50,6 +50,6 @@ pub use {
     policyset::{PolicySet, PolicySource},
     principal::{AwsPrincipal, Principal, SpecifiedPrincipal, SpecifiedPrincipalBuilder},
     resource::{Resource, ResourceArn, ResourceList},
-    serutil::{MapList, StringLikeList},
+    serutil::{JsonRep, MapList, StringLikeList},
     statement::{Statement, StatementBuilder, StatementList},
 };
