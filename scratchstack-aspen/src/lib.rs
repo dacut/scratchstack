@@ -40,8 +40,8 @@ pub use {
     action::{Action, ActionList, SpecificActionDetails, SpecificActionDetailsBuilder},
     authz::{AuthorizationResult, authorize},
     condition::{
-        Condition, ConditionCmp, ConditionMap, ConditionOp, SetOperator as ConditionSetOperator,
-        Variant as ConditionVariant, op as condop,
+        Condition, ConditionCmp, ConditionMap, ConditionOp, IfExists as ConditionIfExists,
+        SetOperator as ConditionSetOperator, Variant as ConditionVariant, op as condop,
     },
     effect::Effect,
     error::AspenError,

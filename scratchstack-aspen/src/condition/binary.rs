@@ -1,7 +1,7 @@
 use {
     super::{
         setop::{OperatorNames, display_names},
-        variant::Variant,
+        variant::IfExists,
     },
     crate::{AspenError, Context, PolicyVersion, serutil::StringLikeList},
     base64::{Engine, engine::general_purpose::STANDARD},
@@ -16,10 +16,10 @@ pub(super) fn binary_match(
     _pv: PolicyVersion,
     allowed: &StringLikeList<String>,
     value: &SessionValue,
-    variant: Variant,
+    if_exists: IfExists,
 ) -> Result<bool, AspenError> {
     match value {
-        SessionValue::Null => Ok(variant.if_exists()),
+        SessionValue::Null => Ok(if_exists.if_exists()),
         SessionValue::Binary(value) => {
             for el in allowed.iter() {
                 // Note: negated is not a valid variant here, so no need to check for !=.
