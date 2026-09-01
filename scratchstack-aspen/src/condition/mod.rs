@@ -25,7 +25,7 @@ pub use {
     op::{ConditionCmp, ConditionOp},
     setop::SetOperator,
     string::StringCmp,
-    variant::{IfExists, Variant},
+    variant::{Suffix, Variant},
 };
 
 use {
