@@ -87,8 +87,11 @@ impl Context {
     }
 
     /// Returns the resources associated with the request.
+    ///
+    /// An empty slice means the operation has no resource-level permissions; a statement must then
+    /// name `Resource: "*"` to apply to it. See [`authorize`][crate::authorize].
     #[inline]
-    pub fn resources(&self) -> &Vec<Arn> {
+    pub fn resources(&self) -> &[Arn] {
         &self.resources
     }
 

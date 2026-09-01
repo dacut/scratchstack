@@ -256,8 +256,9 @@ impl PolicySet {
         self.policies.push((source, policy));
     }
 
-    /// Return the policies in the policy set.
-    pub fn policies(&self) -> &Vec<(PolicySource, Policy)> {
+    /// Return the policies in the policy set, each with the source it came from, in the order they
+    /// were added.
+    pub fn policies(&self) -> &[(PolicySource, Policy)] {
         &self.policies
     }
 
