@@ -255,12 +255,14 @@ where
             if let Some(ctc) = get_content_type_and_charset(req.headers())
                 && !allowed_content_types.contains(&ctc.content_type)
             {
-                // Rusoto and some other clients set Content-Type to application/octet-stream for GET requests <sigh>
+                // Rusoto and some other clients set Content-Type to application/octet-stream on
+                // GET requests <sigh>. Let that through only when nothing says a body is coming:
+                // no Content-Length (or a zero one), no Expect, and no chunked Transfer-Encoding.
                 let mut get_ok = false;
 
                 if req.method() == Method::GET {
-                    get_ok = req.headers().get("content-length").is_none();
-                    get_ok |= req.headers().get("expect").is_none();
+                    get_ok = req.headers().get("content-length").is_none_or(|len| len.as_bytes() == b"0");
+                    get_ok &= req.headers().get("expect").is_none();
                     if let Some(te) = req.headers().get("transfer-encoding") {
                         let te = String::from_utf8_lossy(te.as_bytes());
                         for part in te.split(',') {
@@ -502,6 +504,58 @@ mod tests {
         let body = body.collect().await.expect("Failed to convert response body to bytes").to_bytes();
         let body_str = str::from_utf8(&body).expect("Failed to convert response body to string");
         assert!(body_str.contains("123456789012")); // Check for account number in the response
+    }
+
+    /// A GET carrying a Content-Type the service does not list gets through only when nothing
+    /// says a body is coming. Each body indicator closes the gate on its own; it used to open
+    /// whenever *either* Content-Length or Expect was absent, which is nearly always.
+    #[test_log::test(tokio::test)]
+    async fn test_get_content_type_gate() {
+        let cases: [(&[(&str, &str)], StatusCode); 6] = [
+            (&[("Content-Type", "application/octet-stream")], StatusCode::OK),
+            (&[("Content-Type", "application/octet-stream"), ("Content-Length", "0")], StatusCode::OK),
+            (&[("Content-Type", "application/octet-stream"), ("Content-Length", "5")], StatusCode::FORBIDDEN),
+            (&[("Content-Type", "application/octet-stream"), ("Expect", "100-continue")], StatusCode::FORBIDDEN),
+            (
+                &[("Content-Type", "application/octet-stream"), ("Transfer-Encoding", "gzip, chunked")],
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                &[("Content-Type", "application/octet-stream"), ("Content-Length", "5"), ("Expect", "100-continue")],
+                StatusCode::FORBIDDEN,
+            ),
+        ];
+
+        for (headers, expected) in cases {
+            let verifier = AwsSigV4VerifierLayer::builder()
+                .region("us-east-1")
+                .service("service")
+                .get_signing_key(service_fn(get_creds_fn))
+                .error_mapper(XmlErrorMapper::new("service_namespace"))
+                .signed_header_requirements(NoSignedHeaderRequirements)
+                .signature_options(SignatureOptions {
+                    allowed_mismatch: Duration::MAX,
+                    ..Default::default()
+                })
+                .build();
+            let app = Router::new().route("/", get(hello_response)).layer(verifier);
+
+            // The get-vanilla request; its signature covers only host and x-amz-date, so the
+            // extra headers do not disturb it.
+            let mut builder = Request::builder().method(Method::GET).uri("/").header("Host", "example.amazonaws.com").header("X-Amz-Date", "20150830T123600Z").header("Authorization", "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, SignedHeaders=host;x-amz-date, Signature=5fa00fa31553b73ebf1942676e86291e8372ff2a2260956d9b8aae1d763fbf31");
+            for (name, value) in headers {
+                builder = builder.header(*name, *value);
+            }
+            let request = builder.body(Body::empty()).expect("Failed to build request");
+
+            let response = app.oneshot(request).await.expect("Failed to get response");
+            assert_eq!(response.status(), expected, "headers: {headers:?}");
+            if expected == StatusCode::FORBIDDEN {
+                let body = response.into_body().collect().await.expect("Failed to read body").to_bytes();
+                let body_str = str::from_utf8(&body).expect("Failed to convert response body to string");
+                assert!(body_str.contains("<Code>InvalidContentType</Code>"), "headers: {headers:?}: {body_str}");
+            }
+        }
     }
 
     /// A body over the configured bound is answered with 413 before the signature is examined;
