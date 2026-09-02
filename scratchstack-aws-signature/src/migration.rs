@@ -148,6 +148,16 @@
 //! `SignatureDoesNotMatch`. AWS SDKs sign both headers already, so conforming clients see no
 //! change.
 //!
+//! ### Presigned URLs honour `X-Amz-Expires`
+//! A presigned URL is now accepted for `X-Amz-Expires` seconds after its `X-Amz-Date`, in place
+//! of the `allowed_mismatch` window around the server time that ordinary requests get. It used
+//! to be that window -- so a URL signed for one minute stayed good for fifteen, and one signed
+//! for a day went bad after fifteen minutes. An `X-Amz-Expires` that is not a whole number of
+//! seconds from 0 to 604800 is refused with the new
+//! [`AuthorizationQueryParametersError`][crate::AuthorizationQueryParametersError]. Note that
+//! [`with_any_timestamp`][crate::SignatureOptions::with_any_timestamp] no longer disables this
+//! bound.
+//!
 //! ### `NO_ADDITIONAL_SIGNED_HEADERS` became a type
 //! The constant is replaced by [`NoSignedHeaderRequirements`][crate::NoSignedHeaderRequirements],
 //! a unit struct implementing [`SignedHeaderRequirements`][crate::SignedHeaderRequirements]:

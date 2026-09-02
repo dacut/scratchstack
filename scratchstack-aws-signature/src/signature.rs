@@ -112,7 +112,8 @@ impl SignatureOptions {
     }
 
     /// Update the allowed mismatch for signature validation to be the maximum possible value.
-    /// This effectively disables timestamp validation for testing.
+    /// This effectively disables timestamp validation for testing. A presigned URL's
+    /// `X-Amz-Expires` is still enforced.
     pub const fn with_any_timestamp(mut self) -> Self {
         self.allowed_mismatch = Duration::MAX;
         self
@@ -174,10 +175,13 @@ pub struct StreamingSignatureState {
 /// `X-Amz-Signature`) is treated as a presigned URL: its payload is canonicalized as
 /// `UNSIGNED-PAYLOAD`, so **the body is not covered by the signature**.
 ///
-/// `X-Amz-Expires` is *not* enforced. Its presence is only used to recognize a presigned URL;
-/// the sole time bound applied is `options.allowed_mismatch` around `server_timestamp`, the same
-/// window used for ordinary requests. A service that honours presigned URLs must check the
-/// expiry itself.
+/// `X-Amz-Expires` bounds the URL's life: the request is refused with `SignatureDoesNotMatch`
+/// once `server_timestamp` is more than that many seconds past `X-Amz-Date`, in place of the
+/// `options.allowed_mismatch` bound an ordinary request gets -- even under
+/// [`with_any_timestamp`][SignatureOptions::with_any_timestamp]. A URL dated further than
+/// `allowed_mismatch` into the future is still refused as not yet current. The value must be a
+/// whole number of seconds from 0 to 604800 (one week), or the request is refused with
+/// `AuthorizationQueryParametersError`.
 ///
 /// # Unsigned payloads
 /// With [`options.s3`][SignatureOptions::s3] set, a request whose `x-amz-content-sha256` header
@@ -1266,30 +1270,102 @@ mod tests {
             .expect("Failed to validate terminating chunk");
     }
 
-    #[test_log::test(tokio::test)]
-    async fn test_presigned_url() {
-        let mut get_signing_key_svc = service_for_signing_key_fn(get_signing_key);
-        let req = Request::builder()
+    /// A presigned request for `https://example.com:1234/test-bucket/test-object`, signed at
+    /// 20150830T123602Z. The signature covers the query string, so it is only valid for the
+    /// captured `X-Amz-Expires` of `86400`; other values exercise the parameter checks, which
+    /// run before the signature is examined.
+    fn presigned_request(expires: &str) -> Request<Bytes> {
+        Request::builder()
             .method(Method::GET)
-            .uri("https://example.com:1234/test-bucket/test-object?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA7N4QX2J9L6MZ8T3P%2F20150830%2Feu-central-1%2Fs3%2Faws4_request&X-Amz-Date=20150830T123602Z&X-Amz-Expires=86400&X-Amz-SignedHeaders=host&X-Amz-Signature=353ce66394a6cf278a1047c0158ab2c0d1050cae1138c51d47fd3b6bb2198492")
+            .uri(format!("https://example.com:1234/test-bucket/test-object?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA7N4QX2J9L6MZ8T3P%2F20150830%2Feu-central-1%2Fs3%2Faws4_request&X-Amz-Date=20150830T123602Z&X-Amz-Expires={expires}&X-Amz-SignedHeaders=host&X-Amz-Signature=353ce66394a6cf278a1047c0158ab2c0d1050cae1138c51d47fd3b6bb2198492"))
             .extension(RequestId::new())
             .header(scratchstack_core::http::header::HOST, "example.com:1234")
             .body(Bytes::from("The body of pre-signed URL request should be ignored as it is unsigned".as_bytes()))
-            .unwrap();
+            .unwrap()
+    }
 
-        assert!(
-            sigv4_validate_request(
-                req,
-                "eu-central-1",
-                "s3",
-                &mut get_signing_key_svc,
-                *TEST_TIMESTAMP,
-                &NoSignedHeaderRequirements,
-                SignatureOptions::S3,
-            )
-            .await
-            .is_ok()
+    /// When `presigned_request` was signed.
+    fn presigned_request_timestamp() -> DateTime<Utc> {
+        DateTime::from_naive_utc_and_offset(
+            NaiveDate::from_ymd_opt(2015, 8, 30).unwrap().and_hms_opt(12, 36, 2).unwrap(),
+            Utc,
+        )
+    }
+
+    async fn validate_presigned(
+        req: Request<Bytes>,
+        server_timestamp: DateTime<Utc>,
+        options: SignatureOptions,
+    ) -> Result<(Parts, Bytes, SigV4AuthenticatorResponse), SignatureError> {
+        let mut get_signing_key_svc = service_for_signing_key_fn(get_signing_key);
+        sigv4_validate_request(
+            req,
+            "eu-central-1",
+            "s3",
+            &mut get_signing_key_svc,
+            server_timestamp,
+            &NoSignedHeaderRequirements,
+            options,
+        )
+        .await
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_presigned_url() {
+        let result = validate_presigned(presigned_request("86400"), *TEST_TIMESTAMP, SignatureOptions::S3).await;
+        assert!(result.is_ok(), "{:?}", result.err());
+    }
+
+    /// A presigned URL lives for `X-Amz-Expires` seconds from its `X-Amz-Date`, not for the
+    /// clock-skew window an ordinary request gets: it is accepted long after that window has
+    /// closed, and refused once its own life has run out -- even with timestamp validation
+    /// otherwise disabled. Its future bound is unchanged.
+    #[test_log::test(tokio::test)]
+    async fn test_presigned_url_expires_bounds_age() {
+        let signed_at = presigned_request_timestamp();
+
+        for server_timestamp in [signed_at + Duration::hours(23), signed_at + Duration::seconds(86400)] {
+            let result = validate_presigned(presigned_request("86400"), server_timestamp, SignatureOptions::S3).await;
+            assert!(result.is_ok(), "presigned URL must be accepted at {server_timestamp}: {:?}", result.err());
+        }
+
+        for (server_timestamp, options) in [
+            (signed_at + Duration::seconds(86401), SignatureOptions::S3),
+            (signed_at + Duration::days(30), SignatureOptions::S3.with_any_timestamp()),
+        ] {
+            let e = expect_err!(
+                validate_presigned(presigned_request("86400"), server_timestamp, options).await,
+                SignatureDoesNotMatch
+            );
+            assert!(e.starts_with("Request has expired: 20150830T123602Z is now earlier than "), "{e}");
+        }
+
+        let e = expect_err!(
+            validate_presigned(presigned_request("86400"), signed_at - Duration::minutes(16), SignatureOptions::S3)
+                .await,
+            SignatureDoesNotMatch
         );
+        assert!(e.starts_with("Signature not yet current: "), "{e}");
+    }
+
+    /// `X-Amz-Expires` must be a whole number of seconds no more than a week; anything else is
+    /// an `AuthorizationQueryParametersError` with the message AWS gives.
+    #[test_log::test(tokio::test)]
+    async fn test_presigned_url_invalid_expires() {
+        for (expires, message) in [
+            ("604801", "X-Amz-Expires must be less than a week in seconds; that is, less than 604800 seconds."),
+            ("-1", "X-Amz-Expires must be non-negative"),
+            ("abc", "X-Amz-Expires should be a number"),
+            ("", "X-Amz-Expires should be a number"),
+        ] {
+            let e = validate_presigned(presigned_request(expires), *TEST_TIMESTAMP, SignatureOptions::S3)
+                .await
+                .expect_err("an invalid X-Amz-Expires must be refused");
+            assert!(matches!(e, SignatureError::AuthorizationQueryParameters(_)), "X-Amz-Expires={expires}: {e:?}");
+            assert_eq!(e.to_string(), message, "X-Amz-Expires={expires}");
+            assert_eq!(e.error_code(), "AuthorizationQueryParametersError");
+            assert_eq!(e.http_status(), 400);
+        }
     }
 
     /// A genuine request captured from the real `mc` (MinIO client) binary, which sends

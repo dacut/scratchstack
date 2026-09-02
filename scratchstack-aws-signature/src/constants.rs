@@ -37,6 +37,9 @@ pub(crate) const DEFAULT_SECRET_KEY_RAW_SIZE: usize = 30;
 #[allow(unused)]
 pub(crate) const DEFAULT_SECRET_KEY_SIZE: usize = 40;
 
+/// Error code: AuthorizationQueryParametersError
+pub(crate) const ERR_CODE_AUTHORIZATION_QUERY_PARAMETERS_ERROR: &str = "AuthorizationQueryParametersError";
+
 /// Error code: DuplicateHeaderAndQueryParameter
 pub(crate) const ERR_CODE_DUPLICATE_HEADER_AND_QUERY_PARAMETER: &str = "DuplicateHeaderAndQueryParameter";
 
@@ -128,11 +131,17 @@ pub(crate) const ISO8601_DATE_FORMAT: &str = "%Y%m%d";
 /// Length of an ISO8601 date string in the UTC time zone.
 pub(crate) const ISO8601_UTC_LENGTH: usize = 16;
 
+/// Maximum value of `X-Amz-Expires` on a presigned URL: one week, in seconds.
+pub(crate) const MAX_PRESIGNED_URL_EXPIRES_SECS: i64 = 7 * 24 * 60 * 60;
+
 /// Maximum size of a secret key in bytes.
 pub(crate) const MAX_SECRET_KEY_SIZE: usize = 256;
 
 /// Maximum size of a session token in bytes.
 pub(crate) const MAX_SESSION_TOKEN_SIZE: usize = 1 << 20; // 1 MiB
+
+/// Default error message for `AuthorizationQueryParametersError`.
+pub(crate) const MSG_AUTHORIZATION_QUERY_PARAMETERS_ERROR: &str = "The authorization query parameters are invalid";
 
 /// Error message: `"Authorization header requires 'Credential' parameter."`
 pub(crate) const MSG_AUTH_HEADER_REQ_CREDENTIAL: &str = "Authorization header requires 'Credential' parameter.";
@@ -235,6 +244,9 @@ pub(crate) const MSG_QUERY_STRING_MUST_INCLUDE_SIGNED_HEADERS: &str =
 /// Error message: `"Re-examine the query-string parameters."`
 pub(crate) const MSG_REEXAMINE_QUERY_STRING_PARAMS: &str = "Re-examine the query-string parameters.";
 
+/// Error message prefix for a presigned URL past its `X-Amz-Expires`: `"Request has expired"`
+pub(crate) const MSG_REQUEST_HAS_EXPIRED: &str = "Request has expired";
+
 /// Error message: `"Request is missing Authentication Token"`
 pub(crate) const MSG_REQUEST_MISSING_AUTH_TOKEN: &str = "Request is missing Authentication Token";
 
@@ -249,12 +261,25 @@ pub(crate) const MSG_REQUEST_SIGNATURE_MISMATCH: &str = "The request signature w
 /// Error message: `"The security token included in the request is invalid"`
 pub(crate) const MSG_SECURITY_TOKEN_INVALID: &str = "The security token included in the request is invalid";
 
+/// Error message prefix for a request older than the allowed mismatch: `"Signature expired"`
+pub(crate) const MSG_SIGNATURE_EXPIRED: &str = "Signature expired";
+
 /// Error message: `"Unsupported AWS 'algorithm': "`
 pub(crate) const MSG_UNSUPPORTED_ALGORITHM: &str = "Unsupported AWS 'algorithm': ";
 
 /// Error message: `"'x-amz-content-sha256' must be a 'SignedHeader' in the AWS Authorization."`
 pub(crate) const MSG_X_AMZ_CONTENT_SHA256_MUST_BE_SIGNED: &str =
     "'x-amz-content-sha256' must be a 'SignedHeader' in the AWS Authorization.";
+
+/// Error message: `"X-Amz-Expires must be less than a week in seconds; that is, less than 604800 seconds."`
+pub(crate) const MSG_X_AMZ_EXPIRES_MUST_BE_LESS_THAN_A_WEEK: &str =
+    "X-Amz-Expires must be less than a week in seconds; that is, less than 604800 seconds.";
+
+/// Error message: `"X-Amz-Expires must be non-negative"`
+pub(crate) const MSG_X_AMZ_EXPIRES_MUST_BE_NON_NEGATIVE: &str = "X-Amz-Expires must be non-negative";
+
+/// Error message: `"X-Amz-Expires should be a number"`
+pub(crate) const MSG_X_AMZ_EXPIRES_SHOULD_BE_A_NUMBER: &str = "X-Amz-Expires should be a number";
 
 /// Error message: `"'x-amz-security-token' must be a 'SignedHeader' in the AWS Authorization."`
 pub(crate) const MSG_X_AMZ_SECURITY_TOKEN_MUST_BE_SIGNED: &str =

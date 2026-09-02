@@ -19,7 +19,7 @@ use {
     },
     bon::Builder,
     bytes::Bytes,
-    chrono::{DateTime, Utc, offset::FixedOffset},
+    chrono::{DateTime, Duration, Utc, offset::FixedOffset},
     encoding_rs::UTF_8,
     lazy_static::lazy_static,
     log::trace,
@@ -76,6 +76,10 @@ struct AuthParams {
     /// The session token, if any, passed in with the request.
     #[builder(into)]
     pub session_token: Option<String>,
+
+    /// How long past `timestamp_str` a presigned URL stays valid, from `X-Amz-Expires`. Only
+    /// query-string authentication carries it.
+    pub expires: Option<Duration>,
 }
 
 /// A canonicalized request for AWS SigV4.
@@ -418,6 +422,7 @@ impl CanonicalRequest {
             .maybe_session_token(auth_params.session_token)
             .signature(auth_params.signature)
             .request_timestamp(timestamp)
+            .maybe_expires(auth_params.expires)
             .canonical_request_sha256(canonical_request)
             .build())
     }
@@ -667,6 +672,13 @@ impl CanonicalRequest {
 
         let session_token = self.query_parameters.get(QP_X_AMZ_SECURITY_TOKEN).map(|t| unescape_uri_encoding(&t[0]));
 
+        // Rule 7d: X-Amz-Expires, when present, bounds how long the presigned URL is honoured, so
+        // it has to be a usable number before the timestamp checks that depend on it.
+        let expires = match self.query_parameters.get(QP_X_AMZ_EXPIRES) {
+            None => None,
+            Some(values) => Some(parse_x_amz_expires(&values[0])?),
+        };
+
         let credential = credential.expect("credential should be set");
         let signature = signature.expect("signature should be set");
         let mut signed_headers = signed_headers.expect("signed_headers should be set");
@@ -679,8 +691,26 @@ impl CanonicalRequest {
             .signed_headers(signed_headers)
             .timestamp_str(timestamp_str)
             .maybe_session_token(session_token)
+            .maybe_expires(expires)
             .build())
     }
+}
+
+/// Parses an `X-Amz-Expires` query parameter: a whole number of seconds, from zero to one week.
+/// The messages are the ones AWS returns for each failure.
+fn parse_x_amz_expires(value: &str) -> Result<Duration, SignatureError> {
+    if value.starts_with('-') {
+        return Err(SignatureError::AuthorizationQueryParameters(MSG_X_AMZ_EXPIRES_MUST_BE_NON_NEGATIVE.into()));
+    }
+
+    let seconds = value
+        .parse::<i64>()
+        .map_err(|_| SignatureError::AuthorizationQueryParameters(MSG_X_AMZ_EXPIRES_SHOULD_BE_A_NUMBER.into()))?;
+    if seconds > MAX_PRESIGNED_URL_EXPIRES_SECS {
+        return Err(SignatureError::AuthorizationQueryParameters(MSG_X_AMZ_EXPIRES_MUST_BE_LESS_THAN_A_WEEK.into()));
+    }
+
+    Ok(Duration::seconds(seconds))
 }
 
 impl Debug for CanonicalRequest {
