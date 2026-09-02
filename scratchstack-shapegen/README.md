@@ -24,9 +24,13 @@ Each is pulled into the consuming crate with
 
 ## Measuring build cost
 
-shapegen is often blamed for the workspace's slowest build step. It is not the cause: **generation is
-about 4% of the cost, and compiling what it generates is about 66%.** Re-measure with the following
-before optimizing anything.
+shapegen is often blamed for the workspace's slowest build step. It is not the cause: on a cold build
+of `scratchstack-shapes-iam` and its path dependencies, **rustc on the generated code is about 73% of
+the cost and generating it is about 4%.** The lever is the volume of code generated, not the speed of
+the generator.
+
+Re-measure with the following before optimizing anything. Every figure here is from one machine, and
+the ratios travel better than the seconds do.
 
 ### Where the wall time goes
 
@@ -123,7 +127,8 @@ LLVM lines by category — 975,143 total across 23,951 copies:
 
 Three conclusions worth keeping:
 
-1. **Optimizing shapegen itself is not worth doing for build time.** Generation is 1.06 s of 28.47 s.
+1. **Optimizing shapegen itself is not worth doing for build time.** Generation was 1.06 s of the
+   28.47 s above, and is about 0.9 s of 21 s today -- the ratio has held through every change since.
    String-allocation churn in the generator is a readability concern, not a performance one.
 2. **CLI shorthand parsers were the largest single lever**, and are the reason
    [`CliShorthand`] defaults to value types only. Operation request structures were each getting
@@ -152,13 +157,20 @@ The build-script figure also includes the buffered writers; the rest is having l
 | Measure | writeln! | quote! |
 |---|---|---|
 | rustc time | 14.55 s | 14.75 s |
-| Build-script run | 0.33 s | 1.60 s |
+| Build-script run | 0.33 s | 2.00 s, or 0.64 s optimized (below) |
 | Generated lines (IAM) | 73,893 | 84,835 |
 | shapegen source | 4,912 | 4,819 |
 
 `prettyplease` wraps more aggressively than the hand-written writers did, hence the extra generated
-lines; rustc does not care, and the compile time is unchanged. The build-script run pays about 1.3 s
-for the formatting and the syntax check.
+lines; rustc does not care, and the compile time is unchanged.
+
+Cargo compiles build scripts with the dev profile, which for this one costs about four times its own
+runtime. `[profile.dev.build-override] opt-level = 3` in the workspace manifest brings the run to
+0.64 s, so the formatting and syntax check cost about 0.3 s over the `writeln!` implementation rather
+than 1.7 s. It pays for itself across the workspace: proc macros are compiled under the same profile,
+and `macro_expand_crate` is 23% of rustc's time on the generated crate. A full `cargo build
+--workspace` measured the same either way, so the one-off cost of compiling the macros optimized is
+already repaid.
 
 ## After hoisting validators
 
@@ -194,9 +206,11 @@ Two consequences worth knowing:
 
 * **`//` comments do not survive.** Only `#[doc]` attributes reach the output, so an explanation of
   why some generated `#[allow(...)]` is there has to live in the generator, not the generated file.
-* **Rendering is most of the generation time** -- about 0.8 s of the 1.6 s build-script run for IAM,
-  against roughly 0.3 s to build the tokens. That buys the syntax check and readable output; the
-  alternative is `TokenStream::to_string`, which emits one enormous line.
+* **Rendering is most of the generation time.** Unoptimized, for the IAM model: 865 ms to render
+  against 263 ms to build the tokens, plus 19 ms to parse the model and 2 ms to resolve it. That
+  buys the syntax check and readable output; the alternative is `TokenStream::to_string`, which
+  emits one enormous line. Optimizing the build script (above) cuts the whole thing to about a
+  quarter.
 
 ## Compiling what it generates
 
@@ -233,5 +247,7 @@ Things that are deliberate, or at least known, so they are not rediscovered as b
   consistent fix.
 * **`rust_typename` still returns `String`.** Several implementations compute it (`crate::types::X`,
   `Vec<T>`) rather than returning a cached field, and `Member` reaches through an
-  `Rc<RefCell<Shape>>`, so it cannot hand out a borrow. `smithy_name` has the same constraint. Since
-  generation is 0.33 s of a 16 s build, the allocation is not worth a `Cow` in the signature.
+  `Rc<RefCell<Shape>>`, so it cannot hand out a borrow. `smithy_name` has the same constraint. The
+  allocations are still not worth a `Cow` in the signature: they fall in the token-building phase,
+  which is 263 ms of a build where rustc spends 15 s on the result, and an optimized build script
+  cuts even that by roughly four.
