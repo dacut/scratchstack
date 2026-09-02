@@ -2828,7 +2828,6 @@ dependencies = [
  "bon",
  "chrono",
  "clap",
- "env_logger",
  "log",
  "regex",
  "scratchstack-cli-utils",

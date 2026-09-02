@@ -1,13 +1,19 @@
 //! Rust code generation library for Smithy shape models.
 use {
     bon::Builder,
-    std::io::{Result as IoResult, Write},
+    std::{
+        fs::File,
+        io::{BufWriter, Result as IoResult, Write},
+        path::Path,
+    },
 };
 
 /// Primitive Smithy types.
 pub mod primitive;
 
+mod common_errors;
 mod r#enum;
+mod generator;
 mod int_enum;
 mod length_constraint;
 mod list;
@@ -25,13 +31,14 @@ mod str_ext;
 mod structure;
 mod trait_id;
 mod trait_map;
+mod transform;
 mod r#union;
 
 #[allow(unused_imports)]
 pub use {
-    r#enum::*, int_enum::*, length_constraint::*, list::*, map::*, member::*, operation::*, range_constraint::*,
-    resource::*, service::*, shape::*, shape_base::*, shape_ref::*, smithy_model::*, str_ext::*, structure::*,
-    trait_id::*, trait_map::*, r#union::*,
+    common_errors::*, r#enum::*, generator::*, int_enum::*, length_constraint::*, list::*, map::*, member::*,
+    operation::*, range_constraint::*, resource::*, service::*, shape::*, shape_base::*, shape_ref::*, smithy_model::*,
+    str_ext::*, structure::*, trait_id::*, trait_map::*, transform::*, r#union::*,
 };
 
 /// Writers that will write generated code into the appropriate module.
@@ -42,6 +49,48 @@ pub struct Writers<W: Write> {
     pub operation: W,
     pub types: W,
     pub types_error: W,
+}
+
+impl Writers<BufWriter<File>> {
+    /// Creates the five generated modules in `dir`, each buffered.
+    ///
+    /// Generation writes a line at a time -- around 94,000 of them for the IAM model -- so the
+    /// buffering is not incidental.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any of the files cannot be created.
+    pub fn create_in(dir: &Path) -> IoResult<Self> {
+        fn create(dir: &Path, name: &str) -> IoResult<BufWriter<File>> {
+            let path = dir.join(name);
+            let file = std::fs::File::create(&path)
+                .map_err(|e| std::io::Error::new(e.kind(), format!("could not create {}: {e}", path.display())))?;
+            Ok(BufWriter::new(file))
+        }
+
+        Ok(Self {
+            action: create(dir, "action.rs")?,
+            error_meta: create(dir, "error_meta.rs")?,
+            operation: create(dir, "operation.rs")?,
+            types: create(dir, "types.rs")?,
+            types_error: create(dir, "types_error.rs")?,
+        })
+    }
+}
+
+impl<W: Write> Writers<W> {
+    /// Flushes every sink.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first flush error encountered.
+    pub fn flush(&mut self) -> IoResult<()> {
+        self.action.flush()?;
+        self.error_meta.flush()?;
+        self.operation.flush()?;
+        self.types.flush()?;
+        self.types_error.flush()
+    }
 }
 
 /// Trait for all named shapes.
