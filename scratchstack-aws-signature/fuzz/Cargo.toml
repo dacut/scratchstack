@@ -1,25 +1,22 @@
 [package]
 name = "scratchstack-aws-signature-fuzz"
 version = "0.0.0"
-authors = ["Automatically generated"]
 publish = false
-edition = "2018"
+edition = "2024"
 
 [package.metadata]
 cargo-fuzz = true
 
 [dependencies]
 arbitrary = { version = "1", features = ["derive"] }
-bytes = "^1.2"
-libfuzzer-sys = { path = "../../../libfuzzer" }
-chrono = "^0.4"
-http = "^0.2"
-scratchstack-aws-principal = { git = "https://github.com/dacut/scratchstack-core", branch = "main" }
-tokio = { version = "^1.21", features = [ "rt" ] }
-tower = { version = "^0.4", features = [ "util" ] }
-
-[dependencies.scratchstack-aws-signature]
-path = ".."
+bytes = "1.2"
+chrono = { version = "0.4", default-features = false }
+libfuzzer-sys = "0.4"
+scratchstack-aws-principal = { path = "../../scratchstack-aws-principal" }
+scratchstack-aws-signature = { path = ".." }
+scratchstack-core = { path = "../../scratchstack-core", default-features = false }
+tokio = { version = "1.49", features = ["rt"] }
+tower = { version = "0.5", features = ["util"] }
 
 # Prevent this from interfering with workspaces
 [workspace]
