@@ -61,14 +61,18 @@ pub struct PostcardSessionTokenExtractor<KeyService> {
 ///   with the session token.
 /// * AccountId: 12 bytes, the 12-digit AWS account ID associated with the session token,
 ///   represented as an ASCII string.
-/// * NonceLength: u8.
-/// * Nonce: variable bytes, a random nonce used for encryption.
-/// * EncryptionAlgorithm: 1 byte, an enum representing the encryption algorithm used; currently
-///   always 0 forAES256-GCM.
+/// * NonceLength: u8, the length of the nonce that follows. AES256-GCM fixes this at
+///   [`NONCE_LENGTH`]; a token declaring any other length is rejected.
+/// * Nonce: `NonceLength` bytes, a random nonce used for encryption.
 /// * EncryptedPayloadLength: u32 in little-endian format
-/// * EncryptedPayload: variable length encrypted data with associated authentication tag of
-///   "AccountId=<i>account-id</i>". The underlying plaintext data is a postcard-serialized
-///   `SessionTokenData` struct.
+/// * EncryptedPayload: variable length encrypted data, followed by its AEAD authentication tag.
+///   The associated data is the string `AccountId=<account-id>`, so a token cannot be replayed
+///   against a different account. The underlying plaintext is a postcard-serialized
+///   [`SessionTokenData`] struct.
+///
+/// The encryption algorithm is not carried in the token: it is a property of the encryption key,
+/// which [`SessionTokenEncryptionKeyInfo`] supplies, and reading it from the token would let a
+/// caller nominate the algorithm used to decrypt their own token.
 #[derive(Clone)]
 pub struct EncryptedSessionTokenData {
     /// The KeyId of the signing key associated with the session token.
@@ -80,8 +84,8 @@ pub struct EncryptedSessionTokenData {
     /// The nonce used for encryption.
     nonce: Vec<u8>,
 
-    /// The encrypted session token data. The associated authentication tag is
-    /// "AccountId=<i>account-id</i>".
+    /// The encrypted session token data, followed by its AEAD authentication tag. The associated
+    /// data is the string `AccountId=<account-id>`.
     encrypted_payload: Vec<u8>,
 }
 
@@ -267,7 +271,7 @@ impl EncryptedSessionTokenData {
     /// Encrypt the given session token data with the given encryption key, producing the
     /// encrypted session token data. The account ID must be the 12-digit AWS account ID
     /// associated with the session, represented as an ASCII string; it is used as the
-    /// associated authentication data for the encryption.
+    /// associated data for the encryption, binding the token to that account.
     pub fn encrypt(
         session_token_data: &SessionTokenData,
         key_info: &SessionTokenEncryptionKeyInfo,
@@ -353,8 +357,20 @@ impl EncryptedSessionTokenData {
         }
         let account_id = String::from_utf8(account_id.to_vec()).map_err(|_| invalid_session_token_error(request_id))?;
 
-        let nonce_start = account_id_end;
-        let nonce_end = nonce_start + NONCE_LENGTH;
+        let nonce_length_start = account_id_end;
+        if nonce_length_start >= session_token.len() {
+            return Err(invalid_session_token_error(request_id));
+        }
+        // AES256-GCM nonces are a fixed width, so a token declaring any other length was not
+        // produced by `to_session_token` and cannot be decrypted; reject it rather than reading
+        // a nonce of the wrong size.
+        let nonce_length = session_token[nonce_length_start] as usize;
+        if nonce_length != NONCE_LENGTH {
+            return Err(invalid_session_token_error(request_id));
+        }
+
+        let nonce_start = nonce_length_start + 1;
+        let nonce_end = nonce_start + nonce_length;
         if nonce_end > session_token.len() {
             return Err(invalid_session_token_error(request_id));
         }
@@ -411,13 +427,23 @@ impl EncryptedSessionTokenData {
         })?;
         let encrypted_payload_length = u32::try_from(self.encrypted_payload.len())
             .map_err(|_| SignatureError::internal_service_error("Encrypted session token payload is too long"))?;
+        // `encrypt` always produces a nonce of exactly `NONCE_LENGTH` bytes; anything else means
+        // this struct was assembled some other way and would not survive a round trip.
+        let nonce_length = u8::try_from(self.nonce.len()).ok().filter(|len| usize::from(*len) == NONCE_LENGTH);
+        let Some(nonce_length) = nonce_length else {
+            return Err(SignatureError::internal_service_error(format!(
+                "Session token nonce must be {NONCE_LENGTH} bytes, got {}",
+                self.nonce.len()
+            )));
+        };
 
         let mut body = Vec::with_capacity(
-            1 + self.key_id.len() + ACCOUNT_ID_LENGTH + self.nonce.len() + 4 + self.encrypted_payload.len(),
+            1 + self.key_id.len() + ACCOUNT_ID_LENGTH + 1 + self.nonce.len() + 4 + self.encrypted_payload.len(),
         );
         body.push(key_id_length);
         body.extend_from_slice(self.key_id.as_bytes());
         body.extend_from_slice(self.account_id.as_bytes());
+        body.push(nonce_length);
         body.extend_from_slice(&self.nonce);
         body.extend_from_slice(&encrypted_payload_length.to_le_bytes());
         body.extend_from_slice(&self.encrypted_payload);
@@ -547,6 +573,7 @@ mod tests {
         body.push(key_id.len() as u8);
         body.extend_from_slice(key_id.as_bytes());
         body.extend_from_slice(account_id.as_bytes());
+        body.push(TEST_NONCE.len() as u8);
         body.extend_from_slice(&TEST_NONCE);
         body.extend_from_slice(&(encrypted_payload.len() as u32).to_le_bytes());
         body.extend_from_slice(encrypted_payload);
@@ -790,6 +817,44 @@ mod tests {
                 MSG_INVALID_SESSION_TOKEN,
             );
         }
+    }
+
+    /// The nonce length is carried in the token, but AES256-GCM fixes it, so any declared length
+    /// other than `NONCE_LENGTH` is refused before a nonce of the wrong size is read.
+    #[test_log::test]
+    fn test_from_session_token_wrong_nonce_length() {
+        let payload =
+            encrypt_payload(&TEST_KEY, TEST_ACCOUNT_ID, serialize_session_token_data(&test_session_token_data()));
+        let body = build_token_body(TEST_KEY_ID, TEST_ACCOUNT_ID, &payload);
+        let nonce_length_offset = 1 + TEST_KEY_ID.len() + ACCOUNT_ID_LENGTH;
+        assert_eq!(body[nonce_length_offset], NONCE_LENGTH as u8, "the helper writes the real nonce length");
+        let request_id = RequestId::new();
+
+        for declared in [0u8, 1, (NONCE_LENGTH - 1) as u8, (NONCE_LENGTH + 1) as u8, u8::MAX] {
+            let mut body = body.clone();
+            body[nonce_length_offset] = declared;
+            assert_invalid_session_token(
+                EncryptedSessionTokenData::from_session_token(encode_token(&body).as_bytes(), request_id),
+                MSG_INVALID_SESSION_TOKEN,
+            );
+        }
+    }
+
+    /// A nonce of the wrong size never reaches the wire: `to_session_token` refuses it rather
+    /// than emitting a token that `from_session_token` would reject.
+    #[test_log::test]
+    fn test_to_session_token_wrong_nonce_length() {
+        let payload =
+            encrypt_payload(&TEST_KEY, TEST_ACCOUNT_ID, serialize_session_token_data(&test_session_token_data()));
+        let mut data = EncryptedSessionTokenData::from_session_token(
+            encode_token(&build_token_body(TEST_KEY_ID, TEST_ACCOUNT_ID, &payload)).as_bytes(),
+            RequestId::new(),
+        )
+        .unwrap();
+
+        data.nonce.push(0);
+        let e = data.to_session_token().unwrap_err();
+        assert!(matches!(e, SignatureError::InternalServiceError(_)), "got {e:?}");
     }
 
     #[test_log::test]
