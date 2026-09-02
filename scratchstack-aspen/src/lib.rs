@@ -76,7 +76,8 @@
 //!
 //! `sensitive-logging` emits log records carrying the contents of an authorization request --
 //! policy documents, principals, resources, and session data. It is off by default, and the
-//! records are not compiled in at all without it. See [`sensitive_log`].
+//! records are not compiled in at all without it. It forwards to the feature of the same name in
+//! `scratchstack-core`, which provides the [`sensitive_log`] family of macros.
 
 #![warn(clippy::all)]
 #![allow(clippy::manual_range_contains)]
@@ -92,7 +93,14 @@
 #![cfg_attr(doc, feature(doc_cfg))]
 
 #[macro_use]
-pub(crate) mod macros;
+extern crate scratchstack_core;
+
+/// The sensitive logging macros, re-exported from `scratchstack-core` so that macros in this
+/// crate can name them through `$crate` and so that callers who imported them from here keep
+/// working.
+pub use scratchstack_core::{
+    sensitive_debug, sensitive_error, sensitive_info, sensitive_log, sensitive_trace, sensitive_warn,
+};
 
 pub(crate) mod action;
 pub(crate) mod authz;
@@ -108,11 +116,6 @@ pub(crate) mod statement;
 
 #[macro_use]
 pub(crate) mod serutil;
-
-/// Re-export of the [`log`] crate for use by the `sensitive_*` logging macros, which must name it
-/// through `$crate` so they expand correctly outside this crate.
-#[doc(hidden)]
-pub use log as __log;
 
 pub use {
     action::{Action, ActionList, SpecificActionDetails, SpecificActionDetailsBuilder},

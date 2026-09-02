@@ -2437,6 +2437,7 @@ dependencies = [
  "regex",
  "scratchstack-arn",
  "scratchstack-aws-principal",
+ "scratchstack-core",
  "scratchstack-hakari",
  "serde",
  "serde_json",

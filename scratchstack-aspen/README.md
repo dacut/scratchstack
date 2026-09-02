@@ -41,4 +41,5 @@ assert_eq!(authorize(&context, &policy_set)?.decision(), Decision::Allow);
 
 `sensitive-logging` emits log records carrying the contents of an authorization request — policy
 documents, principals, resources, and session data. It is off by default, and the records are not
-compiled in at all without it.
+compiled in at all without it. It forwards to the feature of the same name in `scratchstack-core`,
+which provides the `sensitive_log` family of macros.
