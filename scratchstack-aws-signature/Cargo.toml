@@ -18,14 +18,15 @@ name = "scratchstack_aws_signature"
 [features]
 default = ["axum", "default_session_token"]
 axum = ["dep:quick-xml", "scratchstack-core/axum"]
-default_session_token = ["dep:aes", "dep:aes-gcm", "dep:base64", "dep:postcard"]
+default_session_token = ["dep:aes", "dep:aes-gcm", "dep:postcard"]
 unstable = []
 
 [dependencies]
 aes = { workspace = true, optional = true, features = ["zeroize"] }
 aes-gcm = { workspace = true, optional = true, features = ["zeroize"] }
 ascii-casing = { workspace = true, features = ["serde"] }
-base64 = { workspace = true, optional = true }
+# Not optional: KSecretKey::new encodes freshly generated key material.
+base64.workspace = true
 bon.workspace = true
 bytes.workspace = true
 chrono = { workspace = true, features = ["serde"] }
