@@ -242,6 +242,10 @@
 //! * `default_session_token`: `PostcardSessionTokenExtractor`,
 //!   an encrypted session token format for services issuing their own temporary credentials.
 //!
+//! A third, `sensitive-logging`, is off by default: it compiles in trace records that carry
+//! request material (canonical requests with their headers and query parameters) for debugging
+//! signature mismatches. It gates only this crate's records; see the crate documentation.
+//!
 //! Turning both off with `default-features = false` narrows the crate to roughly the surface
 //! 0.11 had. It does not restore the 0.11 *API*: every change above -- the error type, the bon
 //! builders, the request ids, `NoSignedHeaderRequirements` -- applies whatever the features.

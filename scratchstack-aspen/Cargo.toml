@@ -20,7 +20,7 @@ default = []
 # principals, resources, and session data. Invaluable for debugging an unexpected authorization
 # decision, and unacceptable in a deployment whose logs are retained or aggregated. Without this
 # feature the records are not merely filtered by log level -- they are not compiled in at all.
-sensitive-logging = ["scratchstack-core/sensitive-logging"]
+sensitive-logging = []
 
 [dependencies]
 base64.workspace = true
