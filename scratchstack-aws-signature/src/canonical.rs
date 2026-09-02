@@ -483,7 +483,7 @@ impl CanonicalRequest {
     #[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
     fn get_auth_parameters_from_auth_header<'a>(&'a self, auth_header: &'a [u8]) -> Result<AuthParams, SignatureError> {
         // Interpret the header as Latin-1, trimmed.
-        let auth_header = trim_ascii(auth_header);
+        let auth_header = auth_header.trim_ascii();
 
         // Rule 6a: Make sure the Authorization header starts with "AWS4-HMAC-SHA256".
         let parts = auth_header.splitn(2, |c| *c == b' ').collect::<Vec<&'a [u8]>>();
@@ -506,7 +506,7 @@ impl CanonicalRequest {
         let mut signed_headers = None;
 
         for parameter_untrimmed in parameters.split(|c| *c == b',') {
-            let parameter = trim_ascii(parameter_untrimmed);
+            let parameter = parameter_untrimmed.trim_ascii();
 
             // Needed if we have no parameters at all; this loop will always run at least once.
             if parameter.is_empty() {
@@ -1019,11 +1019,11 @@ fn debug_headers(headers: &HashMap<String, Vec<Vec<u8>>>) -> String {
 #[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
 fn get_content_type_and_charset(headers: &HeaderMap<HeaderValue>) -> Option<ContentTypeCharset> {
     let content_type_opts = headers.get(HDR_CONTENT_TYPE)?.as_ref();
-    let mut parts = content_type_opts.split(|c| *c == b';').map(trim_ascii);
+    let mut parts = content_type_opts.split(|c| *c == b';').map(<[u8]>::trim_ascii);
     let content_type = latin1_to_string(parts.next().expect("split always returns at least one element"));
 
     for option in parts {
-        let opt_trim = trim_ascii(option);
+        let opt_trim = option.trim_ascii();
         let mut opt_parts = opt_trim.splitn(2, |c| *c == b'=');
 
         let opt_name = opt_parts.next().unwrap();
@@ -1253,65 +1253,6 @@ pub fn query_string_to_normalized_map(query_string: &str) -> Result<HashMap<Stri
     }
 
     Ok(result)
-}
-
-/// Returns a byte slice with leading ASCII whitespace bytes removed.
-///
-/// ‘Whitespace’ refers to the definition used by u8::is_ascii_whitespace.
-///
-/// This is copied from the Rust standard library source until the
-/// [`byte_slice_trim_ascii` feature](https://github.com/rust-lang/rust/issues/94035) is stabilized.
-#[cfg_attr(doc, doc(cfg(feature = "unstable")))]
-#[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
-#[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
-pub const fn trim_ascii_start(bytes: &[u8]) -> &[u8] {
-    let mut bytes = bytes;
-    // Note: A pattern matching based approach (instead of indexing) allows
-    // making the function const.
-    while let [first, rest @ ..] = bytes {
-        if first.is_ascii_whitespace() {
-            bytes = rest;
-        } else {
-            break;
-        }
-    }
-    bytes
-}
-
-/// Returns a byte slice with trailing ASCII whitespace bytes removed.
-///
-/// ‘Whitespace’ refers to the definition used by u8::is_ascii_whitespace.
-///
-/// This is copied from the Rust standard library source until the
-/// [`byte_slice_trim_ascii` feature](https://github.com/rust-lang/rust/issues/94035) is stabilized.
-#[cfg_attr(doc, doc(cfg(feature = "unstable")))]
-#[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
-#[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
-pub const fn trim_ascii_end(bytes: &[u8]) -> &[u8] {
-    let mut bytes = bytes;
-    // Note: A pattern matching based approach (instead of indexing) allows
-    // making the function const.
-    while let [rest @ .., last] = bytes {
-        if last.is_ascii_whitespace() {
-            bytes = rest;
-        } else {
-            break;
-        }
-    }
-    bytes
-}
-
-/// Returns a byte slice with leading and trailing ASCII whitespace bytes removed.
-///
-/// ‘Whitespace’ refers to the definition used by u8::is_ascii_whitespace.
-///
-/// This is copied from the Rust standard library source until the
-/// [`byte_slice_trim_ascii` feature](https://github.com/rust-lang/rust/issues/94035) is stabilized.
-#[cfg_attr(doc, doc(cfg(feature = "unstable")))]
-#[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
-#[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
-pub const fn trim_ascii(bytes: &[u8]) -> &[u8] {
-    trim_ascii_end(trim_ascii_start(bytes))
 }
 
 /// Convert a byte to uppercase hex representation.
