@@ -16,6 +16,10 @@ pub enum CliShorthand {
     All,
 
     /// No shapes at all.
+    ///
+    /// `clap::ValueEnum` impls on enums are unaffected -- they are not shorthand parsers, and a
+    /// command line can take `--filter-name account-id` without shorthand appearing anywhere. Turn
+    /// the crate's `clap` feature off to drop every clap-gated impl.
     None,
 
     /// Value types only -- structures and enums in `crate::types`, but not operation request or

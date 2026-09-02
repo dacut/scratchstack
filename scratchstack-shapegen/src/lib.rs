@@ -377,10 +377,26 @@ mod tests {
 
     #[test]
     fn cli_shorthand_policy_decides_which_shapes_get_parsers() {
-        // `All` reaches request structures; the default `ValueTypes` does not.
         let all = generate_with(FIXTURE, CliShorthand::All);
+        let value_types = generate(FIXTURE);
+        let none = generate_with(FIXTURE, CliShorthand::None);
+
+        // `All` reaches request structures; the default `ValueTypes` does not.
         assert!(contains(&all.operation, "ShorthandValue> for CreateWidgetRequest"));
-        assert!(!contains(&generate(FIXTURE).operation, "ShorthandValue> for CreateWidgetRequest"));
+        assert!(!contains(&value_types.operation, "ShorthandValue> for CreateWidgetRequest"));
+
+        // Value types -- structures and enums alike -- get one under `All` and `ValueTypes`.
+        for generated in [&all, &value_types] {
+            assert!(contains(&generated.types, "ShorthandValue> for Widget"));
+            assert!(contains(&generated.types, "ShorthandValue> for Colour"));
+        }
+
+        // `None` means none, for every shape kind and in every module.
+        assert!(!contains(&none.types, "ShorthandValue>"), "no value type should get a parser");
+        assert!(!contains(&none.operation, "ShorthandValue>"), "no request should get one either");
+
+        // But `None` is about shorthand, not about clap: an enum keeps its `ValueEnum`.
+        assert!(contains(&none.types, "impl ::clap::ValueEnum for Colour"));
     }
 
     /// Generation over the real IAM model: 749 shapes, and the only coverage of constructs the
