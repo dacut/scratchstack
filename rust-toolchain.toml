@@ -1,0 +1,17 @@
+# This workspace requires a nightly toolchain.
+#
+# Every crate carries `#![cfg_attr(doc, feature(doc_cfg))]`, which turns on the unstable `doc_cfg`
+# feature. That feature is what renders the "available on crate feature X" tags that
+# `#[doc(cfg(...))]` asks for, and rustdoc sets `cfg(doc)` for `cargo test --doc` as well as for
+# `cargo doc` -- so on stable both fail outright with E0554 rather than merely dropping the tags.
+#
+# rustup reads this file and uses the channel named here for every cargo and rustc invocation
+# inside the workspace, installing it on first use. A fresh checkout therefore builds, tests, and
+# documents without anyone having to know about the requirement.
+#
+# Only the doc build genuinely needs nightly; `cargo +stable build` and `cargo +stable test --lib`
+# still work if you ask for them explicitly. Pin `channel` to a dated nightly if a floating one
+# starts breaking.
+[toolchain]
+channel = "nightly"
+components = ["clippy", "rustfmt"]
