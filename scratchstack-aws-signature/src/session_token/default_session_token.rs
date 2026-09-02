@@ -197,15 +197,15 @@ where
             account_id,
             nonce,
             encrypted_payload,
-        } = EncryptedSessionTokenData::from_session_token(request.session_token.as_bytes(), request.request_id)?;
+        } = EncryptedSessionTokenData::from_session_token(request.session_token().as_bytes(), request.request_id())?;
 
         // After decryption, this buffer holds the plaintext token data -- including the raw
         // secret key -- so it must be zeroized on every exit path.
         let mut payload = Zeroizing::new(encrypted_payload);
-        let stek_req = GetSessionTokenEncryptionKeyRequest {
-            session_token_encryption_key_id: key_id,
-            request_id: request.request_id,
-        };
+        let stek_req = GetSessionTokenEncryptionKeyRequest::builder()
+            .session_token_encryption_key_id(key_id)
+            .request_id(request.request_id())
+            .build();
         let key_info: SessionTokenEncryptionKeyInfo = self.key_service.call(stek_req).await?;
         if key_info.encryption_algorithm != SessionTokenEncryptionAlgorithm::Aes256Gcm {
             return Err(SignatureError::internal_service_error_with_request_id(
@@ -213,12 +213,12 @@ where
                     "Unsupported encryption algorithm for session token encryption key {}: {:?}",
                     key_info.session_token_encryption_key_id, key_info.encryption_algorithm
                 ),
-                request.request_id,
+                request.request_id(),
             ));
         }
 
         let nonce = Nonce::try_from(nonce.as_slice())
-            .map_err(|_| InvalidSessionTokenError::builder().request_id(request.request_id).build())?;
+            .map_err(|_| InvalidSessionTokenError::builder().request_id(request.request_id()).build())?;
         let associated_data = format!("AccountId={account_id}");
         let cipher = Aes256Gcm::new_from_slice(key_info.encryption_key.as_slice()).map_err(|e| {
             SignatureError::internal_service_error_with_request_id(
@@ -226,18 +226,18 @@ where
                     "Failed to create cipher for session token decryption with key {}: {e}",
                     key_info.session_token_encryption_key_id
                 ),
-                request.request_id,
+                request.request_id(),
             )
         })?;
 
         cipher
             .decrypt_in_place(&nonce, associated_data.as_bytes(), &mut *payload)
-            .map_err(|_| invalid_session_token_error(request.request_id))?;
+            .map_err(|_| invalid_session_token_error(request.request_id()))?;
 
         let (result, remainder) = postcard::take_from_bytes(payload.as_slice())
-            .map_err(|_| invalid_session_token_error(request.request_id))?;
+            .map_err(|_| invalid_session_token_error(request.request_id()))?;
         if !remainder.is_empty() {
-            return Err(invalid_session_token_error(request.request_id));
+            return Err(invalid_session_token_error(request.request_id()));
         }
 
         Ok(result)
