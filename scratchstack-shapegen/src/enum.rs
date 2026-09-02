@@ -1,5 +1,5 @@
 use {
-    crate::{Member, Modules, ShapeBase, ShapeInfo, StrExt, doc_tokens, ident},
+    crate::{CliShorthand, Member, Modules, ShapeBase, ShapeInfo, StrExt, doc_tokens, ident},
     proc_macro2::TokenStream,
     quote::quote,
     serde::{Deserialize, Serialize},
@@ -14,6 +14,12 @@ pub struct Enum {
     /// Basic shape information for the enum.
     #[serde(flatten)]
     pub base: ShapeBase,
+
+    /// Which shapes get CLI shorthand parsers.
+    ///
+    /// This is copied from the model during a call to `resolve`.
+    #[serde(skip, default)]
+    pub cli_shorthand: CliShorthand,
 
     /// The members of the enum. Each member implicitly targets the unit type.
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
@@ -33,8 +39,9 @@ impl ShapeInfo for Enum {
         }
     }
 
-    fn resolve(&mut self, shape_name: &str, _model: &crate::SmithyModel) {
+    fn resolve(&mut self, shape_name: &str, model: &crate::SmithyModel) {
         self.base.resolve(shape_name);
+        self.cli_shorthand = model.cli_shorthand;
     }
 
     fn generate(&self, m: &mut Modules) {
@@ -45,7 +52,14 @@ impl ShapeInfo for Enum {
             m.types.extend(self.rust_decl());
             m.types.extend(self.display_impl());
             m.types.extend(self.str_parse_impl());
-            m.types.extend(self.shorthand_parser());
+
+            // An enum is a value type, so the policy governs it exactly as it governs a structure.
+            // `ValueEnum` is not gated: it is how clap turns a scalar argument into an enum, which
+            // a command line can use without any shorthand at all.
+            if self.cli_shorthand.includes_value_types() {
+                m.types.extend(self.shorthand_parser());
+            }
+
             m.types.extend(self.clap_value_enum());
         }
     }
