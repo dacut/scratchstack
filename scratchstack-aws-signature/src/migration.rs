@@ -139,6 +139,15 @@
 //! [`ExtractSessionToken`][crate::ExtractSessionToken] implementation must make the same check;
 //! providers no longer repeat it.
 //!
+//! ### `UNSIGNED-PAYLOAD` is honoured for S3 only, and the token header must be signed
+//! An `x-amz-content-sha256: UNSIGNED-PAYLOAD` header used to leave the body out of the
+//! signature for every service. It now does so only with
+//! [`SignatureOptions::s3`][crate::SignatureOptions::s3] set, and the header must then be in
+//! `SignedHeaders`; for other services the body is always hashed, as AWS does. Under S3 rules an
+//! `x-amz-security-token` header must likewise be signed. Both are refused with
+//! `SignatureDoesNotMatch`. AWS SDKs sign both headers already, so conforming clients see no
+//! change.
+//!
 //! ### `NO_ADDITIONAL_SIGNED_HEADERS` became a type
 //! The constant is replaced by [`NoSignedHeaderRequirements`][crate::NoSignedHeaderRequirements],
 //! a unit struct implementing [`SignedHeaderRequirements`][crate::SignedHeaderRequirements]:

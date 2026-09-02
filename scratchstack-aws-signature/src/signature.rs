@@ -32,7 +32,10 @@ use {
 #[derive(Builder, Clone, Copy, Debug)]
 #[non_exhaustive]
 pub struct SignatureOptions {
-    /// Canonicalize requests according to S3 rules and allow S3-style streaming requests.
+    /// Canonicalize requests according to S3 rules and allow S3-style streaming requests. This
+    /// also honours an `x-amz-content-sha256: UNSIGNED-PAYLOAD` header, leaving the body out of
+    /// the signature; the header must then be signed. Other services hash the body whatever the
+    /// header says, as AWS does.
     #[builder(default = false)]
     pub s3: bool,
 
@@ -176,6 +179,20 @@ pub struct StreamingSignatureState {
 /// window used for ordinary requests. A service that honours presigned URLs must check the
 /// expiry itself.
 ///
+/// # Unsigned payloads
+/// With [`options.s3`][SignatureOptions::s3] set, a request whose `x-amz-content-sha256` header
+/// is `UNSIGNED-PAYLOAD` is canonicalized with that literal in place of the body hash, so **the
+/// body is not covered by the signature**; the header must be in `SignedHeaders`. Without
+/// `options.s3` the header is ignored and the body is always hashed, as AWS does for services
+/// other than S3.
+///
+/// # Session tokens
+/// With `options.s3` set, an `x-amz-security-token` header must be in `SignedHeaders`, as S3
+/// requires. Other services accept a token header added after signing, as AWS does; a service
+/// that wants it signed regardless can name it in `required_headers`. A presigned URL carries
+/// its token as the `X-Amz-Security-Token` query parameter, which is always part of the
+/// canonical query string.
+///
 /// # Errors
 /// This function returns a [`SignatureError`][crate::SignatureError] if the HTTP request is
 /// malformed or the request was not properly signed. The validation follows the
@@ -225,7 +242,8 @@ where
 /// * `request` - The HTTP [`Request`] to validate.
 /// * `body_hash` - The hash of the request body. For S3 PutObject requests, this is the
 ///   `x-amz-content-sha256` header value, which may have special non-SHA-256 values like
-///   `UNSIGNED-PAYLOAD`.
+///   `UNSIGNED-PAYLOAD` or `STREAMING-AWS4-HMAC-SHA256-PAYLOAD`; when it does, that header must
+///   be in `SignedHeaders`.
 /// * `algorithm` - The signing algorithm named in the request, used as the first line of the
 ///   string to sign for each chunk.
 /// * `region` - The AWS region in which the request is being made.
@@ -1274,19 +1292,20 @@ mod tests {
         );
     }
 
-    #[test_log::test(tokio::test)]
-    async fn test_non_presigned_unsigned_payload() {
-        // A genuine request captured from the real `mc` (MinIO client) binary, which sends
-        // `X-Amz-Content-Sha256: UNSIGNED-PAYLOAD` on an ordinary, non-presigned request for its
-        // internal GetBucketLocation lookup whenever the endpoint is HTTPS and no region has been
-        // configured. Captured by running, against a local HTTPS endpoint using the credentials
-        // below:
-        //
-        //     mc alias set testtarget https://<endpoint> AKIDEXAMPLE \
-        //         wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY --api S3v4
-        //     mc --insecure rm testtarget/test-bucket/test-object
-        let mut get_signing_key_svc = service_for_signing_key_fn(get_signing_key);
-        let req = Request::builder()
+    /// A genuine request captured from the real `mc` (MinIO client) binary, which sends
+    /// `X-Amz-Content-Sha256: UNSIGNED-PAYLOAD` on an ordinary, non-presigned request for its
+    /// internal GetBucketLocation lookup whenever the endpoint is HTTPS and no region has been
+    /// configured. Captured by running, against a local HTTPS endpoint using the credentials
+    /// below:
+    ///
+    ///     mc alias set testtarget https://<endpoint> AKIDEXAMPLE \
+    ///         wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY --api S3v4
+    ///     mc --insecure rm testtarget/test-bucket/test-object
+    ///
+    /// `signed_headers` replaces the captured `SignedHeaders` list; the signature is only valid
+    /// for the captured one, `host;x-amz-content-sha256;x-amz-date`.
+    fn unsigned_payload_request(signed_headers: &str) -> Request<Bytes> {
+        Request::builder()
             .method(Method::GET)
             .uri("https://127.0.0.1:8899/test-bucket/?location=")
             .extension(RequestId::new())
@@ -1295,30 +1314,155 @@ mod tests {
             .header("X-Amz-Content-Sha256", "UNSIGNED-PAYLOAD")
             .header(
                 "Authorization",
-                "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20260723/us-east-1/s3/aws4_request, \
-                 SignedHeaders=host;x-amz-content-sha256;x-amz-date, \
-                 Signature=ab3b5ccbe6939e619822bc16d22754aa4c86134179dac47ddf3f11da9ef7eeab",
+                format!(
+                    "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20260723/us-east-1/s3/aws4_request, \
+                     SignedHeaders={signed_headers}, \
+                     Signature=ab3b5ccbe6939e619822bc16d22754aa4c86134179dac47ddf3f11da9ef7eeab"
+                ),
             )
             .body(Bytes::new())
-            .unwrap();
+            .unwrap()
+    }
 
-        let request_timestamp = DateTime::from_naive_utc_and_offset(
+    /// When `unsigned_payload_request` was captured.
+    fn unsigned_payload_request_timestamp() -> DateTime<Utc> {
+        DateTime::from_naive_utc_and_offset(
             NaiveDate::from_ymd_opt(2026, 7, 23).unwrap().and_hms_opt(15, 0, 30).unwrap(),
             Utc,
-        );
+        )
+    }
 
-        assert!(
+    /// `UNSIGNED-PAYLOAD` is an S3 convention. Under S3 rules the captured request validates;
+    /// under any other service's rules the body is hashed whatever the header says, as AWS does,
+    /// so the very same request no longer matches its signature. A client cannot opt out of body
+    /// integrity just by naming the header.
+    #[test_log::test(tokio::test)]
+    async fn test_unsigned_payload_honoured_for_s3_only() {
+        let mut get_signing_key_svc = service_for_signing_key_fn(get_signing_key);
+
+        let result = sigv4_validate_request(
+            unsigned_payload_request("host;x-amz-content-sha256;x-amz-date"),
+            "us-east-1",
+            "s3",
+            &mut get_signing_key_svc,
+            unsigned_payload_request_timestamp(),
+            &NoSignedHeaderRequirements,
+            SignatureOptions::S3,
+        )
+        .await;
+        assert!(result.is_ok(), "S3 rules must honour UNSIGNED-PAYLOAD: {:?}", result.err());
+
+        let e = expect_err!(
             sigv4_validate_request(
-                req,
+                unsigned_payload_request("host;x-amz-content-sha256;x-amz-date"),
                 "us-east-1",
                 "s3",
                 &mut get_signing_key_svc,
-                request_timestamp,
+                unsigned_payload_request_timestamp(),
+                &NoSignedHeaderRequirements,
+                SignatureOptions::default(),
+            )
+            .await,
+            SignatureDoesNotMatch
+        );
+        assert_eq!(e, MSG_REQUEST_SIGNATURE_MISMATCH);
+    }
+
+    /// When `UNSIGNED-PAYLOAD` is honoured, the header that carries it has to be signed, so the
+    /// claim that the body is unsigned is itself covered by the signature.
+    #[test_log::test(tokio::test)]
+    async fn test_unsigned_payload_header_must_be_signed() {
+        let mut get_signing_key_svc = service_for_signing_key_fn(get_signing_key);
+        let e = expect_err!(
+            sigv4_validate_request(
+                unsigned_payload_request("host;x-amz-date"),
+                "us-east-1",
+                "s3",
+                &mut get_signing_key_svc,
+                unsigned_payload_request_timestamp(),
                 &NoSignedHeaderRequirements,
                 SignatureOptions::S3,
             )
-            .await
-            .is_ok()
+            .await,
+            SignatureDoesNotMatch
         );
+        assert_eq!(e, "'x-amz-content-sha256' must be a 'SignedHeader' in the AWS Authorization.");
+    }
+
+    /// The same holds on the streaming path, where the caller passes the header's value as the
+    /// body hash: a `STREAMING-*` marker is only accepted from a signed header.
+    #[test_log::test(tokio::test)]
+    async fn test_streaming_payload_header_must_be_signed() {
+        // The S3 streaming example, with x-amz-content-sha256 dropped from SignedHeaders.
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri("https://s3.amazonaws.com/examplebucket/chunkObject.txt")
+            .header("Host", "s3.amazonaws.com")
+            .header("x-amz-date", "20130524T000000Z")
+            .header("x-amz-storage-class", "REDUCED_REDUNDANCY")
+            .header("x-amz-content-sha256", "STREAMING-AWS4-HMAC-SHA256-PAYLOAD")
+            .header("Content-Encoding", "aws-chunked")
+            .header("x-amz-decoded-content-length", "66560")
+            .header("Content-Length", "66824")
+            .header("Authorization", "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request,SignedHeaders=content-encoding;content-length;host;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class,Signature=4f232c4386841ef735655705268965c44a0e4690baa4adea153f7db9fa80a0a9")
+            .body(Bytes::new())
+            .unwrap();
+        let timestamp = DateTime::from_naive_utc_and_offset(
+            NaiveDate::from_ymd_opt(2013, 5, 24).unwrap().and_hms_opt(0, 0, 0).unwrap(),
+            Utc,
+        );
+        let mut get_signing_key_svc =
+            service_for_signing_key_fn(make_get_signing_key_fn("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"));
+
+        let e = expect_err!(
+            sigv4_validate_streaming_headers(
+                &req,
+                "STREAMING-AWS4-HMAC-SHA256-PAYLOAD",
+                "AWS4-HMAC-SHA256-PAYLOAD",
+                "us-east-1",
+                "s3",
+                &mut get_signing_key_svc,
+                timestamp,
+                &NoSignedHeaderRequirements,
+                SignatureOptions::S3.with_any_timestamp(),
+                RequestId::new(),
+            )
+            .await,
+            SignatureDoesNotMatch
+        );
+        assert_eq!(e, "'x-amz-content-sha256' must be a 'SignedHeader' in the AWS Authorization.");
+    }
+
+    /// S3 requires a session token sent as a header to be covered by the signature. (Other
+    /// services accept one added after signing; the AWS test-suite vector
+    /// `post-sts-token/post-sts-header-after` in `aws4.rs` checks that path.)
+    #[test_log::test(tokio::test)]
+    async fn test_security_token_header_must_be_signed_for_s3() {
+        let mut get_signing_key_svc = service_for_signing_key_fn(get_signing_key);
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri("/")
+            .extension(RequestId::new())
+            .header("authorization", VALID_AUTH_HEADER)
+            .header("host", "example.amazonaws.com")
+            .header("x-amz-date", "20150830T123600Z")
+            .header("x-amz-security-token", "AQoDYXdzEJr...")
+            .body(())
+            .unwrap();
+
+        let e = expect_err!(
+            sigv4_validate_request(
+                request,
+                TEST_REGION,
+                TEST_SERVICE,
+                &mut get_signing_key_svc,
+                *TEST_TIMESTAMP,
+                &NoSignedHeaderRequirements,
+                SignatureOptions::S3,
+            )
+            .await,
+            SignatureDoesNotMatch
+        );
+        assert_eq!(e, "'x-amz-security-token' must be a 'SignedHeader' in the AWS Authorization.");
     }
 }

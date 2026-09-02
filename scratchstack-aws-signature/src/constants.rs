@@ -252,6 +252,14 @@ pub(crate) const MSG_SECURITY_TOKEN_INVALID: &str = "The security token included
 /// Error message: `"Unsupported AWS 'algorithm': "`
 pub(crate) const MSG_UNSUPPORTED_ALGORITHM: &str = "Unsupported AWS 'algorithm': ";
 
+/// Error message: `"'x-amz-content-sha256' must be a 'SignedHeader' in the AWS Authorization."`
+pub(crate) const MSG_X_AMZ_CONTENT_SHA256_MUST_BE_SIGNED: &str =
+    "'x-amz-content-sha256' must be a 'SignedHeader' in the AWS Authorization.";
+
+/// Error message: `"'x-amz-security-token' must be a 'SignedHeader' in the AWS Authorization."`
+pub(crate) const MSG_X_AMZ_SECURITY_TOKEN_MUST_BE_SIGNED: &str =
+    "'x-amz-security-token' must be a 'SignedHeader' in the AWS Authorization.";
+
 /// Query parameter for the signature algorithm
 pub(crate) const QP_X_AMZ_ALGORITHM: &str = "X-Amz-Algorithm";
 
@@ -297,25 +305,20 @@ pub(crate) const TEST_REGION: &str = "us-east-1";
 pub(crate) const TEST_SERVICE: &str = "service";
 
 /// Token used for `x-amz-content-sha256` when the payload is streamed and signed with SigV4a
-#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
 pub(crate) const XACS_STREAMING_AWS4_ECDSA_P256_SHA256_PAYLOAD: &str = "STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD";
 
 /// Token used for `x-amz-content-sha256` when the payload is streamed and signed with SigV4a and has trailers
-#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
 pub(crate) const XACS_STREAMING_AWS4_ECDSA_P256_SHA256_PAYLOAD_TRAILER: &str =
     "STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD-TRAILER";
 
 /// Token used for `x-amz-content-sha256` when the payload is streamed and SigV4 signed
-#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
 pub(crate) const XACS_STREAMING_AWS4_HMAC_SHA256_PAYLOAD: &str = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD";
 
 /// Token used for `x-amz-content-sha256` when the payload is streamed and SigV4 signed and has trailers
-#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
 pub(crate) const XACS_STREAMING_AWS4_HMAC_SHA256_PAYLOAD_TRAILER: &str = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER";
 
 /// Token used for `x-amz-content-sha256` when the payload is streamed and unsigned and has
 /// trailers
-#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
 pub(crate) const XACS_STREAMING_UNSIGNED_PAYLOAD_TRAILER: &str = "STREAMING-UNSIGNED-PAYLOAD-TRAILER";
 
 /// Token used for `x-amz-content-sha256` when the payload is unsigned
