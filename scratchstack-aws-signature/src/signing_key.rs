@@ -504,10 +504,12 @@ pub struct GetSigningKeyResponse {
     #[builder(into, default)]
     pub(crate) session_data: SessionData,
 
-    /// The session policies restricting the principal's permissions. The default (empty) value
-    /// means the session is unrestricted; providers that recognize temporary credentials
-    /// populate this from the session token.
-    #[builder(into, default)]
+    /// The session policies restricting the principal's permissions. Providers that recognize
+    /// temporary credentials populate this from the session token; for long-term credentials,
+    /// pass [`SessionPolicies::UNRESTRICTED`]. The builder requires it: an empty value means the
+    /// session is unrestricted, and a provider that simply left it out would grant a restricted
+    /// session its role's full permissions without anything failing.
+    #[builder(into)]
     pub(crate) session_policies: SessionPolicies,
 
     /// The signing key.
@@ -562,7 +564,7 @@ where
 #[cfg(test)]
 mod tests {
     use {
-        crate::{GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, constants::*},
+        crate::{GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, SessionPolicies, constants::*},
         chrono::{DateTime, NaiveDate},
         scratchstack_aws_principal::{AssumedRole, Principal},
         scratchstack_core::RequestId,
@@ -705,7 +707,11 @@ mod tests {
                 .unwrap(),
         );
 
-        let gsk_resp1a = GetSigningKeyResponse::builder().signing_key(signing_key).principal(principal).build();
+        let gsk_resp1a = GetSigningKeyResponse::builder()
+            .signing_key(signing_key)
+            .principal(principal)
+            .session_policies(SessionPolicies::UNRESTRICTED)
+            .build();
 
         // Make sure we can debug print the response.
         let _ = format!("{:?}", gsk_resp1a);
@@ -733,7 +739,11 @@ mod tests {
                 .build()
                 .unwrap(),
         );
-        let response = GetSigningKeyResponse::builder().principal(principal).signing_key(signing_key).build();
+        let response = GetSigningKeyResponse::builder()
+            .principal(principal)
+            .signing_key(signing_key)
+            .session_policies(SessionPolicies::UNRESTRICTED)
+            .build();
         assert!(response.principal().as_assumed_role().is_some());
         assert!(response.session_data().is_empty());
     }

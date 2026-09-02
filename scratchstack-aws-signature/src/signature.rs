@@ -540,7 +540,11 @@ mod tests {
                         .build()
                         .unwrap(),
                 );
-                Ok(GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build())
+                Ok(GetSigningKeyResponse::builder()
+                    .principal(principal)
+                    .signing_key(k_signing)
+                    .session_policies(SessionPolicies::UNRESTRICTED)
+                    .build())
             })
         }
     }
@@ -552,7 +556,11 @@ mod tests {
         let principal = Principal::from(
             User::builder().partition("aws").account_id("123456789012").path("/").user_name("test").build().unwrap(),
         );
-        Ok(GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build())
+        Ok(GetSigningKeyResponse::builder()
+            .principal(principal)
+            .signing_key(k_signing)
+            .session_policies(SessionPolicies::UNRESTRICTED)
+            .build())
     }
 
     async fn run_auth_test(auth_str: &str) -> Result<(Parts, Bytes, SigV4AuthenticatorResponse), SignatureError> {

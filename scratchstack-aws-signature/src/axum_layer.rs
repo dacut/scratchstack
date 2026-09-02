@@ -801,7 +801,11 @@ mod tests {
                     .build()
                     .unwrap(),
             );
-            let response = GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build();
+            let response = GetSigningKeyResponse::builder()
+                .principal(principal)
+                .signing_key(k_signing)
+                .session_policies(SessionPolicies::UNRESTRICTED)
+                .build();
             Ok(response)
         } else {
             Err(InvalidClientTokenIdError::builder().request_id(request.request_id()).build().into())
@@ -839,7 +843,11 @@ mod tests {
                         .build()
                         .unwrap(),
                 );
-                let response = GetSigningKeyResponse::builder().principal(principal).signing_key(signing_key).build();
+                let response = GetSigningKeyResponse::builder()
+                    .principal(principal)
+                    .signing_key(signing_key)
+                    .session_policies(SessionPolicies::UNRESTRICTED)
+                    .build();
                 Ok(response)
             } else {
                 Err(InvalidClientTokenIdError::builder().request_id(req.request_id()).build().into())
