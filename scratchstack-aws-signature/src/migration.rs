@@ -93,7 +93,7 @@
 //!
 //! ```
 //! # use chrono::{NaiveDate, Utc};
-//! # use scratchstack_aws_signature::{GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey};
+//! # use scratchstack_aws_signature::{GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, SessionPolicies};
 //! # use scratchstack_core::RequestId;
 //! # use std::str::FromStr;
 //! # let user = scratchstack_aws_principal::User::builder()
@@ -102,7 +102,11 @@
 //! #     .to_ksigning(NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(), "us-east-1", "example");
 //! # let token: Option<String> = None;
 //! // 0.12
-//! let response = GetSigningKeyResponse::builder().principal(user).signing_key(key).build();
+//! let response = GetSigningKeyResponse::builder()
+//!     .principal(user)
+//!     .signing_key(key)
+//!     .session_policies(SessionPolicies::UNRESTRICTED)
+//!     .build();
 //!
 //! let request = GetSigningKeyRequest::builder()
 //!     .access_key("AKIAIOSFODNN7EXAMPLE")
@@ -216,9 +220,11 @@
 //!
 //! These policies are a second gate, intersected with the principal's identity-based policies:
 //! this crate authenticates the request but never evaluates them. A service that ignores the
-//! field grants a restricted session its role's full permissions. The default value is empty,
-//! which means the session is unrestricted -- so long-term credentials behave as they did in
-//! 0.11.
+//! field grants a restricted session its role's full permissions. An empty value means the
+//! session is unrestricted, which is what long-term credentials should carry -- so the
+//! [`GetSigningKeyResponse`][crate::GetSigningKeyResponse] builder requires the field, and a
+//! provider passes [`SessionPolicies::UNRESTRICTED`][crate::SessionPolicies::UNRESTRICTED] for
+//! them. Leaving it out is a compile error rather than a silently unrestricted session.
 //!
 //! ### `scratchstack_errors` became `scratchstack_core`
 //! The `errors` re-export is gone; [`scratchstack_core`] is re-exported as `core` alongside

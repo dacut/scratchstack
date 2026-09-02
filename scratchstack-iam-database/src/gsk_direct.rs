@@ -260,9 +260,11 @@ async fn get_signing_key_from_database(
 
             let secret_key = KSecretKey::from_str(&row.secret_key)?;
             let signing_key = secret_key.to_ksigning(req.request_date(), region.as_ref(), service.as_ref());
+            // Long-term credentials carry no session policies.
             let response = GetSigningKeyResponse::builder()
                 .principal(principal)
                 .session_data(session_data)
+                .session_policies(SessionPolicies::UNRESTRICTED)
                 .signing_key(signing_key)
                 .build();
 

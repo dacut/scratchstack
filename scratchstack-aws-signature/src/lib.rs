@@ -57,8 +57,8 @@
 //! use scratchstack_aws_principal::{Principal, User};
 //! use scratchstack_aws_signature::{
 //!     service_for_signing_key_fn, sigv4_validate_request, GetSigningKeyRequest,
-//!     GetSigningKeyResponse, KSecretKey, NoSignedHeaderRequirements, SignatureOptions,
-//!     SignatureError,
+//!     GetSigningKeyResponse, KSecretKey, NoSignedHeaderRequirements, SessionPolicies,
+//!     SignatureOptions, SignatureError,
 //! };
 //! use scratchstack_core::{http::Request, RequestId};
 //! use std::str::FromStr;
@@ -95,9 +95,11 @@
 //!     let user = User::builder().partition(PARTITION).account_id(ACCOUNT_ID).path(PATH).user_name(USER_NAME).build().unwrap();
 //!     let secret_key = KSecretKey::from_str(SECRET_KEY).unwrap();
 //!     let signing_key = secret_key.to_ksigning(request.request_date(), REGION, SERVICE);
+//!     // Long-term credentials carry no session policies; say so rather than leave it implied.
 //!     Ok(GetSigningKeyResponse::builder()
 //!            .principal(user)
 //!            .signing_key(signing_key)
+//!            .session_policies(SessionPolicies::UNRESTRICTED)
 //!            .build())
 //! }
 //!

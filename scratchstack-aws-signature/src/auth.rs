@@ -429,7 +429,7 @@ mod tests {
         super::duration_to_string,
         crate::{
             ExpiredTokenError, GetSigningKeyRequest, GetSigningKeyResponse, InvalidClientTokenIdError, KSecretKey,
-            SignatureError,
+            SessionPolicies, SignatureError,
             auth::{SigV4Authenticator, SigV4AuthenticatorResponse},
             constants::*,
             internal_service_error, service_for_signing_key_fn,
@@ -534,7 +534,11 @@ mod tests {
                 let k_secret = KSecretKey::from_str("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY").unwrap();
                 let k_signing = k_secret.to_ksigning(request.request_date(), request.region(), request.service());
 
-                let response = GetSigningKeyResponse::builder().principal(principal).signing_key(k_signing).build();
+                let response = GetSigningKeyResponse::builder()
+                    .principal(principal)
+                    .signing_key(k_signing)
+                    .session_policies(SessionPolicies::UNRESTRICTED)
+                    .build();
                 Ok(response)
             }
             _ => Err(InvalidClientTokenIdError::builder().request_id(request.request_id()).build().into()),

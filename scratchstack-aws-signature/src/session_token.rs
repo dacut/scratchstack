@@ -91,7 +91,8 @@ pub struct SessionTokenData {
 ///
 /// The default value — no inline policy, no managed policy ids — means the session is
 /// unrestricted: either the caller used long-term credentials, or no session policies were
-/// passed to `sts:AssumeRole`.
+/// passed to `sts:AssumeRole`. [`SessionPolicies::UNRESTRICTED`] names that value, so a
+/// provider that returns it is seen to have decided rather than to have forgotten.
 #[derive(Builder, Clone, Debug, Default)]
 pub struct SessionPolicies {
     /// The inline session policy document supplied to `sts:AssumeRole`, if any.
@@ -105,6 +106,14 @@ pub struct SessionPolicies {
 }
 
 impl SessionPolicies {
+    /// No restriction: the session may do whatever the principal's identity-based policies
+    /// allow. This is what long-term credentials get, and what `sts:AssumeRole` produces when it
+    /// is passed no session policies.
+    pub const UNRESTRICTED: Self = Self {
+        inline_policy: None,
+        managed_policy_ids: Vec::new(),
+    };
+
     /// Retrieve the inline session policy, if any.
     #[inline]
     pub fn inline_policy(&self) -> Option<&AspenPolicy> {
