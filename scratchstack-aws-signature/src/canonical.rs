@@ -824,12 +824,14 @@ impl VecSignedHeaderRequirements {
         }
     }
 
-    /// Add a header that must always be present in `SignedHeaders`.
+    /// Add a header that must always be present in `SignedHeaders`. Adding a header already
+    /// present, in any case, is a no-op; the first spelling added is the one kept, and is what
+    /// appears in the error message when the requirement is not met.
     pub fn add_always_present(&mut self, header: &str) {
         let header_lower = header.to_ascii_lowercase();
 
         for h in self.always_present.iter() {
-            if h == &header_lower {
+            if h.to_ascii_lowercase() == header_lower {
                 return;
             }
         }
@@ -838,11 +840,13 @@ impl VecSignedHeaderRequirements {
     }
 
     /// Add a header that must be present in `SignedHeaders` if it is present in the request.
+    /// Adding a header already present, in any case, is a no-op; the first spelling added is the
+    /// one kept, and is what appears in the error message when the requirement is not met.
     pub fn add_if_in_request(&mut self, header: &str) {
         let header_lower = header.to_ascii_lowercase();
 
         for h in self.if_in_request.iter() {
-            if h == &header_lower {
+            if h.to_ascii_lowercase() == header_lower {
                 return;
             }
         }
@@ -851,12 +855,13 @@ impl VecSignedHeaderRequirements {
     }
 
     /// Add a prefix that must be present in `SignedHeaders` if any headers with that prefix are
-    /// present in the request.
+    /// present in the request. Adding a prefix already present, in any case, is a no-op; the
+    /// first spelling added is the one kept.
     pub fn add_prefix(&mut self, prefix: &str) {
         let prefix_lower = prefix.to_ascii_lowercase();
 
         for h in self.prefixes.iter() {
-            if h == &prefix_lower {
+            if h.to_ascii_lowercase() == prefix_lower {
                 return;
             }
         }
@@ -1353,7 +1358,8 @@ mod tests {
     use {
         super::{debug_headers, u8_to_upper_hex},
         crate::{
-            NoSignedHeaderRequirements, SignatureError, SignatureOptions,
+            NoSignedHeaderRequirements, SignatureError, SignatureOptions, SignedHeaderRequirements,
+            VecSignedHeaderRequirements,
             canonical::{
                 CanonicalRequest, canonicalize_query_to_string, canonicalize_uri_path, normalize_uri_path_component,
                 query_string_to_normalized_map, unescape_uri_encoding,
@@ -1366,7 +1372,7 @@ mod tests {
             request::Request,
             uri::{PathAndQuery, Uri},
         },
-        std::collections::HashMap,
+        std::{borrow::Cow, collections::HashMap},
     };
 
     macro_rules! expect_err {
@@ -1735,6 +1741,32 @@ mod tests {
         assert_eq!(cr.canonical_query_string(), "a=body1&a=body2&a=url1&a=url2&b=url-only&c=body-only");
         assert_eq!(parts.uri.query().unwrap(), "a=body1&a=body2&a=url1&a=url2&b=url-only&c=body-only");
         assert!(body.is_empty(), "the body is folded into the query string");
+    }
+
+    /// Adding the same header twice adds it once, whatever case it is written in: matching is
+    /// case-insensitive, but only against a lowercased copy of the argument, so comparing it
+    /// with a stored entry verbatim let "X-Foo" and "x-foo" both accumulate. The first spelling
+    /// is kept, because it is echoed in the error message when the requirement is not met.
+    #[test_log::test]
+    fn test_add_requirements_is_idempotent_across_case() {
+        let mut reqs = VecSignedHeaderRequirements::default();
+        for header in ["X-Foo", "x-foo", "X-FOO"] {
+            reqs.add_always_present(header);
+            reqs.add_if_in_request(header);
+            reqs.add_prefix(header);
+        }
+
+        assert_eq!(reqs.always_present(), &[Cow::Borrowed("X-Foo")]);
+        assert_eq!(reqs.if_in_request(), &[Cow::Borrowed("X-Foo")]);
+        assert_eq!(reqs.prefixes(), &[Cow::Borrowed("X-Foo")]);
+
+        // remove_* lowercases both sides, so it matches whatever case add_* was given.
+        reqs.remove_always_present("X-FOO");
+        reqs.remove_if_in_request("x-foo");
+        reqs.remove_prefix("X-Foo");
+        assert!(reqs.always_present().is_empty());
+        assert!(reqs.if_in_request().is_empty());
+        assert!(reqs.prefixes().is_empty());
     }
 
     #[test_log::test]
