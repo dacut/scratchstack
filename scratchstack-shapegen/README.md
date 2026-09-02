@@ -198,6 +198,22 @@ Two consequences worth knowing:
   against roughly 0.3 s to build the tokens. That buys the syntax check and readable output; the
   alternative is `TokenStream::to_string`, which emits one enormous line.
 
+## Compiling what it generates
+
+`scratchstack-shapes-iam` and `scratchstack-shapes-sts` between them use structures, operations,
+strings, lists, enums, integers, maps, booleans, blobs, timestamps and a service -- but no union and
+no `intEnum`. Nothing compiled the code generated for the kinds they leave out, and three bugs lived
+there undetected until a reviewer asked about one of them.
+
+`scratchstack-shapegen-conformance` closes that: its `build.rs` generates from a model exercising
+every shape kind, and the crate compiles the result as part of `cargo build --workspace`. Its tests
+pin the wire forms that compiling alone does not check -- an `intEnum` encoding its discriminant, a
+union externally tagged by member name. Add a shape kind, add it to `conformance-model.json`.
+
+Note what the shapegen unit tests can and cannot do: they render tokens and assert on the text, and
+`syn::parse2` catches a *syntax* error, but neither notices a semantically invalid attribute such as
+`#[serde(tag = ...)]` on a variant. Only compiling the output finds those.
+
 ## Known loose ends
 
 Things that are deliberate, or at least known, so they are not rediscovered as bugs:
@@ -215,10 +231,6 @@ Things that are deliberate, or at least known, so they are not rediscovered as b
   `operation` module. The allow is still load-bearing -- removing it produces one
   "improperly nested Markdown paragraph" warning -- but a targeted `doc_rewrite` would be the
   consistent fix.
-* **`intEnum` serialization is unverified.** An `intEnum`'s wire value is its integer, but the
-  generated code carries a discriminant and lets serde encode the variant by name, which is
-  probably wrong. Neither model has an `intEnum` shape, so it has never been exercised; deciding
-  the right encoding is a change to make on purpose.
 * **`rust_typename` still returns `String`.** Several implementations compute it (`crate::types::X`,
   `Vec<T>`) rather than returning a cached field, and `Member` reaches through an
   `Rc<RefCell<Shape>>`, so it cannot hand out a borrow. `smithy_name` has the same constraint. Since

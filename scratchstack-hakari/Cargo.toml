@@ -46,6 +46,8 @@ memchr = { version = "2" }
 num-traits = { version = "0.2", default-features = false, features = ["std"] }
 percent-encoding = { version = "2" }
 postcard = { version = "1", features = ["use-std"] }
+proc-macro2 = { version = "1" }
+quote = { version = "1" }
 rand = { version = "0.10" }
 regex = { version = "1" }
 regex-automata = { version = "0.4", default-features = false, features = ["dfa-onepass", "hybrid", "meta", "nfa-backtrack", "perf-inline", "perf-literal", "std", "unicode"] }
@@ -65,6 +67,7 @@ sqlx-mysql = { version = "0.9", default-features = false, features = ["any", "ch
 sqlx-postgres = { version = "0.9", default-features = false, features = ["any", "chrono", "migrate", "offline"] }
 sqlx-sqlite = { version = "0.9", default-features = false, features = ["any", "bundled", "chrono", "deserialize", "json", "load-extension", "migrate", "offline", "unlock-notify"] }
 subtle = { version = "2" }
+syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
 sync_wrapper = { version = "1", default-features = false, features = ["futures"] }
 thiserror = { version = "2" }
 tokio = { version = "1", features = ["full", "test-util"] }
@@ -110,6 +113,8 @@ memchr = { version = "2" }
 num-traits = { version = "0.2", default-features = false, features = ["std"] }
 percent-encoding = { version = "2" }
 postcard = { version = "1", features = ["use-std"] }
+proc-macro2 = { version = "1" }
+quote = { version = "1" }
 rand = { version = "0.10" }
 regex = { version = "1" }
 regex-automata = { version = "0.4", default-features = false, features = ["dfa-onepass", "hybrid", "meta", "nfa-backtrack", "perf-inline", "perf-literal", "std", "unicode"] }

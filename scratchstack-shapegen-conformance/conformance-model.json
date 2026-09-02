@@ -1,0 +1,57 @@
+{
+  "smithy": "2.0",
+  "shapes": {
+    "com.example#Example": {
+      "type": "service",
+      "version": "2020-01-01",
+      "operations": [{"target": "com.example#DoThing"}],
+      "traits": {"smithy.api#xmlNamespace": {"uri": "https://example.amazonaws.com/doc/2020-01-01/"}}
+    },
+    "com.example#DoThing": {
+      "type": "operation",
+      "input": {"target": "com.example#DoThingRequest"},
+      "output": {"target": "com.example#DoThingResponse"}
+    },
+    "com.example#DoThingRequest": {
+      "type": "structure",
+      "traits": {"smithy.api#input": {}},
+      "members": {
+        "Name": {"target": "com.example#nameType", "traits": {"smithy.api#required": {}}},
+        "Choice": {"target": "com.example#Choice"},
+        "Level": {"target": "com.example#LevelEnum"},
+        "Labels": {"target": "com.example#labelMap"},
+        "Payload": {"target": "com.example#blobType"},
+        "When": {"target": "com.example#timestampType"},
+        "Names": {"target": "com.example#nameListType"}
+      }
+    },
+    "com.example#DoThingResponse": {
+      "type": "structure",
+      "traits": {"smithy.api#output": {}},
+      "members": {"Result": {"target": "com.example#nameType"}}
+    },
+    "com.example#Choice": {
+      "type": "union",
+      "members": {
+        "managedPolicy": {"target": "com.example#nameType"},
+        "InlinePolicy": {"target": "com.example#nameType"}
+      }
+    },
+    "com.example#LevelEnum": {
+      "type": "intEnum",
+      "members": {
+        "LOW": {"target": "smithy.api#Unit", "traits": {"smithy.api#enumValue": 1}},
+        "HIGH": {"target": "smithy.api#Unit", "traits": {"smithy.api#enumValue": 9}}
+      }
+    },
+    "com.example#labelMap": {
+      "type": "map",
+      "key": {"target": "com.example#nameType"},
+      "value": {"target": "com.example#nameType"}
+    },
+    "com.example#nameListType": {"type": "list", "member": {"target": "com.example#nameType"}},
+    "com.example#nameType": {"type": "string", "traits": {"smithy.api#length": {"min": 1, "max": 64}}},
+    "com.example#blobType": {"type": "blob"},
+    "com.example#timestampType": {"type": "timestamp"}
+  }
+}
