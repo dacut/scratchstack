@@ -388,8 +388,12 @@ impl EncryptedSessionTokenData {
                 .try_into()
                 .map_err(|_| invalid_session_token_error(request_id))?,
         ) as usize;
+        // The declared length is attacker-controlled and up to u32::MAX; on a 32-bit target the
+        // sum could wrap past the bounds check, so add with overflow detection.
         let encrypted_payload_start = encrypted_payload_length_end;
-        let encrypted_payload_end = encrypted_payload_start + encrypted_payload_length;
+        let encrypted_payload_end = encrypted_payload_start
+            .checked_add(encrypted_payload_length)
+            .ok_or_else(|| invalid_session_token_error(request_id))?;
         if encrypted_payload_end > session_token.len() {
             return Err(invalid_session_token_error(request_id));
         }

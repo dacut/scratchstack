@@ -144,6 +144,7 @@ pub(crate) const MAX_PRESIGNED_URL_EXPIRES_SECS: i64 = 7 * 24 * 60 * 60;
 pub(crate) const MAX_SECRET_KEY_SIZE: usize = 256;
 
 /// Maximum size of a session token in bytes.
+#[cfg(feature = "default_session_token")]
 pub(crate) const MAX_SESSION_TOKEN_SIZE: usize = 1 << 20; // 1 MiB
 
 /// Default error message for `AuthorizationQueryParametersError`.
