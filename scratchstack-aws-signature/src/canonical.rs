@@ -109,6 +109,18 @@ struct CanonicalRequest {
 
     /// The SHA-256 hash of the body. If the payload is unsigned, this should be the "UNSIGNED-PAYLOAD" string.
     body_sha256: String,
+
+    /// Whether `x-amz-content-sha256` must appear in `SignedHeaders`. This is set when the
+    /// payload hash above was taken from that header rather than computed from the body --
+    /// `UNSIGNED-PAYLOAD` or one of the `STREAMING-*` markers -- so that the header making the
+    /// claim is itself covered by the signature, as S3 requires. A presigned URL's
+    /// `UNSIGNED-PAYLOAD` comes from the query string instead and does not require it.
+    content_sha256_must_be_signed: bool,
+
+    /// Whether an `x-amz-security-token` header must appear in `SignedHeaders`. S3 requires
+    /// this; other services accept a token header added after signing, and AWS's own SigV4 test
+    /// suite (`post-sts-token/post-sts-header-after`) checks that they do.
+    security_token_must_be_signed: bool,
 }
 
 impl CanonicalRequest {
@@ -187,20 +199,15 @@ impl CanonicalRequest {
         }
 
         let headers = normalize_headers(&parts.headers);
-        let is_presigned_url = [
-            QP_X_AMZ_ALGORITHM,
-            QP_X_AMZ_CREDENTIAL,
-            QP_X_AMZ_DATE,
-            QP_X_AMZ_EXPIRES,
-            QP_X_AMZ_SIGNED_HEADERS,
-            QP_X_AMZ_SIGNATURE,
-        ]
-        .into_iter()
-        .all(|p| query_parameters.contains_key(p));
-        let payload_is_unsigned = is_presigned_url
-            || headers.get(HDR_X_AMZ_CONTENT_SHA256).and_then(|values| values.first()).map(|v| v.as_slice())
+        let is_presigned_url = is_presigned_url(&query_parameters);
+
+        // Only S3 lets a client leave the payload out of the signature. Every other service
+        // hashes the body whatever the header says, as AWS does; otherwise any client of any
+        // service could opt out of body integrity by naming the header.
+        let unsigned_payload_header = options.s3
+            && headers.get(HDR_X_AMZ_CONTENT_SHA256).and_then(|values| values.first()).map(|v| v.as_slice())
                 == Some(XACS_UNSIGNED_PAYLOAD.as_bytes());
-        let body_sha256 = if payload_is_unsigned {
+        let body_sha256 = if is_presigned_url || unsigned_payload_header {
             XACS_UNSIGNED_PAYLOAD.to_string()
         } else {
             sha256_hex(body.as_ref())
@@ -213,6 +220,8 @@ impl CanonicalRequest {
                 query_parameters,
                 headers,
                 body_sha256,
+                content_sha256_must_be_signed: unsigned_payload_header && !is_presigned_url,
+                security_token_must_be_signed: options.s3,
             },
             parts,
             body,
@@ -242,12 +251,18 @@ impl CanonicalRequest {
         let query_parameters = query_string_to_normalized_map(request.uri().query().unwrap_or(""))?;
         let headers = normalize_headers(request.headers());
 
+        // A marker rather than a digest means the caller took the hash from the request's
+        // x-amz-content-sha256 header, which must then be signed.
+        let content_sha256_must_be_signed = !is_presigned_url(&query_parameters) && is_payload_marker(body_hash);
+
         Ok(CanonicalRequest {
             request_method: request.method().to_string(),
             canonical_path,
             query_parameters,
             headers,
             body_sha256: body_hash.to_string(),
+            content_sha256_must_be_signed,
+            security_token_must_be_signed: options.s3,
         })
     }
 
@@ -443,6 +458,23 @@ impl CanonicalRequest {
         }
         if !found_host {
             return Err(SignatureError::SignatureDoesNotMatch(MSG_HOST_AUTHORITY_MUST_BE_SIGNED.into()));
+        }
+
+        // Rule 8a: A payload hash taken from the x-amz-content-sha256 header is only honoured if
+        // that header is signed.
+        if self.content_sha256_must_be_signed
+            && !params.signed_headers.iter().any(|header| header == HDR_X_AMZ_CONTENT_SHA256)
+        {
+            return Err(SignatureError::SignatureDoesNotMatch(MSG_X_AMZ_CONTENT_SHA256_MUST_BE_SIGNED.into()));
+        }
+
+        // Rule 8b: S3 requires a session token sent as a header to be signed. (A presigned URL
+        // carries its token in the query string, which is always canonicalized in full.)
+        if self.security_token_must_be_signed
+            && self.headers.contains_key(HDR_X_AMZ_SECURITY_TOKEN)
+            && !params.signed_headers.iter().any(|header| header == HDR_X_AMZ_SECURITY_TOKEN)
+        {
+            return Err(SignatureError::SignatureDoesNotMatch(MSG_X_AMZ_SECURITY_TOKEN_MUST_BE_SIGNED.into()));
         }
 
         for header in signed_header_requirements.always_present() {
@@ -661,6 +693,8 @@ impl Debug for CanonicalRequest {
             .field("query_parameters", &self.query_parameters)
             .field("headers", &headers)
             .field("body_sha256", &self.body_sha256)
+            .field("content_sha256_must_be_signed", &self.content_sha256_must_be_signed)
+            .field("security_token_must_be_signed", &self.security_token_must_be_signed)
             .finish()
     }
 }
@@ -1042,6 +1076,34 @@ fn get_content_type_and_charset(headers: &HeaderMap<HeaderValue>) -> Option<Cont
         content_type,
         charset: None,
     })
+}
+
+/// Indicates whether the query parameters carry the full set of presigned-URL parameters.
+fn is_presigned_url(query_parameters: &HashMap<String, Vec<String>>) -> bool {
+    [
+        QP_X_AMZ_ALGORITHM,
+        QP_X_AMZ_CREDENTIAL,
+        QP_X_AMZ_DATE,
+        QP_X_AMZ_EXPIRES,
+        QP_X_AMZ_SIGNED_HEADERS,
+        QP_X_AMZ_SIGNATURE,
+    ]
+    .into_iter()
+    .all(|p| query_parameters.contains_key(p))
+}
+
+/// Indicates whether a payload hash is one of the S3 markers that stand in for a digest --
+/// `UNSIGNED-PAYLOAD` or a `STREAMING-*` value -- rather than a SHA-256 hex string.
+fn is_payload_marker(body_hash: &str) -> bool {
+    [
+        XACS_STREAMING_AWS4_ECDSA_P256_SHA256_PAYLOAD,
+        XACS_STREAMING_AWS4_ECDSA_P256_SHA256_PAYLOAD_TRAILER,
+        XACS_STREAMING_AWS4_HMAC_SHA256_PAYLOAD,
+        XACS_STREAMING_AWS4_HMAC_SHA256_PAYLOAD_TRAILER,
+        XACS_STREAMING_UNSIGNED_PAYLOAD_TRAILER,
+        XACS_UNSIGNED_PAYLOAD,
+    ]
+    .contains(&body_hash)
 }
 
 /// Indicates whether the specified byte is RFC3986 unreserved -- i.e., can appear in a URI as
@@ -1980,7 +2042,7 @@ mod tests {
         let request = Request::builder()
             .method(Method::GET)
             .uri(uri)
-            .header("authorization", "AWS4-HMAC-SHA256 Credential=1234, SignedHeaders=date;host, Signature=5678, Credential=ABCD, SignedHeaders=foo;bar;host, Signature=DEFG")
+            .header("authorization", "AWS4-HMAC-SHA256 Credential=1234, SignedHeaders=date;host, Signature=5678, Credential=ABCD, SignedHeaders=foo;bar;host;x-amz-security-token, Signature=DEFG")
             .header("authorization", "AWS3 Credential=1234, SignedHeaders=date;host, Signature=5678, Credential=ABCD, SignedHeaders=foo;bar;host, Signature=DEFG")
             .header("host", "example.amazonaws.com")
             .header("x-amz-date", "20150830T123600Z")
@@ -1996,7 +2058,7 @@ mod tests {
         // Expect last component found
         assert_eq!(auth.credential.as_str(), "ABCD");
         assert_eq!(auth.signature.as_str(), "DEFG");
-        assert_eq!(auth.signed_headers, vec!["bar", "foo", "host"]);
+        assert_eq!(auth.signed_headers, vec!["bar", "foo", "host", "x-amz-security-token"]);
         // Expect first header found.
         assert_eq!(auth.session_token.as_deref(), Some("Test1"));
         assert_eq!(auth.timestamp_str, "20150830T123600Z");
