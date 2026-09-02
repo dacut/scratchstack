@@ -23,7 +23,6 @@ pub mod action;
 pub mod error_meta;
 
 /// Operation input and output shapes.
-#[allow(rustdoc::invalid_html_tags)]
 pub mod operation;
 
 /// General types used in the API.

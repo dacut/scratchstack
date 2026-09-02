@@ -249,16 +249,11 @@ Things that are deliberate, or at least known, so they are not rediscovered as b
   `idType`, `booleanType`, `stringType` -- are referenced by nothing in `sts-2011-06-15.json`, and
   primitives emit no code of their own, so the file currently contributes nothing to the build. They
   look like groundwork for paginated STS operations; the pagination pair in particular mirrors IAM's.
-* **The two services handle bad documentation differently.** IAM repairs angle-bracketed placeholders
-  through `doc_rewrites`; STS instead carries `#[allow(rustdoc::invalid_html_tags)]` on its
-  `operation` module. The allow is still load-bearing -- removing it produces one
-  "improperly nested Markdown paragraph" warning -- but a targeted `doc_rewrite` would be the
-  consistent fix.
 * **`rust_typename` and `smithy_name` return `String`, and should stay that way.** Generating the
   IAM shapes calls them 7,131 and 1,915 times respectively -- about nine thousand short-lived
   allocations, inside a 266 ms token-building phase, inside a build where rustc spends 15 s on the
   result. There is nothing to win.
-  
+
   Nor is there a clean signature that would avoid them. Primitives return constants and could hand
   out `&'static str`, but `Structure` and `List` *compute* their names (`crate::types::X`,
   `Vec<T>`), and `Member` reaches its shape through an `Rc<RefCell<Shape>>`, so it cannot return a
