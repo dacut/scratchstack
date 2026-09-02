@@ -5,6 +5,9 @@ use {
 };
 
 /// Wrapper function to form a HMAC-SHA256 operation.
+///
+/// The `Hmac` holds two SHA-256 states derived from the key (the inner and outer pads). `sha2`
+/// is built with its `zeroize` feature so those states are scrubbed when the `Hmac` drops here.
 #[inline(always)]
 pub(crate) fn hmac_sha256(key: &[u8], value: &[u8]) -> [u8; SHA256_OUTPUT_LEN] {
     let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC can take arbitrary key lengths");
