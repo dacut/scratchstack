@@ -25,10 +25,13 @@ use {
     log::trace,
     qualifier_attr::qualifiers,
     regex::Regex,
-    scratchstack_core::http::{
-        header::{HeaderMap, HeaderValue},
-        request::{Parts, Request},
-        uri::Uri,
+    scratchstack_core::{
+        http::{
+            header::{HeaderMap, HeaderValue},
+            request::{Parts, Request},
+            uri::Uri,
+        },
+        sensitive_trace,
     },
     std::{
         borrow::Cow,
@@ -53,7 +56,7 @@ lazy_static! {
 #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
 #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
 #[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
-#[derive(Builder, Debug)]
+#[derive(Builder)]
 struct AuthParams {
     /// The credential used to sign the request.
     #[builder(into)]
@@ -80,6 +83,21 @@ struct AuthParams {
     /// How long past `timestamp_str` a presigned URL stays valid, from `X-Amz-Expires`. Only
     /// query-string authentication carries it.
     pub expires: Option<Duration>,
+}
+
+impl Debug for AuthParams {
+    /// Formats the parameters with the session token redacted: the token is bearer-credential
+    /// material and must not end up in logs.
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("AuthParams")
+            .field("credential", &self.credential)
+            .field("signature", &self.signature)
+            .field("signed_headers", &self.signed_headers)
+            .field("timestamp_str", &self.timestamp_str)
+            .field("session_token", &self.session_token.as_ref().map(|_| "<redacted>"))
+            .field("expires", &self.expires)
+            .finish()
+    }
 }
 
 /// A canonicalized request for AWS SigV4.
@@ -186,9 +204,11 @@ impl CanonicalRequest {
                     query_parameters.entry(key).or_default().extend(values);
                 }
 
-                // Rebuild the parts URI with the new query string.
+                // Rebuild the parts URI with the new query string. The form body may carry
+                // anything the API accepts as a parameter -- passwords included -- so the result
+                // is only logged with sensitive logging enabled.
                 let qs = canonicalize_query_to_string(&query_parameters);
-                trace!("Rebuilding URI with new query string: {}", qs);
+                sensitive_trace!("Rebuilding URI with new query string: {}", qs);
 
                 let mut pq = canonical_path.clone();
                 if !qs.is_empty() {
@@ -361,7 +381,9 @@ impl CanonicalRequest {
         result.push(b'\n');
         result.extend(self.body_sha256().as_bytes());
 
-        trace!("Canonical request:\n{}", String::from_utf8_lossy(&result));
+        // The signed headers commonly include x-amz-security-token, and the query string a
+        // presigned URL's token, so the full text is only logged with sensitive logging enabled.
+        sensitive_trace!("Canonical request:\n{}", String::from_utf8_lossy(&result));
 
         result
     }
@@ -1053,7 +1075,8 @@ pub fn canonicalize_uri_path(uri_path: &str, s3: bool) -> Result<String, Signatu
     }
 }
 
-/// Formats HTTP headers in a HashMap suitable for debugging.
+/// Formats HTTP headers in a HashMap suitable for debugging. The values of credential-bearing
+/// headers -- `authorization` and `x-amz-security-token` -- are redacted.
 #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
 #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
 #[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
@@ -1062,6 +1085,10 @@ fn debug_headers(headers: &HashMap<String, Vec<Vec<u8>>>) -> String {
     let mut result = Vec::new();
     for (key, values) in headers.iter() {
         for value in values {
+            if key == HDR_AUTHORIZATION || key == HDR_X_AMZ_SECURITY_TOKEN {
+                writeln!(result, "{}: <redacted>", key).unwrap();
+                continue;
+            }
             match String::from_utf8(value.clone()) {
                 Ok(s) => writeln!(result, "{}: {}", key, s).unwrap(),
                 Err(_) => writeln!(result, "{}: {:?}", key, value).unwrap(),
@@ -2274,6 +2301,41 @@ mod tests {
         } else {
             panic!("Unexpected error: {:?}", e);
         }
+    }
+
+    /// The Authorization header and session token are credential material: neither the
+    /// canonical request's Debug output nor the auth parameters' may show them, because both are
+    /// traced during validation.
+    #[test_log::test]
+    fn debug_output_redacts_credentials() {
+        let uri = Uri::builder().path_and_query(PathAndQuery::from_static("/")).build().unwrap();
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri(uri)
+            .header(
+                "authorization",
+                "AWS4-HMAC-SHA256 Credential=1234, SignedHeaders=host;x-amz-security-token, Signature=5678",
+            )
+            .header("host", "example.amazonaws.com")
+            .header("x-amz-date", "20150830T123600Z")
+            .header("x-amz-security-token", "0SECRET-TOKEN-MATERIAL")
+            .body(Bytes::new())
+            .unwrap();
+        let (parts, body) = request.into_parts();
+
+        let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::default()).unwrap();
+        let debug = format!("{cr:?}");
+        assert!(!debug.contains("SECRET-TOKEN-MATERIAL"), "token leaked into Debug: {debug}");
+        assert!(!debug.contains("Signature=5678"), "Authorization header leaked into Debug: {debug}");
+        assert!(debug.contains("authorization: <redacted>"), "{debug}");
+        assert!(debug.contains("x-amz-security-token: <redacted>"), "{debug}");
+        assert!(debug.contains("host: example.amazonaws.com"), "ordinary headers must still show: {debug}");
+
+        let params = cr.get_auth_parameters(&NoSignedHeaderRequirements).unwrap();
+        assert_eq!(params.session_token.as_deref(), Some("0SECRET-TOKEN-MATERIAL"));
+        let debug = format!("{params:?}");
+        assert!(!debug.contains("SECRET-TOKEN-MATERIAL"), "token leaked into Debug: {debug}");
+        assert!(debug.contains("session_token: Some(\"<redacted>\")"), "{debug}");
     }
 
     #[test_log::test]

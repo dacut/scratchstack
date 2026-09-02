@@ -36,7 +36,6 @@ use {
 #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
 #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
 #[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
-#[builder(derive(Debug))]
 pub struct SigV4Authenticator {
     /// The SHA-256 hash of the canonical request.
     canonical_request_sha256: [u8; SHA256_OUTPUT_LEN],
@@ -351,10 +350,12 @@ impl SigV4Authenticator {
 }
 
 impl Debug for SigV4Authenticator {
+    /// Formats the authenticator with the session token redacted: the token is bearer-credential
+    /// material and must not end up in logs.
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("SigV4Authenticator")
             .field("canonical_request_sha256", &hex::encode(self.canonical_request_sha256()))
-            .field("session_token", &self.session_token())
+            .field("session_token", &self.session_token().map(|_| "<redacted>"))
             .field("signature", &self.signature())
             .field("request_timestamp", &self.request_timestamp())
             .field("expires", &self.expires())
@@ -473,7 +474,7 @@ mod tests {
         let auth2 = SigV4Authenticator::builder()
             .canonical_request_sha256(sha256)
             .credential("AKIA1/20151231/us-east-1/example/aws4_request".to_string())
-            .session_token("token".to_string())
+            .session_token("0SECRET-TOKEN-MATERIAL".to_string())
             .signature("1234".to_string())
             .request_timestamp(test_time)
             .build();
@@ -486,12 +487,17 @@ mod tests {
             ]
         );
         assert_eq!(auth2.credential(), "AKIA1/20151231/us-east-1/example/aws4_request");
-        assert_eq!(auth2.session_token(), Some("token"));
+        assert_eq!(auth2.session_token(), Some("0SECRET-TOKEN-MATERIAL"));
         assert_eq!(auth2.signature(), "1234");
         assert_eq!(auth2.request_timestamp(), test_time);
 
         assert_eq!(auth2.credential(), auth2.clone().credential());
-        let _ = format!("{:?}", auth2);
+
+        // The session token is bearer-credential material; Debug must not print it.
+        let debug = format!("{:?}", auth2);
+        assert!(!debug.contains("SECRET-TOKEN-MATERIAL"), "token leaked into Debug: {debug}");
+        assert!(debug.contains("<redacted>"), "expected redaction marker: {debug}");
+        assert!(format!("{:?}", auth1).contains("session_token: None"));
     }
 
     async fn get_signing_key(request: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, SignatureError> {

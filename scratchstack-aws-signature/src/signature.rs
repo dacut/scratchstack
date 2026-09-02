@@ -11,6 +11,7 @@ use {
     scratchstack_core::{
         RequestId,
         http::request::{Parts, Request},
+        sensitive_trace,
     },
     std::future::Future,
     subtle::ConstantTimeEq,
@@ -256,7 +257,10 @@ where
     let (parts, body) = request.into_parts();
     let body = body.into_request_bytes(options.max_body_size).await?;
     let (canonical_request, parts, body) = CanonicalRequest::from_request_parts(parts, body, options)?;
-    trace!("Created canonical request: {canonical_request:?}");
+    // Even with credentials redacted, the canonical request holds every header and query
+    // parameter (including any folded in from a form body), so it is only traced with sensitive
+    // logging enabled.
+    sensitive_trace!("Created canonical request: {canonical_request:?}");
     let auth = canonical_request.get_authenticator(required_headers)?;
     trace!("Created authenticator: {auth:?}");
     let request_id = parts.extensions.get::<RequestId>().cloned().unwrap_or_else(RequestId::new);
@@ -322,7 +326,7 @@ where
     S: SignedHeaderRequirements,
 {
     let canonical_request = CanonicalRequest::from_request_and_body_hash(request, body_hash, options)?;
-    trace!("Created canonical request: {canonical_request:?}");
+    sensitive_trace!("Created canonical request: {canonical_request:?}");
     let auth = canonical_request.get_authenticator(required_headers)?;
     trace!("Created authenticator: {auth:?}");
 
