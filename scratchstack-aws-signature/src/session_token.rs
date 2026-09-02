@@ -44,7 +44,9 @@ pub struct SessionTokenData {
     #[builder(into)]
     pub principal: Principal,
 
-    /// The expiration time of the session token.
+    /// The expiration time of the session token. An extractor rejects the token with
+    /// [`ExpiredTokenError`][crate::ExpiredTokenError] once the server's clock reaches this
+    /// instant.
     #[builder(into)]
     pub expires_at: DateTime<Utc>,
 
@@ -133,6 +135,9 @@ pub struct ExtractSessionTokenRequest {
     /// The request id for logging and tracing.
     #[builder(into)]
     request_id: RequestId,
+
+    /// The time the server received the request, against which the token's expiry is checked.
+    server_timestamp: DateTime<Utc>,
 }
 
 impl ExtractSessionTokenRequest {
@@ -147,6 +152,12 @@ impl ExtractSessionTokenRequest {
     pub fn request_id(&self) -> RequestId {
         self.request_id
     }
+
+    /// Returns the time the server received the request.
+    #[inline(always)]
+    pub fn server_timestamp(&self) -> DateTime<Utc> {
+        self.server_timestamp
+    }
 }
 
 impl Debug for ExtractSessionTokenRequest {
@@ -156,6 +167,7 @@ impl Debug for ExtractSessionTokenRequest {
         f.debug_struct("ExtractSessionTokenRequest")
             .field("session_token", &"<redacted>")
             .field("request_id", &self.request_id)
+            .field("server_timestamp", &self.server_timestamp)
             .finish()
     }
 }
@@ -170,6 +182,11 @@ impl Debug for ExtractSessionTokenRequest {
 /// signature validation process to determine the principal associated with the request,
 /// the permissions associated with the session, and other relevant metadata (including the
 /// expiration time of the session).
+///
+/// An implementation must reject a token whose expiration time has passed with
+/// [`ExpiredTokenError`][crate::ExpiredTokenError], comparing it against the request's
+/// [`server_timestamp`][ExtractSessionTokenRequest::server_timestamp] rather than a clock of its
+/// own. Signing-key providers rely on this: they do not repeat the check.
 ///
 /// This trait is blanket-implemented for every [`Service`] with the matching request, response,
 /// and error types; do not implement it directly.
@@ -217,7 +234,7 @@ pub use default_session_token::*;
 
 #[cfg(test)]
 mod tests {
-    use {super::ExtractSessionTokenRequest, scratchstack_core::RequestId};
+    use {super::ExtractSessionTokenRequest, chrono::DateTime, scratchstack_core::RequestId};
 
     /// `ExtractSessionToken` is a public extension point, so an implementation living outside this
     /// crate has to be able to read the request it is handed. These accessors are the only way to
@@ -225,10 +242,16 @@ mod tests {
     #[test_log::test]
     fn extract_session_token_request_is_readable() {
         let request_id = RequestId::new();
-        let req = ExtractSessionTokenRequest::builder().session_token("0abcdef").request_id(request_id).build();
+        let server_timestamp = DateTime::from_timestamp(1_767_225_600, 0).unwrap();
+        let req = ExtractSessionTokenRequest::builder()
+            .session_token("0abcdef")
+            .request_id(request_id)
+            .server_timestamp(server_timestamp)
+            .build();
 
         assert_eq!(req.session_token(), "0abcdef");
         assert_eq!(req.request_id(), request_id);
+        assert_eq!(req.server_timestamp(), server_timestamp);
     }
 
     /// The session token is bearer-credential material. A derived `Debug` would print it in full,
@@ -238,6 +261,7 @@ mod tests {
         let req = ExtractSessionTokenRequest::builder()
             .session_token("0SECRET-TOKEN-MATERIAL")
             .request_id(RequestId::new())
+            .server_timestamp(DateTime::from_timestamp(1_767_225_600, 0).unwrap())
             .build();
 
         let debug = format!("{req:?}");

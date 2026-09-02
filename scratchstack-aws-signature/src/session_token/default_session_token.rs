@@ -1,12 +1,13 @@
 //! Default session token extractor implementation.
 use {
     crate::{
-        ExtractSessionToken, ExtractSessionTokenRequest, InvalidSessionTokenError, SessionTokenData, SignatureError,
-        constants::*, internal_service_error,
+        ExpiredTokenError, ExtractSessionToken, ExtractSessionTokenRequest, InvalidSessionTokenError, SessionTokenData,
+        SignatureError, constants::*, internal_service_error,
     },
     aes_gcm::{AeadCore, AeadInOut as _, Aes256Gcm, KeyInit as _, KeySizeUser, Nonce, aead::common::Generate as _},
     base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
     bon::Builder,
+    chrono::{DateTime, Utc},
     scratchstack_core::RequestId,
     std::{
         collections::HashMap,
@@ -45,6 +46,10 @@ pub const AES256_KEY_LENGTH: usize = <Aes256Gcm as KeySizeUser>::KeySize::USIZE;
 /// The format of the session token used in this implementation is:
 /// * Version: 1 byte, currently always ASCII `0`.
 /// * Base64Payload: base-64 encoded string representing an [`EncryptedSessionTokenData`] struct.
+///
+/// A token that decrypts and decodes but whose `expires_at` is not later than the request's
+/// server timestamp is rejected with [`ExpiredTokenError`]. The key service is handed the same
+/// timestamp so that it can refuse keys whose acceptance window has closed.
 #[derive(Builder, Clone)]
 pub struct PostcardSessionTokenExtractor<KeyService> {
     /// An underlying Tower service that converts a `KeyId` into an AES256-GCM key for decrypting
@@ -126,6 +131,10 @@ pub struct GetSessionTokenEncryptionKeyRequest {
     /// The request id for logging and tracing.
     #[builder(into)]
     request_id: RequestId,
+
+    /// The time the server received the request. A key service that retires keys should refuse
+    /// one whose acceptance window has closed by this instant, rather than by its own clock.
+    server_timestamp: DateTime<Utc>,
 }
 
 impl GetSessionTokenEncryptionKeyRequest {
@@ -139,6 +148,12 @@ impl GetSessionTokenEncryptionKeyRequest {
     #[inline(always)]
     pub fn request_id(&self) -> RequestId {
         self.request_id
+    }
+
+    /// Returns the time the server received the request.
+    #[inline(always)]
+    pub fn server_timestamp(&self) -> DateTime<Utc> {
+        self.server_timestamp
     }
 }
 
@@ -175,7 +190,8 @@ impl SessionTokenEncryptionKeyInfo {
     }
 }
 
-/// A static key service, primarily for testing.
+/// A static key service, primarily for testing. It has no notion of an acceptance window, so it
+/// ignores the request's server timestamp.
 #[derive(Clone)]
 #[repr(transparent)]
 pub struct StaticKeyService(pub HashMap<String, SessionTokenEncryptionKeyInfo>);
@@ -203,6 +219,7 @@ where
         let stek_req = GetSessionTokenEncryptionKeyRequest::builder()
             .session_token_encryption_key_id(key_id)
             .request_id(request.request_id())
+            .server_timestamp(request.server_timestamp())
             .build();
         let key_info: SessionTokenEncryptionKeyInfo = self.key_service.call(stek_req).await?;
         if key_info.encryption_algorithm != SessionTokenEncryptionAlgorithm::Aes256Gcm {
@@ -224,10 +241,17 @@ where
             .decrypt_in_place(&nonce, associated_data.as_bytes(), &mut *payload)
             .map_err(|_| invalid_session_token_error(request.request_id()))?;
 
-        let (result, remainder) = postcard::take_from_bytes(payload.as_slice())
+        let (result, remainder): (SessionTokenData, &[u8]) = postcard::take_from_bytes(payload.as_slice())
             .map_err(|_| invalid_session_token_error(request.request_id()))?;
         if !remainder.is_empty() {
             return Err(invalid_session_token_error(request.request_id()));
+        }
+
+        // The token is authentic; now check that it is still current. Nothing downstream repeats
+        // this check, so an expired token must not leave here. (The secret key inside `result`
+        // is zeroized when it drops on this path.)
+        if request.server_timestamp() >= result.expires_at {
+            return Err(ExpiredTokenError::builder().request_id(request.request_id()).build().into());
         }
 
         Ok(result)
@@ -520,7 +544,7 @@ mod tests {
         crate::KSecretKey,
         aes_gcm::Key as AesKey,
         ascii_casing::AsciiString,
-        chrono::{DateTime, Duration},
+        chrono::Duration,
         scratchstack_aspen::Policy as AspenPolicy,
         scratchstack_aws_principal::{AssumedRole, SessionData, SessionValue},
         std::collections::{HashMap, HashSet},
@@ -532,6 +556,18 @@ mod tests {
     const TEST_KEY_ID: &str = "test-key-1";
     const TEST_NONCE: [u8; NONCE_LENGTH] = [0x07; NONCE_LENGTH];
     const MSG_INVALID_SESSION_TOKEN: &str = "The security token included in the request is invalid";
+    const MSG_EXPIRED_TOKEN: &str = "The security token included in the request is expired";
+
+    /// When the test token was issued: 2026-01-01T00:00:00Z. The tests use fixed instants so
+    /// they never depend on the wall clock.
+    fn test_issued_at() -> DateTime<Utc> {
+        DateTime::from_timestamp(1_767_225_600, 0).unwrap()
+    }
+
+    /// A moment inside the test token's one-hour lifetime.
+    fn test_now() -> DateTime<Utc> {
+        test_issued_at() + Duration::minutes(5)
+    }
 
     /// Asserts that `result` is an `InvalidSessionToken` error carrying `expected_message`.
     fn assert_invalid_session_token<T>(result: Result<T, SignatureError>, expected_message: &str) {
@@ -597,8 +633,7 @@ mod tests {
 
     /// Returns a representative `SessionTokenData` with an assumed-role principal.
     fn test_session_token_data() -> SessionTokenData {
-        // 2026-01-01T00:00:00Z; a fixed timestamp since chrono's `clock` feature is not enabled.
-        let issued_at = DateTime::from_timestamp(1_767_225_600, 0).unwrap();
+        let issued_at = test_issued_at();
         let mut metadata = SessionData::new();
         metadata.insert("MultiFactorAuthPresent", SessionValue::Bool(true));
         let inline_policy = AspenPolicy::from_str(
@@ -640,7 +675,11 @@ mod tests {
         let request_id = RequestId::new();
         let mut extractor = PostcardSessionTokenExtractor::builder().key_service(test_key_service()).build();
 
-        let req = ExtractSessionTokenRequest::builder().session_token(token).request_id(request_id).build();
+        let req = ExtractSessionTokenRequest::builder()
+            .session_token(token)
+            .request_id(request_id)
+            .server_timestamp(test_now())
+            .build();
 
         let actual = extractor.ready().await.unwrap().call(req).await.unwrap();
         assert_eq!(actual.access_key_id, expected.access_key_id);
@@ -663,7 +702,11 @@ mod tests {
         let token = encode_token(&build_token_body("unknown-key", TEST_ACCOUNT_ID, &payload));
         let mut extractor = PostcardSessionTokenExtractor::builder().key_service(test_key_service()).build();
         let request_id = RequestId::new();
-        let req = ExtractSessionTokenRequest::builder().session_token(token).request_id(request_id).build();
+        let req = ExtractSessionTokenRequest::builder()
+            .session_token(token)
+            .request_id(request_id)
+            .server_timestamp(test_now())
+            .build();
 
         assert_invalid_session_token(
             extractor.ready().await.unwrap().call(req).await,
@@ -679,7 +722,11 @@ mod tests {
         let token = encode_token(&build_token_body(TEST_KEY_ID, TEST_ACCOUNT_ID, &payload));
         let mut extractor = PostcardSessionTokenExtractor::builder().key_service(test_key_service()).build();
         let request_id = RequestId::new();
-        let req = ExtractSessionTokenRequest::builder().session_token(token).request_id(request_id).build();
+        let req = ExtractSessionTokenRequest::builder()
+            .session_token(token)
+            .request_id(request_id)
+            .server_timestamp(test_now())
+            .build();
 
         assert_invalid_session_token(extractor.ready().await.unwrap().call(req).await, MSG_INVALID_SESSION_TOKEN);
     }
@@ -693,7 +740,11 @@ mod tests {
         let token = encode_token(&build_token_body(TEST_KEY_ID, "999999999999", &payload));
         let mut extractor = PostcardSessionTokenExtractor::builder().key_service(test_key_service()).build();
         let request_id = RequestId::new();
-        let req = ExtractSessionTokenRequest::builder().session_token(token).request_id(request_id).build();
+        let req = ExtractSessionTokenRequest::builder()
+            .session_token(token)
+            .request_id(request_id)
+            .server_timestamp(test_now())
+            .build();
 
         assert_invalid_session_token(extractor.ready().await.unwrap().call(req).await, MSG_INVALID_SESSION_TOKEN);
     }
@@ -704,7 +755,11 @@ mod tests {
         let token = encode_token(&build_token_body(TEST_KEY_ID, TEST_ACCOUNT_ID, &payload));
         let mut extractor = PostcardSessionTokenExtractor::builder().key_service(test_key_service()).build();
         let request_id = RequestId::new();
-        let req = ExtractSessionTokenRequest::builder().session_token(token).request_id(request_id).build();
+        let req = ExtractSessionTokenRequest::builder()
+            .session_token(token)
+            .request_id(request_id)
+            .server_timestamp(test_now())
+            .build();
 
         assert_invalid_session_token(extractor.ready().await.unwrap().call(req).await, MSG_INVALID_SESSION_TOKEN);
     }
@@ -717,9 +772,86 @@ mod tests {
         let token = encode_token(&build_token_body(TEST_KEY_ID, TEST_ACCOUNT_ID, &payload));
         let mut extractor = PostcardSessionTokenExtractor::builder().key_service(test_key_service()).build();
         let request_id = RequestId::new();
-        let req = ExtractSessionTokenRequest::builder().session_token(token).request_id(request_id).build();
+        let req = ExtractSessionTokenRequest::builder()
+            .session_token(token)
+            .request_id(request_id)
+            .server_timestamp(test_now())
+            .build();
 
         assert_invalid_session_token(extractor.ready().await.unwrap().call(req).await, MSG_INVALID_SESSION_TOKEN);
+    }
+
+    /// A token is accepted right up until the instant it expires, and rejected from then on.
+    /// Nothing after the extractor repeats this check, so it has to be exact.
+    #[tokio::test]
+    async fn test_extractor_expired_token() {
+        let data = test_session_token_data();
+        let token = test_session_token(&data);
+        let mut extractor = PostcardSessionTokenExtractor::builder().key_service(test_key_service()).build();
+
+        let request = |server_timestamp: DateTime<Utc>| {
+            ExtractSessionTokenRequest::builder()
+                .session_token(token.clone())
+                .request_id(RequestId::new())
+                .server_timestamp(server_timestamp)
+                .build()
+        };
+
+        let just_before = request(data.expires_at - Duration::seconds(1));
+        extractor.ready().await.unwrap().call(just_before).await.expect("token must be accepted before it expires");
+
+        for server_timestamp in
+            [data.expires_at, data.expires_at + Duration::seconds(1), data.expires_at + Duration::days(365)]
+        {
+            let result = extractor.ready().await.unwrap().call(request(server_timestamp)).await;
+            match result {
+                Err(SignatureError::ExpiredToken(e)) => assert_eq!(e.message, MSG_EXPIRED_TOKEN),
+                Err(e) => panic!("expected ExpiredToken at {server_timestamp}, got {e:?}"),
+                Ok(_) => panic!("expired token accepted at {server_timestamp}"),
+            }
+        }
+    }
+
+    /// The key service is handed the request's server timestamp, so a service that retires keys
+    /// can judge the acceptance window by the same clock the rest of validation uses.
+    #[tokio::test]
+    async fn test_extractor_passes_server_timestamp_to_key_service() {
+        /// Wraps the static service, asserting on the timestamp every request carries.
+        #[derive(Clone)]
+        struct Expecting {
+            inner: StaticKeyService,
+            server_timestamp: DateTime<Utc>,
+        }
+
+        impl Service<GetSessionTokenEncryptionKeyRequest> for Expecting {
+            type Response = SessionTokenEncryptionKeyInfo;
+            type Error = SignatureError;
+            type Future = <StaticKeyService as Service<GetSessionTokenEncryptionKeyRequest>>::Future;
+
+            fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+                self.inner.poll_ready(cx)
+            }
+
+            fn call(&mut self, req: GetSessionTokenEncryptionKeyRequest) -> Self::Future {
+                assert_eq!(req.server_timestamp(), self.server_timestamp);
+                self.inner.call(req)
+            }
+        }
+
+        let data = test_session_token_data();
+        let token = test_session_token(&data);
+        let key_service = Expecting {
+            inner: test_key_service(),
+            server_timestamp: test_now(),
+        };
+        let mut extractor = PostcardSessionTokenExtractor::builder().key_service(key_service).build();
+        let req = ExtractSessionTokenRequest::builder()
+            .session_token(token)
+            .request_id(RequestId::new())
+            .server_timestamp(test_now())
+            .build();
+
+        extractor.ready().await.unwrap().call(req).await.expect("token should extract");
     }
 
     #[test_log::test]
@@ -883,7 +1015,11 @@ mod tests {
         let request_id = RequestId::new();
 
         let mut extractor = PostcardSessionTokenExtractor::builder().key_service(test_key_service()).build();
-        let req = ExtractSessionTokenRequest::builder().session_token(session_token).request_id(request_id).build();
+        let req = ExtractSessionTokenRequest::builder()
+            .session_token(session_token)
+            .request_id(request_id)
+            .server_timestamp(test_now())
+            .build();
         let extracted = extractor.ready().await.unwrap().call(req).await.unwrap();
 
         assert_eq!(extracted.access_key_id, data.access_key_id);
@@ -933,6 +1069,7 @@ mod tests {
         let req = GetSessionTokenEncryptionKeyRequest::builder()
             .session_token_encryption_key_id(TEST_KEY_ID)
             .request_id(request_id)
+            .server_timestamp(test_now())
             .build();
 
         let key_info = service.ready().await.unwrap().call(req).await.unwrap();
@@ -943,6 +1080,7 @@ mod tests {
         let req = GetSessionTokenEncryptionKeyRequest::builder()
             .session_token_encryption_key_id("missing")
             .request_id(request_id)
+            .server_timestamp(test_now())
             .build();
         assert_invalid_session_token(
             service.ready().await.unwrap().call(req).await,

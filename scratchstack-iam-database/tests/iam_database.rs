@@ -375,6 +375,9 @@ async fn subtest_assume_role(pool: &PgPool) {
     role::test_assume_role(pool).await;
     role::test_assume_role_session_policy_cross_account_rejected(pool).await;
     role::test_assume_role_with_session_policies(pool).await;
+    role::test_assume_role_expired_token_rejected(pool).await;
+    role::test_assume_role_token_bound_to_access_key(pool).await;
+    role::test_assume_role_token_key_past_acceptance_window(pool).await;
     role::test_assume_role_nonexistent_role(pool).await;
     role::test_assume_role_invalid_arn(pool).await;
     role::test_assume_role_malformed_policy(pool).await;

@@ -269,7 +269,7 @@ where
     trace!("Created authenticator: {auth:?}");
 
     // Obtain the signing key for the request.
-    let gsk_response = auth.get_signing_key(region, service, get_signing_key, request_id).await?;
+    let gsk_response = auth.get_signing_key(region, service, server_timestamp, get_signing_key, request_id).await?;
 
     // This will validate the signature; on success, this returns nothing.
     auth.validate_signature_with_key(

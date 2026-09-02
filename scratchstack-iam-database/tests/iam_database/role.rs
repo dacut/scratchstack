@@ -2,13 +2,13 @@
 use {
     super::common::VALID_POLICY_DOCUMENT,
     base64::{Engine as _, engine::general_purpose::URL_SAFE},
-    chrono::Utc,
+    chrono::{DateTime, Duration, Utc},
     pretty_assertions::assert_eq,
     scratchstack_aws_principal::SessionValue,
     scratchstack_aws_signature::{
         ExtractSessionTokenRequest, GetSigningKeyRequest, PostcardSessionTokenExtractor,
         SessionTokenEncryptionAlgorithm as SigSessionTokenEncryptionAlgorithm, SessionTokenEncryptionKeyInfo,
-        StaticKeyService,
+        SignatureError, StaticKeyService,
     },
     scratchstack_core::RequestId,
     scratchstack_iam_database::{GetSigningKeyFromDatabase, RequestExecutor},
@@ -25,7 +25,9 @@ use {
         types::{PermissionsBoundaryAttachmentType, Tag},
     },
     scratchstack_shapes_sts::{
-        error_meta::Error as StsError, operation::AssumeRoleRequest, types::PolicyDescriptorType,
+        error_meta::Error as StsError,
+        operation::AssumeRoleRequest,
+        types::{Credentials, PolicyDescriptorType},
     },
     std::sync::Arc,
     tower::{Service as _, ServiceExt as _},
@@ -2132,6 +2134,7 @@ pub async fn test_assume_role(pool: &sqlx::PgPool) {
     let req = ExtractSessionTokenRequest::builder()
         .session_token(credentials.session_token.clone())
         .request_id(request_id)
+        .server_timestamp(Utc::now())
         .build();
 
     let token_data = extractor
@@ -2254,6 +2257,7 @@ pub async fn test_assume_role_with_session_policies(pool: &sqlx::PgPool) {
         .region("us-east-1")
         .service("iam")
         .request_id(RequestId::new())
+        .server_timestamp(Utc::now())
         .build();
     let gsk_response = gsk
         .ready()
@@ -2290,6 +2294,7 @@ pub async fn test_assume_role_with_session_policies(pool: &sqlx::PgPool) {
         .region("us-west-2")
         .service("iam")
         .request_id(RequestId::new())
+        .server_timestamp(Utc::now())
         .build();
     let west_response = gsk
         .ready()
@@ -2308,6 +2313,135 @@ pub async fn test_assume_role_with_session_policies(pool: &sqlx::PgPool) {
     let inline_policy = session_policies.inline_policy().expect("Inline session policy should be present");
     assert!(inline_policy.to_string().contains("s3:ListBucket"));
     assert_eq!(session_policies.managed_policy_ids(), ["ANPAAAAABBBBCCCCDDDD".to_string()]);
+}
+
+/// Creates a session token encryption key and assumes `example-role-1`, returning the temporary
+/// credentials issued for the session.
+async fn assume_role_credentials(pool: &sqlx::PgPool, session_name: &str) -> Credentials {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateSessionTokenEncryptionKeyRequest::builder()
+        .issue_valid_from(Utc::now())
+        .build()
+        .expect("Failed to build CreateSessionTokenEncryptionKeyRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to create session token encryption key");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = AssumeRoleRequest::builder()
+        .role_arn("arn:aws:iam::123456789012:role/example-role-1")
+        .role_session_name(session_name)
+        .build()
+        .expect("Failed to build AssumeRoleRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to assume role");
+    tx.commit().await.expect("Failed to commit transaction");
+    resp.credentials.expect("Credentials should be present")
+}
+
+/// A signing-key request presenting `access_key_id` and `session_token` to the IAM service in
+/// us-east-1, as received at `server_timestamp`.
+fn temporary_credential_request(
+    access_key_id: &str,
+    session_token: &str,
+    server_timestamp: DateTime<Utc>,
+) -> GetSigningKeyRequest {
+    GetSigningKeyRequest::builder()
+        .access_key(access_key_id)
+        .session_token(session_token)
+        .request_date(server_timestamp.date_naive())
+        .region("us-east-1")
+        .service("iam")
+        .request_id(RequestId::new())
+        .server_timestamp(server_timestamp)
+        .build()
+}
+
+/// The direct-database signing-key provider for the IAM service in us-east-1.
+fn iam_signing_key_provider(pool: &sqlx::PgPool) -> GetSigningKeyFromDatabase {
+    GetSigningKeyFromDatabase::builder()
+        .pool(Arc::new(pool.clone()))
+        .partition("aws")
+        .region("us-east-1")
+        .service("iam")
+        .build()
+}
+
+/// Temporary credentials work right up until the session expires and not for one second longer.
+/// The token is what carries the expiry, so this is the check that keeps an old token from
+/// serving as a permanent credential.
+pub async fn test_assume_role_expired_token_rejected(pool: &sqlx::PgPool) {
+    let credentials = assume_role_credentials(pool, "expiry-session").await;
+    let mut gsk = iam_signing_key_provider(pool);
+
+    let request = |server_timestamp| {
+        temporary_credential_request(&credentials.access_key_id, &credentials.session_token, server_timestamp)
+    };
+
+    gsk.ready()
+        .await
+        .expect("GetSigningKeyFromDatabase should be ready")
+        .call(request(credentials.expiration - Duration::seconds(1)))
+        .await
+        .expect("Credentials must be accepted before they expire");
+
+    // Stay within the encryption key's acceptance window, which is checked first; a far-future
+    // timestamp would be refused for the key rather than for the token.
+    for server_timestamp in [credentials.expiration, credentials.expiration + Duration::hours(1)] {
+        let e = gsk
+            .ready()
+            .await
+            .expect("GetSigningKeyFromDatabase should be ready")
+            .call(request(server_timestamp))
+            .await
+            .expect_err("Expired credentials must be rejected");
+        assert!(
+            matches!(e, SignatureError::ExpiredToken(_)),
+            "Expected ExpiredToken at {server_timestamp}, got: {e:?}"
+        );
+        assert_eq!(e.to_string(), "The security token included in the request is expired");
+    }
+}
+
+/// A session token is bound to the access key it was issued with. Presented under a different
+/// (even valid) temporary access key, the pair is rejected as an invalid token, as AWS does.
+pub async fn test_assume_role_token_bound_to_access_key(pool: &sqlx::PgPool) {
+    let credentials = assume_role_credentials(pool, "binding-session").await;
+    let other = assume_role_credentials(pool, "other-session").await;
+    assert_ne!(credentials.access_key_id, other.access_key_id);
+
+    let mut gsk = iam_signing_key_provider(pool);
+    let e = gsk
+        .ready()
+        .await
+        .expect("GetSigningKeyFromDatabase should be ready")
+        .call(temporary_credential_request(&other.access_key_id, &credentials.session_token, Utc::now()))
+        .await
+        .expect_err("A token presented under another access key must be rejected");
+    assert!(matches!(e, SignatureError::InvalidClientTokenId(_)), "Expected InvalidClientTokenId, got: {e:?}");
+    assert_eq!(e.to_string(), "The security token included in the request is invalid");
+}
+
+/// Once a session token encryption key's acceptance window closes, every token encrypted under
+/// it is refused. The key is checked before the token is decrypted, so this is what surfaces
+/// even though the token has long since expired as well.
+pub async fn test_assume_role_token_key_past_acceptance_window(pool: &sqlx::PgPool) {
+    let credentials = assume_role_credentials(pool, "stale-key-session").await;
+
+    // Far enough out that every key's acceptance window has closed.
+    let server_timestamp = Utc::now() + Duration::days(3650);
+    let mut gsk = iam_signing_key_provider(pool);
+    let e = gsk
+        .ready()
+        .await
+        .expect("GetSigningKeyFromDatabase should be ready")
+        .call(temporary_credential_request(&credentials.access_key_id, &credentials.session_token, server_timestamp))
+        .await
+        .expect_err("A token under a retired key must be rejected");
+    assert!(matches!(e, SignatureError::InvalidSessionToken(_)), "Expected InvalidSessionToken, got: {e:?}");
+    assert_eq!(e.to_string(), "The security token included in the request is invalid");
 }
 
 /// AssumeRole on a nonexistent role must fail with AccessDenied, not NoSuchEntity, to avoid

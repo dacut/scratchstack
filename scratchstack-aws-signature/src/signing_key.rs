@@ -2,7 +2,7 @@ use {
     crate::{KeyLengthError, SessionPolicies, SignatureError, constants::*, crypto::hmac_sha256},
     base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
     bon::Builder,
-    chrono::NaiveDate,
+    chrono::{DateTime, NaiveDate, Utc},
     scratchstack_aws_principal::{Principal, SessionData},
     scratchstack_core::RequestId,
     serde::{
@@ -422,6 +422,12 @@ pub struct GetSigningKeyRequest {
     /// The request id of the request.
     #[builder(into)]
     request_id: RequestId,
+
+    /// The time the server received the request. Every time-bound check a provider makes --
+    /// session-token expiry, key acceptance windows -- should be made against this clock rather
+    /// than one the provider reads itself, so that one request is validated against one notion
+    /// of "now".
+    server_timestamp: DateTime<Utc>,
 }
 
 impl GetSigningKeyRequest {
@@ -460,6 +466,12 @@ impl GetSigningKeyRequest {
     pub fn request_id(&self) -> RequestId {
         self.request_id
     }
+
+    /// Retrieve the time the server received the request.
+    #[inline(always)]
+    pub fn server_timestamp(&self) -> DateTime<Utc> {
+        self.server_timestamp
+    }
 }
 
 impl Debug for GetSigningKeyRequest {
@@ -472,6 +484,8 @@ impl Debug for GetSigningKeyRequest {
             .field("request_date", &self.request_date)
             .field("region", &self.region)
             .field("service", &self.service)
+            .field("request_id", &self.request_id)
+            .field("server_timestamp", &self.server_timestamp)
             .finish()
     }
 }
@@ -549,7 +563,7 @@ where
 mod tests {
     use {
         crate::{GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, constants::*},
-        chrono::NaiveDate,
+        chrono::{DateTime, NaiveDate},
         scratchstack_aws_principal::{AssumedRole, Principal},
         scratchstack_core::RequestId,
         std::str::FromStr,
@@ -660,6 +674,7 @@ mod tests {
             region: "us-east-1".to_string(),
             service: "example".to_string(),
             request_id,
+            server_timestamp: DateTime::from_timestamp(1_440_938_160, 0).unwrap(),
         };
 
         // Make sure we can debug print the request, and that the session token is redacted.
