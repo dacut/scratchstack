@@ -257,21 +257,16 @@ where
             {
                 // Rusoto and some other clients set Content-Type to application/octet-stream on
                 // GET requests <sigh>. Let that through only when nothing says a body is coming:
-                // no Content-Length (or a zero one), no Expect, and no chunked Transfer-Encoding.
+                // no Content-Length (or a zero one), no Expect, and no Transfer-Encoding.
                 let mut get_ok = false;
 
                 if req.method() == Method::GET {
                     get_ok = req.headers().get("content-length").is_none_or(|len| len.as_bytes() == b"0");
                     get_ok &= req.headers().get("expect").is_none();
-                    if let Some(te) = req.headers().get("transfer-encoding") {
-                        let te = String::from_utf8_lossy(te.as_bytes());
-                        for part in te.split(',') {
-                            if part.trim() == "chunked" {
-                                get_ok = false;
-                                break;
-                            }
-                        }
-                    }
+                    // Any Transfer-Encoding signals a body (RFC 9112 section 6), whatever codings
+                    // it names and however they are capitalized, so there is no need to look for
+                    // "chunked" in particular -- and doing so case-sensitively let "Chunked" by.
+                    get_ok &= !req.headers().contains_key("transfer-encoding");
                 }
 
                 if !get_ok {
@@ -511,7 +506,7 @@ mod tests {
     /// whenever *either* Content-Length or Expect was absent, which is nearly always.
     #[test_log::test(tokio::test)]
     async fn test_get_content_type_gate() {
-        let cases: [(&[(&str, &str)], StatusCode); 6] = [
+        let cases: [(&[(&str, &str)], StatusCode); 7] = [
             (&[("Content-Type", "application/octet-stream")], StatusCode::OK),
             (&[("Content-Type", "application/octet-stream"), ("Content-Length", "0")], StatusCode::OK),
             (&[("Content-Type", "application/octet-stream"), ("Content-Length", "5")], StatusCode::FORBIDDEN),
@@ -520,6 +515,8 @@ mod tests {
                 &[("Content-Type", "application/octet-stream"), ("Transfer-Encoding", "gzip, chunked")],
                 StatusCode::FORBIDDEN,
             ),
+            // Transfer-coding names are case-insensitive; this used to slip through.
+            (&[("Content-Type", "application/octet-stream"), ("Transfer-Encoding", "Chunked")], StatusCode::FORBIDDEN),
             (
                 &[("Content-Type", "application/octet-stream"), ("Content-Length", "5"), ("Expect", "100-continue")],
                 StatusCode::FORBIDDEN,
