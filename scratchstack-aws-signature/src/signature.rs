@@ -124,6 +124,10 @@ impl SignatureOptions {
 ///
 /// This is returned during the initial validation of the request headers by [`sigv4_validate_streaming_headers`],
 /// and is used to validate chunks via [`StreamingSignatureState::sigv4_validate_streaming_chunk`].
+///
+/// Each chunk's signature chains from the previous one, so the state is only meaningful while
+/// every chunk so far has validated. Once a chunk fails, the state is poisoned: every later
+/// call fails too, whatever it is given.
 #[derive(Clone, Debug)]
 pub struct StreamingSignatureState {
     /// The principal and session information from the authenticator response.
@@ -144,6 +148,11 @@ pub struct StreamingSignatureState {
     /// The previous signature in the chain. The initial value is the signature of the headers, and each chunk is
     /// signed with a signature that includes the previous signature.
     prev_signature: String,
+
+    /// Set once a chunk has failed to validate. The chain is broken from that point, so no later
+    /// chunk can be accepted -- not even one that would have validated against the last good
+    /// signature -- and a caller that overlooks one failure cannot go on accepting the rest.
+    poisoned: bool,
 }
 
 /// Validate an AWS SigV4 request.
@@ -290,6 +299,12 @@ where
     let auth = canonical_request.get_authenticator(required_headers)?;
     trace!("Created authenticator: {auth:?}");
 
+    // Check the timestamp and credential scope before looking the key up, as the buffered path
+    // does: an unauthenticated caller with a stale or malformed request should get its answer
+    // without a trip to the key store, and the documented error ordering puts these checks
+    // first. (validate_signature_with_key repeats the check; it is cheap.)
+    auth.prevalidate(region, service, server_timestamp, options.allowed_mismatch, request_id)?;
+
     // Obtain the signing key for the request.
     let gsk_response = auth.get_signing_key(region, service, server_timestamp, get_signing_key, request_id).await?;
 
@@ -332,6 +347,7 @@ where
         scope: scope.to_string(),
         request_timestamp: auth.request_timestamp.format(ISO8601_COMPACT_FORMAT).to_string(),
         prev_signature: auth.signature,
+        poisoned: false,
     };
 
     Ok(response)
@@ -340,16 +356,24 @@ where
 impl StreamingSignatureState {
     /// Validate AWS SigV4 streaming chunk.
     ///
+    /// `chunk_hash` is the lowercase hex SHA-256 of the chunk's decoded bytes. The caller must
+    /// compute it from the bytes actually received, never take it from the request: it is the
+    /// only thing that binds the chunk's content to its signature.
+    ///
     /// # Errors
-    /// This function returns a [`SignatureError`][crate::SignatureError] if the HTTP request is
-    /// malformed or the request was not properly signed. The validation follows the
-    /// [AWS Auth Error Ordering](https://github.com/dacut/scratchstack/blob/main/scratchstack-aws-signature/docs/AWS%20Auth%20Error%20Ordering.pdf)
-    /// document.
+    /// This function returns a [`SignatureError`][crate::SignatureError] if the chunk's signature
+    /// does not match, or if any earlier chunk failed to. A failure poisons the state: every
+    /// later call fails, so a caller that keeps reading after an error cannot end up accepting
+    /// the rest of the body.
     pub fn sigv4_validate_streaming_chunk(
         &mut self,
         chunk_hash: &str,
         chunk_signature: impl Into<String>,
     ) -> Result<(), SignatureError> {
+        if self.poisoned {
+            return Err(SignatureError::SignatureDoesNotMatch(MSG_REQUEST_SIGNATURE_MISMATCH.into()));
+        }
+
         let chunk_signature = chunk_signature.into();
         let string_to_sign = format!(
             "{}\n{}\n{}\n{}\n{}\n{}",
@@ -361,8 +385,10 @@ impl StreamingSignatureState {
         let chunk_signature_bytes = chunk_signature.as_bytes();
         let is_equal: bool = chunk_signature_bytes.ct_eq(expected_signature_bytes).into();
         if !is_equal {
-            trace!("Chunk signature mismatch: expected '{}', got '{}'", expected_signature, chunk_signature);
-            self.prev_signature = chunk_signature;
+            // The expected signature is deliberately not logged: it is exactly what a caller
+            // would need to get this chunk accepted.
+            trace!("Chunk signature mismatch");
+            self.poisoned = true;
             Err(SignatureError::SignatureDoesNotMatch(MSG_REQUEST_SIGNATURE_MISMATCH.into()))
         } else {
             self.prev_signature = chunk_signature;
@@ -376,9 +402,9 @@ mod tests {
     use {
         crate::{
             GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, NoSignedHeaderRequirements, SessionPolicies,
-            SignatureError, SignatureOptions, SignedHeaderRequirements, VecSignedHeaderRequirements,
-            auth::SigV4AuthenticatorResponse, constants::*, service_for_signing_key_fn, sigv4_validate_request,
-            sigv4_validate_streaming_headers,
+            SignatureError, SignatureOptions, SignedHeaderRequirements, StreamingSignatureState,
+            VecSignedHeaderRequirements, auth::SigV4AuthenticatorResponse, constants::*, service_for_signing_key_fn,
+            sigv4_validate_request, sigv4_validate_streaming_headers,
         },
         bytes::Bytes,
         chrono::{DateTime, Duration, NaiveDate, Utc},
@@ -1308,6 +1334,109 @@ mod tests {
             options,
         )
         .await
+    }
+
+    /// A chunk that fails to validate breaks the chain for good. In particular the chunk that
+    /// *would* have validated is refused afterwards, so a caller that overlooks one error cannot
+    /// resume accepting chunks, and the client's bad signature is not adopted as the chain's
+    /// previous signature.
+    #[test_log::test(tokio::test)]
+    async fn test_streaming_chunk_failure_poisons_state() {
+        let mut sig_state = validate_s3_streaming_example().await;
+
+        let e = expect_err!(
+            sig_state.sigv4_validate_streaming_chunk(
+                "bf718b6f653bebc184e1479f1935b8da974d701b893afcf49e701f3e2f9f9c5a",
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            ),
+            SignatureDoesNotMatch
+        );
+        assert_eq!(e, MSG_REQUEST_SIGNATURE_MISMATCH);
+
+        // The genuine first chunk, which a fresh state accepts (see test_validate_streaming_headers).
+        expect_err!(
+            sig_state.sigv4_validate_streaming_chunk(
+                "bf718b6f653bebc184e1479f1935b8da974d701b893afcf49e701f3e2f9f9c5a",
+                "ad80c730a21e5b8d04586a2213dd63b9a0e99e0e2307b0ade35a65485a288648",
+            ),
+            SignatureDoesNotMatch
+        );
+    }
+
+    /// The streaming path checks the timestamp and credential scope before it looks the signing
+    /// key up, as the buffered path does; a stale request never reaches the key store.
+    #[test_log::test(tokio::test)]
+    async fn test_streaming_headers_prevalidate_before_key_lookup() {
+        async fn never_called(_: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, SignatureError> {
+            panic!("the signing key must not be looked up before the request is prevalidated");
+        }
+
+        let req = s3_streaming_example_request();
+        let mut get_signing_key_svc = service_for_signing_key_fn(never_called);
+        let e = expect_err!(
+            sigv4_validate_streaming_headers(
+                &req,
+                "STREAMING-AWS4-HMAC-SHA256-PAYLOAD",
+                "AWS4-HMAC-SHA256-PAYLOAD",
+                "us-east-1",
+                "s3",
+                &mut get_signing_key_svc,
+                s3_streaming_example_timestamp() + Duration::days(1),
+                &NoSignedHeaderRequirements,
+                SignatureOptions::S3,
+                RequestId::new(),
+            )
+            .await,
+            SignatureDoesNotMatch
+        );
+        assert!(e.starts_with("Signature expired: "), "{e}");
+    }
+
+    /// The request from <https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-streaming.html>.
+    fn s3_streaming_example_request() -> Request<Bytes> {
+        Request::builder()
+            .method(Method::PUT)
+            .uri("https://s3.amazonaws.com/examplebucket/chunkObject.txt")
+            .header("Host", "s3.amazonaws.com")
+            .header("x-amz-date", "20130524T000000Z")
+            .header("x-amz-storage-class", "REDUCED_REDUNDANCY")
+            .header("x-amz-content-sha256", "STREAMING-AWS4-HMAC-SHA256-PAYLOAD")
+            .header("Content-Encoding", "aws-chunked")
+            .header("x-amz-decoded-content-length", "66560")
+            .header("Content-Length", "66824")
+            .header("Authorization", "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request,SignedHeaders=content-encoding;content-length;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class,Signature=4f232c4386841ef735655705268965c44a0e4690baa4adea153f7db9fa80a0a9")
+            .body(Bytes::new())
+            .unwrap()
+    }
+
+    /// When `s3_streaming_example_request` was signed.
+    fn s3_streaming_example_timestamp() -> DateTime<Utc> {
+        DateTime::from_naive_utc_and_offset(
+            NaiveDate::from_ymd_opt(2013, 5, 24).unwrap().and_hms_opt(0, 0, 0).unwrap(),
+            Utc,
+        )
+    }
+
+    /// Validates the headers of `s3_streaming_example_request`, returning the chunk state.
+    async fn validate_s3_streaming_example() -> StreamingSignatureState {
+        // This S3 example secret key is subtly different than the standard example signing key;
+        // the + is replaced with a second /.
+        let mut get_signing_key_svc =
+            service_for_signing_key_fn(make_get_signing_key_fn("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"));
+        sigv4_validate_streaming_headers(
+            &s3_streaming_example_request(),
+            "STREAMING-AWS4-HMAC-SHA256-PAYLOAD",
+            "AWS4-HMAC-SHA256-PAYLOAD",
+            "us-east-1",
+            "s3",
+            &mut get_signing_key_svc,
+            s3_streaming_example_timestamp(),
+            &NoSignedHeaderRequirements,
+            SignatureOptions::S3,
+            RequestId::new(),
+        )
+        .await
+        .expect("Failed to validate streaming headers")
     }
 
     #[test_log::test(tokio::test)]

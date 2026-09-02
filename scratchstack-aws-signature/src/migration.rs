@@ -229,7 +229,8 @@
 //! request's headers against a body hash before the body arrives -- for answering
 //! `Expect: 100-continue`, or for S3-style `aws-chunked` uploads -- and returns a
 //! [`StreamingSignatureState`][crate::StreamingSignatureState] that validates each subsequent
-//! chunk. This is additive; nothing in 0.11 needs to change to use it.
+//! chunk. A chunk that fails poisons the state, so every later chunk fails too. This is
+//! additive; nothing in 0.11 needs to change to use it.
 //!
 //! # Migrating from 0.10 to 0.11
 //!
