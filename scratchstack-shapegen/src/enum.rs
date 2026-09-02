@@ -139,8 +139,9 @@ impl Enum {
 
     /// The `FromStr` implementation, accepting each variant's wire value.
     fn str_parse_impl(&self) -> TokenStream {
-        let name = ident(&self.base.rust_typename());
-        let invalid = format!("Invalid value '{{s}}' for {}", self.base.rust_typename());
+        let type_name = self.base.rust_typename();
+        let name = ident(&type_name);
+        let invalid = format!("Invalid value '{{s}}' for {type_name}");
         let arms = self.members.iter().map(|(member_name, member)| {
             let variant = ident(&member_name.to_pascal_case());
             let wire_value = Self::wire_value(member_name, member);
@@ -162,8 +163,9 @@ impl Enum {
 
     /// A `TryFrom<ShorthandValue>` implementation, so the enum can be parsed from CLI shorthand.
     fn shorthand_parser(&self) -> TokenStream {
-        let name = ident(&self.base.rust_typename());
-        let expected = format!("Expected a string for {} but got '{{value:?}}", self.base.rust_typename());
+        let type_name = self.base.rust_typename();
+        let name = ident(&type_name);
+        let expected = format!("Expected a string for {type_name} but got '{{value:?}}");
 
         quote! {
             #[cfg(feature = "clap")]

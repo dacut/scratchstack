@@ -254,9 +254,13 @@ Things that are deliberate, or at least known, so they are not rediscovered as b
   `operation` module. The allow is still load-bearing -- removing it produces one
   "improperly nested Markdown paragraph" warning -- but a targeted `doc_rewrite` would be the
   consistent fix.
-* **`rust_typename` still returns `String`.** Several implementations compute it (`crate::types::X`,
-  `Vec<T>`) rather than returning a cached field, and `Member` reaches through an
-  `Rc<RefCell<Shape>>`, so it cannot hand out a borrow. `smithy_name` has the same constraint. The
-  allocations are still not worth a `Cow` in the signature: they fall in the token-building phase,
-  which is 263 ms of a build where rustc spends 15 s on the result, and an optimized build script
-  cuts even that by roughly four.
+* **`rust_typename` and `smithy_name` return `String`, and should stay that way.** Generating the
+  IAM shapes calls them 7,131 and 1,915 times respectively -- about nine thousand short-lived
+  allocations, inside a 266 ms token-building phase, inside a build where rustc spends 15 s on the
+  result. There is nothing to win.
+  
+  Nor is there a clean signature that would avoid them. Primitives return constants and could hand
+  out `&'static str`, but `Structure` and `List` *compute* their names (`crate::types::X`,
+  `Vec<T>`), and `Member` reaches its shape through an `Rc<RefCell<Shape>>`, so it cannot return a
+  borrow at all. `Cow<'static, str>` would let only the primitives borrow while every other
+  implementation still allocated, in exchange for `Cow` at every call site.

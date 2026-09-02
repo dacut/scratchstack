@@ -186,9 +186,10 @@ impl Structure {
 
     /// Writes the main impl of this structure, which provides the builder entry point.
     fn rust_impl(&self) -> TokenStream {
-        let name = ident(&self.base.rust_typename());
-        let builder = ident(&format!("{}Builder", self.base.rust_typename()));
-        let builder_doc = format!(" Returns a [`{0}Builder`] for constructing a `{0}`.", self.base.rust_typename());
+        let type_name = self.base.rust_typename();
+        let name = ident(&type_name);
+        let builder = ident(&format!("{type_name}Builder"));
+        let builder_doc = format!(" Returns a [`{type_name}Builder`] for constructing a `{type_name}`.");
 
         let message_accessor = if self.base.traits.is_error() {
             quote! {
@@ -221,9 +222,10 @@ impl Structure {
     /// `Option<T>`, and `build()` validates before constructing, returning a typed
     /// `ValidationError` rather than an opaque builder error.
     fn builder(&self) -> TokenStream {
-        let name = ident(&self.base.rust_typename());
-        let builder = ident(&format!("{}Builder", self.base.rust_typename()));
-        let builder_doc = format!(" Builder for [`{}`].", self.base.rust_typename());
+        let type_name = self.base.rust_typename();
+        let name = ident(&type_name);
+        let builder = ident(&format!("{type_name}Builder"));
+        let builder_doc = format!(" Builder for [`{type_name}`].");
 
         let fields = self.members.iter().map(|(member_name, member)| {
             let field = ident(&member_name.to_rust_ident());
