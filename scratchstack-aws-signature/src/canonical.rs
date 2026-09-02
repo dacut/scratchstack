@@ -15,6 +15,7 @@ use {
         chronoutil::ParseISO8601,
         constants::*,
         crypto::{sha256, sha256_hex},
+        internal_service_error,
     },
     bon::Builder,
     bytes::Bytes,
@@ -232,7 +233,7 @@ impl CanonicalRequest {
         options: SignatureOptions,
     ) -> Result<Self, SignatureError> {
         if options.url_encode_form {
-            return Err(SignatureError::internal_service_error(
+            return Err(internal_service_error!(
                 "SignatureOptions::url_encode_form is set, but this request is being canonicalized from a body \
                  hash, so there is no body to fold into the query string",
             ));

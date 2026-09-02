@@ -2,7 +2,7 @@
 use {
     crate::{
         ExtractSessionToken, ExtractSessionTokenRequest, InvalidSessionTokenError, SessionTokenData, SignatureError,
-        constants::*,
+        constants::*, internal_service_error,
     },
     aes_gcm::{AeadCore, AeadInOut as _, Aes256Gcm, KeyInit as _, KeySizeUser, Nonce, aead::common::Generate as _},
     base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
@@ -103,9 +103,7 @@ impl FromStr for SessionTokenEncryptionAlgorithm {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "AES256-GCM" => Ok(Self::Aes256Gcm),
-            _ => Err(SignatureError::internal_service_error(format!(
-                "Unsupported session token encryption algorithm: {s}"
-            ))),
+            _ => Err(internal_service_error!("Unsupported session token encryption algorithm: {s}")),
         }
     }
 }
@@ -208,26 +206,18 @@ where
             .build();
         let key_info: SessionTokenEncryptionKeyInfo = self.key_service.call(stek_req).await?;
         if key_info.encryption_algorithm != SessionTokenEncryptionAlgorithm::Aes256Gcm {
-            return Err(SignatureError::internal_service_error_with_request_id(
-                format!(
-                    "Unsupported encryption algorithm for session token encryption key {}: {:?}",
-                    key_info.session_token_encryption_key_id, key_info.encryption_algorithm
-                ),
-                request.request_id(),
-            ));
+            return Err(internal_service_error!(request.request_id();
+                "Unsupported encryption algorithm for session token encryption key {}: {:?}",
+                key_info.session_token_encryption_key_id, key_info.encryption_algorithm));
         }
 
         let nonce = Nonce::try_from(nonce.as_slice())
             .map_err(|_| InvalidSessionTokenError::builder().request_id(request.request_id()).build())?;
         let associated_data = format!("AccountId={account_id}");
         let cipher = Aes256Gcm::new_from_slice(key_info.encryption_key.as_slice()).map_err(|e| {
-            SignatureError::internal_service_error_with_request_id(
-                format!(
-                    "Failed to create cipher for session token decryption with key {}: {e}",
-                    key_info.session_token_encryption_key_id
-                ),
-                request.request_id(),
-            )
+            internal_service_error!(request.request_id();
+                "Failed to create cipher for session token decryption with key {}: {e}",
+                key_info.session_token_encryption_key_id)
         })?;
 
         cipher
@@ -277,38 +267,38 @@ impl EncryptedSessionTokenData {
         account_id: &str,
     ) -> Result<Self, SignatureError> {
         if key_info.encryption_algorithm != SessionTokenEncryptionAlgorithm::Aes256Gcm {
-            return Err(SignatureError::internal_service_error(format!(
+            return Err(internal_service_error!(
                 "Unsupported encryption algorithm for session token encryption key {}: {:?}",
-                key_info.session_token_encryption_key_id, key_info.encryption_algorithm
-            )));
+                key_info.session_token_encryption_key_id,
+                key_info.encryption_algorithm
+            ));
         }
 
         if account_id.len() != ACCOUNT_ID_LENGTH || !account_id.bytes().all(|b| b.is_ascii_digit()) {
-            return Err(SignatureError::internal_service_error(format!(
-                "Invalid account ID for session token: {account_id}"
-            )));
+            return Err(internal_service_error!("Invalid account ID for session token: {account_id}"));
         }
 
         let cipher = Aes256Gcm::new_from_slice(key_info.encryption_key.as_slice()).map_err(|e| {
-            SignatureError::internal_service_error(format!(
+            internal_service_error!(
                 "Failed to create cipher for session token encryption with key {}: {e}",
                 key_info.session_token_encryption_key_id
-            ))
+            )
         })?;
 
         // Before encryption, this buffer holds the plaintext token data -- including the raw
         // secret key -- so it must be zeroized on every exit path. On success, the plaintext is
         // overwritten in place by the ciphertext.
-        let mut payload = Zeroizing::new(postcard::to_allocvec(session_token_data).map_err(|e| {
-            SignatureError::internal_service_error(format!("Failed to serialize session token data: {e}"))
-        })?);
+        let mut payload = Zeroizing::new(
+            postcard::to_allocvec(session_token_data)
+                .map_err(|e| internal_service_error!("Failed to serialize session token data: {e}"))?,
+        );
 
         let nonce = Nonce::<NonceSize>::generate_from_rng(&mut rand::rng());
         let associated_data = format!("AccountId={account_id}");
 
-        cipher.encrypt_in_place(&nonce, associated_data.as_bytes(), &mut *payload).map_err(|e| {
-            SignatureError::internal_service_error(format!("Failed to encrypt session token data: {e}"))
-        })?;
+        cipher
+            .encrypt_in_place(&nonce, associated_data.as_bytes(), &mut *payload)
+            .map_err(|e| internal_service_error!("Failed to encrypt session token data: {e}"))?;
 
         Ok(Self {
             key_id: key_info.session_token_encryption_key_id.clone(),
@@ -407,22 +397,18 @@ impl EncryptedSessionTokenData {
 
     /// Serialize this encrypted session token data into an opaque session token string.
     pub fn to_session_token(&self) -> Result<String, SignatureError> {
-        let key_id_length = u8::try_from(self.key_id.len()).map_err(|_| {
-            SignatureError::internal_service_error(format!(
-                "Session token encryption key id is too long: {}",
-                self.key_id
-            ))
-        })?;
+        let key_id_length = u8::try_from(self.key_id.len())
+            .map_err(|_| internal_service_error!("Session token encryption key id is too long: {}", self.key_id))?;
         let encrypted_payload_length = u32::try_from(self.encrypted_payload.len())
-            .map_err(|_| SignatureError::internal_service_error("Encrypted session token payload is too long"))?;
+            .map_err(|_| internal_service_error!("Encrypted session token payload is too long"))?;
         // `encrypt` always produces a nonce of exactly `NONCE_LENGTH` bytes; anything else means
         // this struct was assembled some other way and would not survive a round trip.
         let nonce_length = u8::try_from(self.nonce.len()).ok().filter(|len| usize::from(*len) == NONCE_LENGTH);
         let Some(nonce_length) = nonce_length else {
-            return Err(SignatureError::internal_service_error(format!(
+            return Err(internal_service_error!(
                 "Session token nonce must be {NONCE_LENGTH} bytes, got {}",
                 self.nonce.len()
-            )));
+            ));
         };
 
         let mut body = Vec::with_capacity(
@@ -438,7 +424,7 @@ impl EncryptedSessionTokenData {
 
         let session_token = format!("{}{}", CURRENT_TOKEN_VERSION as char, URL_SAFE_NO_PAD.encode(body));
         if session_token.len() > MAX_SESSION_TOKEN_SIZE {
-            return Err(SignatureError::internal_service_error("Session token is too long"));
+            return Err(internal_service_error!("Session token is too long"));
         }
 
         Ok(session_token)

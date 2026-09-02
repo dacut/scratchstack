@@ -404,7 +404,7 @@ mod tests {
             SignatureError,
             auth::{SigV4Authenticator, SigV4AuthenticatorResponse},
             constants::*,
-            service_for_signing_key_fn,
+            internal_service_error, service_for_signing_key_fn,
         },
         chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, NaiveTime, Utc},
         log::LevelFilter,
@@ -470,10 +470,7 @@ mod tests {
         if let Some(token) = request.session_token() {
             match token {
                 "internal-service-error" | "io-error" => {
-                    return Err(SignatureError::internal_service_error_with_request_id(
-                        "test internal service error",
-                        request.request_id(),
-                    ));
+                    return Err(internal_service_error!(request.request_id(); "test internal service error"));
                 }
                 "invalid" => {
                     return Err(InvalidClientTokenIdError::builder()
