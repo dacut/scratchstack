@@ -2619,6 +2619,8 @@ dependencies = [
  "num-traits",
  "percent-encoding",
  "postcard",
+ "proc-macro2",
+ "quote",
  "rand",
  "regex",
  "regex-automata",
@@ -2802,6 +2804,23 @@ dependencies = [
  "strum",
  "strum_macros",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "scratchstack-shapegen-conformance"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "bon",
+ "chrono",
+ "clap",
+ "regex",
+ "scratchstack-cli-utils",
+ "scratchstack-core",
+ "scratchstack-hakari",
+ "scratchstack-shapegen",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

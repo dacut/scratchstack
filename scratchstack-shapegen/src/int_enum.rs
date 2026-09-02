@@ -62,18 +62,28 @@ impl IntEnum {
                 panic!("intEnum {type_name} variant {member_name} has no integer smithy.api#enumValue")
             });
             let value = Literal::i64_unsuffixed(value);
-            let rename = if variant_name == *member_name {
-                quote!()
-            } else {
-                quote!(#[serde(rename = #member_name)])
-            };
 
             quote! {
                 #variant_docs
-                #rename
                 #variant = #value,
             }
         });
+
+        // An intEnum's wire value is its integer, so serde has to encode the discriminant rather
+        // than the variant name. `into`/`try_from` route it through `i64`; naming the variants with
+        // `serde(rename)` -- which is what this did -- made serde emit the *name* as a string.
+        let into_arms = self.members.keys().map(|member_name| {
+            let variant = ident(&member_name.to_pascal_case());
+            quote!(#name::#variant => #name::#variant as i64,)
+        });
+        let from_arms = self.members.iter().map(|(member_name, member)| {
+            let variant = ident(&member_name.to_pascal_case());
+            let value = Literal::i64_unsuffixed(
+                member.traits.enum_value_as_i64().expect("checked while building the variants"),
+            );
+            quote!(#value => ::std::result::Result::Ok(#name::#variant),)
+        });
+        let unknown = format!("Invalid value '{{value}}' for {type_name}");
 
         quote! {
             #docs
@@ -82,9 +92,29 @@ impl IntEnum {
                 ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq,
                 ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash, ::std::marker::Copy
             )]
+            #[serde(into = "i64", try_from = "i64")]
             #[non_exhaustive]
             pub enum #name {
                 #(#variants)*
+            }
+
+            impl ::std::convert::From<#name> for i64 {
+                fn from(value: #name) -> Self {
+                    match value {
+                        #(#into_arms)*
+                    }
+                }
+            }
+
+            impl ::std::convert::TryFrom<i64> for #name {
+                type Error = ::std::string::String;
+
+                fn try_from(value: i64) -> ::std::result::Result<Self, Self::Error> {
+                    match value {
+                        #(#from_arms)*
+                        _ => ::std::result::Result::Err(::std::format!(#unknown)),
+                    }
+                }
             }
         }
     }

@@ -1,0 +1,32 @@
+[package]
+name = "scratchstack-shapegen-conformance"
+description = "Compiles shapegen's output for every Smithy shape kind"
+publish = false
+
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[features]
+default = ["clap"]
+clap = ["dep:clap", "dep:scratchstack-cli-utils"]
+
+[build-dependencies]
+anyhow.workspace = true
+scratchstack-shapegen = { path = "../scratchstack-shapegen" }
+
+[dependencies]
+bon.workspace = true
+chrono = { workspace = true, features = ["serde"] }
+clap = { workspace = true, optional = true, features = ["derive"] }
+regex.workspace = true
+scratchstack-cli-utils = { path = "../scratchstack-cli-utils", optional = true }
+scratchstack-core.path = "../scratchstack-core"
+scratchstack-hakari.path = "../scratchstack-hakari"
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+serde_json.workspace = true
