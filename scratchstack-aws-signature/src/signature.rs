@@ -51,6 +51,18 @@ pub struct SignatureOptions {
     /// at the default value.
     #[builder(default = Duration::minutes(ALLOWED_MISMATCH_MINUTES))]
     pub allowed_mismatch: Duration,
+
+    /// The largest request body [`sigv4_validate_request`] will read into memory, in bytes.
+    /// This defaults to 10 MiB.
+    ///
+    /// The body has to be buffered before the signature can be checked, so this bound -- not the
+    /// signature -- is what keeps an unauthenticated caller from making the service buffer an
+    /// arbitrarily large request. A larger body is refused with
+    /// [`RequestEntityTooLarge`][crate::SignatureError::RequestEntityTooLarge] as soon as the
+    /// bound is passed. Services that accept large uploads should raise it, or validate them
+    /// through [`sigv4_validate_streaming_headers`], which buffers nothing.
+    #[builder(default = DEFAULT_MAX_BODY_SIZE)]
+    pub max_body_size: usize,
 }
 
 impl Default for SignatureOptions {
@@ -59,6 +71,7 @@ impl Default for SignatureOptions {
             s3: false,
             url_encode_form: false,
             allowed_mismatch: Duration::minutes(ALLOWED_MISMATCH_MINUTES),
+            max_body_size: DEFAULT_MAX_BODY_SIZE,
         }
     }
 }
@@ -76,6 +89,7 @@ impl SignatureOptions {
         s3: false,
         url_encode_form: true,
         allowed_mismatch: Duration::minutes(ALLOWED_MISMATCH_MINUTES),
+        max_body_size: DEFAULT_MAX_BODY_SIZE,
     };
 
     /// Create a `SignatureOptions` suitable for use with services that treat
@@ -102,6 +116,7 @@ impl SignatureOptions {
         s3: true,
         url_encode_form: false,
         allowed_mismatch: Duration::minutes(ALLOWED_MISMATCH_MINUTES),
+        max_body_size: DEFAULT_MAX_BODY_SIZE,
     };
 
     /// Update the allowed mismatch for signature validation. This is primarily used for testing,
@@ -116,6 +131,12 @@ impl SignatureOptions {
     /// `X-Amz-Expires` is still enforced.
     pub const fn with_any_timestamp(mut self) -> Self {
         self.allowed_mismatch = Duration::MAX;
+        self
+    }
+
+    /// Update the largest request body that will be read into memory for validation.
+    pub const fn with_max_body_size(mut self, max_body_size: usize) -> Self {
+        self.max_body_size = max_body_size;
         self
     }
 }
@@ -206,6 +227,12 @@ pub struct StreamingSignatureState {
 /// its token as the `X-Amz-Security-Token` query parameter, which is always part of the
 /// canonical query string.
 ///
+/// # Body size
+/// The body is read into memory, up to [`options.max_body_size`][SignatureOptions::max_body_size]
+/// bytes, before anything else is examined; a larger body is refused with
+/// [`RequestEntityTooLarge`][crate::SignatureError::RequestEntityTooLarge] as soon as the bound
+/// is passed.
+///
 /// # Errors
 /// This function returns a [`SignatureError`][crate::SignatureError] if the HTTP request is
 /// malformed or the request was not properly signed. The validation follows the
@@ -227,7 +254,7 @@ where
     S: SignedHeaderRequirements,
 {
     let (parts, body) = request.into_parts();
-    let body = body.into_request_bytes().await?;
+    let body = body.into_request_bytes(options.max_body_size).await?;
     let (canonical_request, parts, body) = CanonicalRequest::from_request_parts(parts, body, options)?;
     trace!("Created canonical request: {canonical_request:?}");
     let auth = canonical_request.get_authenticator(required_headers)?;
@@ -1096,6 +1123,40 @@ mod tests {
         assert!(!opt1.url_encode_form);
 
         assert_eq!(opt1.allowed_mismatch, Duration::seconds(900));
+        assert_eq!(opt1.max_body_size, 10 * 1024 * 1024);
+        assert_eq!(SignatureOptions::URL_ENCODE_FORM.max_body_size, 10 * 1024 * 1024);
+        assert_eq!(SignatureOptions::default().with_max_body_size(1).max_body_size, 1);
+        assert_eq!(SignatureOptions::builder().max_body_size(2).build().max_body_size, 2);
+    }
+
+    /// A body over `max_body_size` is refused before anything else about the request is looked
+    /// at -- here, before the missing Authorization header would be reported.
+    #[test_log::test(tokio::test)]
+    async fn test_oversized_body_rejected() {
+        let mut get_signing_key_svc = service_for_signing_key_fn(get_signing_key);
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/")
+            .extension(RequestId::new())
+            .header("host", "example.amazonaws.com")
+            .body(Bytes::from_static(b"0123456789abcdef!"))
+            .unwrap();
+
+        let e = sigv4_validate_request(
+            request,
+            TEST_REGION,
+            TEST_SERVICE,
+            &mut get_signing_key_svc,
+            *TEST_TIMESTAMP,
+            &NoSignedHeaderRequirements,
+            SignatureOptions::default().with_max_body_size(16),
+        )
+        .await
+        .expect_err("a 17-byte body must be refused under a 16-byte bound");
+        assert!(matches!(e, SignatureError::RequestEntityTooLarge(_)), "{e:?}");
+        assert_eq!(e.error_code(), "RequestEntityTooLarge");
+        assert_eq!(e.http_status(), 413);
+        assert_eq!(e.to_string(), "The request body exceeds the size this service accepts");
     }
 
     #[test_log::test(tokio::test)]

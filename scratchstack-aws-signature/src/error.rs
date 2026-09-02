@@ -297,6 +297,12 @@ signature_errors! {
     MissingRequiredHeader => MissingRequiredHeaderError, caller_facing, ERR_CODE_MISSING_REQUIRED_HEADER, StatusCode::BAD_REQUEST,
         MSG_MISSING_REQUIRED_HEADER;
 
+    /// The request body is larger than [`SignatureOptions::max_body_size`][crate::SignatureOptions::max_body_size]
+    /// allows. The body is refused before any of it is hashed, so an unauthenticated caller
+    /// cannot make the service buffer an arbitrarily large request.
+    RequestEntityTooLarge => RequestEntityTooLargeError, caller_facing, ERR_CODE_REQUEST_ENTITY_TOO_LARGE,
+        StatusCode::PAYLOAD_TOO_LARGE, MSG_REQUEST_ENTITY_TOO_LARGE;
+
     /// Signature did not match the calculated signature value. Example messages:
     /// * `The request signature we calculated does not match the signature you provided.`
     /// * `Signature expired: 20210502T144040Z is now earlier than 20210502T173143Z (20210502T174643Z - 15 min.)`

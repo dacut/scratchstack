@@ -504,6 +504,36 @@ mod tests {
         assert!(body_str.contains("123456789012")); // Check for account number in the response
     }
 
+    /// A body over the configured bound is answered with 413 before the signature is examined;
+    /// the get-vanilla request is well signed, so only the body is at fault here.
+    #[test_log::test(tokio::test)]
+    async fn test_oversized_body_rejected() {
+        let sigfn = service_fn(get_creds_fn);
+        let err_handler = XmlErrorMapper::new("service_namespace");
+        let signature_options = SignatureOptions {
+            allowed_mismatch: Duration::MAX,
+            max_body_size: 16,
+            ..Default::default()
+        };
+        let verifier = AwsSigV4VerifierLayer::builder()
+            .region("us-east-1")
+            .service("service")
+            .get_signing_key(sigfn)
+            .error_mapper(err_handler)
+            .signed_header_requirements(NoSignedHeaderRequirements)
+            .signature_options(signature_options)
+            .build();
+        let app = Router::new().route("/", get(hello_response)).layer(verifier);
+        let request =
+            Request::builder().method(Method::GET).uri("/").header("Host", "example.amazonaws.com").header("X-Amz-Date", "20150830T123600Z").header("Authorization", "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, SignedHeaders=host;x-amz-date, Signature=5fa00fa31553b73ebf1942676e86291e8372ff2a2260956d9b8aae1d763fbf31").body(Body::from(vec![b'x'; 17])).expect("Failed to build request");
+        let response = app.oneshot(request).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        let (_parts, body) = response.into_parts();
+        let body = body.collect().await.expect("Failed to convert response body to bytes").to_bytes();
+        let body_str = str::from_utf8(&body).expect("Failed to convert response body to string");
+        assert!(body_str.contains("<Error><Type>Sender</Type><Code>RequestEntityTooLarge</Code><Message>The request body exceeds the size this service accepts</Message></Error>"), "{body_str}");
+    }
+
     /// Test a mis-signed response. This uses the get-vanilla AWS SigV4 test case.
     #[test_log::test(tokio::test)]
     async fn test_missigned_request() {

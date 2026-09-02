@@ -30,6 +30,9 @@ pub(crate) const CHARSET: &str = "charset";
 /// Signature field for the access key
 pub(crate) const CREDENTIAL: &[u8] = b"Credential";
 
+/// The default bound on a request body read into memory for validation: 10 MiB.
+pub(crate) const DEFAULT_MAX_BODY_SIZE: usize = 10 * 1024 * 1024;
+
 /// The default size of a raw secret key in bytes before encoding.
 pub(crate) const DEFAULT_SECRET_KEY_RAW_SIZE: usize = 30;
 
@@ -81,6 +84,9 @@ pub(crate) const ERR_CODE_MISSING_AUTHENTICATION_TOKEN: &str = "MissingAuthentic
 
 /// Error code: MissingRequiredHeader
 pub(crate) const ERR_CODE_MISSING_REQUIRED_HEADER: &str = "MissingRequiredHeader";
+
+/// Error code: RequestEntityTooLarge
+pub(crate) const ERR_CODE_REQUEST_ENTITY_TOO_LARGE: &str = "RequestEntityTooLarge";
 
 /// Error code: SignatureDoesNotMatch
 pub(crate) const ERR_CODE_SIGNATURE_DOES_NOT_MATCH: &str = "SignatureDoesNotMatch";
@@ -243,6 +249,9 @@ pub(crate) const MSG_QUERY_STRING_MUST_INCLUDE_SIGNED_HEADERS: &str =
 
 /// Error message: `"Re-examine the query-string parameters."`
 pub(crate) const MSG_REEXAMINE_QUERY_STRING_PARAMS: &str = "Re-examine the query-string parameters.";
+
+/// Default error message for `RequestEntityTooLarge`.
+pub(crate) const MSG_REQUEST_ENTITY_TOO_LARGE: &str = "The request body exceeds the size this service accepts";
 
 /// Error message prefix for a presigned URL past its `X-Amz-Expires`: `"Request has expired"`
 pub(crate) const MSG_REQUEST_HAS_EXPIRED: &str = "Request has expired";

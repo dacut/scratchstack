@@ -158,6 +158,20 @@
 //! [`with_any_timestamp`][crate::SignatureOptions::with_any_timestamp] no longer disables this
 //! bound.
 //!
+//! ### Request bodies are bounded
+//! [`sigv4_validate_request`][crate::sigv4_validate_request] reads at most
+//! [`SignatureOptions::max_body_size`][crate::SignatureOptions::max_body_size] bytes of body --
+//! 10 MiB by default -- and refuses anything larger with the new
+//! [`RequestEntityTooLarge`][crate::SignatureError::RequestEntityTooLarge] (HTTP 413). The body
+//! has to be buffered before the signature can be checked, so without a bound an
+//! unauthenticated caller could make the service buffer as much as it liked. Services that
+//! accept larger uploads should raise the bound or validate them through
+//! [`sigv4_validate_streaming_headers`][crate::sigv4_validate_streaming_headers].
+//!
+//! To carry the bound, [`IntoRequestBytes::into_request_bytes`][crate::IntoRequestBytes::into_request_bytes]
+//! takes a `max_size` argument; an implementation for a body type of your own must stop
+//! reading at that size and return [`too_large()`][crate::too_large].
+//!
 //! ### `NO_ADDITIONAL_SIGNED_HEADERS` became a type
 //! The constant is replaced by [`NoSignedHeaderRequirements`][crate::NoSignedHeaderRequirements],
 //! a unit struct implementing [`SignedHeaderRequirements`][crate::SignedHeaderRequirements]:
