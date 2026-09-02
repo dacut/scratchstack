@@ -1,5 +1,5 @@
 use {
-    super::{Member, ShapeBase, ShapeInfo, SmithyModel, StrExt, Writers, status_code_const},
+    super::{CliShorthand, Member, ShapeBase, ShapeInfo, SmithyModel, StrExt, Writers, status_code_const},
     serde::{Deserialize, Serialize},
     std::{
         collections::BTreeMap,
@@ -15,6 +15,12 @@ pub struct Structure {
     /// Basic shape information for the `structure` type.
     #[serde(flatten)]
     pub base: ShapeBase,
+
+    /// Which shapes get CLI shorthand parsers.
+    ///
+    /// This is copied from the model during a call to `resolve`.
+    #[serde(skip, default)]
+    pub cli_shorthand: CliShorthand,
 
     /// The members of the structure. Each member name maps to exactly one member definition.
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
@@ -51,6 +57,7 @@ impl ShapeInfo for Structure {
         }
 
         self.xmlns.clone_from(&model.xmlns);
+        self.cli_shorthand = model.cli_shorthand;
     }
 
     /// Generates code that implements the structure.
@@ -78,14 +85,17 @@ impl ShapeInfo for Structure {
             self.write_rust_impl(&mut w.operation)?;
             self.write_builder(&mut w.operation)?;
 
-            if is_input {
+            if is_input && self.cli_shorthand.includes_operation_inputs() {
                 self.write_shorthand_parser(&mut w.operation)?;
             }
         } else {
             self.write_rust_decl(&mut w.types)?;
             self.write_rust_impl(&mut w.types)?;
             self.write_builder(&mut w.types)?;
-            self.write_shorthand_parser(&mut w.types)?;
+
+            if self.cli_shorthand.includes_value_types() {
+                self.write_shorthand_parser(&mut w.types)?;
+            }
         }
 
         Ok(())
@@ -120,11 +130,16 @@ impl Structure {
 
     /// Indicates whether this structure is eligible for CLI shorthand parsing.
     ///
-    /// To be eligible, the structure's members must all be primitive types, enums, lists of
-    /// primitive types, or lists of enums.
+    /// To be eligible, every member must be something the shorthand grammar can express: a
+    /// primitive, an enum, or a list of primitives.
+    ///
+    /// Lists of enums are deliberately excluded. The shorthand grammar could express them, and an
+    /// earlier unused predicate here accepted them, but the parser this gates has never actually
+    /// been emitted for one. Widening the rule would add a `FromStr` to two IAM request types, so
+    /// it is a change to make on purpose rather than in passing.
     #[must_use]
     pub fn is_cli_shorthand_parsable(&self) -> bool {
-        self.members.values().all(Member::is_struct_member_cli_shorthand_parseable)
+        self.members.values().all(|member| member.is_primitive() || member.is_enum() || member.is_list_of_primitives())
     }
 
     /// Writes the Rust declaration for the main body of this structure.
@@ -556,14 +571,8 @@ impl Structure {
     /// To be shorthand eligible, a structure must not have any nested structures or lists of
     /// structures.
     fn write_shorthand_parser(&self, w: &mut dyn Write) -> IoResult<()> {
-        for member in self.members.values() {
-            if !member.is_enum() && !member.is_primitive() && !member.is_list_of_primitives() {
-                let smithy_name = self.base.smithy_name();
-                if smithy_name == "com.amazonaws.iam#Tag" || smithy_name == "com.amazonaws.iam#ListAccountsFilter" {
-                    panic!()
-                }
-                return Ok(());
-            }
+        if !self.is_cli_shorthand_parsable() {
+            return Ok(());
         }
 
         let rust_typename = self.base.rust_typename();

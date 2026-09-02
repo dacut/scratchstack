@@ -62,7 +62,11 @@ serializer type.
 ### Volume proxies
 
 ```sh
-OUT=$(ls -d target/debug/build/scratchstack-shapes-iam-*/out | head -1)
+# Pick the out dir by the mtime of what is in it. Older cargo versions left behind
+# `build/<pkg>-<hash>/out` directories that `ls -t` will happily hand you instead, and comparing
+# against one of those quietly compares a snapshot with itself.
+OUT=$(find target/debug/build -name operation.rs -path '*/scratchstack-shapes-iam/*/out/*' \
+      -exec stat -f '%m %N' {} \; | sort -rn | head -1 | cut -d' ' -f2- | xargs dirname)
 wc -l $OUT/*.rs
 grep -c LazyLock $OUT/operation.rs
 ls -l target/debug/deps/libscratchstack_shapes_iam-*.rmeta
@@ -119,9 +123,24 @@ Three conclusions worth keeping:
 
 1. **Optimizing shapegen itself is not worth doing for build time.** Generation is 1.06 s of 28.47 s.
    String-allocation churn in the generator is a readability concern, not a performance one.
-2. **The `clap` feature is the largest single lever.** It defaults on and every consumer takes the
-   default, yet no consumer uses the generated shorthand impls. Building without it:
-   975,143 → 730,669 LLVM lines (−25%) and 18.78 s → 15.85 s of rustc time (−15.6%).
+2. **CLI shorthand parsers were the largest single lever**, and are the reason
+   [`CliShorthand`] defaults to value types only. Operation request structures were each getting
+   three `#[cfg(feature = "clap")]` parser impls -- 858 of the 1,041 generated -- for a syntax that
+   only ever supplies a *nested value* to a flag. No caller parsed one.
 3. **Macro expansion is already 23%.** Any change that adds proc-macro expansions to the generated
-   crate — for example replacing hand-rolled builders with ~1,000 `#[bon::bon]` expansions — must be
-   measured against this number before being adopted.
+   crate -- for example replacing hand-rolled builders with ~1,000 `#[bon::bon]` expansions -- must
+   be measured against this number before being adopted.
+
+## After restricting CLI shorthand to value types
+
+| Measure | Before | After | Change |
+|---|---|---|---|
+| Generated lines (IAM) | 94,120 | 80,160 | −14.8% |
+| `operation.rs` lines | 72,041 | 58,081 | −19.4% |
+| clap-gated impls | 1,041 | 183 | −82.4% |
+| LLVM lines | 975,143 | 768,592 | −21.2% |
+| LLVM copies | 23,951 | 18,434 | −23.0% |
+| rustc time | 18.78 s | 15.65 s | −16.7% |
+| Build-script run | 1.06 s | 0.33 s | −68.9% |
+
+The build-script figure also includes the buffered writers; the rest is having less to write.
