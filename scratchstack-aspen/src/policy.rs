@@ -396,6 +396,66 @@ mod tests {
         }
     }
 
+    /// A miscased action reaches the request through Action, NotAction, and Deny alike.
+    ///
+    /// These are the three shapes the end-to-end suite exercises against real IAM, in
+    /// tests/test_authz_action_case.py of scratchstack-e2e, where all three pass. Only the first
+    /// fails safe: a `NotAction` or a `Deny` that fails to match grants a call the policy was
+    /// written to withhold, and nothing about the document looks wrong when it happens.
+    #[test_log::test]
+    fn test_miscased_actions_reach_the_request() {
+        let context = |api: &str| {
+            let actor = PrincipalActor::from(
+                User::builder()
+                    .partition("aws")
+                    .account_id("123456789012")
+                    .path("/")
+                    .user_name("MyUser")
+                    .build()
+                    .unwrap(),
+            );
+            Context::builder().api(api).actor(actor).service("iam").session_data(SessionData::new()).build().unwrap()
+        };
+
+        // Action: a grant spelled in another case still grants.
+        let allow = Policy::from_str(
+            r#"{"Version": "2012-10-17", "Statement": [
+                {"Effect": "Allow", "Action": "iam:listusers", "Resource": "*"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(allow.evaluate(&context("ListUsers")).unwrap(), Decision::Allow);
+        assert_eq!(allow.evaluate(&context("ListRoles")).unwrap(), Decision::DefaultDeny);
+
+        // NotAction: an exclusion spelled in another case still excludes. This is the direction
+        // that fails open -- a non-match here is a grant.
+        let not_action = Policy::from_str(
+            r#"{"Version": "2012-10-17", "Statement": [
+                {"Effect": "Allow", "NotAction": "iam:listusers", "Resource": "*"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            not_action.evaluate(&context("ListUsers")).unwrap(),
+            Decision::DefaultDeny,
+            "a NotAction that fails to match grants the call it was written to withhold"
+        );
+        assert_eq!(not_action.evaluate(&context("ListRoles")).unwrap(), Decision::Allow);
+
+        // Deny: an explicit deny spelled in another case still denies, and the broad allow it
+        // carves out of stays in force elsewhere.
+        let deny = Policy::from_str(
+            r#"{"Version": "2012-10-17", "Statement": [
+                {"Effect": "Allow", "Action": "IAM:*", "Resource": "*"},
+                {"Effect": "Deny", "Action": "iam:listusers", "Resource": "*"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            deny.evaluate(&context("ListUsers")).unwrap(),
+            Decision::Deny,
+            "a Deny that fails to match leaves the broad allow it carves out of in force"
+        );
+        assert_eq!(deny.evaluate(&context("ListRoles")).unwrap(), Decision::Allow);
+    }
+
     #[test_log::test]
     fn test_bad_condition_variable() {
         let policy_str = indoc! { r#"
