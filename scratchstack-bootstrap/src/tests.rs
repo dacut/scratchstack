@@ -6222,7 +6222,7 @@ async fn test_session_token_encryption_keys(database: &TempDatabase) {
         .and_then(JsonValue::as_str)
         .expect("SessionTokenEncryptionKeyId should be a string");
     assert!(key_id.starts_with("STEK"), "Key id should start with STEK, got {key_id}");
-    assert_eq!(key.get("EncryptionAlgorithm").and_then(JsonValue::as_str), Some("Aes256Gcm"));
+    assert_eq!(key.get("EncryptionAlgorithm").and_then(JsonValue::as_str), Some("AES256-GCM"));
     assert_eq!(parse_dt(key, "IssueValidFrom"), "2030-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
     // Default issue lifetime is 24h, default accept extends by max session duration (12h) + 15m skew.
     assert_eq!(parse_dt(key, "IssueExpiresAt"), "2030-01-02T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
@@ -6449,7 +6449,7 @@ async fn test_session_token_encryption_keys(database: &TempDatabase) {
     let key =
         json.get("SessionTokenEncryptionKey").expect("SessionTokenEncryptionKey should be present in get response");
     assert_eq!(key.get("SessionTokenEncryptionKeyId").and_then(JsonValue::as_str), Some(key1_id.as_str()));
-    assert_eq!(key.get("EncryptionAlgorithm").and_then(JsonValue::as_str), Some("Aes256Gcm"));
+    assert_eq!(key.get("EncryptionAlgorithm").and_then(JsonValue::as_str), Some("AES256-GCM"));
     assert_eq!(parse_dt(key, "IssueValidFrom"), "2030-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
     assert_eq!(parse_dt(key, "IssueExpiresAt"), "2030-01-02T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
     assert_eq!(parse_dt(key, "AcceptExpiresAt"), "2030-01-02T12:15:00Z".parse::<DateTime<Utc>>().unwrap());
@@ -6508,7 +6508,7 @@ async fn test_session_token_encryption_keys(database: &TempDatabase) {
     let key =
         json.get("SessionTokenEncryptionKey").expect("SessionTokenEncryptionKey should be present in update response");
     assert_eq!(key.get("SessionTokenEncryptionKeyId").and_then(JsonValue::as_str), Some(key1_id.as_str()));
-    assert_eq!(key.get("EncryptionAlgorithm").and_then(JsonValue::as_str), Some("Aes256Gcm"));
+    assert_eq!(key.get("EncryptionAlgorithm").and_then(JsonValue::as_str), Some("AES256-GCM"));
     assert_eq!(parse_dt(key, "IssueValidFrom"), "2030-01-01T01:00:00Z".parse::<DateTime<Utc>>().unwrap());
     assert_eq!(parse_dt(key, "IssueExpiresAt"), "2030-01-02T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
     assert_eq!(parse_dt(key, "AcceptExpiresAt"), "2030-01-02T12:15:00Z".parse::<DateTime<Utc>>().unwrap());

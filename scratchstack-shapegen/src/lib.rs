@@ -361,6 +361,21 @@ mod tests {
     }
 
     #[test]
+    fn enum_serde_rename_uses_the_wire_value() {
+        let generated = generate(FIXTURE);
+
+        // `enumValue` is the wire value, so serde has to agree with `Display` and `FromStr`.
+        // Renaming to the Smithy member name instead made serialization emit a value the service
+        // never sends and deserialization reject the one it does.
+        assert!(contains(&generated.types, r#"#[serde(rename = "red")] Red,"#));
+        assert!(!contains(&generated.types, r#"#[serde(rename = "RED")]"#));
+
+        // The same value drives Display and FromStr.
+        assert!(contains(&generated.types, r#"Self::Red => f.write_str("red")"#));
+        assert!(contains(&generated.types, r#""red" => Ok(Self::Red)"#));
+    }
+
+    #[test]
     fn cli_shorthand_policy_decides_which_shapes_get_parsers() {
         // `All` reaches request structures; the default `ValueTypes` does not.
         let all = generate_with(FIXTURE, CliShorthand::All);
