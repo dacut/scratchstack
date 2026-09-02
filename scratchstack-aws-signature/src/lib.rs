@@ -16,7 +16,8 @@
 //! mock-AWS services or other services that need to use AWS SigV4, this _might_ be the right
 //! crate for you.
 //!
-//! Users migrating from version 0.10 to 0.11 should consult the [migration guide][migration].
+//! Users upgrading from an earlier version should consult the [migration guides][migration],
+//! which cover 0.11 to 0.12 and 0.10 to 0.11.
 //!
 //! # Feature flags
 //! This crate has one feature flag:
