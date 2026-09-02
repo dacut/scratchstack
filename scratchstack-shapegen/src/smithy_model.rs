@@ -1,5 +1,5 @@
 use {
-    crate::{Shape, ShapeInfo as _, Writers, primitive::SmithyUnit},
+    crate::{CliShorthand, Shape, ShapeInfo as _, Writers, primitive::SmithyUnit},
     serde::{Deserialize, Serialize},
     serde_json::Value,
     std::{
@@ -25,6 +25,12 @@ pub struct SmithyModel {
     /// A map of absolute shape IDs to shape definitions.
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub shapes: BTreeMap<String, Rc<RefCell<Shape>>>,
+
+    /// Which shapes get CLI shorthand parsers.
+    ///
+    /// Set before [`resolve`][Self::resolve], which hands it down to every shape that can emit one.
+    #[serde(skip, default)]
+    pub cli_shorthand: CliShorthand,
 
     /// A set of shape IDs that are reachable from the service's input shapes. This is used to
     /// generate try_from implementations from CLI input.

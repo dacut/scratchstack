@@ -94,25 +94,6 @@ impl Member {
         self.as_list().is_some()
     }
 
-    /// Indicates whether this structure member is eligible for CLI shorthand parsing.
-    ///
-    /// To be eligible, this member must be a primitive type, an enum, a list of a primitive type,
-    /// or a list of an enum type.
-    #[must_use]
-    pub(crate) fn is_struct_member_cli_shorthand_parseable(&self) -> bool {
-        self.is_primitive() || self.is_enum() || self.is_list_of_primitives() || self.is_list_of_enums()
-    }
-
-    /// Indicates whether this member is a list of enums.
-    #[must_use]
-    pub(crate) fn is_list_of_enums(&self) -> bool {
-        let Some(list) = self.as_list() else {
-            return false;
-        };
-
-        list.member.is_enum()
-    }
-
     /// Indicates whether this member is a list of primitive members.
     #[must_use]
     pub(crate) fn is_list_of_primitives(&self) -> bool {

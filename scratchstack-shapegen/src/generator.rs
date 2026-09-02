@@ -1,7 +1,9 @@
 //! The build-script entry point.
 
 use {
-    crate::{CommonErrors, DerivedStructs, DocRewrite, PatternRewrite, SmithyModel, Writers, merge_extension},
+    crate::{
+        CliShorthand, CommonErrors, DerivedStructs, DocRewrite, PatternRewrite, SmithyModel, Writers, merge_extension,
+    },
     bon::bon,
     std::{
         env::var_os,
@@ -40,6 +42,7 @@ use {
 /// ```
 #[derive(Clone, Debug)]
 pub struct ShapeGenerator {
+    cli_shorthand: CliShorthand,
     common_errors: CommonErrors,
     derived_structs: Option<DerivedStructs>,
     doc_rewrites: Vec<DocRewrite>,
@@ -60,6 +63,7 @@ impl ShapeGenerator {
     ///   that create or scan shapes are scoped to it.
     /// * `model`: path to the base Smithy model, relative to the crate root.
     /// * `extensions`: additional models merged over the base, in order.
+    /// * `cli_shorthand`: which shapes get CLI shorthand parsers. Defaults to value types only.
     /// * `common_errors`: errors to attach to every operation. Defaults to none.
     /// * `derived_structs`: a rule for deriving extra structures from operation inputs.
     /// * `doc_rewrites`: repairs to documentation rustdoc will not accept.
@@ -70,6 +74,7 @@ impl ShapeGenerator {
         #[builder(into)] namespace: String,
         #[builder(into)] model: PathBuf,
         #[builder(default)] extensions: Vec<PathBuf>,
+        #[builder(default)] cli_shorthand: CliShorthand,
         #[builder(default = CommonErrors::none())] common_errors: CommonErrors,
         derived_structs: Option<DerivedStructs>,
         #[builder(default)] doc_rewrites: Vec<DocRewrite>,
@@ -77,6 +82,7 @@ impl ShapeGenerator {
         out_dir: Option<PathBuf>,
     ) -> Self {
         Self {
+            cli_shorthand,
             common_errors,
             derived_structs,
             doc_rewrites,
@@ -128,6 +134,7 @@ impl ShapeGenerator {
 
         self.common_errors.apply(&mut model, &self.namespace);
 
+        model.cli_shorthand = self.cli_shorthand;
         model.resolve();
 
         let out_dir = match self.out_dir {

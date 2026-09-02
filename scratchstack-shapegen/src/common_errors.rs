@@ -7,7 +7,9 @@
 //! the common set once and it is attached to every operation in the model.
 
 use {
-    crate::{Member, Shape, ShapeBase, ShapeRef, SmithyModel, Structure, TraitMap, primitive::SmithyString},
+    crate::{
+        CliShorthand, Member, Shape, ShapeBase, ShapeRef, SmithyModel, Structure, TraitMap, primitive::SmithyString,
+    },
     serde_json::{Map as JsonMap, Value as JsonValue},
     std::{cell::RefCell, collections::BTreeMap, rc::Rc},
 };
@@ -258,7 +260,8 @@ impl CommonErrors {
                 traits,
             },
             members,
-            // Filled in when the model resolves.
+            // Both filled in when the model resolves.
+            cli_shorthand: CliShorthand::default(),
             xmlns: None,
         };
         model.shapes.insert(shape_id, Rc::new(RefCell::new(Shape::Structure(error_structure))));

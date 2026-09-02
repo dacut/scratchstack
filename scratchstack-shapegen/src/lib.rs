@@ -11,6 +11,7 @@ use {
 /// Primitive Smithy types.
 pub mod primitive;
 
+mod cli_shorthand;
 mod common_errors;
 mod r#enum;
 mod generator;
@@ -36,9 +37,9 @@ mod r#union;
 
 #[allow(unused_imports)]
 pub use {
-    common_errors::*, r#enum::*, generator::*, int_enum::*, length_constraint::*, list::*, map::*, member::*,
-    operation::*, range_constraint::*, resource::*, service::*, shape::*, shape_base::*, shape_ref::*, smithy_model::*,
-    str_ext::*, structure::*, trait_id::*, trait_map::*, transform::*, r#union::*,
+    cli_shorthand::*, common_errors::*, r#enum::*, generator::*, int_enum::*, length_constraint::*, list::*, map::*,
+    member::*, operation::*, range_constraint::*, resource::*, service::*, shape::*, shape_base::*, shape_ref::*,
+    smithy_model::*, str_ext::*, structure::*, trait_id::*, trait_map::*, transform::*, r#union::*,
 };
 
 /// Writers that will write generated code into the appropriate module.
