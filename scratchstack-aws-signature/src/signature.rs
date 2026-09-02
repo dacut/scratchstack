@@ -281,10 +281,13 @@ where
         request_id,
     )?;
 
-    let auth_response = SigV4AuthenticatorResponse::builder()
-        .principal(gsk_response.principal)
-        .session_data(gsk_response.session_data)
-        .build();
+    // Build the response through the same conversion the non-streaming path uses, rather than
+    // naming fields here: hand-building it is how session policies came to be dropped from this
+    // path, and would drop the next field added to GetSigningKeyResponse just as quietly. The
+    // signing key is needed below for chunk validation, so it is taken before the conversion
+    // consumes the response.
+    let signing_key = gsk_response.signing_key().clone();
+    let auth_response = SigV4AuthenticatorResponse::from(gsk_response);
 
     let mut credential_parts = auth.credential.splitn(2, '/');
     let Some(_keyid) = credential_parts.next() else {
@@ -303,7 +306,7 @@ where
     let response = StreamingSignatureState {
         auth_response,
         algorithm: algorithm.into(),
-        signing_key: gsk_response.signing_key,
+        signing_key,
         scope: scope.to_string(),
         request_timestamp: auth.request_timestamp.format(ISO8601_COMPACT_FORMAT).to_string(),
         prev_signature: auth.signature,
@@ -350,9 +353,10 @@ impl StreamingSignatureState {
 mod tests {
     use {
         crate::{
-            GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, NoSignedHeaderRequirements, SignatureError,
-            SignatureOptions, SignedHeaderRequirements, VecSignedHeaderRequirements, auth::SigV4AuthenticatorResponse,
-            constants::*, service_for_signing_key_fn, sigv4_validate_request, sigv4_validate_streaming_headers,
+            GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey, NoSignedHeaderRequirements, SessionPolicies,
+            SignatureError, SignatureOptions, SignedHeaderRequirements, VecSignedHeaderRequirements,
+            auth::SigV4AuthenticatorResponse, constants::*, service_for_signing_key_fn, sigv4_validate_request,
+            sigv4_validate_streaming_headers,
         },
         bytes::Bytes,
         chrono::{DateTime, Duration, NaiveDate, Utc},
@@ -402,6 +406,39 @@ mod tests {
     Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, \
     SignedHeaders=host;x-amz-date, \
     Signature=c9d5ea9f3f72853aea855b47ea873832890dbdd183b4468f858259531a5138ea";
+
+    /// Like `make_get_signing_key_fn`, but returns a session restricted by a managed policy --
+    /// the shape a temporary credential from `sts:AssumeRole` with `PolicyArns` produces.
+    fn make_restricted_get_signing_key_fn(
+        secret_key: &str,
+    ) -> impl Fn(
+        GetSigningKeyRequest,
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<GetSigningKeyResponse, SignatureError>> + Send>> {
+        let secret_key = secret_key.to_string();
+        move |req: GetSigningKeyRequest| {
+            let secret_key = secret_key.clone();
+            Box::pin(async move {
+                let k_secret = KSecretKey::from_str(secret_key.as_str()).unwrap();
+                let k_signing = k_secret.to_ksigning(req.request_date(), req.region(), req.service());
+                let principal = Principal::from(
+                    User::builder()
+                        .partition("aws")
+                        .account_id("123456789012")
+                        .path("/")
+                        .user_name("test")
+                        .build()
+                        .unwrap(),
+                );
+                let session_policies =
+                    SessionPolicies::builder().managed_policy_ids(vec!["ANPAEXAMPLEPOLICYID".to_string()]).build();
+                Ok(GetSigningKeyResponse::builder()
+                    .principal(principal)
+                    .signing_key(k_signing)
+                    .session_policies(session_policies)
+                    .build())
+            })
+        }
+    }
 
     fn make_get_signing_key_fn(
         secret_key: &str,
@@ -1066,6 +1103,68 @@ mod tests {
             .await
             .is_ok()
         );
+    }
+
+    /// A restricted temporary credential must stay restricted through the streaming path.
+    ///
+    /// `sigv4_validate_streaming_headers` used to hand-build its `SigV4AuthenticatorResponse`
+    /// from the principal and session data alone, so `session_policies` silently defaulted to
+    /// empty and a session restricted by `sts:AssumeRole` policies appeared unrestricted -- a
+    /// service gating on `is_empty()` would grant it the role's full permissions.
+    #[test_log::test(tokio::test)]
+    async fn test_streaming_headers_preserve_session_policies() {
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri("https://s3.amazonaws.com/examplebucket/chunkObject.txt")
+            .header("Host", "s3.amazonaws.com")
+            .header("x-amz-date", "20130524T000000Z")
+            .header("x-amz-storage-class", "REDUCED_REDUNDANCY")
+            .header("x-amz-content-sha256", "STREAMING-AWS4-HMAC-SHA256-PAYLOAD")
+            .header("Content-Encoding", "aws-chunked")
+            .header("x-amz-decoded-content-length", "66560")
+            .header("Content-Length", "66824")
+            .header("Authorization", "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request,SignedHeaders=content-encoding;content-length;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class,Signature=4f232c4386841ef735655705268965c44a0e4690baa4adea153f7db9fa80a0a9")
+            .body(Bytes::new())
+            .unwrap();
+
+        let timestamp = DateTime::from_naive_utc_and_offset(
+            NaiveDate::from_ymd_opt(2013, 5, 24).unwrap().and_hms_opt(0, 0, 0).unwrap(),
+            Utc,
+        );
+        let signature_options = SignatureOptions::S3.with_any_timestamp();
+        let mut get_signing_key_svc =
+            service_for_signing_key_fn(make_restricted_get_signing_key_fn("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"));
+        let mut required_headers = VecSignedHeaderRequirements::default();
+        for header in [
+            "content-encoding",
+            "content-length",
+            "host",
+            "x-amz-content-sha256",
+            "x-amz-date",
+            "x-amz-decoded-content-length",
+            "x-amz-storage-class",
+        ] {
+            required_headers.add_always_present(header);
+        }
+
+        let sig_state = sigv4_validate_streaming_headers(
+            &req,
+            "STREAMING-AWS4-HMAC-SHA256-PAYLOAD",
+            "AWS4-HMAC-SHA256-PAYLOAD",
+            "us-east-1",
+            "s3",
+            &mut get_signing_key_svc,
+            timestamp,
+            &required_headers,
+            signature_options,
+            RequestId::new(),
+        )
+        .await
+        .expect("streaming header validation should succeed");
+
+        let policies = sig_state.auth_response.session_policies();
+        assert!(!policies.is_empty(), "the session must not appear unrestricted");
+        assert_eq!(policies.managed_policy_ids(), ["ANPAEXAMPLEPOLICYID"]);
     }
 
     #[test_log::test(tokio::test)]
