@@ -1,8 +1,8 @@
 //! Default session token extractor implementation.
 use {
     crate::{
-        ExtractSessionToken, ExtractSessionTokenRequest, InternalServiceError, InvalidSessionTokenError,
-        SessionTokenData, SignatureError, constants::*,
+        ExtractSessionToken, ExtractSessionTokenRequest, InvalidSessionTokenError, SessionTokenData, SignatureError,
+        constants::*,
     },
     aes_gcm::{AeadCore, AeadInOut as _, Aes256Gcm, KeyInit as _, KeySizeUser, Nonce, aead::common::Generate as _},
     base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD},
@@ -103,10 +103,9 @@ impl FromStr for SessionTokenEncryptionAlgorithm {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "AES256-GCM" => Ok(Self::Aes256Gcm),
-            _ => {
-                log::error!("Unsupported session token encryption algorithm: {s}");
-                Err(InternalServiceError::builder().build().into())
-            }
+            _ => Err(SignatureError::internal_service_error(format!(
+                "Unsupported session token encryption algorithm: {s}"
+            ))),
         }
     }
 }
@@ -209,26 +208,26 @@ where
         };
         let key_info: SessionTokenEncryptionKeyInfo = self.key_service.call(stek_req).await?;
         if key_info.encryption_algorithm != SessionTokenEncryptionAlgorithm::Aes256Gcm {
-            log::error!(
-                "Unsupported encryption algorithm for session token encryption key {}: {:?}",
-                key_info.session_token_encryption_key_id,
-                key_info.encryption_algorithm,
-            );
-            return Err(InternalServiceError::builder().request_id(request.request_id).build().into());
+            return Err(SignatureError::internal_service_error_with_request_id(
+                format!(
+                    "Unsupported encryption algorithm for session token encryption key {}: {:?}",
+                    key_info.session_token_encryption_key_id, key_info.encryption_algorithm
+                ),
+                request.request_id,
+            ));
         }
 
         let nonce = Nonce::try_from(nonce.as_slice())
             .map_err(|_| InvalidSessionTokenError::builder().request_id(request.request_id).build())?;
         let associated_data = format!("AccountId={account_id}");
         let cipher = Aes256Gcm::new_from_slice(key_info.encryption_key.as_slice()).map_err(|e| {
-            log::error!(
-                "Failed to create cipher for session token decryption with key {}: {e}",
-                key_info.session_token_encryption_key_id,
-            );
-            SignatureError::internal_service_error(format!(
-                "Failed to create cipher for session token decryption with key {}: {e}",
-                key_info.session_token_encryption_key_id
-            ))
+            SignatureError::internal_service_error_with_request_id(
+                format!(
+                    "Failed to create cipher for session token decryption with key {}: {e}",
+                    key_info.session_token_encryption_key_id
+                ),
+                request.request_id,
+            )
         })?;
 
         cipher
@@ -278,11 +277,6 @@ impl EncryptedSessionTokenData {
         account_id: &str,
     ) -> Result<Self, SignatureError> {
         if key_info.encryption_algorithm != SessionTokenEncryptionAlgorithm::Aes256Gcm {
-            log::error!(
-                "Unsupported encryption algorithm for session token encryption key {}: {:?}",
-                key_info.session_token_encryption_key_id,
-                key_info.encryption_algorithm,
-            );
             return Err(SignatureError::internal_service_error(format!(
                 "Unsupported encryption algorithm for session token encryption key {}: {:?}",
                 key_info.session_token_encryption_key_id, key_info.encryption_algorithm
@@ -296,10 +290,6 @@ impl EncryptedSessionTokenData {
         }
 
         let cipher = Aes256Gcm::new_from_slice(key_info.encryption_key.as_slice()).map_err(|e| {
-            log::error!(
-                "Failed to create cipher for session token encryption with key {}: {e}",
-                key_info.session_token_encryption_key_id,
-            );
             SignatureError::internal_service_error(format!(
                 "Failed to create cipher for session token encryption with key {}: {e}",
                 key_info.session_token_encryption_key_id
@@ -310,7 +300,6 @@ impl EncryptedSessionTokenData {
         // secret key -- so it must be zeroized on every exit path. On success, the plaintext is
         // overwritten in place by the ciphertext.
         let mut payload = Zeroizing::new(postcard::to_allocvec(session_token_data).map_err(|e| {
-            log::error!("Failed to serialize session token data: {e}");
             SignatureError::internal_service_error(format!("Failed to serialize session token data: {e}"))
         })?);
 
@@ -318,7 +307,6 @@ impl EncryptedSessionTokenData {
         let associated_data = format!("AccountId={account_id}");
 
         cipher.encrypt_in_place(&nonce, associated_data.as_bytes(), &mut *payload).map_err(|e| {
-            log::error!("Failed to encrypt session token data: {e}");
             SignatureError::internal_service_error(format!("Failed to encrypt session token data: {e}"))
         })?;
 

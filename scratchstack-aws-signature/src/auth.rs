@@ -389,8 +389,8 @@ mod tests {
     use {
         super::duration_to_string,
         crate::{
-            ExpiredTokenError, GetSigningKeyRequest, GetSigningKeyResponse, InternalServiceError,
-            InvalidClientTokenIdError, KSecretKey, SignatureError,
+            ExpiredTokenError, GetSigningKeyRequest, GetSigningKeyResponse, InvalidClientTokenIdError, KSecretKey,
+            SignatureError,
             auth::{SigV4Authenticator, SigV4AuthenticatorResponse},
             constants::*,
             service_for_signing_key_fn,
@@ -459,7 +459,10 @@ mod tests {
         if let Some(token) = request.session_token() {
             match token {
                 "internal-service-error" | "io-error" => {
-                    return Err(InternalServiceError::builder().request_id(request.request_id()).build().into());
+                    return Err(SignatureError::internal_service_error_with_request_id(
+                        "test internal service error",
+                        request.request_id(),
+                    ));
                 }
                 "invalid" => {
                     return Err(InvalidClientTokenIdError::builder()

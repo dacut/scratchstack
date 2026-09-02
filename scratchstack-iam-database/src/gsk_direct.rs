@@ -14,10 +14,9 @@ use {
     scratchstack_aws_principal::{Principal, SessionData, SessionValue, User},
     scratchstack_aws_signature::{
         ExtractSessionTokenRequest, GetSessionTokenEncryptionKeyRequest, GetSigningKeyRequest, GetSigningKeyResponse,
-        InternalServiceError, InvalidClientTokenIdError, InvalidSessionTokenError, KSecretKey,
-        PostcardSessionTokenExtractor, SessionPolicies,
-        SessionTokenEncryptionAlgorithm as SigSessionTokenEncryptionAlgorithm, SessionTokenEncryptionKeyInfo,
-        SignatureError,
+        InvalidClientTokenIdError, InvalidSessionTokenError, KSecretKey, PostcardSessionTokenExtractor,
+        SessionPolicies, SessionTokenEncryptionAlgorithm as SigSessionTokenEncryptionAlgorithm,
+        SessionTokenEncryptionKeyInfo, SignatureError,
     },
     scratchstack_core::RequestId,
     scratchstack_shapes_iam::{error_meta::Error as IamError, types::SessionTokenEncryptionAlgorithm},
@@ -81,18 +80,24 @@ impl Service<GetSigningKeyRequest> for GetSigningKeyFromDatabase {
 
         Box::pin(async move {
             let mut conn = pool.acquire().await.map_err(|e| {
-                log::error!("{request_id}: Failed to acquire database connection: {e}");
-                InternalServiceError::builder().request_id(request_id).build()
+                SignatureError::internal_service_error_with_request_id(
+                    format!("Failed to acquire database connection: {e}"),
+                    request_id,
+                )
             })?;
             let mut tx = conn.begin().await.map_err(|e| {
-                log::error!("{request_id}: Failed to begin database transaction: {e}");
-                InternalServiceError::builder().request_id(request_id).build()
+                SignatureError::internal_service_error_with_request_id(
+                    format!("Failed to begin database transaction: {e}"),
+                    request_id,
+                )
             })?;
             let result =
                 get_signing_key_from_database(&mut tx, partition, region, service, req, get_stek_service).await?;
             tx.commit().await.map_err(|e| {
-                log::error!("{request_id}: Failed to commit database transaction: {e}");
-                InternalServiceError::builder().request_id(request_id).build()
+                SignatureError::internal_service_error_with_request_id(
+                    format!("Failed to commit database transaction: {e}"),
+                    request_id,
+                )
             })?;
             Ok(result)
         })
@@ -123,42 +128,51 @@ async fn get_session_token_encryption_key_from_database(
     request_id: RequestId,
 ) -> Result<SessionTokenEncryptionKeyInfo, SignatureError> {
     let mut conn = pool.acquire().await.map_err(|e| {
-        log::error!("{request_id}: Failed to acquire database connection: {e}");
-        InternalServiceError::builder().request_id(request_id).build()
+        SignatureError::internal_service_error_with_request_id(
+            format!("Failed to acquire database connection: {e}"),
+            request_id,
+        )
     })?;
     let mut tx = conn.begin().await.map_err(|e| {
-        log::error!("{request_id}: Failed to begin database transaction: {e}");
-        InternalServiceError::builder().request_id(request_id).build()
+        SignatureError::internal_service_error_with_request_id(
+            format!("Failed to begin database transaction: {e}"),
+            request_id,
+        )
     })?;
     let result = get_session_token_encryption_key(&mut tx, stek_id.as_str(), request_id).await.map_err(|e| {
         if matches!(e, IamError::ValidationError(_)) {
             SignatureError::InvalidSessionToken(InvalidSessionTokenError::builder().request_id(request_id).build())
         } else {
-            log::error!("{request_id}: Failed to get session token encryption key from database: {e}");
-            SignatureError::InternalServiceError(InternalServiceError::builder().request_id(request_id).build())
+            SignatureError::internal_service_error_with_request_id(
+                format!("Failed to get session token encryption key from database: {e}"),
+                request_id,
+            )
         }
     })?;
     let stek = result.session_token_encryption_key;
     tx.commit().await.map_err(|e| {
-        log::error!("{request_id}: Failed to commit database transaction: {e}");
-        InternalServiceError::builder().request_id(request_id).build()
+        SignatureError::internal_service_error_with_request_id(
+            format!("Failed to commit database transaction: {e}"),
+            request_id,
+        )
     })?;
 
     let algorithm = match stek.encryption_algorithm {
         SessionTokenEncryptionAlgorithm::Aes256Gcm => SigSessionTokenEncryptionAlgorithm::Aes256Gcm,
         _ => {
-            log::error!(
-                "{request_id}: Unsupported session token encryption algorithm: {:?}",
-                stek.encryption_algorithm
-            );
-            return Err(InternalServiceError::builder().request_id(request_id).build().into());
+            return Err(SignatureError::internal_service_error_with_request_id(
+                format!("Unsupported session token encryption algorithm: {:?}", stek.encryption_algorithm),
+                request_id,
+            ));
         }
     };
 
     let encoded_encryption_key = stek.encryption_key;
     let encryption_key = Zeroizing::new(URL_SAFE.decode(encoded_encryption_key.as_bytes()).map_err(|e| {
-        log::error!("{request_id}: Failed to decode encryption key from database value: {e}");
-        InternalServiceError::builder().request_id(request_id).build()
+        SignatureError::internal_service_error_with_request_id(
+            format!("Failed to decode encryption key from database value: {e}"),
+            request_id,
+        )
     })?);
 
     let result = SessionTokenEncryptionKeyInfo::builder()
@@ -225,10 +239,10 @@ async fn get_signing_key_from_database(
                         SqlxError::RowNotFound => {
                             InvalidClientTokenIdError::builder().request_id(req.request_id()).build().into()
                         }
-                        _ => {
-                            log::error!("{}: Database query failed: {}", req.request_id(), e);
-                            InternalServiceError::builder().request_id(req.request_id()).build().into()
-                        }
+                        _ => SignatureError::internal_service_error_with_request_id(
+                            format!("Database query failed: {e}"),
+                            req.request_id(),
+                        ),
                     });
                 }
             };
@@ -240,8 +254,10 @@ async fn get_signing_key_from_database(
                 .user_name(&row.user_name_cased)
                 .build()
                 .map_err(|e| {
-                    log::error!("{}: Failed to create User principal: {}", req.request_id(), e);
-                    InternalServiceError::builder().request_id(req.request_id()).build()
+                    SignatureError::internal_service_error_with_request_id(
+                        format!("Failed to create User principal: {e}"),
+                        req.request_id(),
+                    )
                 })?;
             let user_arn: Arn = (&user).into();
             let principal = Principal::from(user);

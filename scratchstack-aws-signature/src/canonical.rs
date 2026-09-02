@@ -229,7 +229,10 @@ impl CanonicalRequest {
         options: SignatureOptions,
     ) -> Result<Self, SignatureError> {
         if options.url_encode_form {
-            return Err(SignatureError::internal_service_error(MSG_INTERNAL_SERVICE_ERROR));
+            return Err(SignatureError::internal_service_error(
+                "SignatureOptions::url_encode_form is set, but this request is being canonicalized from a body \
+                 hash, so there is no body to fold into the query string",
+            ));
         }
         let canonical_path = canonicalize_uri_path(request.uri().path(), options.s3)?;
         let query_parameters = query_string_to_normalized_map(request.uri().query().unwrap_or(""))?;

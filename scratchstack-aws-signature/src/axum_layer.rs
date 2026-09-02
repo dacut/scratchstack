@@ -1,8 +1,8 @@
 use {
     crate::{
-        GetSigningKeyRequest, GetSigningKeyResponse, InternalServiceError, InvalidContentTypeError,
-        InvalidRequestMethodError, SignatureError, SignatureOptions, SignedHeaderRequirements,
-        canonical::get_content_type_and_charset, constants::*, sigv4_validate_request,
+        GetSigningKeyRequest, GetSigningKeyResponse, InvalidContentTypeError, InvalidRequestMethodError,
+        SignatureError, SignatureOptions, SignedHeaderRequirements, canonical::get_content_type_and_charset,
+        constants::*, sigv4_validate_request,
     },
     bon::Builder,
     chrono::Utc,
@@ -385,11 +385,13 @@ impl XmlErrorMapper {
 
 impl<SE: Display> ErrorMapper<SE> for XmlErrorMapper {
     fn map_service_error(self, e: SE, request_id: Option<RequestId>) -> Response<Body> {
-        // Swallow the error and return a generic internal service error response.
-        log::error!(
-            "{request_id:?}: underlying service returned an error, will convert to InternalServiceError with loss of information: {e}"
-        );
-        let err = InternalServiceError::builder().maybe_request_id(request_id).build();
+        // Swallow the error and return a generic internal service error response; the detail
+        // reaches the log only.
+        let detail = format!("Underlying service returned an error: {e}");
+        let err = match request_id {
+            Some(request_id) => SignatureError::internal_service_error_with_request_id(detail, request_id),
+            None => SignatureError::internal_service_error(detail),
+        };
         ErrorResponseEnvelope::new_with_xmlns(&err, &self.namespace).respond()
     }
 
@@ -407,8 +409,8 @@ mod tests {
     use {
         crate::{
             AwsSigV4VerifierLayer, ExpiredTokenError, GetSigningKeyRequest, GetSigningKeyResponse,
-            InternalServiceError, InvalidClientTokenIdError, KSecretKey, NoSignedHeaderRequirements, SessionPolicies,
-            SignatureError, SignatureOptions, XmlErrorMapper,
+            InvalidClientTokenIdError, KSecretKey, NoSignedHeaderRequirements, SessionPolicies, SignatureError,
+            SignatureOptions, XmlErrorMapper,
         },
         chrono::Duration,
         http_body_util::BodyExt,
@@ -793,7 +795,7 @@ mod tests {
         }
 
         fn call(&mut self, _req: GetSigningKeyRequest) -> Self::Future {
-            Box::pin(async move { Err(InternalServiceError::builder().build().into()) })
+            Box::pin(async move { Err(SignatureError::internal_service_error("test signing key service").into()) })
         }
     }
 }
