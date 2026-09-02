@@ -30,7 +30,7 @@
 //! # use scratchstack_aws_signature::{GetSigningKeyRequest, GetSigningKeyResponse, SignatureError};
 //! // 0.12
 //! async fn get_signing_key(req: GetSigningKeyRequest) -> Result<GetSigningKeyResponse, SignatureError>
-//! # { Err(SignatureError::internal_service_error("not implemented")) }
+//! # { Err(scratchstack_aws_signature::internal_service_error!("not implemented")) }
 //! ```
 //!
 //! `From<Box<dyn Error + Send + Sync>>` is still implemented, and recovers a `SignatureError`
@@ -64,20 +64,20 @@
 //! `InternalServiceError` no longer holds a `Box<dyn Error>` either. Both changes exist to stop
 //! service internals reaching a caller: the detail goes to the log and is dropped.
 //!
-//! Build one with [`SignatureError::internal_service_error`][crate::SignatureError::internal_service_error],
-//! or with [`internal_service_error_with_request_id`][crate::SignatureError::internal_service_error_with_request_id]
-//! when a request id is in hand -- that id is what ties the caller's response back to the logged
-//! detail. These are the only two constructors; there is no builder and no `Default`.
+//! Build one with the [`internal_service_error!`][crate::internal_service_error] macro, giving a
+//! request id first where one is in hand -- that id is what ties the caller's response back to
+//! the logged detail. The macro is the only constructor: `InternalServiceError` has no message
+//! field, no builder and no `Default`, so there is nothing to put internal detail into.
+//!
+//! It is a macro so that the log entry is attributed to the code that failed rather than to a
+//! single line inside this crate, which is what `RUST_LOG` filters on.
 //!
 //! ```
-//! # use scratchstack_aws_signature::SignatureError;
+//! # use scratchstack_aws_signature::{internal_service_error, SignatureError};
 //! # let query = "SELECT 1";
 //! # let request_id = "11111111-2222-3333-4444-555555555555";
 //! // The query text is logged, never returned.
-//! let e = SignatureError::internal_service_error_with_request_id(
-//!     format!("Database query failed: {query}"),
-//!     request_id,
-//! );
+//! let e: SignatureError = internal_service_error!(request_id; "Database query failed: {query}");
 //! assert_eq!(e.to_string(), "Internal Service Error");
 //! ```
 //!

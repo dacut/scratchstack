@@ -1,7 +1,6 @@
 use {
     crate::constants::*,
     bon::Builder,
-    log::error,
     scratchstack_core::{
         ProvideRequestId,
         error::{ErrorType, ProvideErrorMetadata},
@@ -19,13 +18,12 @@ use {
 /// The two arms differ only in what a caller may put in the message:
 ///
 /// * `caller_facing` -- the message describes what the caller did wrong and is safe to return, so
-///   the field is public and settable, a builder and a [`Default`] are derived, and
+///   it is stored in a public, settable field, a builder and a [`Default`] are derived, and
 ///   `From<String>`/`From<&str>` provide the terse form.
-/// * `internal` -- the message is fixed. There is no builder, no `Default`, no setter, no
-///   conversion, and no public message field, so the only way to build one is
-///   [`SignatureError::internal_service_error`] or
-///   [`SignatureError::internal_service_error_with_request_id`], both of which log the detail
-///   rather than carrying it. This is deliberate: internal detail reaching a caller is how
+/// * `internal` -- there is no message field at all. The message is a constant, so there is
+///   nothing to set and nothing that could carry internal detail out to a caller, and the struct
+///   holds only a request id. The sole way to build one is the [`internal_service_error!`] macro,
+///   which logs the detail instead. This is deliberate: internal detail reaching a caller is how
 ///   service internals leak.
 macro_rules! signature_error_struct {
     (caller_facing, $(#[$doc:meta])* $name:ident, $default_message:expr) => {
@@ -39,6 +37,14 @@ macro_rules! signature_error_struct {
             /// The request id associated with the request, if available.
             #[builder(into)]
             pub request_id: Option<String>,
+        }
+
+        impl $name {
+            /// The message describing this failure.
+            #[inline(always)]
+            fn message_str(&self) -> &str {
+                &self.message
+            }
         }
 
         impl Default for $name {
@@ -67,22 +73,22 @@ macro_rules! signature_error_struct {
         $(#[$doc])*
         #[derive(Clone, Debug, Eq, PartialEq)]
         pub struct $name {
-            /// The fixed internal-failure message. Private, so that this type cannot be built
-            /// outside this module and the detail is always logged instead of carried.
-            message: String,
-
             /// The request id associated with the request, if available.
             pub request_id: Option<String>,
         }
 
         impl $name {
-            /// Builds the error with its fixed message. Private on purpose: every caller goes
-            /// through the logging constructors on [`SignatureError`].
-            fn new(request_id: Option<String>) -> Self {
-                Self {
-                    message: $default_message.to_string(),
-                    request_id,
-                }
+            /// Builds the error. Not public: the [`internal_service_error!`] macro logs the
+            /// detail and then calls this, and is the only way in.
+            pub(crate) fn new(request_id: Option<String>) -> Self {
+                Self { request_id }
+            }
+
+            /// The fixed message for this failure. There is no field behind it, so no caller can
+            /// put anything else here.
+            #[inline(always)]
+            fn message_str(&self) -> &'static str {
+                $default_message
             }
         }
     };
@@ -114,7 +120,7 @@ macro_rules! signature_errors {
 
             impl Display for $name {
                 fn fmt(&self, f: &mut Formatter) -> FmtResult {
-                    f.write_str(&self.message)
+                    f.write_str(self.message_str())
                 }
             }
 
@@ -133,7 +139,7 @@ macro_rules! signature_errors {
 
                 #[inline(always)]
                 fn message(&self) -> Option<&str> {
-                    Some(&self.message)
+                    Some(self.message_str())
                 }
 
                 #[inline(always)]
@@ -179,7 +185,7 @@ macro_rules! signature_errors {
             /// which this delegates to.
             pub fn message(&self) -> Option<&str> {
                 match self {
-                    $( Self::$variant(e) => Some(e.message.as_str()), )*
+                    $( Self::$variant(e) => Some(e.message_str()), )*
                 }
             }
 
@@ -221,9 +227,11 @@ signature_errors! {
 
     /// Validation failed for a reason the caller cannot act on.
     ///
-    /// The underlying cause is written to the log where it occurs and is deliberately not carried
-    /// on the error, so that internal state cannot be returned to the caller. Construct these with
-    /// [`SignatureError::internal_service_error`] rather than directly.
+    /// This error has no message field: the message is a constant, and the underlying cause is
+    /// written to the log where it occurs rather than carried here, so internal state cannot be
+    /// returned to a caller. Build one with the
+    /// [`internal_service_error!`][crate::internal_service_error] macro, which is the only way
+    /// in.
     InternalServiceError => InternalServiceError, internal, ERR_CODE_INTERNAL_FAILURE, StatusCode::INTERNAL_SERVER_ERROR,
         MSG_INTERNAL_SERVICE_ERROR;
 
@@ -320,38 +328,63 @@ impl ProvideRequestId for SignatureError {
 
 impl Error for SignatureError {}
 
-impl SignatureError {
-    /// Records an internal failure.
-    ///
-    /// `detail` is written to the log and then dropped. The returned error carries only the
-    /// generic internal-failure message, so nothing about the service's internal state can reach
-    /// the caller.
-    ///
-    /// Prefer [`internal_service_error_with_request_id`][Self::internal_service_error_with_request_id]
-    /// wherever a request id is in hand: it is what ties the logged detail to the response the
-    /// caller received. Together these two are the only ways to build an
-    /// [`InternalServiceError`][SignatureError::InternalServiceError].
-    pub fn internal_service_error(detail: impl Display) -> Self {
-        error!("Internal service error: {detail}");
-        Self::InternalServiceError(InternalServiceError::new(None))
-    }
+/// Records an internal failure, logging the detail and returning an error that does not carry it.
+///
+/// The message the caller receives is a fixed string; everything you pass here goes to the log
+/// and nowhere else. That is the point of the type -- see
+/// [`InternalServiceError`][crate::InternalServiceError].
+///
+/// Takes `format!`-style arguments. A request id may be given first, separated by a semicolon;
+/// it is attached to both the log entry and the returned error, and is what ties a caller's
+/// complaint to the logged detail.
+///
+/// ```
+/// # use scratchstack_aws_signature::{internal_service_error, SignatureError};
+/// # let request_id = "11111111-2222-3333-4444-555555555555";
+/// # let query = "SELECT 1";
+/// let e: SignatureError = internal_service_error!("Session token is too long");
+/// let e: SignatureError = internal_service_error!(request_id; "Database query failed: {query}");
+///
+/// // The query text was logged; the caller sees none of it.
+/// assert_eq!(e.to_string(), "Internal Service Error");
+/// ```
+///
+/// This is a macro rather than a function so that the log entry is attributed to the code that
+/// failed. A function would log every internal failure in the workspace against its own line in
+/// this file, which breaks `RUST_LOG` filtering by module as well as the file and line in the
+/// log record.
+#[macro_export]
+macro_rules! internal_service_error {
+    ($request_id:expr; $($arg:tt)+) => {{
+        let request_id: ::std::string::String = ::std::convert::Into::into($request_id);
+        $crate::__private::log::error!(
+            "{}: Internal service error: {}", request_id, ::std::format_args!($($arg)+));
+        $crate::__private::internal_service_error(::std::option::Option::Some(request_id))
+    }};
+    ($($arg:tt)+) => {{
+        $crate::__private::log::error!("Internal service error: {}", ::std::format_args!($($arg)+));
+        $crate::__private::internal_service_error(::std::option::Option::None)
+    }};
+}
 
-    /// Records an internal failure that arose while handling a known request.
-    ///
-    /// Behaves as [`internal_service_error`][Self::internal_service_error], additionally tagging
-    /// the log entry with `request_id` and attaching it to the returned error. The request id is
-    /// the one piece of context that is safe to return: it is what lets an operator find the
-    /// logged detail from a caller's complaint.
-    pub fn internal_service_error_with_request_id(detail: impl Display, request_id: impl Into<String>) -> Self {
-        let request_id = request_id.into();
-        error!("{request_id}: Internal service error: {detail}");
-        Self::InternalServiceError(InternalServiceError::new(Some(request_id)))
+/// Implementation details of [`internal_service_error!`]. Not public API; no stability guarantee.
+#[doc(hidden)]
+pub mod __private {
+    pub use log;
+
+    use super::{InternalServiceError, SignatureError};
+
+    /// Builds the error *without* logging. Call [`internal_service_error!`] instead, which logs
+    /// the detail first; reaching this directly would produce an internal failure that no log
+    /// entry explains.
+    pub fn internal_service_error(request_id: Option<String>) -> SignatureError {
+        SignatureError::InternalServiceError(InternalServiceError::new(request_id))
     }
 }
 
 impl From<IOError> for SignatureError {
     fn from(e: IOError) -> SignatureError {
-        SignatureError::internal_service_error(e)
+        internal_service_error!("{e}")
     }
 }
 
@@ -359,7 +392,7 @@ impl From<Box<dyn Error + Send + Sync>> for SignatureError {
     fn from(e: Box<dyn Error + Send + Sync>) -> SignatureError {
         match e.downcast::<SignatureError>() {
             Ok(sig_err) => *sig_err,
-            Err(e) => SignatureError::internal_service_error(e),
+            Err(e) => internal_service_error!("{e}"),
         }
     }
 }
@@ -387,7 +420,7 @@ impl Error for KeyLengthError {}
 
 impl From<KeyLengthError> for SignatureError {
     fn from(e: KeyLengthError) -> SignatureError {
-        SignatureError::internal_service_error(format!("Secret key rejected: {e}"))
+        internal_service_error!("Secret key rejected: {e}")
     }
 }
 
@@ -457,7 +490,7 @@ mod tests {
     /// error that reaches the caller.
     #[test_log::test]
     fn internal_failures_do_not_carry_detail() {
-        let e = SignatureError::internal_service_error("connection string: postgres://user:hunter2@db/iam");
+        let e = internal_service_error!("connection string: postgres://user:hunter2@db/iam");
 
         assert_eq!(e.to_string(), "Internal Service Error");
         assert_eq!(ProvideErrorMetadata::message(&e), Some("Internal Service Error"));
@@ -470,10 +503,7 @@ mod tests {
     /// log, and the two constructors agree on everything the caller can see.
     #[test_log::test]
     fn internal_failures_carry_only_the_request_id() {
-        let e = SignatureError::internal_service_error_with_request_id(
-            "connection string: postgres://user:hunter2@db/iam",
-            "11111111-2222-3333-4444-555555555555",
-        );
+        let e = internal_service_error!("11111111-2222-3333-4444-555555555555"; "connection string: postgres://user:hunter2@db/iam");
 
         assert_eq!(e.to_string(), "Internal Service Error");
         assert_eq!(ProvideErrorMetadata::message(&e), Some("Internal Service Error"));
@@ -481,7 +511,7 @@ mod tests {
         assert_eq!(SignatureError::http_status(&e), 500);
         assert_eq!(ProvideRequestId::request_id(&e), Some("11111111-2222-3333-4444-555555555555"));
 
-        let without = SignatureError::internal_service_error("connection string: postgres://user:hunter2@db/iam");
+        let without = internal_service_error!("connection string: postgres://user:hunter2@db/iam");
         assert_eq!(e.to_string(), without.to_string());
         assert_eq!(ProvideRequestId::request_id(&without), None);
     }
@@ -509,7 +539,7 @@ mod tests {
 
         // Internal failures carry a request id like anything else -- it is the one piece of
         // context that is safe to return, and it is what ties the response to the log entry.
-        let e = SignatureError::internal_service_error("secret detail").with_request_id("abc");
+        let e = internal_service_error!("secret detail").with_request_id("abc");
         assert_eq!(ProvideRequestId::request_id(&e), Some("abc"));
     }
 }
