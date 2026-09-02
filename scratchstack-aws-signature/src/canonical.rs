@@ -44,12 +44,6 @@ use {
 lazy_static! {
     /// Multiple slash pattern for condensing URIs
     static ref MULTISLASH: Regex = Regex::new("//+").unwrap();
-
-    /// Multiple space pattern for condensing header values
-    static ref MULTISPACE: Regex = Regex::new("  +").unwrap();
-
-    /// Pattern for the start of an AWS4 signature Authorization header.
-    static ref AWS4_HMAC_SHA256_RE: Regex = Regex::new(r"\s*AWS4-HMAC-SHA256(?:\s+|$)").unwrap();
 }
 
 /// Authentication parameters extracted from the header or query string.
