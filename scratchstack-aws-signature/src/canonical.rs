@@ -743,13 +743,16 @@ fn parse_x_amz_expires(value: &str) -> Result<Duration, SignatureError> {
 }
 
 impl Debug for CanonicalRequest {
+    /// Formats the request with credential-bearing header and query-parameter values redacted;
+    /// see [`debug_headers`] and [`debug_query_parameters`].
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let headers = debug_headers(&self.headers);
+        let query_parameters = debug_query_parameters(&self.query_parameters);
 
         f.debug_struct("CanonicalRequest")
             .field("request_method", &self.request_method)
             .field("canonical_path", &self.canonical_path)
-            .field("query_parameters", &self.query_parameters)
+            .field("query_parameters", &query_parameters)
             .field("headers", &headers)
             .field("body_sha256", &self.body_sha256)
             .field("content_sha256_must_be_signed", &self.content_sha256_must_be_signed)
@@ -1110,6 +1113,26 @@ fn debug_headers(headers: &HashMap<String, Vec<Vec<u8>>>) -> String {
     // Remove the last newline.
     let result_except_last = &result[..result.len() - 1];
     String::from_utf8_lossy(result_except_last).to_string()
+}
+
+/// Copies query parameters for debugging, with the values of credential-bearing parameters --
+/// `X-Amz-Security-Token` and `X-Amz-Signature`, the query-string forms of the header values
+/// [`debug_headers`] redacts -- replaced by `<redacted>`.
+#[cfg_attr(doc, doc(cfg(feature = "unstable")))]
+#[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
+#[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
+fn debug_query_parameters(query_parameters: &HashMap<String, Vec<String>>) -> HashMap<&str, Vec<&str>> {
+    query_parameters
+        .iter()
+        .map(|(key, values)| {
+            let values = if key == QP_X_AMZ_SECURITY_TOKEN || key == QP_X_AMZ_SIGNATURE {
+                values.iter().map(|_| "<redacted>").collect()
+            } else {
+                values.iter().map(String::as_str).collect()
+            };
+            (key.as_str(), values)
+        })
+        .collect()
 }
 
 /// Get the content type and character set used in the body
@@ -2343,6 +2366,31 @@ mod tests {
         let debug = format!("{params:?}");
         assert!(!debug.contains("SECRET-TOKEN-MATERIAL"), "token leaked into Debug: {debug}");
         assert!(debug.contains("session_token: Some(\"<redacted>\")"), "{debug}");
+
+        // A presigned URL carries the same credentials as query parameters.
+        let uri = Uri::builder().path_and_query(PathAndQuery::from_static("/?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=1234&X-Amz-Date=20150830T123600Z&X-Amz-Expires=60&X-Amz-SignedHeaders=host&X-Amz-Signature=5678deadbeef&X-Amz-Security-Token=0SECRET-TOKEN-MATERIAL")).build().unwrap();
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri(uri)
+            .header("host", "example.amazonaws.com")
+            .body(Bytes::new())
+            .unwrap();
+        let (parts, body) = request.into_parts();
+
+        let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::default()).unwrap();
+        let debug = format!("{cr:?}");
+        assert!(!debug.contains("SECRET-TOKEN-MATERIAL"), "query token leaked into Debug: {debug}");
+        assert!(!debug.contains("5678deadbeef"), "query signature leaked into Debug: {debug}");
+        assert!(debug.contains("\"X-Amz-Security-Token\": [\"<redacted>\"]"), "{debug}");
+        assert!(debug.contains("\"X-Amz-Signature\": [\"<redacted>\"]"), "{debug}");
+        assert!(
+            debug.contains("\"X-Amz-Date\": [\"20150830T123600Z\"]"),
+            "ordinary parameters must still show: {debug}"
+        );
+
+        let params = cr.get_auth_parameters(&NoSignedHeaderRequirements).unwrap();
+        assert_eq!(params.session_token.as_deref(), Some("0SECRET-TOKEN-MATERIAL"));
+        assert!(!format!("{params:?}").contains("SECRET-TOKEN-MATERIAL"));
     }
 
     #[test_log::test]
