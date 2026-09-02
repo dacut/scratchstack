@@ -39,6 +39,9 @@ pub const NONCE_LENGTH: usize = NonceSize::USIZE;
 /// The length of the keys used for AES256-GCM encryption in bytes.
 pub const AES256_KEY_LENGTH: usize = <Aes256Gcm as KeySizeUser>::KeySize::USIZE;
 
+/// The length of the AES256-GCM authentication tag appended to an encrypted payload, in bytes.
+pub const TAG_LENGTH: usize = <Aes256Gcm as AeadCore>::TagSize::USIZE;
+
 /// The default Scratchstack implementation of the `ExtractSessionToken` trait that relies on the
 /// [Postcard][postcard] serialization format. This is enabled by the `default_session_token`
 /// feature.
@@ -310,12 +313,19 @@ impl EncryptedSessionTokenData {
         })?;
 
         // Before encryption, this buffer holds the plaintext token data -- including the raw
-        // secret key -- so it must be zeroized on every exit path. On success, the plaintext is
-        // overwritten in place by the ciphertext.
-        let mut payload = Zeroizing::new(
-            postcard::to_allocvec(session_token_data)
-                .map_err(|e| internal_service_error!("Failed to serialize session token data: {e}"))?,
-        );
+        // secret key -- so it must be zeroized on every exit path. It is sized up front for the
+        // plaintext plus the tag that encryption appends, so it is never reallocated: a
+        // reallocation would leave an unscrubbed copy of the plaintext on the heap, which is
+        // exactly what postcard::to_allocvec, growing its buffer as it goes, would do. On
+        // success, the plaintext is overwritten in place by the ciphertext.
+        let plaintext_len = postcard::experimental::serialized_size(session_token_data)
+            .map_err(|e| internal_service_error!("Failed to size session token data: {e}"))?;
+        let mut payload = Zeroizing::new(Vec::with_capacity(plaintext_len + TAG_LENGTH));
+        payload.resize(plaintext_len, 0);
+        let written = postcard::to_slice(session_token_data, &mut payload)
+            .map_err(|e| internal_service_error!("Failed to serialize session token data: {e}"))?
+            .len();
+        payload.truncate(written);
 
         let nonce = Nonce::<NonceSize>::generate_from_rng(&mut rand::rng());
         let associated_data = format!("AccountId={account_id}");
@@ -1015,6 +1025,10 @@ mod tests {
         };
 
         let encrypted = EncryptedSessionTokenData::encrypt(&data, &key_info, TEST_ACCOUNT_ID).unwrap();
+        assert_eq!(
+            encrypted.encrypted_payload.len(),
+            postcard::experimental::serialized_size(&data).unwrap() + TAG_LENGTH
+        );
         let session_token = encrypted.to_session_token().unwrap();
         let request_id = RequestId::new();
 
@@ -1035,6 +1049,18 @@ mod tests {
         assert_eq!(extracted.secret_key, data.secret_key);
         assert_eq!(extracted.tags, data.tags);
         assert_eq!(extracted.transitive_tag_keys, data.transitive_tag_keys);
+    }
+
+    /// `encrypt` sizes its plaintext buffer from `serialized_size` so that the buffer is never
+    /// reallocated (which would leave unscrubbed plaintext behind). That only holds if the size
+    /// is exact.
+    #[test_log::test]
+    fn test_serialized_size_is_exact() {
+        let data = test_session_token_data();
+        assert_eq!(
+            postcard::experimental::serialized_size(&data).unwrap(),
+            postcard::to_allocvec(&data).unwrap().len()
+        );
     }
 
     #[tokio::test]

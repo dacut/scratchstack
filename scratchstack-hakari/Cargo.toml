@@ -19,6 +19,7 @@ anstream = { version = "1" }
 axum = { version = "0.8", features = ["http2", "macros"] }
 base64 = { version = "0.22" }
 bitflags = { version = "2", default-features = false, features = ["serde"] }
+block-buffer = { version = "0.12", default-features = false, features = ["zeroize"] }
 byteorder = { version = "1", default-features = false, features = ["std"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4", features = ["derive", "env"] }
@@ -26,7 +27,7 @@ clap_builder = { version = "4", default-features = false, features = ["color", "
 crypto-common-6f8ce4dd05d13bba = { package = "crypto-common", version = "0.2", default-features = false, features = ["getrandom"] }
 crypto-common-c65f7effa3be6d31 = { package = "crypto-common", version = "0.1", default-features = false, features = ["std"] }
 digest-93f6ce9d446188ac = { package = "digest", version = "0.10", features = ["std"] }
-digest-a6292c17cd707f01 = { package = "digest", version = "0.11", features = ["alloc", "mac", "oid"] }
+digest-a6292c17cd707f01 = { package = "digest", version = "0.11", features = ["alloc", "mac", "oid", "zeroize"] }
 env_filter = { version = "2", default-features = false, features = ["regex", "std"] }
 env_logger = { version = "0.11" }
 form_urlencoded = { version = "1" }
@@ -36,6 +37,7 @@ futures-sink = { version = "0.3" }
 futures-task = { version = "0.3", default-features = false, features = ["std"] }
 futures-util = { version = "0.3", features = ["channel", "io", "sink"] }
 hashbrown = { version = "0.17" }
+hmac = { version = "0.13", default-features = false, features = ["zeroize"] }
 hyper = { version = "1", features = ["http1", "http2", "server"] }
 hyper-util = { version = "0.1", features = ["http1", "http2", "server", "service", "tokio"] }
 libsqlite3-sys = { version = "0.37", default-features = false, features = ["bundled", "pkg-config", "unlock_notify", "vcpkg"] }
@@ -54,7 +56,7 @@ serde = { version = "1", features = ["alloc", "derive", "rc"] }
 serde_core = { version = "1", features = ["alloc", "rc"] }
 serde_json = { version = "1", features = ["raw_value"] }
 sha2-93f6ce9d446188ac = { package = "sha2", version = "0.10" }
-sha2-a6292c17cd707f01 = { package = "sha2", version = "0.11" }
+sha2-a6292c17cd707f01 = { package = "sha2", version = "0.11", features = ["zeroize"] }
 slab = { version = "0.4" }
 smallvec = { version = "1", default-features = false, features = ["const_new", "serde"] }
 sqlx = { version = "0.9", features = ["all-databases", "chrono", "runtime-tokio", "tls-rustls", "tls-rustls-aws-lc-rs"] }
@@ -80,6 +82,7 @@ anstream = { version = "1" }
 axum = { version = "0.8", features = ["http2", "macros"] }
 base64 = { version = "0.22" }
 bitflags = { version = "2", default-features = false, features = ["serde"] }
+block-buffer = { version = "0.12", default-features = false, features = ["zeroize"] }
 byteorder = { version = "1", default-features = false, features = ["std"] }
 cc = { version = "1", default-features = false, features = ["parallel"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
@@ -88,7 +91,7 @@ clap_builder = { version = "4", default-features = false, features = ["color", "
 crypto-common-6f8ce4dd05d13bba = { package = "crypto-common", version = "0.2", default-features = false, features = ["getrandom"] }
 crypto-common-c65f7effa3be6d31 = { package = "crypto-common", version = "0.1", default-features = false, features = ["std"] }
 digest-93f6ce9d446188ac = { package = "digest", version = "0.10", features = ["std"] }
-digest-a6292c17cd707f01 = { package = "digest", version = "0.11", features = ["alloc", "mac", "oid"] }
+digest-a6292c17cd707f01 = { package = "digest", version = "0.11", features = ["alloc", "mac", "oid", "zeroize"] }
 env_filter = { version = "2", default-features = false, features = ["regex", "std"] }
 env_logger = { version = "0.11" }
 form_urlencoded = { version = "1" }
@@ -98,6 +101,7 @@ futures-sink = { version = "0.3" }
 futures-task = { version = "0.3", default-features = false, features = ["std"] }
 futures-util = { version = "0.3", features = ["channel", "io", "sink"] }
 hashbrown = { version = "0.17" }
+hmac = { version = "0.13", default-features = false, features = ["zeroize"] }
 hyper = { version = "1", features = ["http1", "http2", "server"] }
 hyper-util = { version = "0.1", features = ["http1", "http2", "server", "service", "tokio"] }
 libsqlite3-sys = { version = "0.37", default-features = false, features = ["bundled", "pkg-config", "unlock_notify", "vcpkg"] }
@@ -116,7 +120,7 @@ serde = { version = "1", features = ["alloc", "derive", "rc"] }
 serde_core = { version = "1", features = ["alloc", "rc"] }
 serde_json = { version = "1", features = ["raw_value"] }
 sha2-93f6ce9d446188ac = { package = "sha2", version = "0.10" }
-sha2-a6292c17cd707f01 = { package = "sha2", version = "0.11" }
+sha2-a6292c17cd707f01 = { package = "sha2", version = "0.11", features = ["zeroize"] }
 slab = { version = "0.4" }
 smallvec = { version = "1", default-features = false, features = ["const_new", "serde"] }
 sqlx = { version = "0.9", features = ["all-databases", "chrono", "runtime-tokio", "tls-rustls", "tls-rustls-aws-lc-rs"] }
