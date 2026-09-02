@@ -183,7 +183,9 @@
 //! * `default_session_token`: `PostcardSessionTokenExtractor`,
 //!   an encrypted session token format for services issuing their own temporary credentials.
 //!
-//! Depending on this crate with `default-features = false` gets the 0.11 surface.
+//! Turning both off with `default-features = false` narrows the crate to roughly the surface
+//! 0.11 had. It does not restore the 0.11 *API*: every change above -- the error type, the bon
+//! builders, the request ids, `NoSignedHeaderRequirements` -- applies whatever the features.
 //!
 //! ### Streaming validation
 //! [`sigv4_validate_streaming_headers`][crate::sigv4_validate_streaming_headers] validates a
