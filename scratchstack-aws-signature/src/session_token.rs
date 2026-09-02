@@ -8,7 +8,10 @@ use {
     scratchstack_aws_principal::{Principal, SessionData},
     scratchstack_core::RequestId,
     serde::{Deserialize, Serialize},
-    std::collections::{HashMap, HashSet},
+    std::{
+        collections::{HashMap, HashSet},
+        fmt::{Debug, Formatter, Result as FmtResult},
+    },
     tower::Service,
 };
 
@@ -121,7 +124,7 @@ impl SessionPolicies {
 }
 
 /// Request for extracting session token data from an opaque session token string.
-#[derive(Builder, Clone, Debug)]
+#[derive(Builder, Clone)]
 pub struct ExtractSessionTokenRequest {
     /// The opaque session token string.
     #[builder(into)]
@@ -130,6 +133,31 @@ pub struct ExtractSessionTokenRequest {
     /// The request id for logging and tracing.
     #[builder(into)]
     request_id: RequestId,
+}
+
+impl ExtractSessionTokenRequest {
+    /// Returns the opaque session token string to be decoded.
+    #[inline(always)]
+    pub fn session_token(&self) -> &str {
+        &self.session_token
+    }
+
+    /// Returns the request id for logging and tracing.
+    #[inline(always)]
+    pub fn request_id(&self) -> RequestId {
+        self.request_id
+    }
+}
+
+impl Debug for ExtractSessionTokenRequest {
+    /// Formats the request with the session token redacted: the token is bearer-credential
+    /// material and must not end up in logs.
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("ExtractSessionTokenRequest")
+            .field("session_token", &"<redacted>")
+            .field("request_id", &self.request_id)
+            .finish()
+    }
 }
 
 /// Trait for extracting data from an opaque session token.
@@ -186,3 +214,34 @@ mod default_session_token;
 
 #[cfg(feature = "default_session_token")]
 pub use default_session_token::*;
+
+#[cfg(test)]
+mod tests {
+    use {super::ExtractSessionTokenRequest, scratchstack_core::RequestId};
+
+    /// `ExtractSessionToken` is a public extension point, so an implementation living outside this
+    /// crate has to be able to read the request it is handed. These accessors are the only way to
+    /// do that -- the fields are private.
+    #[test_log::test]
+    fn extract_session_token_request_is_readable() {
+        let request_id = RequestId::new();
+        let req = ExtractSessionTokenRequest::builder().session_token("0abcdef").request_id(request_id).build();
+
+        assert_eq!(req.session_token(), "0abcdef");
+        assert_eq!(req.request_id(), request_id);
+    }
+
+    /// The session token is bearer-credential material. A derived `Debug` would print it in full,
+    /// putting a live token into any log line that formats this request.
+    #[test_log::test]
+    fn extract_session_token_request_redacts_the_token() {
+        let req = ExtractSessionTokenRequest::builder()
+            .session_token("0SECRET-TOKEN-MATERIAL")
+            .request_id(RequestId::new())
+            .build();
+
+        let debug = format!("{req:?}");
+        assert!(!debug.contains("SECRET-TOKEN-MATERIAL"), "token leaked into Debug: {debug}");
+        assert!(debug.contains("<redacted>"), "expected redaction marker: {debug}");
+    }
+}
