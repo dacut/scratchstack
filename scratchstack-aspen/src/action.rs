@@ -110,10 +110,16 @@ impl Action {
     /// globbed against this action's pattern, in which `*` stands for any run of characters --
     /// including none, and including a newline -- and `?` for any single one.
     ///
-    /// Both comparisons are case-sensitive, so `s3:GetObject` does not cover a request for
-    /// `s3:getobject`. AWS matches action names without regard to case, so a policy written
-    /// against AWS evaluates more narrowly here, and a `NotAction` statement -- which inverts a
-    /// non-match -- correspondingly more widely. This is a known divergence.
+    /// Neither comparison regards case, matching AWS: `s3:GetObject` covers a request for
+    /// `s3:getobject`, and `IAM:LIST*` covers `iam:ListUsers`. That is the direction that has to
+    /// be right, because `NotAction` inverts a non-match -- a matcher too strict here would
+    /// withhold what a policy grants and grant what a policy withholds.
+    ///
+    /// Only ASCII case is folded. An action is ASCII by construction -- [`Action::new`] rejects
+    /// anything else -- so folding further would buy nothing, and would let a request whose API
+    /// is spelled with a non-ASCII lookalike satisfy an ASCII pattern. The regex crate's own
+    /// case-insensitive mode folds by Unicode, under which `getkey` matches a `getKey` carrying
+    /// U+212A KELVIN SIGN in place of the `k`; that is not a match AWS would make.
     pub fn matches(&self, service: &str, api: &str) -> bool {
         match self {
             Self::Any => true,
@@ -121,11 +127,8 @@ impl Action {
                 service: self_service,
                 api: self_api,
             }) => {
-                if self_service == service {
-                    regex_from_glob(self_api, false).is_match(api)
-                } else {
-                    false
-                }
+                self_service.eq_ignore_ascii_case(service)
+                    && regex_from_glob(&self_api.to_ascii_lowercase(), false).is_match(&api.to_ascii_lowercase())
             }
         }
     }
@@ -289,27 +292,60 @@ mod tests {
         std::{panic::catch_unwind, str::FromStr},
     };
 
-    /// Action matching is case-sensitive, on the service and on the API alike.
+    /// Action matching ignores case, on the service and on the API alike, which is what AWS does.
     ///
-    /// AWS is not, so this pins a known divergence rather than a decision. A change here changes
-    /// authorization outcomes in both directions: a narrower `Action`, and a wider `NotAction`.
+    /// The direction that matters is the inverted one: `NotAction` applies to everything it does
+    /// not name, so a matcher too strict to see `iam:listusers` as `ListUsers` would grant the
+    /// very call the statement was written to withhold. An `Action` too strict merely denies
+    /// something the policy meant to allow, which is visible the first time anyone runs it.
     #[test_log::test]
-    fn test_matching_is_case_sensitive() {
+    fn test_matching_ignores_ascii_case() {
         let action = Action::from_str("s3:GetObject").unwrap();
-        assert!(action.matches("s3", "GetObject"));
-        assert!(!action.matches("s3", "getobject"));
-        assert!(!action.matches("s3", "GETOBJECT"));
-        assert!(!action.matches("S3", "GetObject"));
+        for (service, api) in [
+            ("s3", "GetObject"),
+            ("s3", "getobject"),
+            ("s3", "GETOBJECT"),
+            ("s3", "gEtObJeCt"),
+            ("S3", "GetObject"),
+            ("S3", "GETOBJECT"),
+        ] {
+            assert!(action.matches(service, api), "s3:GetObject should cover {service}:{api}");
+        }
 
-        // The same holds through a wildcard: the literal part of the pattern still must match
-        // exactly.
-        let pattern = Action::from_str("s3:Get*").unwrap();
-        assert!(pattern.matches("s3", "GetObject"));
-        assert!(pattern.matches("s3", "Get"));
-        assert!(!pattern.matches("s3", "getObject"));
+        // A different action is still a different action.
+        assert!(!action.matches("s3", "PutObject"));
+        assert!(!action.matches("s3", "getobjects"));
+        assert!(!action.matches("ec2", "GetObject"));
 
-        // Action::Any is unaffected -- it covers everything without comparing anything.
+        // The same holds through a wildcard, whichever side the case sits on.
+        for spelling in ["s3:Get*", "s3:get*", "s3:GET*", "S3:Get*"] {
+            let pattern = Action::from_str(spelling).unwrap();
+            assert!(pattern.matches("s3", "GetObject"), "{spelling} should cover s3:GetObject");
+            assert!(pattern.matches("S3", "getobject"), "{spelling} should cover S3:getobject");
+            assert!(!pattern.matches("s3", "PutObject"), "{spelling} should not cover s3:PutObject");
+        }
+
+        // Action::Any covers everything without comparing anything.
         assert!(Action::Any.matches("S3", "getobject"));
+    }
+
+    /// Only ASCII case is folded, so a non-ASCII lookalike does not satisfy an ASCII pattern.
+    ///
+    /// An action is ASCII by construction, and a request that reached the evaluator through
+    /// `Context` is too, so this is reachable only by calling `matches` directly. It is asserted
+    /// because the obvious implementation -- handing `case_insensitive` to the regex builder --
+    /// folds by Unicode, under which U+212A KELVIN SIGN folds to `k` and the match would succeed.
+    #[test_log::test]
+    fn test_matching_folds_ascii_case_only() {
+        let action = Action::from_str("iam:GetKey").unwrap();
+        assert!(action.matches("iam", "getkey"));
+        assert!(!action.matches("iam", "get\u{212A}ey"), "U+212A KELVIN SIGN must not fold to `k`");
+        assert!(!action.matches("i\u{212A}m", "getkey"), "the service must not fold either");
+
+        // The long s folds to `s` under Unicode too; it must not here.
+        let action = Action::from_str("iam:Gets").unwrap();
+        assert!(action.matches("iam", "GETS"));
+        assert!(!action.matches("iam", "get\u{017F}"));
     }
 
     #[test_log::test]
