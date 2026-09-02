@@ -19,6 +19,7 @@ name = "scratchstack_aws_signature"
 default = ["axum", "default_session_token"]
 axum = ["dep:quick-xml", "scratchstack-core/axum"]
 default_session_token = ["dep:aes", "dep:aes-gcm", "dep:postcard"]
+sensitive-logging = ["scratchstack-core/sensitive-logging"]
 unstable = []
 
 [dependencies]
