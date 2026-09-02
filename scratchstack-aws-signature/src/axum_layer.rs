@@ -24,7 +24,7 @@ use {
     tower::{Layer, Service, ServiceExt},
 };
 
-/// AWSSigV4VerifierLayer implements a Tower layer that produces an [`AwsSigV4VerifierMiddleware`] for authenticating
+/// [`AwsSigV4VerifierLayer`] implements a Tower layer that produces an [`AwsSigV4VerifierMiddleware`] for authenticating
 /// requests using AWS SigV4 signing protocol.
 #[derive(Builder)]
 pub struct AwsSigV4VerifierLayer<G, E, SHR> {
@@ -36,11 +36,16 @@ pub struct AwsSigV4VerifierLayer<G, E, SHR> {
     #[builder(into)]
     service: String,
 
-    /// The allowed HTTP request methods.
+    /// The allowed HTTP request methods. Empty (the default) allows every method.
     #[builder(default)]
     allowed_request_methods: Vec<Method>,
 
     /// The allowed HTTP content types.
+    ///
+    /// Note that this is *not* like `allowed_request_methods`: empty (the default) rejects every
+    /// request carrying a `Content-Type` header, rather than allowing all of them. A request with
+    /// no `Content-Type` is always allowed, as is a `GET` that carries no body-bearing headers.
+    /// List the content types the service accepts.
     #[builder(default)]
     allowed_content_types: Vec<String>,
 
@@ -114,7 +119,7 @@ where
     }
 }
 
-/// AWSSigV4VerifierMiddleware implements a Tower service that authenticates a request against AWS SigV4 signing protocol.
+/// [`AwsSigV4VerifierMiddleware`] implements a Tower service that authenticates a request against AWS SigV4 signing protocol.
 pub struct AwsSigV4VerifierMiddleware<S, SE, G, E, SHR>
 where
     SE: StdError + Send + Sync + 'static,
@@ -152,7 +157,7 @@ where
     SE: Debug + StdError + Send + Sync + 'static,
 {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        f.debug_struct("AwsSigV4VerifierService")
+        f.debug_struct("AwsSigV4VerifierMiddleware")
             .field("inner", &type_name::<S>())
             .field("layer", &self.layer)
             .field("poll_error", &self.poll_error)
@@ -375,7 +380,7 @@ pub struct XmlErrorMapper {
 }
 
 impl XmlErrorMapper {
-    /// Create a new [XmlErrorMapper] using the specified XML namespace as the response root element namespace.
+    /// Create a new [`XmlErrorMapper`] using the specified XML namespace as the response root element namespace.
     pub fn new(namespace: &str) -> Self {
         XmlErrorMapper {
             namespace: namespace.to_string(),

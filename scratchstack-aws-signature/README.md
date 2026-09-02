@@ -1,16 +1,14 @@
 # AWS signature verification routines for Rust
 ## Crate: [scratchstack-aws-signature](https://crates.io/crates/scratchstack-aws-signature)
 
-![GitHub Actions](https://github.com/dacut/scratchstack-aws-signature/workflows/Rust/badge.svg)
-[![Coverage Status](https://coveralls.io/repos/github/dacut/scratchstack-aws-signature/badge.svg?branch=main)](https://coveralls.io/github/dacut/scratchstack-aws-signature?branch=main)
+![GitHub Actions](https://github.com/dacut/scratchstack/workflows/Rust/badge.svg)
 
 The `scratchstack-aws-signature` crate (formerly known as `aws_sig_verify`) provides
 AWS SigV4 _verification_ routines.
 This *is not* the library you want if you just want to call AWS services
-or other services that use AWS SigV4 signatures.
-[Rusoto](https://github.com/rusoto/rusoto) already has a library, 
-[rusoto_signature](https://docs.rs/rusoto_signature/), that provides this
-functionality.
+or other services that use AWS SigV4 signatures. To sign outgoing requests,
+use the [AWS SDK for Rust](https://github.com/awslabs/aws-sdk-rust) or, for
+signing alone, [aws-sigv4](https://docs.rs/aws-sigv4/).
 
 If you are attempting to perform AWS SigV4 verification using AWS-vended
 credentials, this library also ___will not work for you___. You need the

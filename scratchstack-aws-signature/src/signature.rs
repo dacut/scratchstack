@@ -165,10 +165,21 @@ pub struct StreamingSignatureState {
 /// * `options` - [`SignatureOptions`] that affect the behavior of the signature validation. For
 ///   most services, use `SignatureOptions::default()`.
 ///
+/// # Presigned URLs
+/// A request carrying the full set of presign query parameters (`X-Amz-Algorithm`,
+/// `X-Amz-Credential`, `X-Amz-Date`, `X-Amz-Expires`, `X-Amz-SignedHeaders` and
+/// `X-Amz-Signature`) is treated as a presigned URL: its payload is canonicalized as
+/// `UNSIGNED-PAYLOAD`, so **the body is not covered by the signature**.
+///
+/// `X-Amz-Expires` is *not* enforced. Its presence is only used to recognize a presigned URL;
+/// the sole time bound applied is `options.allowed_mismatch` around `server_timestamp`, the same
+/// window used for ordinary requests. A service that honours presigned URLs must check the
+/// expiry itself.
+///
 /// # Errors
 /// This function returns a [`SignatureError`][crate::SignatureError] if the HTTP request is
 /// malformed or the request was not properly signed. The validation follows the
-/// [AWS Auth Error Ordering](https://github.com/dacut/scratchstack-aws-signature/blob/main/docs/AWS%20Auth%20Error%20Ordering.pdf)
+/// [AWS Auth Error Ordering](https://github.com/dacut/scratchstack/blob/main/scratchstack-aws-signature/docs/AWS%20Auth%20Error%20Ordering.pdf)
 /// document.
 pub async fn sigv4_validate_request<B, G, F, S>(
     request: Request<B>,
@@ -204,17 +215,19 @@ where
 ///
 /// This takes in a reference to an HTTP [`Request`] and a body hash along with other
 /// authentication service-specific parameters. If the validation is successful (i.e. the request
-/// is properly signed with a known access key), this returns:
-/// * The [response from the authenticator][SigV4AuthenticatorResponse], which contains the
-///   principal and other session data.
-/// * The [signing key][crate::KSigningKey] used to sign the request. This may be needed for later
-///   signature validation of `aws-chunked` body chunks.
+/// is properly signed with a known access key), this returns a [`StreamingSignatureState`]
+/// carrying the [response from the authenticator][SigV4AuthenticatorResponse] -- the principal
+/// and other session data -- along with the signing key and running signature needed to validate
+/// each `aws-chunked` body chunk through
+/// [`sigv4_validate_streaming_chunk`][StreamingSignatureState::sigv4_validate_streaming_chunk].
 ///
 /// # Parameters
 /// * `request` - The HTTP [`Request`] to validate.
 /// * `body_hash` - The hash of the request body. For S3 PutObject requests, this is the
 ///   `x-amz-content-sha256` header value, which may have special non-SHA-256 values like
 ///   `UNSIGNED-PAYLOAD`.
+/// * `algorithm` - The signing algorithm named in the request, used as the first line of the
+///   string to sign for each chunk.
 /// * `region` - The AWS region in which the request is being made.
 /// * `service` - The AWS service to which the request is being made.
 /// * `get_signing_key` - A service that can provide the signing key for the request.
@@ -225,11 +238,12 @@ where
 ///   [`NoSignedHeaderRequirements`][crate::NoSignedHeaderRequirements].
 /// * `options` - [`SignatureOptions`] that affect the behavior of the signature validation. For
 ///   most services, use `SignatureOptions::default()`.
+/// * `request_id` - The id of the request being validated, attached to any error returned.
 ///
 /// # Errors
 /// This function returns a [`SignatureError`][crate::SignatureError] if the HTTP request is
 /// malformed or the request was not properly signed. The validation follows the
-/// [AWS Auth Error Ordering](https://github.com/dacut/scratchstack-aws-signature/blob/main/docs/AWS%20Auth%20Error%20Ordering.pdf)
+/// [AWS Auth Error Ordering](https://github.com/dacut/scratchstack/blob/main/scratchstack-aws-signature/docs/AWS%20Auth%20Error%20Ordering.pdf)
 /// document.
 #[allow(clippy::too_many_arguments)]
 pub async fn sigv4_validate_streaming_headers<B, G, F, S>(
@@ -304,7 +318,7 @@ impl StreamingSignatureState {
     /// # Errors
     /// This function returns a [`SignatureError`][crate::SignatureError] if the HTTP request is
     /// malformed or the request was not properly signed. The validation follows the
-    /// [AWS Auth Error Ordering](https://github.com/dacut/scratchstack-aws-signature/blob/main/docs/AWS%20Auth%20Error%20Ordering.pdf)
+    /// [AWS Auth Error Ordering](https://github.com/dacut/scratchstack/blob/main/scratchstack-aws-signature/docs/AWS%20Auth%20Error%20Ordering.pdf)
     /// document.
     pub fn sigv4_validate_streaming_chunk(
         &mut self,

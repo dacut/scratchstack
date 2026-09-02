@@ -3,9 +3,9 @@
 //! The `scratchstack_aws_signature` crate provides
 //! AWS [SigV4](http://docs.aws.amazon.com/general/latest/gr/signature-version-4.html)
 //! _validation_ routines. This *is not* the library you want if you just want to call AWS services
-//! or other services that use AWS SigV4 signatures. [Rusoto](https://github.com/rusoto/rusoto)
-//! already has a library, [rusoto_signature](https://docs.rs/rusoto_signature/), that provides
-//! this functionality.
+//! or other services that use AWS SigV4 signatures. To sign outgoing requests, use the
+//! [AWS SDK for Rust](https://github.com/awslabs/aws-sdk-rust) or, for signing alone,
+//! [aws-sigv4](https://docs.rs/aws-sigv4/).
 //!
 //! If you are attempting to perform AWS SigV4 verification using AWS-vended credentials, this
 //! library also ___will not work for you___. You need the caller's secret key (or a derivative),
@@ -20,7 +20,13 @@
 //! which cover 0.11 to 0.12 and 0.10 to 0.11.
 //!
 //! # Feature flags
-//! This crate has one feature flag:
+//! Two flags are enabled by default:
+//! * `axum`: Provides `AwsSigV4VerifierLayer`, a Tower layer that runs validation as middleware
+//!   and attaches the principal, session data, and session policies to the request as extensions.
+//! * `default_session_token`: Provides `PostcardSessionTokenExtractor`, an encrypted session
+//!   token format for services that issue their own temporary credentials.
+//!
+//! One is off by default:
 //! * `unstable`: Allows access to unstable APIs (structs, traits, functions) such as
 //!   [`canonical::normalize_uri_path_component`]. These APIs are not needed for normal use of
 //!   this crate; they are provided for others exploring AWS SigV4 internals.
@@ -31,10 +37,13 @@
 //! required for almost all modes of AWS SigV4.
 //!
 //! The typical workflow is:
-//! 1. Convert an HTTP `Request` object into a scratchstack `Request` object.
-//! 2. Create a `GetSigningKeyRequest` from this `Request`.
-//! 3. Call your service to obtain the principal and signing key for this request.
-//! 4. Verify the request using `sigv4_validate_request`.
+//! 1. Write a [`tower::Service`] that maps a [`GetSigningKeyRequest`] to a
+//!    [`GetSigningKeyResponse`], looking up the principal and signing key for an access key.
+//!    [`service_for_signing_key_fn`] wraps a plain async function as one.
+//! 2. Pass your HTTP [`Request`][crate::core::http::Request] and that service to
+//!    [`sigv4_validate_request`], which canonicalizes the request, asks your service for the
+//!    signing key, and checks the signature.
+//! 3. On success you get back the request parts, the body, and the authenticated principal.
 //!
 //! ## Example
 //! ```rust

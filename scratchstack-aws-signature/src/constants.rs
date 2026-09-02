@@ -30,12 +30,12 @@ pub(crate) const CHARSET: &str = "charset";
 /// Signature field for the access key
 pub(crate) const CREDENTIAL: &[u8] = b"Credential";
 
+/// The default size of a raw secret key in bytes before encoding.
+pub(crate) const DEFAULT_SECRET_KEY_RAW_SIZE: usize = 30;
+
 /// The default size of a secret key in bytes.
 #[allow(unused)]
 pub(crate) const DEFAULT_SECRET_KEY_SIZE: usize = 40;
-
-/// The default size of a raw secret key in bytes before encoding.
-pub(crate) const DEFAULT_SECRET_KEY_RAW_SIZE: usize = 30;
 
 /// Error code: DuplicateHeaderAndQueryParameter
 pub(crate) const ERR_CODE_DUPLICATE_HEADER_AND_QUERY_PARAMETER: &str = "DuplicateHeaderAndQueryParameter";
@@ -43,11 +43,11 @@ pub(crate) const ERR_CODE_DUPLICATE_HEADER_AND_QUERY_PARAMETER: &str = "Duplicat
 /// Error code: ExpiredToken
 pub(crate) const ERR_CODE_EXPIRED_TOKEN: &str = "ExpiredToken";
 
+/// Error code: IncompleteSignature
+pub(crate) const ERR_CODE_INCOMPLETE_SIGNATURE: &str = "IncompleteSignature";
+
 /// Error code: InternalFailure
 pub(crate) const ERR_CODE_INTERNAL_FAILURE: &str = "InternalFailure";
-
-/// Error code: InvalidContentType (non-AWS standard)
-pub(crate) const ERR_CODE_INVALID_CONTENT_TYPE: &str = "InvalidContentType";
 
 /// Error code: InvalidBodyEncoding
 pub(crate) const ERR_CODE_INVALID_BODY_ENCODING: &str = "InvalidBodyEncoding";
@@ -55,8 +55,8 @@ pub(crate) const ERR_CODE_INVALID_BODY_ENCODING: &str = "InvalidBodyEncoding";
 /// Error code: InvalidClientTokenId
 pub(crate) const ERR_CODE_INVALID_CLIENT_TOKEN_ID: &str = "InvalidClientTokenId";
 
-/// Error code: IncompleteSignature
-pub(crate) const ERR_CODE_INCOMPLETE_SIGNATURE: &str = "IncompleteSignature";
+/// Error code: InvalidContentType (non-AWS standard)
+pub(crate) const ERR_CODE_INVALID_CONTENT_TYPE: &str = "InvalidContentType";
 
 /// Error code: InvalidRequestMethod (non-AWS standard)
 pub(crate) const ERR_CODE_INVALID_REQUEST_METHOD: &str = "InvalidRequestMethod";
@@ -104,7 +104,6 @@ pub(crate) const HDR_EXPECT: &str = "expect";
 pub(crate) const HDR_TRANSFER_ENCODING: &str = "transfer-encoding";
 
 /// Header for `x-amz-content-sha256`
-#[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
 pub(crate) const HDR_X_AMZ_CONTENT_SHA256: &str = "x-amz-content-sha256";
 
 /// Header for delivering the alternate date
@@ -129,11 +128,11 @@ pub(crate) const ISO8601_DATE_FORMAT: &str = "%Y%m%d";
 /// Length of an ISO8601 date string in the UTC time zone.
 pub(crate) const ISO8601_UTC_LENGTH: usize = 16;
 
-/// Maximum size of a session token in bytes.
-pub(crate) const MAX_SESSION_TOKEN_SIZE: usize = 1 << 20; // 1 MiB
-
 /// Maximum size of a secret key in bytes.
 pub(crate) const MAX_SECRET_KEY_SIZE: usize = 256;
+
+/// Maximum size of a session token in bytes.
+pub(crate) const MAX_SESSION_TOKEN_SIZE: usize = 1 << 20; // 1 MiB
 
 /// Error message: `"Authorization header requires 'Credential' parameter."`
 pub(crate) const MSG_AUTH_HEADER_REQ_CREDENTIAL: &str = "Authorization header requires 'Credential' parameter.";
@@ -163,12 +162,6 @@ pub(crate) const MSG_EXPIRED_TOKEN: &str = "The security token included in the r
 /// Error message: `"'Host' or ':authority' must be a 'SignedHeader' in the AWS Authorization."`
 pub(crate) const MSG_HOST_AUTHORITY_MUST_BE_SIGNED: &str =
     "'Host' or ':authority' must be a 'SignedHeader' in the AWS Authorization.";
-
-/// Error message: Key too long
-pub(crate) const MSG_KEY_TOO_LONG: &str = "Key too long";
-
-/// Error message: Key too short
-pub(crate) const MSG_KEY_TOO_SHORT: &str = "Key too short";
 
 /// Error message: `"Illegal hex character in escape % pattern: %"`
 pub(crate) const MSG_ILLEGAL_HEX_CHAR: &str = "Illegal hex character in escape % pattern: %";
@@ -201,6 +194,12 @@ pub(crate) const MSG_INVALID_URI_PATH: &str = "The URI path includes invalid com
 #[allow(dead_code)] // XXX: Will this be needed? (S3-specific)
 pub(crate) const MSG_INVALID_XACS_VALUE: &str = "Invalid x-amz-content-sha256 value";
 
+/// Error message: Key too long
+pub(crate) const MSG_KEY_TOO_LONG: &str = "Key too long";
+
+/// Error message: Key too short
+pub(crate) const MSG_KEY_TOO_SHORT: &str = "Key too short";
+
 /// Default error message for `MalformedHeader`.
 pub(crate) const MSG_MALFORMED_HEADER: &str = "Invalid request header";
 
@@ -218,20 +217,20 @@ pub(crate) const MSG_MALFORMED_XACS_QUERY_PARAMETER: &str = "Malformed X-Amz-Con
 /// Default error message for `MissingRequiredHeader`.
 pub(crate) const MSG_MISSING_REQUIRED_HEADER: &str = "Request is missing a required header";
 
-/// Error message: `"AWS query-string parameters must include 'X-Amz-Credential'"`
+/// Error message: `"AWS query-string parameters must include 'X-Amz-Credential'."`
 pub(crate) const MSG_QUERY_STRING_MUST_INCLUDE_CREDENTIAL: &str =
     "AWS query-string parameters must include 'X-Amz-Credential'.";
 
-/// Error message: `"AWS query-string parameters must include 'X-Amz-Sigature'"`
+/// Error message: `"AWS query-string parameters must include 'X-Amz-Date'."`
+pub(crate) const MSG_QUERY_STRING_MUST_INCLUDE_DATE: &str = "AWS query-string parameters must include 'X-Amz-Date'.";
+
+/// Error message: `"AWS query-string parameters must include 'X-Amz-Signature'."`
 pub(crate) const MSG_QUERY_STRING_MUST_INCLUDE_SIGNATURE: &str =
     "AWS query-string parameters must include 'X-Amz-Signature'.";
 
-/// Error message: `"AWS query-string parameters must include 'X-Amz-SignedHeaders'"`
+/// Error message: `"AWS query-string parameters must include 'X-Amz-SignedHeaders'."`
 pub(crate) const MSG_QUERY_STRING_MUST_INCLUDE_SIGNED_HEADERS: &str =
     "AWS query-string parameters must include 'X-Amz-SignedHeaders'.";
-
-/// Error message: `"AWS query-string parameters must include 'X-Amz-Date'"`
-pub(crate) const MSG_QUERY_STRING_MUST_INCLUDE_DATE: &str = "AWS query-string parameters must include 'X-Amz-Date'.";
 
 /// Error message: `"Re-examine the query-string parameters."`
 pub(crate) const MSG_REEXAMINE_QUERY_STRING_PARAMS: &str = "Re-examine the query-string parameters.";

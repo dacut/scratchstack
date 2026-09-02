@@ -177,10 +177,10 @@
 //!
 //! ### New feature flags
 //! 0.11 had one feature flag, `unstable`. 0.12 adds two, both enabled by default:
-//! * `axum`: the [`AwsSigV4VerifierLayer`][crate::AwsSigV4VerifierLayer] Tower layer, which runs
+//! * `axum`: the `AwsSigV4VerifierLayer` Tower layer, which runs
 //!   validation as middleware and attaches the principal, session data, and session policies to
 //!   the request as extensions.
-//! * `default_session_token`: [`PostcardSessionTokenExtractor`][crate::PostcardSessionTokenExtractor],
+//! * `default_session_token`: `PostcardSessionTokenExtractor`,
 //!   an encrypted session token format for services issuing their own temporary credentials.
 //!
 //! Depending on this crate with `default-features = false` gets the 0.11 surface.

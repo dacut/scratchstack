@@ -478,7 +478,7 @@ impl Debug for GetSigningKeyRequest {
 
 /// A response from the signing key provider.
 ///
-/// GetSigningKeyResponse structs are immutable. Use [GetSigningKeyResponseBuilder] to programmatically construct a
+/// GetSigningKeyResponse structs are immutable. Use [`GetSigningKeyResponseBuilder`] to programmatically construct a
 /// response.
 #[derive(Builder, Clone, Debug)]
 pub struct GetSigningKeyResponse {
