@@ -92,7 +92,7 @@
 //! ```
 //!
 //! ```
-//! # use chrono::NaiveDate;
+//! # use chrono::{NaiveDate, Utc};
 //! # use scratchstack_aws_signature::{GetSigningKeyRequest, GetSigningKeyResponse, KSecretKey};
 //! # use scratchstack_core::RequestId;
 //! # use std::str::FromStr;
@@ -111,6 +111,7 @@
 //!     .region("us-east-1")
 //!     .service("example")
 //!     .request_id(RequestId::new())
+//!     .server_timestamp(Utc::now())
 //!     .build();
 //! ```
 //!
@@ -120,6 +121,23 @@
 //! carry the id back out. [`sigv4_validate_request`][crate::sigv4_validate_request] takes it from
 //! the [`RequestId`][scratchstack_core::RequestId] extension on the incoming request, generating
 //! one if the extension is absent.
+//!
+//! ### Requests carry the server timestamp
+//! [`GetSigningKeyRequest`][crate::GetSigningKeyRequest] also has a required `server_timestamp`
+//! field: the `server_timestamp` given to the validation entry point. It is the clock every
+//! time-bound check in a provider should use -- session-token expiry, key acceptance windows --
+//! so that one request is validated against one notion of "now" rather than several clocks read
+//! at different moments. [`ExtractSessionTokenRequest`][crate::ExtractSessionTokenRequest] and
+//! `GetSessionTokenEncryptionKeyRequest` carry it onward for the same reason.
+//!
+//! ### Session-token expiry is enforced
+//! `PostcardSessionTokenExtractor` rejects a token whose `expires_at` is not later than the
+//! request's `server_timestamp` with [`ExpiredTokenError`][crate::ExpiredTokenError]. It used
+//! to return the token's data regardless and leave the comparison to the signing-key provider,
+//! and a provider that did not make it accepted expired temporary credentials for as long as
+//! the encryption key was still on file. A custom
+//! [`ExtractSessionToken`][crate::ExtractSessionToken] implementation must make the same check;
+//! providers no longer repeat it.
 //!
 //! ### `NO_ADDITIONAL_SIGNED_HEADERS` became a type
 //! The constant is replaced by [`NoSignedHeaderRequirements`][crate::NoSignedHeaderRequirements],

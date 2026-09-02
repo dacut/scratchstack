@@ -204,7 +204,8 @@ impl SigV4Authenticator {
 
     /// Ask `get_signing_key` for the principal and signing key (`kSigning` from the
     /// [AWS documentation](https://docs.aws.amazon.com/general/latest/gr/sigv4-calculate-signature.html))
-    /// for this request.
+    /// for this request. `server_timestamp` is handed to the provider as the clock for its own
+    /// time-bound checks.
     #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
     #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
     #[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
@@ -212,6 +213,7 @@ impl SigV4Authenticator {
         &self,
         region: &str,
         service: &str,
+        server_timestamp: DateTime<Utc>,
         get_signing_key: &mut S,
         request_id: RequestId,
     ) -> Result<GetSigningKeyResponse, SignatureError>
@@ -229,6 +231,7 @@ impl SigV4Authenticator {
             .region(region)
             .service(service)
             .request_id(request_id)
+            .server_timestamp(server_timestamp)
             .build();
 
         get_signing_key.oneshot(req).await
@@ -277,7 +280,7 @@ impl SigV4Authenticator {
     {
         self.prevalidate(region, service, server_timestamp, allowed_mismatch, request_id)?;
         let string_to_sign = self.get_string_to_sign();
-        let response = self.get_signing_key(region, service, get_signing_key, request_id).await?;
+        let response = self.get_signing_key(region, service, server_timestamp, get_signing_key, request_id).await?;
         let expected_signature = hex::encode(hmac_sha256(response.signing_key().as_ref(), string_to_sign.as_ref()));
         let expected_signature_bytes = expected_signature.as_bytes();
         let signature_bytes = self.signature().as_bytes();

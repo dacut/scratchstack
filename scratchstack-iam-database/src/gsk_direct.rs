@@ -9,6 +9,7 @@ use {
     crate::{constants::*, session_token_encryption_key::get_session_token_encryption_key},
     base64::{Engine as _, engine::general_purpose::URL_SAFE},
     bon::Builder,
+    chrono::{DateTime, Utc},
     indoc::indoc,
     scratchstack_arn::Arn,
     scratchstack_aws_principal::{Principal, SessionData, SessionValue, User},
@@ -110,14 +111,18 @@ impl Service<GetSessionTokenEncryptionKeyRequest> for GetSessionTokenEncryptionK
         let pool = self.pool.clone();
         let request_id = req.request_id();
         let key_id = req.session_token_encryption_key_id().to_string();
+        let server_timestamp = req.server_timestamp();
 
-        Box::pin(async move { get_session_token_encryption_key_from_database(pool, key_id, request_id).await })
+        Box::pin(async move {
+            get_session_token_encryption_key_from_database(pool, key_id, server_timestamp, request_id).await
+        })
     }
 }
 
 async fn get_session_token_encryption_key_from_database(
     pool: Arc<PgPool>,
     stek_id: String,
+    server_timestamp: DateTime<Utc>,
     request_id: RequestId,
 ) -> Result<SessionTokenEncryptionKeyInfo, SignatureError> {
     let mut conn = pool
@@ -137,6 +142,15 @@ async fn get_session_token_encryption_key_from_database(
     })?;
     let stek = result.session_token_encryption_key;
     tx.commit().await.map_err(|e| internal_service_error!(request_id; "Failed to commit database transaction: {e}"))?;
+
+    // A retired key stays in the database so that its history can be audited, but nothing
+    // encrypted under it is accepted once its acceptance window closes -- whatever the token
+    // itself says about its own expiry.
+    if server_timestamp >= stek.accept_expires_at {
+        return Err(SignatureError::InvalidSessionToken(
+            InvalidSessionTokenError::builder().request_id(request_id).build(),
+        ));
+    }
 
     let algorithm = match stek.encryption_algorithm {
         SessionTokenEncryptionAlgorithm::Aes256Gcm => SigSessionTokenEncryptionAlgorithm::Aes256Gcm,
@@ -261,11 +275,26 @@ async fn get_signing_key_from_database(
                 return Err(InvalidClientTokenIdError::builder().request_id(req.request_id()).build().into());
             };
 
-            let ext_req =
-                ExtractSessionTokenRequest::builder().session_token(session_token).request_id(req.request_id()).build();
+            let ext_req = ExtractSessionTokenRequest::builder()
+                .session_token(session_token)
+                .request_id(req.request_id())
+                .server_timestamp(req.server_timestamp())
+                .build();
 
+            // The extractor rejects an expired token; it is not checked again here.
             let mut stek_extractor = PostcardSessionTokenExtractor::builder().key_service(get_stek_service).build();
             let token = stek_extractor.extract(ext_req).await?;
+
+            // The token names the access key it was issued alongside. Presented under any other
+            // access key, it is not a credential pair this service issued, and AWS reports the
+            // pair as an invalid token.
+            if token.access_key_id != access_key {
+                return Err(InvalidClientTokenIdError::builder()
+                    .message(MSG_SECURITY_TOKEN_INVALID)
+                    .request_id(req.request_id())
+                    .build()
+                    .into());
+            }
 
             // The session metadata records what was true when the session was minted. What the
             // request determines is not in there: the region it targets, and whether an AWS

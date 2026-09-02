@@ -1,6 +1,6 @@
 //! GetSigningKey (direct database lookup) test suite.
 use {
-    chrono::NaiveDate,
+    chrono::{NaiveDate, Utc},
     pretty_assertions::assert_eq,
     scratchstack_aws_principal::{Principal, SessionValue},
     scratchstack_aws_signature::{GetSigningKeyRequest, SignatureError},
@@ -35,6 +35,7 @@ async fn get_signing_key(
         .region("us-east-1")
         .service("iam")
         .request_id(RequestId::new())
+        .server_timestamp(Utc::now())
         .build();
 
     gsk.ready().await.expect("GetSigningKeyFromDatabase should be ready").call(request).await
