@@ -30,6 +30,12 @@ opt-level = "s"
 panic = "abort"
 strip = "symbols"
 
+# Build scripts and proc macros are compiled with the dev profile by default, which for shapegen
+# means generating the IAM shapes takes about four times longer than it needs to. Optimizing them
+# costs a one-off compile and is repaid on every build script run.
+[profile.dev.build-override]
+opt-level = 3
+
 [profile.dev]
 debug = "full"
 # lto = "thin"
