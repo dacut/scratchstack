@@ -55,6 +55,11 @@ pub struct SigV4Authenticator {
 
     /// The timestamp of the request, from either `X-Amz-Date` query string/header or the `Date` header.
     pub(crate) request_timestamp: DateTime<Utc>,
+
+    /// How long past `request_timestamp` the request stays valid, from a presigned URL's
+    /// `X-Amz-Expires`. `None` for a request authenticated by header, which is instead bounded
+    /// by the allowed clock mismatch.
+    expires: Option<Duration>,
 }
 
 impl SigV4Authenticator {
@@ -103,6 +108,15 @@ impl SigV4Authenticator {
         self.request_timestamp
     }
 
+    /// Retrieve how long past the request timestamp a presigned URL stays valid, if this is one.
+    #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
+    #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
+    #[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
+    #[inline(always)]
+    fn expires(&self) -> Option<Duration> {
+        self.expires
+    }
+
     /// Verify the request parameters make sense for the region, service, and specified timestamp.
     ///
     /// [`validate_signature`][Self::validate_signature] and
@@ -121,18 +135,27 @@ impl SigV4Authenticator {
         request_id: RequestId,
     ) -> Result<(), SignatureError> {
         let req_ts = self.request_timestamp();
-        let min_ts = server_timestamp.checked_sub_signed(allowed_mismatch).unwrap_or(DateTime::<Utc>::MIN_UTC);
+
+        // A presigned URL is valid for X-Amz-Expires seconds from its X-Amz-Date, so that is how
+        // old it may be, however wide (or, for testing, disabled) the clock-mismatch window is.
+        // Any other request may be at most `allowed_mismatch` old.
+        let (expiry_message, max_age) = match self.expires() {
+            Some(expires) => (MSG_REQUEST_HAS_EXPIRED, expires),
+            None => (MSG_SIGNATURE_EXPIRED, allowed_mismatch),
+        };
+        let min_ts = server_timestamp.checked_sub_signed(max_age).unwrap_or(DateTime::<Utc>::MIN_UTC);
         let max_ts = server_timestamp.checked_add_signed(allowed_mismatch).unwrap_or(DateTime::<Utc>::MAX_UTC);
 
         // Rule 10: Make sure date isn't expired...
         if req_ts < min_ts {
             return Err(SignatureDoesNotMatchError::builder()
                 .message(format!(
-                    "Signature expired: {} is now earlier than {} ({} - {}.)",
+                    "{}: {} is now earlier than {} ({} - {}.)",
+                    expiry_message,
                     req_ts.format(ISO8601_COMPACT_FORMAT),
                     min_ts.format(ISO8601_COMPACT_FORMAT),
                     server_timestamp.format(ISO8601_COMPACT_FORMAT),
-                    duration_to_string(allowed_mismatch)
+                    duration_to_string(max_age)
                 ))
                 .request_id(request_id)
                 .build()
@@ -334,6 +357,7 @@ impl Debug for SigV4Authenticator {
             .field("session_token", &self.session_token())
             .field("signature", &self.signature())
             .field("request_timestamp", &self.request_timestamp())
+            .field("expires", &self.expires())
             .finish()
     }
 }
@@ -440,6 +464,7 @@ mod tests {
         assert!(auth1.session_token().is_none());
         assert!(auth1.signature().is_empty());
         assert_eq!(auth1.request_timestamp(), epoch);
+        assert!(auth1.expires().is_none());
 
         let sha256: [u8; 32] = [
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,

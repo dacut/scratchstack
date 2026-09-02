@@ -217,6 +217,13 @@ macro_rules! signature_errors {
 }
 
 signature_errors! {
+    /// A query-string authentication parameter is malformed. Sample messages:
+    /// * `X-Amz-Expires must be less than a week in seconds; that is, less than 604800 seconds.`
+    /// * `X-Amz-Expires must be non-negative`
+    /// * `X-Amz-Expires should be a number`
+    AuthorizationQueryParameters => AuthorizationQueryParametersError, caller_facing,
+        ERR_CODE_AUTHORIZATION_QUERY_PARAMETERS_ERROR, StatusCode::BAD_REQUEST, MSG_AUTHORIZATION_QUERY_PARAMETERS_ERROR;
+
     /// The request contains a query parameter that duplicates a header value.
     DuplicateHeaderAndQueryParameter => DuplicateHeaderAndQueryParameterError, caller_facing,
         ERR_CODE_DUPLICATE_HEADER_AND_QUERY_PARAMETER, StatusCode::BAD_REQUEST,
