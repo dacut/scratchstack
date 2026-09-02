@@ -147,6 +147,19 @@ Three conclusions worth keeping:
 
 The build-script figure also includes the buffered writers; the rest is having less to write.
 
+## After porting emission to `quote!`
+
+| Measure | writeln! | quote! |
+|---|---|---|
+| rustc time | 14.55 s | 14.75 s |
+| Build-script run | 0.33 s | 1.60 s |
+| Generated lines (IAM) | 73,893 | 84,835 |
+| shapegen source | 4,912 | 4,819 |
+
+`prettyplease` wraps more aggressively than the hand-written writers did, hence the extra generated
+lines; rustc does not care, and the compile time is unchanged. The build-script run pays about 1.3 s
+for the formatting and the syntax check.
+
 ## After hoisting validators
 
 Constraints belong to the shape, not to each field targeting it, so each constrained shape now emits
@@ -168,6 +181,22 @@ Note that the regex statics were never the build-time cost they looked like -- t
 lines. What hoisting actually removed was the `validate()` bodies, which were 8.7%. The statics
 mattered for a different reason: 694 of them meant compiling `^[\w+=,.@-]+$` 235 times at runtime,
 on first use, in every process that touched an IAM request.
+
+## Emitting code
+
+Generators build a `proc_macro2::TokenStream` with `quote!` and append it to one of the five
+[`Modules`]. `Modules::write_to` renders each through `syn::parse2` and `prettyplease` and writes it
+out. Nothing writes formatted text: the generator reads like the code it emits, brace matching is the
+compiler's problem rather than the author's, and a generator bug surfaces as a parse error naming the
+module instead of a rustc syntax error tens of thousands of lines into `operation.rs`.
+
+Two consequences worth knowing:
+
+* **`//` comments do not survive.** Only `#[doc]` attributes reach the output, so an explanation of
+  why some generated `#[allow(...)]` is there has to live in the generator, not the generated file.
+* **Rendering is most of the generation time** -- about 0.8 s of the 1.6 s build-script run for IAM,
+  against roughly 0.3 s to build the tokens. That buys the syntax check and readable output; the
+  alternative is `TokenStream::to_string`, which emits one enormous line.
 
 ## Known loose ends
 

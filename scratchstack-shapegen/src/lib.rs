@@ -1,12 +1,5 @@
 //! Rust code generation library for Smithy shape models.
-use {
-    bon::Builder,
-    std::{
-        fs::File,
-        io::{BufWriter, Result as IoResult, Write},
-        path::Path,
-    },
-};
+use proc_macro2::TokenStream;
 
 /// Primitive Smithy types.
 pub mod primitive;
@@ -20,6 +13,7 @@ mod length_constraint;
 mod list;
 mod map;
 mod member;
+mod modules;
 mod operation;
 mod range_constraint;
 mod resource;
@@ -38,61 +32,9 @@ mod r#union;
 #[allow(unused_imports)]
 pub use {
     cli_shorthand::*, common_errors::*, r#enum::*, generator::*, int_enum::*, length_constraint::*, list::*, map::*,
-    member::*, operation::*, range_constraint::*, resource::*, service::*, shape::*, shape_base::*, shape_ref::*,
-    smithy_model::*, str_ext::*, structure::*, trait_id::*, trait_map::*, transform::*, r#union::*,
+    member::*, modules::*, operation::*, range_constraint::*, resource::*, service::*, shape::*, shape_base::*,
+    shape_ref::*, smithy_model::*, str_ext::*, structure::*, trait_id::*, trait_map::*, transform::*, r#union::*,
 };
-
-/// Writers that will write generated code into the appropriate module.
-#[derive(Builder, Debug)]
-pub struct Writers<W: Write> {
-    pub action: W,
-    pub error_meta: W,
-    pub operation: W,
-    pub types: W,
-    pub types_error: W,
-}
-
-impl Writers<BufWriter<File>> {
-    /// Creates the five generated modules in `dir`, each buffered.
-    ///
-    /// Generation writes a line at a time -- around 94,000 of them for the IAM model -- so the
-    /// buffering is not incidental.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any of the files cannot be created.
-    pub fn create_in(dir: &Path) -> IoResult<Self> {
-        fn create(dir: &Path, name: &str) -> IoResult<BufWriter<File>> {
-            let path = dir.join(name);
-            let file = std::fs::File::create(&path)
-                .map_err(|e| std::io::Error::new(e.kind(), format!("could not create {}: {e}", path.display())))?;
-            Ok(BufWriter::new(file))
-        }
-
-        Ok(Self {
-            action: create(dir, "action.rs")?,
-            error_meta: create(dir, "error_meta.rs")?,
-            operation: create(dir, "operation.rs")?,
-            types: create(dir, "types.rs")?,
-            types_error: create(dir, "types_error.rs")?,
-        })
-    }
-}
-
-impl<W: Write> Writers<W> {
-    /// Flushes every sink.
-    ///
-    /// # Errors
-    ///
-    /// Returns the first flush error encountered.
-    pub fn flush(&mut self) -> IoResult<()> {
-        self.action.flush()?;
-        self.error_meta.flush()?;
-        self.operation.flush()?;
-        self.types.flush()?;
-        self.types_error.flush()
-    }
-}
 
 /// Trait for all named shapes.
 pub trait ShapeInfo {
@@ -126,20 +68,12 @@ pub trait ShapeInfo {
     /// Returns the Rust type name of this shape.
     fn rust_typename(&self) -> String;
 
-    /// If this shape has custom code to validate its value from a builder type, returns it.
-    /// Otherwise returns `None`.
+    /// The checks this shape's values must pass, if it constrains them.
     ///
-    /// This is the *body* of a check, not a whole function. It is emitted once, into the shape's
-    /// validator function; builders call that function rather than repeating the body. See
-    /// [`validator_fn_name`][Self::validator_fn_name].
-    ///
-    /// # Parameters
-    /// * `var` — the variable holding the value to be validated.
-    /// * `field_name` — the name of the field being evaluated (for use in error messages). Callers
-    ///   emitting a validator function pass the literal `{field}`, which resolves to that
-    ///   function's `field` parameter when the generated `format!` runs.
-    #[allow(unused)]
-    fn derive_builder_validator(&self, var: &str, field_name: &str) -> Option<String> {
+    /// This is the *body* of a validator function, not a whole one: it may refer to `value`, the
+    /// value under test, and `field`, the name of the field being checked. It is emitted once, into
+    /// the shape's validator function, and builders call that function rather than repeating it.
+    fn validator_body(&self) -> Option<TokenStream> {
         None
     }
 
@@ -153,17 +87,21 @@ pub trait ShapeInfo {
         None
     }
 
-    /// Writes this shape's validator function, if it has one, into `crate::types`.
-    #[allow(unused_variables)] // Makes code completion show `w` instead of `_w`.
-    fn write_validator_fn(&self, w: &mut dyn Write) -> IoResult<()> {
-        Ok(())
+    /// This shape's validator function, if it has one, for `crate::types`.
+    fn validator_fn(&self) -> Option<TokenStream> {
+        let fn_name = self.validator_fn_name()?;
+        let body = self.validator_body()?;
+        Some(validator_fn_tokens(&fn_name, &self.validator_value_type(), &self.simple_name(), &body))
     }
 
-    /// Generate Rust code for this shape, writing it to the appropriate module in `w`.
-    #[allow(unused_variables)] // Makes code completion show `w` instead of `_w`.
-    fn generate<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
-        Ok(())
+    /// The type a validator function takes by reference. Defaults to the shape's own Rust type.
+    fn validator_value_type(&self) -> String {
+        self.rust_typename()
     }
+
+    /// Appends this shape's generated code to the appropriate module in `m`.
+    #[allow(unused_variables)] // Makes code completion show `m` instead of `_m`.
+    fn generate(&self, m: &mut Modules) {}
 }
 
 /// Renders an HTTP status code as a `scratchstack_core::http::StatusCode` constant expression.
@@ -211,37 +149,28 @@ macro_rules! forward_shape_info {
     };
 }
 
-/// Writes a validator function for one shape into `crate::types`.
+/// Builds a validator function for one shape.
 ///
 /// The function takes the value and the name of the field being checked, so one function serves
-/// every field targeting the shape and each still names itself in the error. `body` comes from
-/// [`ShapeInfo::derive_builder_validator`] rendered with `{field}` as the field name, which the
-/// generated `format!` calls resolve against the `field` parameter.
-pub(crate) fn write_validator_fn(
-    w: &mut dyn Write,
-    fn_name: &str,
-    value_type: &str,
-    simple_name: &str,
-    body: &str,
-) -> IoResult<()> {
-    writeln!(w, "/// Validates a value against the constraints of the `{simple_name}` shape.")?;
-    writeln!(w, "///")?;
-    writeln!(w, "/// `field` names the field being checked and appears in the error message.")?;
-    writeln!(
-        w,
-        "pub(crate) fn {fn_name}(value: &{value_type}, field: &str) -> ::std::result::Result<(), ::std::string::String> {{"
-    )?;
-    for line in body.trim_end().lines() {
-        if line.trim().is_empty() {
-            writeln!(w)?;
-        } else {
-            writeln!(w, "    {line}")?;
+/// every field targeting the shape and each still names itself in the error.
+#[must_use]
+pub fn validator_fn_tokens(fn_name: &str, value_type: &str, simple_name: &str, body: &TokenStream) -> TokenStream {
+    let name = ident(fn_name);
+    let value_type = type_tokens(value_type);
+    let doc = format!(" Validates a value against the constraints of the `{simple_name}` shape.");
+
+    quote::quote! {
+        #[doc = #doc]
+        #[doc = ""]
+        #[doc = " `field` names the field being checked and appears in the error message."]
+        pub(crate) fn #name(
+            value: &#value_type,
+            field: &str,
+        ) -> ::std::result::Result<(), ::std::string::String> {
+            #body
+            ::std::result::Result::Ok(())
         }
     }
-    writeln!(w, "    ::std::result::Result::Ok(())")?;
-    writeln!(w, "}}")?;
-    writeln!(w)?;
-    Ok(())
 }
 
 /// The validator function name for a shape with the given simple name.
@@ -325,26 +254,37 @@ mod tests {
     }
 
     fn generate(model_json: &str) -> Generated {
+        generate_with(model_json, CliShorthand::default())
+    }
+
+    /// Whether `haystack` contains `needle`, ignoring how the formatter wrapped either.
+    ///
+    /// `prettyplease` breaks long signatures across lines, so an assertion written as one line
+    /// would otherwise be testing the formatter rather than the generator.
+    fn contains(haystack: &str, needle: &str) -> bool {
+        fn squash(text: &str) -> String {
+            text.split_whitespace().collect::<Vec<_>>().join(" ")
+        }
+
+        squash(haystack).contains(&squash(needle))
+    }
+
+    fn generate_with(model_json: &str, cli_shorthand: CliShorthand) -> Generated {
         let mut model: SmithyModel = serde_json::from_str(model_json).expect("fixture should deserialize");
         model.add_default_shapes();
+        model.cli_shorthand = cli_shorthand;
         model.resolve();
 
-        let mut w = Writers::builder()
-            .action(Vec::new())
-            .error_meta(Vec::new())
-            .operation(Vec::new())
-            .types(Vec::new())
-            .types_error(Vec::new())
-            .build();
-        model.generate(&mut w).expect("generation should succeed");
+        let mut m = Modules::new();
+        model.generate(&mut m);
 
-        let to_string = |bytes: Vec<u8>| String::from_utf8(bytes).expect("generated code should be UTF-8");
+        // Rendering is the assertion that the generators produced parseable Rust at all.
         Generated {
-            action: to_string(w.action),
-            error_meta: to_string(w.error_meta),
-            operation: to_string(w.operation),
-            types: to_string(w.types),
-            types_error: to_string(w.types_error),
+            action: render("action.rs", &m.action),
+            error_meta: render("error_meta.rs", &m.error_meta),
+            operation: render("operation.rs", &m.operation),
+            types: render("types.rs", &m.types),
+            types_error: render("types_error.rs", &m.types_error),
         }
     }
 
@@ -363,10 +303,10 @@ mod tests {
     fn validators_are_called_with_the_field_name_not_the_struct_name() {
         let generated = generate(FIXTURE);
 
-        assert!(generated.operation.contains(r#"validate_widget_name_type(value, "WidgetName")"#));
-        assert!(generated.operation.contains(r#"validate_widget_name_type(value, "OwnerName")"#));
+        assert!(contains(&generated.operation, r#"validate_widget_name_type(value, "WidgetName")"#));
+        assert!(contains(&generated.operation, r#"validate_widget_name_type(value, "OwnerName")"#));
         assert!(
-            !generated.operation.contains("CreateWidgetRequest must match"),
+            !contains(&generated.operation, "CreateWidgetRequest must match"),
             "the error should name the field, not the structure"
         );
     }
@@ -375,67 +315,57 @@ mod tests {
     fn list_validator_delegates_to_its_element() {
         let generated = generate(FIXTURE);
 
-        assert!(generated.types.contains("pub(crate) fn validate_tag_list_type"));
-        assert!(generated.types.contains("validate_widget_name_type(el, field)"));
+        assert!(contains(&generated.types, "pub(crate) fn validate_tag_list_type"));
+        assert!(contains(&generated.types, "validate_widget_name_type(el, field)"));
         // A slice, so clippy's ptr_arg lint does not fire on the generated code.
-        assert!(generated.types.contains("validate_tag_list_type(value: &[::std::string::String]"));
+        assert!(
+            contains(&generated.types, "value: &[::std::string::String]"),
+            "list validators take a slice, not &Vec: {}",
+            generated.types
+        );
     }
 
     #[test]
     fn numeric_range_constraints_are_validated() {
         let generated = generate(FIXTURE);
 
-        assert!(generated.types.contains("pub(crate) fn validate_size_type"));
-        assert!(generated.types.contains("*value < 1"));
-        assert!(generated.types.contains("*value > 100"));
+        assert!(contains(&generated.types, "pub(crate) fn validate_size_type"));
+        assert!(contains(&generated.types, "*value < 1"));
+        assert!(contains(&generated.types, "*value > 100"));
     }
 
     #[test]
     fn string_length_counts_code_points_not_bytes() {
         let generated = generate(FIXTURE);
 
-        assert!(generated.types.contains("value.chars().count() > 64"));
-        assert!(!generated.types.contains("value.len() > 64"), "Smithy length counts code points");
+        assert!(contains(&generated.types, "value.chars().count() > 64"));
+        assert!(!contains(&generated.types, "value.len() > 64"), "Smithy length counts code points");
     }
 
     #[test]
     fn action_enum_lists_operations_bound_to_the_service() {
         let generated = generate(FIXTURE);
 
-        assert!(generated.action.contains(r#"pub const VERSION: &str = "2020-01-01";"#));
-        assert!(generated.action.contains("    CreateWidget,"));
-        assert!(generated.action.contains(r#""CreateWidget" => ::std::result::Result::Ok(Self::CreateWidget)"#));
+        assert!(contains(&generated.action, r#"pub const VERSION: &str = "2020-01-01";"#));
+        assert!(contains(&generated.action, "CreateWidget,"));
+        assert!(contains(&generated.action, r#""CreateWidget" => ::std::result::Result::Ok(Self::CreateWidget)"#));
     }
 
     #[test]
     fn errors_reach_both_the_error_module_and_the_union_enum() {
         let generated = generate(FIXTURE);
 
-        assert!(generated.types_error.contains("pub struct NoSuchWidget"));
-        assert!(generated.error_meta.contains("NoSuchWidget(::std::boxed::Box<crate::types::error::NoSuchWidget>)"));
-        assert!(generated.types_error.contains("::scratchstack_core::http::StatusCode::NOT_FOUND"));
+        assert!(contains(&generated.types_error, "pub struct NoSuchWidget"));
+        assert!(contains(&generated.error_meta, "NoSuchWidget(::std::boxed::Box<crate::types::error::NoSuchWidget>)"));
+        assert!(contains(&generated.types_error, "::scratchstack_core::http::StatusCode::NOT_FOUND"));
     }
 
     #[test]
     fn cli_shorthand_policy_decides_which_shapes_get_parsers() {
-        let mut model: SmithyModel = serde_json::from_str(FIXTURE).expect("fixture should deserialize");
-        model.add_default_shapes();
-        model.cli_shorthand = CliShorthand::All;
-        model.resolve();
-
-        let mut w = Writers::builder()
-            .action(Vec::new())
-            .error_meta(Vec::new())
-            .operation(Vec::new())
-            .types(Vec::new())
-            .types_error(Vec::new())
-            .build();
-        model.generate(&mut w).expect("generation should succeed");
-        let operation = String::from_utf8(w.operation).expect("generated code should be UTF-8");
-
         // `All` reaches request structures; the default `ValueTypes` does not.
-        assert!(operation.contains("ShorthandValue> for CreateWidgetRequest"));
-        assert!(!generate(FIXTURE).operation.contains("ShorthandValue> for CreateWidgetRequest"));
+        let all = generate_with(FIXTURE, CliShorthand::All);
+        assert!(contains(&all.operation, "ShorthandValue> for CreateWidgetRequest"));
+        assert!(!contains(&generate(FIXTURE).operation, "ShorthandValue> for CreateWidgetRequest"));
     }
 
     /// Generation over the real IAM model: 749 shapes, and the only coverage of constructs the
@@ -451,8 +381,8 @@ mod tests {
 
         let generated = generate(&model_json);
 
-        assert!(generated.action.contains("    CreateUser,"));
-        assert!(generated.types.contains("pub(crate) fn validate_account_id_type"));
-        assert!(generated.operation.contains("pub struct CreateUserRequest"));
+        assert!(contains(&generated.action, "CreateUser,"));
+        assert!(contains(&generated.types, "pub(crate) fn validate_account_id_type"));
+        assert!(contains(&generated.operation, "pub struct CreateUserRequest"));
     }
 }

@@ -2,10 +2,7 @@ use {
     crate::{LengthConstraint, RangeConstraint, TraitId},
     serde::{Deserialize, Serialize},
     serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue},
-    std::{
-        collections::BTreeMap,
-        io::{Result as IoResult, Write},
-    },
+    std::collections::BTreeMap,
 };
 
 /// A map of trait identifiers to their corresponding values.
@@ -152,21 +149,6 @@ impl TraitMap {
     /// via [`SmithyModel::xmlns`](crate::SmithyModel::xmlns).
     pub fn xml_namespace(&self) -> Option<&str> {
         self.0.get(&TraitId::SmithyApiXmlNamespace)?.as_object()?.get("uri")?.as_str()
-    }
-
-    /// Writes documentation comments for this shape to the given output.
-    pub fn write_docs(&self, w: &mut dyn Write, indent: &str) -> IoResult<()> {
-        if let Some(doc_any) = self.0.get(&TraitId::SmithyApiDocumentation)
-            && let Some(doc) = doc_any.as_str()
-        {
-            for line in doc.lines() {
-                writeln!(w, "{}/// {}", indent, line.trim())?;
-            }
-        } else {
-            writeln!(w, "{}#[allow(missing_docs)]", indent)?;
-        }
-
-        Ok(())
     }
 
     /// Indicates whether the trait map has an AWS Query Error marker.

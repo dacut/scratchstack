@@ -2,7 +2,7 @@
 
 use {
     crate::{
-        CliShorthand, CommonErrors, DerivedStructs, DocRewrite, PatternRewrite, SmithyModel, Writers, merge_extension,
+        CliShorthand, CommonErrors, DerivedStructs, DocRewrite, Modules, PatternRewrite, SmithyModel, merge_extension,
     },
     bon::bon,
     std::{
@@ -144,12 +144,9 @@ impl ShapeGenerator {
             ),
         };
 
-        let mut writers = Writers::create_in(&out_dir)?;
-        model.generate(&mut writers)?;
-
-        // BufWriter flushes on drop but discards the error, which would truncate a generated file
-        // and leave the failure to surface as a baffling syntax error in the consuming crate.
-        writers.flush()
+        let mut modules = Modules::new();
+        model.generate(&mut modules);
+        modules.write_to(&out_dir)
     }
 }
 

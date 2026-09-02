@@ -1,11 +1,10 @@
 use {
-    crate::{Member, ShapeBase, ShapeInfo, StrExt, Writers},
+    crate::{Member, Modules, ShapeBase, ShapeInfo, StrExt, doc_tokens, ident},
+    proc_macro2::TokenStream,
+    quote::quote,
     serde::{Deserialize, Serialize},
     serde_json::Value as JsonValue,
-    std::{
-        collections::BTreeMap,
-        io::{Result as IoResult, Write},
-    },
+    std::collections::BTreeMap,
 };
 
 /// The _enum_ shape is used to represent a fixed set of one or more string values. Each value
@@ -38,170 +37,158 @@ impl ShapeInfo for Enum {
         self.base.resolve(shape_name);
     }
 
-    fn generate<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
+    fn generate(&self, m: &mut Modules) {
         if self.base.traits.is_error() {
-            self.write_rust_decl(&mut w.types_error)?;
-            self.write_display_impl(&mut w.types_error)?;
+            m.types_error.extend(self.rust_decl());
+            m.types_error.extend(self.display_impl());
         } else {
-            self.write_rust_decl(&mut w.types)?;
-            self.write_display_impl(&mut w.types)?;
-            self.write_from_str_impl(&mut w.types)?;
-            self.write_shorthand_parser(&mut w.types)?;
-            self.write_clap_value_enum(&mut w.types)?;
+            m.types.extend(self.rust_decl());
+            m.types.extend(self.display_impl());
+            m.types.extend(self.str_parse_impl());
+            m.types.extend(self.shorthand_parser());
+            m.types.extend(self.clap_value_enum());
         }
-        Ok(())
     }
 }
 
 impl Enum {
-    /// Writes the Rust declaration for this enum.
-    fn write_rust_decl(&self, w: &mut dyn Write) -> IoResult<()> {
-        let rust_typename = self.base.rust_typename();
-
-        self.base.traits.write_docs(w, "")?;
-
-        // Attributes for the enum.
-        writeln!(w, "#[derive(::serde::Deserialize, ::serde::Serialize)]")?;
-        writeln!(
-            w,
-            "#[derive(::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash, ::std::marker::Copy)]"
-        )?;
-        writeln!(w, "#[non_exhaustive]")?;
-        writeln!(w, "pub enum {rust_typename} {{")?;
-
-        let mut is_first = true;
-        for (member_name, member) in self.members.iter() {
-            if !is_first {
-                writeln!(w)?;
-            } else {
-                is_first = false;
-            }
-
-            member.traits.write_docs(w, "    ")?;
-
-            let rust_member_name = member_name.to_pascal_case();
-            if &rust_member_name != member_name {
-                writeln!(w, "    #[serde(rename = \"{member_name}\")]")?;
-            }
-            writeln!(w, "    {rust_member_name},")?;
+    /// The wire value of a member: its `enumValue` trait, or the member name.
+    fn wire_value(member_name: &str, member: &Member) -> String {
+        match member.traits.enum_value() {
+            Some(JsonValue::String(enum_value)) => enum_value,
+            _ => member_name.to_string(),
         }
-
-        writeln!(w, "}}")?;
-        writeln!(w)?;
-        Ok(())
     }
 
-    /// Writes the Display implementation for this enum.
-    fn write_display_impl(&self, w: &mut dyn Write) -> IoResult<()> {
-        let rust_typename = self.base.rust_typename();
+    /// The Rust declaration for this enum.
+    fn rust_decl(&self) -> TokenStream {
+        let name = ident(&self.base.rust_typename());
+        let docs = doc_tokens(self.base.traits.documentation());
 
-        writeln!(w, "impl ::std::fmt::Display for {rust_typename} {{")?;
-        writeln!(w, "    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {{")?;
-        writeln!(w, "        match self {{")?;
-
-        for (member_name, member) in self.members.iter() {
-            let rust_member_name = member_name.to_pascal_case();
-            if let Some(enum_value) = member.traits.enum_value()
-                && let JsonValue::String(enum_value) = enum_value
-            {
-                writeln!(w, "            Self::{rust_member_name} => f.write_str(\"{enum_value}\"),")?;
+        let variants = self.members.iter().map(|(member_name, member)| {
+            let variant_name = member_name.to_pascal_case();
+            let variant = ident(&variant_name);
+            let variant_docs = doc_tokens(member.traits.documentation());
+            let rename = if variant_name == *member_name {
+                quote!()
             } else {
-                writeln!(w, "            Self::{rust_member_name} => f.write_str(\"{member_name}\"),")?;
+                quote!(#[serde(rename = #member_name)])
+            };
+
+            quote! {
+                #variant_docs
+                #rename
+                #variant,
+            }
+        });
+
+        quote! {
+            #docs
+            #[derive(::serde::Deserialize, ::serde::Serialize)]
+            #[derive(
+                ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq,
+                ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash, ::std::marker::Copy
+            )]
+            #[non_exhaustive]
+            pub enum #name {
+                #(#variants)*
             }
         }
-
-        writeln!(w, "        }}")?;
-        writeln!(w, "    }}")?;
-        writeln!(w, "}}")?;
-        writeln!(w)?;
-        Ok(())
     }
 
-    /// Writes the FromStr implementation for this enum.
-    fn write_from_str_impl(&self, w: &mut dyn Write) -> IoResult<()> {
-        let rust_typename = self.base.rust_typename();
+    /// The `Display` implementation, writing each variant's wire value.
+    fn display_impl(&self) -> TokenStream {
+        let name = ident(&self.base.rust_typename());
+        let arms = self.members.iter().map(|(member_name, member)| {
+            let variant = ident(&member_name.to_pascal_case());
+            let wire_value = Self::wire_value(member_name, member);
+            quote!(Self::#variant => f.write_str(#wire_value),)
+        });
 
-        writeln!(w, "impl ::std::str::FromStr for {rust_typename} {{")?;
-        writeln!(w, "    type Err = String;")?;
-        writeln!(w, "    fn from_str(s: &str) -> ::std::result::Result<Self, Self::Err> {{")?;
-        writeln!(w, "        match s {{")?;
-        for (member_name, member) in self.members.iter() {
-            let rust_member_name = member_name.to_pascal_case();
-            if let Some(enum_value) = member.traits.enum_value()
-                && let JsonValue::String(enum_value) = enum_value
-            {
-                writeln!(w, "            \"{enum_value}\" => Ok(Self::{rust_member_name}),")?;
-            } else {
-                writeln!(w, "            \"{member_name}\" => Ok(Self::{rust_member_name}),")?;
+        quote! {
+            impl ::std::fmt::Display for #name {
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                    match self {
+                        #(#arms)*
+                    }
+                }
             }
         }
-        writeln!(w, "            _ => Err(format!(\"Invalid value '{{s}}' for {rust_typename}\")),")?;
-        writeln!(w, "        }}")?;
-        writeln!(w, "    }}")?;
-        writeln!(w, "}}")?;
-        writeln!(w)?;
-        Ok(())
     }
 
-    /// Writes a TryFrom<ShorthandValue> implementation for this enum that allows it to be parsed
-    /// from a string in shorthand form.
-    fn write_shorthand_parser(&self, w: &mut dyn Write) -> IoResult<()> {
-        let rust_typename = self.base.rust_typename();
+    /// The `FromStr` implementation, accepting each variant's wire value.
+    fn str_parse_impl(&self) -> TokenStream {
+        let name = ident(&self.base.rust_typename());
+        let invalid = format!("Invalid value '{{s}}' for {}", self.base.rust_typename());
+        let arms = self.members.iter().map(|(member_name, member)| {
+            let variant = ident(&member_name.to_pascal_case());
+            let wire_value = Self::wire_value(member_name, member);
+            quote!(#wire_value => Ok(Self::#variant),)
+        });
 
-        writeln!(w, "#[cfg(feature = \"clap\")]")?;
-        writeln!(w, "impl ::std::convert::TryFrom<&::scratchstack_cli_utils::ShorthandValue> for {rust_typename} {{")?;
-        writeln!(w, "    type Error = ::std::string::String;")?;
-        writeln!(
-            w,
-            "    fn try_from(value: &::scratchstack_cli_utils::ShorthandValue) -> ::std::result::Result<Self, Self::Error> {{"
-        )?;
-        writeln!(w, "        let ::scratchstack_cli_utils::ShorthandValue::Scalar(value) = value else {{")?;
-        writeln!(
-            w,
-            "            return ::std::result::Result::Err(format!(\"Expected a string for {rust_typename} but got '{{value:?}}\"));"
-        )?;
-        writeln!(w, "         }};")?;
-        writeln!(w)?;
-        writeln!(w, "        <Self as ::std::str::FromStr>::from_str(value.as_str())")?;
-        writeln!(w, "    }}")?;
-        writeln!(w, "}}")?;
-        writeln!(w)?;
-        Ok(())
-    }
-
-    /// Writes a ValueEnum implementation for this enum that allows it to be used as a clap value enum when the "clap"
-    /// feature is enabled.
-    fn write_clap_value_enum(&self, w: &mut dyn Write) -> IoResult<()> {
-        let rust_typename = self.base.rust_typename();
-
-        writeln!(w, "#[cfg(feature = \"clap\")]")?;
-        writeln!(w, "impl ::clap::ValueEnum for {rust_typename} {{")?;
-        writeln!(w, "    fn value_variants<'a>() -> &'a [Self] {{")?;
-        writeln!(w, "        &[")?;
-        for member_name in self.members.keys() {
-            let rust_member_name = member_name.to_pascal_case();
-            writeln!(w, "            Self::{rust_member_name},")?;
-        }
-        writeln!(w, "        ]")?;
-        writeln!(w, "    }}")?;
-        writeln!(w)?;
-        writeln!(w, "    fn to_possible_value(&self) -> ::std::option::Option<::clap::builder::PossibleValue> {{")?;
-        writeln!(w, "        let s = match self {{")?;
-        for (member_name, member) in self.members.iter() {
-            let rust_member_name = member_name.to_pascal_case();
-            if let Some(enum_value) = member.traits.enum_value()
-                && let JsonValue::String(enum_value) = enum_value
-            {
-                writeln!(w, "            Self::{rust_member_name} => \"{enum_value}\",")?;
-            } else {
-                writeln!(w, "            Self::{rust_member_name} => \"{member_name}\",")?;
+        quote! {
+            impl ::std::str::FromStr for #name {
+                type Err = String;
+                fn from_str(s: &str) -> ::std::result::Result<Self, Self::Err> {
+                    match s {
+                        #(#arms)*
+                        _ => Err(::std::format!(#invalid)),
+                    }
+                }
             }
         }
-        writeln!(w, "        }};")?;
-        writeln!(w)?;
-        writeln!(w, "        ::std::option::Option::Some(::clap::builder::PossibleValue::new(s))")?;
-        writeln!(w, "    }}")?;
-        writeln!(w, "}}")?;
-        Ok(())
+    }
+
+    /// A `TryFrom<ShorthandValue>` implementation, so the enum can be parsed from CLI shorthand.
+    fn shorthand_parser(&self) -> TokenStream {
+        let name = ident(&self.base.rust_typename());
+        let expected = format!("Expected a string for {} but got '{{value:?}}", self.base.rust_typename());
+
+        quote! {
+            #[cfg(feature = "clap")]
+            impl ::std::convert::TryFrom<&::scratchstack_cli_utils::ShorthandValue> for #name {
+                type Error = ::std::string::String;
+                fn try_from(
+                    value: &::scratchstack_cli_utils::ShorthandValue,
+                ) -> ::std::result::Result<Self, Self::Error> {
+                    let ::scratchstack_cli_utils::ShorthandValue::Scalar(value) = value else {
+                        return ::std::result::Result::Err(::std::format!(#expected));
+                    };
+
+                    <Self as ::std::str::FromStr>::from_str(value.as_str())
+                }
+            }
+        }
+    }
+
+    /// A `clap::ValueEnum` implementation, so the enum can be a command-line argument type.
+    fn clap_value_enum(&self) -> TokenStream {
+        let name = ident(&self.base.rust_typename());
+        let variants = self.members.keys().map(|member_name| {
+            let variant = ident(&member_name.to_pascal_case());
+            quote!(Self::#variant,)
+        });
+        let arms = self.members.iter().map(|(member_name, member)| {
+            let variant = ident(&member_name.to_pascal_case());
+            let wire_value = Self::wire_value(member_name, member);
+            quote!(Self::#variant => #wire_value,)
+        });
+
+        quote! {
+            #[cfg(feature = "clap")]
+            impl ::clap::ValueEnum for #name {
+                fn value_variants<'a>() -> &'a [Self] {
+                    &[#(#variants)*]
+                }
+
+                fn to_possible_value(&self) -> ::std::option::Option<::clap::builder::PossibleValue> {
+                    let s = match self {
+                        #(#arms)*
+                    };
+
+                    ::std::option::Option::Some(::clap::builder::PossibleValue::new(s))
+                }
+            }
+        }
     }
 }

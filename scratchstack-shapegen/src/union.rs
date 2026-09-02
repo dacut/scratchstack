@@ -1,10 +1,8 @@
 use {
-    super::{Member, ShapeBase, ShapeInfo, SmithyModel, StrExt as _, Writers},
+    super::{Member, Modules, ShapeBase, ShapeInfo, SmithyModel, StrExt as _, doc_tokens, ident, type_tokens},
+    quote::quote,
     serde::{Deserialize, Serialize},
-    std::{
-        collections::BTreeMap,
-        io::{Result as IoResult, Write},
-    },
+    std::collections::BTreeMap,
 };
 
 /// The union type represents a tagged union data structure that can take on several different,
@@ -41,22 +39,25 @@ impl ShapeInfo for Union {
         }
     }
 
-    fn generate<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
-        let rust_typename = self.base.rust_typename();
-        self.base.traits.write_docs(&mut w.types, "")?;
+    fn generate(&self, m: &mut Modules) {
+        let name = ident(&self.base.rust_typename());
+        let docs = doc_tokens(self.base.traits.documentation());
+        let variants = self.members.iter().map(|(member_name, member)| {
+            let variant = ident(&member_name.to_pascal_case());
+            let variant_type = type_tokens(&member.rust_typename());
+            quote! {
+                #[serde(tag = #member_name)]
+                #variant(#variant_type),
+            }
+        });
 
-        writeln!(w.types, "#[derive(Debug, ::serde::Deserialize, ::serde::Serialize)]")?;
-        writeln!(w.types, "#[non_exhaustive]")?;
-        writeln!(w.types, "pub enum {rust_typename} {{")?;
-
-        for (member_name, member) in &self.members {
-            let rust_member_name = member_name.to_pascal_case();
-            let member_type = member.rust_typename();
-            writeln!(w.types, "    #[serde(tag = \"{member_name}\")]")?;
-            writeln!(w.types, "    {rust_member_name}({member_type}),")?;
-        }
-
-        writeln!(w.types, "}}")?;
-        Ok(())
+        m.types.extend(quote! {
+            #docs
+            #[derive(Debug, ::serde::Deserialize, ::serde::Serialize)]
+            #[non_exhaustive]
+            pub enum #name {
+                #(#variants)*
+            }
+        });
     }
 }

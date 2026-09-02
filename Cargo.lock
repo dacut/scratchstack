@@ -2792,13 +2792,16 @@ name = "scratchstack-shapegen"
 version = "0.12.0"
 dependencies = [
  "bon",
- "indoc",
  "log",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
  "scratchstack-hakari",
  "serde",
  "serde_json",
  "strum",
  "strum_macros",
+ "syn 2.0.119",
 ]
 
 [[package]]

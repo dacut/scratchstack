@@ -1,10 +1,9 @@
 use {
-    crate::{Member, ShapeBase, ShapeInfo, StrExt, Writers},
+    crate::{Member, Modules, ShapeBase, ShapeInfo, StrExt, doc_tokens, ident},
+    proc_macro2::{Literal, TokenStream},
+    quote::quote,
     serde::{Deserialize, Serialize},
-    std::{
-        collections::BTreeMap,
-        io::{Result as IoResult, Write},
-    },
+    std::collections::BTreeMap,
 };
 
 /// An `intEnum` is used to represent an enumerated set of one or more integer values. The members
@@ -37,47 +36,56 @@ impl ShapeInfo for IntEnum {
         self.base.resolve(shape_name);
     }
 
-    fn generate<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
+    fn generate(&self, m: &mut Modules) {
         let module = if self.base.traits.is_error() {
-            &mut w.types_error
+            &mut m.types_error
         } else {
-            &mut w.types
+            &mut m.types
         };
-        self.generate_types(module)
+        module.extend(self.rust_decl());
     }
 }
 
 impl IntEnum {
-    /// Generates code that belogs in `crate::types` for this enum.
-    pub fn generate_types(&self, w: &mut dyn Write) -> IoResult<()> {
+    /// The Rust declaration for this enum, a discriminant per variant.
+    fn rust_decl(&self) -> TokenStream {
         // The bare name: `rust_typename` is module-qualified, for naming the type from elsewhere.
-        let rust_type = self.base.rust_typename();
+        let type_name = self.base.rust_typename();
+        let name = ident(&type_name);
+        let docs = doc_tokens(self.base.traits.documentation());
 
-        self.base.traits.write_docs(w, "")?;
-
-        writeln!(w, "#[derive(::serde::Deserialize, ::serde::Serialize,)]")?;
-        writeln!(
-            w,
-            "#[derive(::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash, ::std::marker::Copy)]"
-        )?;
-        writeln!(w, "#[non_exhaustive]")?;
-        writeln!(w, "pub enum {rust_type} {{")?;
-
-        for (member_name, member) in self.members.iter() {
-            member.traits.write_docs(w, "    ")?;
-            let rust_member_name = member_name.to_pascal_case();
+        let variants = self.members.iter().map(|(member_name, member)| {
+            let variant_name = member_name.to_pascal_case();
+            let variant = ident(&variant_name);
+            let variant_docs = doc_tokens(member.traits.documentation());
             let value = member.traits.enum_value_as_i64().unwrap_or_else(|| {
-                panic!("intEnum {rust_type} variant {member_name} has no integer smithy.api#enumValue")
+                panic!("intEnum {type_name} variant {member_name} has no integer smithy.api#enumValue")
             });
+            let value = Literal::i64_unsuffixed(value);
+            let rename = if variant_name == *member_name {
+                quote!()
+            } else {
+                quote!(#[serde(rename = #member_name)])
+            };
 
-            if &rust_member_name != member_name {
-                writeln!(w, "    #[serde(rename = \"{member_name}\")]")?;
+            quote! {
+                #variant_docs
+                #rename
+                #variant = #value,
             }
-            writeln!(w, "    {rust_member_name} = {value},")?;
+        });
+
+        quote! {
+            #docs
+            #[derive(::serde::Deserialize, ::serde::Serialize)]
+            #[derive(
+                ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq,
+                ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash, ::std::marker::Copy
+            )]
+            #[non_exhaustive]
+            pub enum #name {
+                #(#variants)*
+            }
         }
-
-        writeln!(w, "}}")?;
-
-        Ok(())
     }
 }
