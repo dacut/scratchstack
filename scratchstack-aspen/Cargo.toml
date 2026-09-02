@@ -20,7 +20,7 @@ default = []
 # principals, resources, and session data. Invaluable for debugging an unexpected authorization
 # decision, and unacceptable in a deployment whose logs are retained or aggregated. Without this
 # feature the records are not merely filtered by log level -- they are not compiled in at all.
-sensitive-logging = []
+sensitive-logging = ["scratchstack-core/sensitive-logging"]
 
 [dependencies]
 base64.workspace = true
@@ -32,6 +32,7 @@ log.workspace = true
 regex.workspace = true
 scratchstack-arn.path = "../scratchstack-arn"
 scratchstack-aws-principal.path = "../scratchstack-aws-principal"
+scratchstack-core = { path = "../scratchstack-core", default-features = false }
 scratchstack-hakari = { path = "../scratchstack-hakari" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

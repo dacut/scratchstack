@@ -1,21 +1,20 @@
-//! Logging macros for records that may expose the contents of an authorization request.
+//! Logging macros for records that may expose request material.
 //!
-//! Tracing an authorization decision means logging the material the decision was made from:
-//! policy documents, the principal making the request, the resources it names, and the session
-//! data (which carries request headers, tags, and federation attributes). That is exactly what a
-//! log aggregator should never see, so the macros here compile to nothing unless the
-//! `sensitive-logging` feature is enabled.
+//! Tracing an authentication or authorization decision means logging the material the decision
+//! was made from: credentials, canonical requests, policy documents, the principal making the
+//! request, the resources it names, and the session data (which carries request headers, tags,
+//! and federation attributes). That is exactly what a log aggregator should never see, so the
+//! macros here compile to nothing unless the `sensitive-logging` feature is enabled.
 //!
 //! Logs that carry no request material -- internal invariant violations, serializer failures --
 //! use the [`log`] macros directly and are always compiled in.
 
-/// Log a record that may expose the contents of an authorization request, at an explicit
-/// [`log::Level`].
+/// Log a record that may expose request material, at an explicit [`log::Level`].
 ///
 /// This expands to nothing unless the `sensitive-logging` feature is enabled: such records carry
-/// policy documents, principals, resources, and session data, none of which belong in an ordinary
-/// log stream. The format string and its arguments are still type-checked when the feature is
-/// off, but nothing is evaluated at runtime.
+/// credentials, canonical requests, policy documents, principals, resources, and session data,
+/// none of which belong in an ordinary log stream. The format string and its arguments are still
+/// type-checked when the feature is off, but nothing is evaluated at runtime.
 #[cfg(feature = "sensitive-logging")]
 #[macro_export]
 macro_rules! sensitive_log {
@@ -24,13 +23,12 @@ macro_rules! sensitive_log {
     };
 }
 
-/// Log a record that may expose the contents of an authorization request, at an explicit
-/// [`log::Level`].
+/// Log a record that may expose request material, at an explicit [`log::Level`].
 ///
 /// This expands to nothing unless the `sensitive-logging` feature is enabled: such records carry
-/// policy documents, principals, resources, and session data, none of which belong in an ordinary
-/// log stream. The format string and its arguments are still type-checked when the feature is
-/// off, but nothing is evaluated at runtime.
+/// credentials, canonical requests, policy documents, principals, resources, and session data,
+/// none of which belong in an ordinary log stream. The format string and its arguments are still
+/// type-checked when the feature is off, but nothing is evaluated at runtime.
 #[cfg(not(feature = "sensitive-logging"))]
 #[macro_export]
 macro_rules! sensitive_log {
@@ -44,7 +42,7 @@ macro_rules! sensitive_log {
     }};
 }
 
-/// Log a `Trace` record that may expose the contents of an authorization request.
+/// Log a `Trace` record that may expose request material.
 ///
 /// This expands to nothing unless the `sensitive-logging` feature is enabled; see
 /// [`sensitive_log`].
@@ -55,7 +53,7 @@ macro_rules! sensitive_trace {
     };
 }
 
-/// Log a `Debug` record that may expose the contents of an authorization request.
+/// Log a `Debug` record that may expose request material.
 ///
 /// This expands to nothing unless the `sensitive-logging` feature is enabled; see
 /// [`sensitive_log`].
@@ -66,7 +64,7 @@ macro_rules! sensitive_debug {
     };
 }
 
-/// Log an `Info` record that may expose the contents of an authorization request.
+/// Log an `Info` record that may expose request material.
 ///
 /// This expands to nothing unless the `sensitive-logging` feature is enabled; see
 /// [`sensitive_log`].
@@ -77,7 +75,7 @@ macro_rules! sensitive_info {
     };
 }
 
-/// Log a `Warn` record that may expose the contents of an authorization request.
+/// Log a `Warn` record that may expose request material.
 ///
 /// This expands to nothing unless the `sensitive-logging` feature is enabled; see
 /// [`sensitive_log`].
@@ -88,7 +86,7 @@ macro_rules! sensitive_warn {
     };
 }
 
-/// Log an `Error` record that may expose the contents of an authorization request.
+/// Log an `Error` record that may expose request material.
 ///
 /// This expands to nothing unless the `sensitive-logging` feature is enabled; see
 /// [`sensitive_log`].

@@ -27,8 +27,11 @@
 //! # Features
 //!
 //! `axum` is enabled by default and brings in the `response` module along with the `quick-xml` serializer that
-//! [`xml`] wraps. `tls` adds the `tls` module. The remaining features (`form`, `http1`, `http2`, `macros`,
-//! `original-uri`, `query`, `tokio`, `tower-log`, `tracing`) forward to the Axum features of the same name.
+//! [`xml`] wraps. `tls` adds the `tls` module. `sensitive-logging` compiles in the [`sensitive_log`] family of
+//! macros, which emit log records carrying request material -- credentials, canonical requests, policy documents,
+//! principals, and session data; it is off by default, and the records are not compiled in at all without it. The
+//! remaining features (`form`, `http1`, `http2`, `macros`, `original-uri`, `query`, `tokio`, `tower-log`, `tracing`)
+//! forward to the Axum features of the same name.
 
 #![warn(clippy::all)]
 #![allow(clippy::manual_range_contains)]
@@ -44,6 +47,9 @@
 #![cfg_attr(doc, feature(doc_cfg))]
 
 pub(crate) mod constants;
+
+#[macro_use]
+pub(crate) mod macros;
 
 /// Error traits and types.
 pub mod error;
@@ -67,6 +73,11 @@ pub mod xml;
 
 /// The underlying `http` crate used by this crate.
 pub use http;
+
+/// Re-export of the [`log`] crate for use by the `sensitive_*` logging macros, which must name it
+/// through `$crate` so they expand correctly outside this crate.
+#[doc(hidden)]
+pub use log as __log;
 
 pub use {error::*, request_id::*};
 
