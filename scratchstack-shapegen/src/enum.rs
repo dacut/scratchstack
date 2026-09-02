@@ -69,10 +69,17 @@ impl Enum {
             let variant_name = member_name.to_pascal_case();
             let variant = ident(&variant_name);
             let variant_docs = doc_tokens(member.traits.documentation());
-            let rename = if variant_name == *member_name {
+
+            // Rename to the *wire* value, not the Smithy member name. `enumValue` is what goes on
+            // the wire -- IAM's `ContextKeyTypeEnum` member `STRING` has the value `string` -- and
+            // renaming to the member name made serde disagree with `Display` and `FromStr`, which
+            // use `enumValue`. Serialization emitted a value AWS never sends, and deserialization
+            // rejected the one it does.
+            let wire_value = Self::wire_value(member_name, member);
+            let rename = if wire_value == variant_name {
                 quote!()
             } else {
-                quote!(#[serde(rename = #member_name)])
+                quote!(#[serde(rename = #wire_value)])
             };
 
             quote! {
