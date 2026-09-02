@@ -233,6 +233,10 @@ pub(crate) const MSG_MALFORMED_XACS_QUERY_PARAMETER: &str = "Malformed X-Amz-Con
 /// Default error message for `MissingRequiredHeader`.
 pub(crate) const MSG_MISSING_REQUIRED_HEADER: &str = "Request is missing a required header";
 
+/// Error message: `"Payload hash markers such as UNSIGNED-PAYLOAD are only accepted under S3 rules."`
+pub(crate) const MSG_PAYLOAD_MARKER_REQUIRES_S3: &str =
+    "Payload hash markers such as UNSIGNED-PAYLOAD are only accepted under S3 rules.";
+
 /// Error message: `"AWS query-string parameters must include 'X-Amz-Credential'."`
 pub(crate) const MSG_QUERY_STRING_MUST_INCLUDE_CREDENTIAL: &str =
     "AWS query-string parameters must include 'X-Amz-Credential'.";

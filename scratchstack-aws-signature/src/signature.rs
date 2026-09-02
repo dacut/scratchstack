@@ -286,8 +286,10 @@ where
 /// * `request` - The HTTP [`Request`] to validate.
 /// * `body_hash` - The hash of the request body. For S3 PutObject requests, this is the
 ///   `x-amz-content-sha256` header value, which may have special non-SHA-256 values like
-///   `UNSIGNED-PAYLOAD` or `STREAMING-AWS4-HMAC-SHA256-PAYLOAD`; when it does, that header must
-///   be in `SignedHeaders`.
+///   `UNSIGNED-PAYLOAD` or `STREAMING-AWS4-HMAC-SHA256-PAYLOAD`. Such markers are accepted only
+///   with [`options.s3`][SignatureOptions::s3] set (or for a presigned URL), and the header
+///   must then be in `SignedHeaders`; any other service refuses them, as it has no body to
+///   hash in their place.
 /// * `algorithm` - The signing algorithm named in the request, used as the first line of the
 ///   string to sign for each chunk.
 /// * `region` - The AWS region in which the request is being made.
@@ -1709,6 +1711,61 @@ mod tests {
             SignatureDoesNotMatch
         );
         assert_eq!(e, "'x-amz-content-sha256' must be a 'SignedHeader' in the AWS Authorization.");
+    }
+
+    /// Without S3 rules the buffered path hashes the body whatever the header claims; the
+    /// streaming path has no body to hash, so a marker passed as the body hash is refused
+    /// outright rather than copied into the canonical request as an unsigned payload.
+    #[test_log::test(tokio::test)]
+    async fn test_streaming_payload_marker_requires_s3() {
+        let req = s3_streaming_example_request();
+        let mut get_signing_key_svc =
+            service_for_signing_key_fn(make_get_signing_key_fn("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"));
+
+        for body_hash in
+            ["STREAMING-AWS4-HMAC-SHA256-PAYLOAD", "UNSIGNED-PAYLOAD", "STREAMING-UNSIGNED-PAYLOAD-TRAILER"]
+        {
+            let e = expect_err!(
+                sigv4_validate_streaming_headers(
+                    &req,
+                    body_hash,
+                    "AWS4-HMAC-SHA256-PAYLOAD",
+                    "us-east-1",
+                    "s3",
+                    &mut get_signing_key_svc,
+                    s3_streaming_example_timestamp(),
+                    &NoSignedHeaderRequirements,
+                    SignatureOptions::default(),
+                    RequestId::new(),
+                )
+                .await,
+                SignatureDoesNotMatch
+            );
+            assert_eq!(
+                e, "Payload hash markers such as UNSIGNED-PAYLOAD are only accepted under S3 rules.",
+                "{body_hash}"
+            );
+        }
+
+        // A real digest is canonicalized as given under any rules; this one merely fails to
+        // match the signature, which was computed over the streaming marker.
+        let e = expect_err!(
+            sigv4_validate_streaming_headers(
+                &req,
+                SHA256_EMPTY,
+                "AWS4-HMAC-SHA256-PAYLOAD",
+                "us-east-1",
+                "s3",
+                &mut get_signing_key_svc,
+                s3_streaming_example_timestamp(),
+                &NoSignedHeaderRequirements,
+                SignatureOptions::default(),
+                RequestId::new(),
+            )
+            .await,
+            SignatureDoesNotMatch
+        );
+        assert_eq!(e, MSG_REQUEST_SIGNATURE_MISMATCH);
     }
 
     /// S3 requires a session token sent as a header to be covered by the signature. (Other
