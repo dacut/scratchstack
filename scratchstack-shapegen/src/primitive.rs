@@ -2,6 +2,7 @@ use {
     crate::{ShapeBase, ShapeInfo, SmithyModel, TraitMap},
     indoc::formatdoc,
     serde::{Deserialize, Serialize},
+    std::io::{Result as IoResult, Write},
 };
 
 /// The `unit` type in Smithy is similar to `Void` and `None` in other languages. It is used
@@ -233,7 +234,7 @@ impl ShapeInfo for SmithyString {
                 && min > 0
             {
                 let cond = if min > 1 {
-                    format!("{var}.len() < {min}")
+                    format!("{var}.chars().count() < {min}")
                 } else {
                     format!("{var}.is_empty()")
                 };
@@ -247,7 +248,7 @@ impl ShapeInfo for SmithyString {
 
             if let Some(max) = lc.max {
                 output += &formatdoc!("
-                    if {var}.len() > {max} {{
+                    if {var}.chars().count() > {max} {{
                         return Err(format!(\"{field_name} must be at most {max} characters long for {simple_name}: {{{var}}}\")); 
                     }}
                 ");
@@ -259,6 +260,35 @@ impl ShapeInfo for SmithyString {
         } else {
             None
         }
+    }
+
+    fn validator_fn_name(&self) -> Option<String> {
+        if self.is_builtin() {
+            return None;
+        }
+
+        let has_length = self
+            .base
+            .traits
+            .length_constraint()
+            .is_some_and(|lc| lc.max.is_some() || lc.min.is_some_and(|min| min > 0));
+
+        if self.base.traits.pattern().is_some() || has_length {
+            Some(crate::validator_fn_name_for(&self.simple_name()))
+        } else {
+            None
+        }
+    }
+
+    fn write_validator_fn(&self, w: &mut dyn Write) -> IoResult<()> {
+        let Some(fn_name) = self.validator_fn_name() else {
+            return Ok(());
+        };
+        let Some(body) = self.derive_builder_validator("value", "{field}") else {
+            return Ok(());
+        };
+
+        crate::write_validator_fn(w, &fn_name, &self.rust_typename(), &self.simple_name(), &body)
     }
 
     fn is_primitive(&self) -> bool {
@@ -391,6 +421,30 @@ macro_rules! impl_numeric {
                 }
 
                 Some(output)
+            }
+
+            fn validator_fn_name(&self) -> Option<String> {
+                if self.is_builtin() {
+                    return None;
+                }
+
+                match self.base.traits.range_constraint() {
+                    Some(rc) if rc.min.is_some() || rc.max.is_some() => {
+                        Some(crate::validator_fn_name_for(&self.simple_name()))
+                    }
+                    _ => None,
+                }
+            }
+
+            fn write_validator_fn(&self, w: &mut dyn ::std::io::Write) -> IoResult<()> {
+                let Some(fn_name) = self.validator_fn_name() else {
+                    return Ok(());
+                };
+                let Some(body) = self.derive_builder_validator("value", "{field}") else {
+                    return Ok(());
+                };
+
+                crate::write_validator_fn(w, &fn_name, &self.rust_typename(), &self.simple_name(), &body)
             }
 
             fn is_primitive(&self) -> bool {

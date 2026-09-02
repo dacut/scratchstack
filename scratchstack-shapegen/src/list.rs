@@ -2,7 +2,11 @@ use {
     crate::{Member, Shape, ShapeBase, ShapeInfo, SmithyModel},
     indoc::formatdoc,
     serde::{Deserialize, Serialize},
-    std::{cell::RefCell, rc::Rc},
+    std::{
+        cell::RefCell,
+        io::{Result as IoResult, Write},
+        rc::Rc,
+    },
 };
 
 /// The list type represents an ordered homogeneous collection of values. A list shape requires
@@ -74,13 +78,14 @@ impl ShapeInfo for List {
             }
         }
 
-        let el_validator = self.inner().borrow().derive_builder_validator("el", field_name);
-        if let Some(el_validator) = el_validator {
+        // The element shape validates itself; call its function rather than inlining its checks
+        // once per list that happens to contain it.
+        if let Some(el_fn) = self.inner().borrow().validator_fn_name() {
             output += &formatdoc! {"
                 for el in {var}.iter() {{
-                    {el_validator}
+                    crate::types::{el_fn}(el, {field_name_expr})?;
                 }}
-            "};
+            ", field_name_expr = field_name_expr(field_name)};
         }
 
         if output.is_empty() {
@@ -88,6 +93,50 @@ impl ShapeInfo for List {
         } else {
             Some(output)
         }
+    }
+
+    fn validator_fn_name(&self) -> Option<String> {
+        if self.is_builtin() {
+            return None;
+        }
+
+        let has_length = self
+            .base
+            .traits
+            .length_constraint()
+            .is_some_and(|lc| lc.max.is_some() || lc.min.is_some_and(|min| min > 0));
+
+        if has_length || self.inner().borrow().validator_fn_name().is_some() {
+            Some(crate::validator_fn_name_for(&self.simple_name()))
+        } else {
+            None
+        }
+    }
+
+    fn write_validator_fn(&self, w: &mut dyn Write) -> IoResult<()> {
+        let Some(fn_name) = self.validator_fn_name() else {
+            return Ok(());
+        };
+        let Some(body) = self.derive_builder_validator("value", "{field}") else {
+            return Ok(());
+        };
+
+        // A slice parameter, not `&Vec<T>`: callers hold a `Vec` and it coerces, and clippy's
+        // ptr_arg lint fires on the generated code otherwise.
+        let value_type = format!("[{}]", self.member.rust_typename());
+        crate::write_validator_fn(w, &fn_name, &value_type, &self.simple_name(), &body)
+    }
+}
+
+/// Renders `field_name` as a Rust expression of type `&str`.
+///
+/// A validator function passes its own `field` parameter straight through to the element check; any
+/// other caller is naming a literal field.
+fn field_name_expr(field_name: &str) -> String {
+    if field_name == "{field}" {
+        "field".to_string()
+    } else {
+        format!("\"{field_name}\"")
     }
 }
 

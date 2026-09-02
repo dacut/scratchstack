@@ -130,12 +130,34 @@ pub trait ShapeInfo {
     /// If this shape has custom code to validate its value from a builder type, returns it.
     /// Otherwise returns `None`.
     ///
+    /// This is the *body* of a check, not a whole function. It is emitted once, into the shape's
+    /// validator function; builders call that function rather than repeating the body. See
+    /// [`validator_fn_name`][Self::validator_fn_name].
+    ///
     /// # Parameters
     /// * `var` — the variable holding the value to be validated.
-    /// * `field_name` — the name of the field being evaluated (for use in error messages).
+    /// * `field_name` — the name of the field being evaluated (for use in error messages). Callers
+    ///   emitting a validator function pass the literal `{field}`, which resolves to that
+    ///   function's `field` parameter when the generated `format!` runs.
     #[allow(unused)]
     fn derive_builder_validator(&self, var: &str, field_name: &str) -> Option<String> {
         None
+    }
+
+    /// The name of this shape's validator function, if it constrains its values.
+    ///
+    /// Constraints belong to the shape, not to the fields targeting it: `accountIdType` is one
+    /// regular expression however many requests carry an account id. Emitting the check once per
+    /// shape and calling it per field keeps IAM from compiling the same twelve-digit pattern 153
+    /// times.
+    fn validator_fn_name(&self) -> Option<String> {
+        None
+    }
+
+    /// Writes this shape's validator function, if it has one, into `crate::types`.
+    #[allow(unused_variables)] // Makes code completion show `w` instead of `_w`.
+    fn write_validator_fn(&self, w: &mut dyn Write) -> IoResult<()> {
+        Ok(())
     }
 
     /// Generate Rust code for this shape, writing it to the appropriate module in `w`.
@@ -188,6 +210,44 @@ macro_rules! forward_shape_info {
             self.$field.rust_typename()
         }
     };
+}
+
+/// Writes a validator function for one shape into `crate::types`.
+///
+/// The function takes the value and the name of the field being checked, so one function serves
+/// every field targeting the shape and each still names itself in the error. `body` comes from
+/// [`ShapeInfo::derive_builder_validator`] rendered with `{field}` as the field name, which the
+/// generated `format!` calls resolve against the `field` parameter.
+pub(crate) fn write_validator_fn(
+    w: &mut dyn Write,
+    fn_name: &str,
+    value_type: &str,
+    simple_name: &str,
+    body: &str,
+) -> IoResult<()> {
+    writeln!(w, "/// Validates a value against the constraints of the `{simple_name}` shape.")?;
+    writeln!(w, "///")?;
+    writeln!(w, "/// `field` names the field being checked and appears in the error message.")?;
+    writeln!(
+        w,
+        "pub(crate) fn {fn_name}(value: &{value_type}, field: &str) -> ::std::result::Result<(), ::std::string::String> {{"
+    )?;
+    for line in body.trim_end().lines() {
+        if line.trim().is_empty() {
+            writeln!(w)?;
+        } else {
+            writeln!(w, "    {line}")?;
+        }
+    }
+    writeln!(w, "    ::std::result::Result::Ok(())")?;
+    writeln!(w, "}}")?;
+    writeln!(w)?;
+    Ok(())
+}
+
+/// The validator function name for a shape with the given simple name.
+pub(crate) fn validator_fn_name_for(simple_name: &str) -> String {
+    simple_name.to_rust_ident_affixed("validate_", "")
 }
 
 #[cfg(test)]

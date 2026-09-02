@@ -267,6 +267,16 @@ impl ShapeInfo for Shape {
     }
 
     #[inline(always)]
+    fn validator_fn_name(&self) -> Option<String> {
+        unwrap_inner!(self => validator_fn_name())
+    }
+
+    #[inline(always)]
+    fn write_validator_fn(&self, w: &mut dyn Write) -> IoResult<()> {
+        unwrap_inner!(self => write_validator_fn(w))
+    }
+
+    #[inline(always)]
     fn generate<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
         unwrap_inner!(self => generate(w))
     }

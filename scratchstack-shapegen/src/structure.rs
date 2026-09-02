@@ -308,21 +308,20 @@ impl Structure {
                 writeln!(w, "        }}")?;
             }
 
-            let member_validator = member.derive_builder_validator("value", &rust_typename);
-            if let Some(mut validator) = member_validator
-                && !validator.trim().is_empty()
-            {
-                validator = validator.trim().replace("\n", "\n            ");
+            // The check itself lives in the target shape's validator function; the member name is
+            // passed so the error names the field rather than the structure.
+            if let Some(validator_fn) = member.validator_fn_name() {
+                let call = format!("crate::types::{validator_fn}(value, \"{member_name}\")?;");
                 if is_required || is_list {
                     writeln!(w, "        if let Some(value) = &self.{rust_member_name} {{")?;
-                    writeln!(w, "            {validator}")?;
+                    writeln!(w, "            {call}")?;
                     writeln!(w, "        }}")?;
                 } else {
                     writeln!(
                         w,
                         "        if let Some(value_opt) = &self.{rust_member_name} && let Some(value) = value_opt {{"
                     )?;
-                    writeln!(w, "            {validator}")?;
+                    writeln!(w, "            {call}")?;
                     writeln!(w, "        }}")?;
                 }
             }
