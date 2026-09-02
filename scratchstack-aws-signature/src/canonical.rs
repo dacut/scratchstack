@@ -158,7 +158,14 @@ impl CanonicalRequest {
                     ));
                 }
 
-                query_parameters.extend(query_string_to_normalized_map(&body_query)?);
+                // Append the body parameters to the query string parameters. `HashMap::extend`
+                // would replace the values already present under a key rather than appending to
+                // them, silently dropping the URL's copy of any parameter that also appears in
+                // the body.
+                for (key, values) in query_string_to_normalized_map(&body_query)? {
+                    query_parameters.entry(key).or_default().extend(values);
+                }
+
                 // Rebuild the parts URI with the new query string.
                 let qs = canonicalize_query_to_string(&query_parameters);
                 trace!("Rebuilding URI with new query string: {}", qs);
@@ -256,8 +263,9 @@ impl CanonicalRequest {
     }
 
     /// Retrieve the query parameters from the request. Values are ordered as they appear in the URL, followed by any
-    /// values in the request body if the request body is of type `application/x-www-form-urlencoded`. Values are
-    /// normalized to be percent-encoded.
+    /// values in the request body if the request body is of type `application/x-www-form-urlencoded` and
+    /// [`SignatureOptions::url_encode_form`] is set. A parameter appearing in both keeps both values, in that order.
+    /// Values are normalized to be percent-encoded.
     #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
     #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
     #[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
@@ -1678,6 +1686,40 @@ mod tests {
 
         let (cr, _, _) = CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
         assert_eq!(cr.query_parameters().get("foo").unwrap(), &vec!["bar%C3%BF".to_string()]);
+    }
+
+    /// A parameter carried in both the URL and the form body keeps both values, in that order.
+    /// Replacing the URL's value instead would drop it from the canonical request, and the
+    /// signature computed over that request would not be the one the client signed.
+    #[test_log::test]
+    fn test_form_appends_to_query_string() {
+        let uri =
+            Uri::builder().path_and_query(PathAndQuery::from_static("/?a=url1&b=url-only&a=url2")).build().unwrap();
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(uri)
+            .header("content-type", "application/x-www-form-urlencoded")
+            .header("authorization", "AWS4-HMAC-SHA256 Credential=1234, SignedHeaders=date;host, Signature=5678")
+            .header("x-amz-date", "20150830T123600Z")
+            .body(Bytes::from("a=body1&c=body-only&a=body2"))
+            .unwrap();
+        let (parts, body) = request.into_parts();
+
+        let (cr, parts, body) =
+            CanonicalRequest::from_request_parts(parts, body, SignatureOptions::URL_ENCODE_FORM).unwrap();
+
+        // URL values first, then body values, each in the order they appeared.
+        assert_eq!(
+            cr.query_parameters().get("a").unwrap(),
+            &vec!["url1".to_string(), "url2".to_string(), "body1".to_string(), "body2".to_string()]
+        );
+        assert_eq!(cr.query_parameters().get("b").unwrap(), &vec!["url-only".to_string()]);
+        assert_eq!(cr.query_parameters().get("c").unwrap(), &vec!["body-only".to_string()]);
+
+        // The rebuilt URI and the canonical query string carry every value exactly once.
+        assert_eq!(cr.canonical_query_string(), "a=body1&a=body2&a=url1&a=url2&b=url-only&c=body-only");
+        assert_eq!(parts.uri.query().unwrap(), "a=body1&a=body2&a=url1&a=url2&b=url-only&c=body-only");
+        assert!(body.is_empty(), "the body is folded into the query string");
     }
 
     #[test_log::test]
