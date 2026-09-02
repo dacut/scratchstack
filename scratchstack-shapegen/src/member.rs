@@ -49,6 +49,11 @@ impl ShapeInfo for Member {
     fn derive_builder_validator(&self, var: &str, field_name: &str) -> Option<String> {
         self.inner().borrow().derive_builder_validator(var, field_name)
     }
+
+    #[inline(always)]
+    fn validator_fn_name(&self) -> Option<String> {
+        self.inner().borrow().validator_fn_name()
+    }
 }
 
 impl Member {

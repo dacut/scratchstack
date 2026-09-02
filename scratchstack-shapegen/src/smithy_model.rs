@@ -92,6 +92,8 @@ impl SmithyModel {
     ///
     /// This must have been resolved before calling this method.
     pub fn generate<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
+        self.generate_validators(w)?;
+
         for shape in self.shapes.values() {
             let shape = shape.borrow();
             shape.generate(w)?;
@@ -102,11 +104,62 @@ impl SmithyModel {
         Ok(())
     }
 
+    /// Writes one validator function per constrained shape into `crate::types`.
+    ///
+    /// Constraints are a property of the shape, so the check is emitted once here and every builder
+    /// field targeting that shape calls it. Inlining them instead cost IAM 694 `LazyLock<Regex>`
+    /// statics for 80 distinct constrained shapes.
+    fn generate_validators<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
+        let reachable = self.builder_reachable_shape_ids();
+
+        for (shape_id, shape) in &self.shapes {
+            if shape_id.starts_with("smithy.api#") || !reachable.contains(shape_id) {
+                continue;
+            }
+
+            shape.borrow().write_validator_fn(&mut w.types)?;
+        }
+
+        Ok(())
+    }
+
+    /// Returns the ids of shapes a generated builder can validate.
+    ///
+    /// That is the shapes targeted by the members of structures that get a hand-written builder --
+    /// everything but error structures, which use `bon` -- plus, transitively, the element shapes of
+    /// any lists among them. Emitting a validator for anything else would be dead code.
+    fn builder_reachable_shape_ids(&self) -> HashSet<String> {
+        let mut pending: Vec<String> = Vec::new();
+
+        for shape in self.shapes.values() {
+            if let Shape::Structure(structure) = &*shape.borrow()
+                && !structure.base.traits.is_error()
+            {
+                pending.extend(structure.members.values().map(|member| member.target.clone()));
+            }
+        }
+
+        let mut reachable = HashSet::new();
+        while let Some(shape_id) = pending.pop() {
+            if !reachable.insert(shape_id.clone()) {
+                continue;
+            }
+
+            if let Some(shape) = self.shapes.get(&shape_id)
+                && let Shape::List(list) = &*shape.borrow()
+            {
+                pending.push(list.member.target.clone());
+            }
+        }
+
+        reachable
+    }
+
     /// Generates code that belongs in `crate::action` for this model's service.
     ///
     /// The wire actions are the operations bound to the service shape, not every operation shape
-    /// in the model: `build.rs` synthesizes `*InternalRequest` structures that are not callable
-    /// actions.
+    /// in the model. A model transform may add structures or operations that are not callable
+    /// actions, and those must not appear here.
     fn generate_action<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
         let service_shape = self.get_service().expect("Model has no service shape");
         let service = service_shape.as_service().expect("Service shape is not a service");

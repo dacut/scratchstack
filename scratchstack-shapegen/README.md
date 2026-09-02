@@ -68,9 +68,11 @@ serializer type.
 OUT=$(find target/debug/build -name operation.rs -path '*/scratchstack-shapes-iam/*/out/*' \
       -exec stat -f '%m %N' {} \; | sort -rn | head -1 | cut -d' ' -f2- | xargs dirname)
 wc -l $OUT/*.rs
-grep -c LazyLock $OUT/operation.rs
-ls -l target/debug/deps/libscratchstack_shapes_iam-*.rmeta
+cat $OUT/*.rs | grep -c LazyLock
 ```
+
+Compare rmeta or rlib sizes only between builds made the same way -- a `cargo check` metadata file and
+a `cargo build` one differ by more than the code does, which makes the comparison meaningless.
 
 ### Incremental rebuild, which is what actually hurts
 
@@ -81,7 +83,7 @@ touch scratchstack-shapes-iam/build.rs && time cargo build -p scratchstack-shape
 ## Baseline — 2026-09-02
 
 IAM model: 1,057,288 bytes, 749 shapes (353 structure, 176 operation, 115 string, 56 list, 27 enum).
-Generated: 4.6 MB across 94,120 lines; `operation.rs` alone is 3.5 MB / 72,041 lines. rmeta: 20 MB.
+Generated: 4.6 MB across 94,120 lines; `operation.rs` alone is 3.5 MB / 72,041 lines.
 
 Cold build of `scratchstack-shapes-iam` and its path dependencies — 28.47 s total:
 
@@ -144,3 +146,25 @@ Three conclusions worth keeping:
 | Build-script run | 1.06 s | 0.33 s | −68.9% |
 
 The build-script figure also includes the buffered writers; the rest is having less to write.
+
+## After hoisting validators
+
+Constraints belong to the shape, not to each field targeting it, so each constrained shape now emits
+one `pub(crate) fn validate_<shape>(value, field)` into `crate::types` and every builder field calls
+it. Lists call their element shape's function rather than inlining its checks.
+
+| Measure | Baseline | After shorthand | After hoisting |
+|---|---|---|---|
+| Generated lines (IAM) | 94,120 | 80,160 | **73,893** (−21.5%) |
+| `operation.rs` lines | 72,041 | 58,081 | **51,533** (−28.5%) |
+| `LazyLock<Regex>` statics | 694 | 694 | **55** (−92.1%) |
+| Inline constraint checks | ~2,335 | ~2,335 | **182** (−92.2%) |
+| LLVM lines | 975,143 | 768,592 | **728,623** (−25.3%) |
+| LLVM copies | 23,951 | 18,434 | **17,017** (−29.0%) |
+| rustc time | 18.78 s | 15.65 s | **14.55 s** (−22.5%) |
+| Build-script run | 1.06 s | 0.33 s | **0.33 s** |
+
+Note that the regex statics were never the build-time cost they looked like -- they were 0.2% of LLVM
+lines. What hoisting actually removed was the `validate()` bodies, which were 8.7%. The statics
+mattered for a different reason: 694 of them meant compiling `^[\w+=,.@-]+$` 235 times at runtime,
+on first use, in every process that touched an IAM request.
