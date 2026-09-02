@@ -32,11 +32,6 @@ pub struct SmithyModel {
     #[serde(skip, default)]
     pub cli_shorthand: CliShorthand,
 
-    /// A set of shape IDs that are reachable from the service's input shapes. This is used to
-    /// generate try_from implementations from CLI input.
-    #[serde(skip, default)]
-    pub input_reachable_shapes: HashSet<String>,
-
     /// The XML namespace for this service, taken from the service shape's `xmlNamespace` trait.
     ///
     /// This is resolved during a call to [`resolve`][Self::resolve] and handed down to every shape
@@ -60,9 +55,14 @@ impl SmithyModel {
     /// model as they resolve.
     pub fn resolve(&mut self) {
         let xmlns = {
-            let service_shape = self.get_service().expect("Model has no service shape");
-            let service = service_shape.as_service().expect("Service shape is not a service");
-            service.base.traits.xml_namespace().expect("Service shape has no xmlNamespace trait").to_string()
+            let service_shape = self.service();
+            let service = service_shape.as_service().expect("service lookup returned a non-service shape");
+            service
+                .base
+                .traits
+                .xml_namespace()
+                .expect("the service shape has no smithy.api#xmlNamespace trait; the AWS query protocol needs one")
+                .to_string()
         };
         self.xmlns = Some(xmlns);
 
@@ -86,6 +86,17 @@ impl SmithyModel {
     #[must_use]
     pub fn get_service(&self) -> Option<Ref<'_, Shape>> {
         self.shapes.values().map(|shape| shape.borrow()).find(|shape| matches!(**shape, Shape::Service(_)))
+    }
+
+    /// Returns the service shape.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the model has no service shape. Everything generated hangs off it -- the action
+    /// enum, the API version, the XML namespace -- so a model without one has nothing to generate.
+    #[must_use]
+    fn service(&self) -> Ref<'_, Shape> {
+        self.get_service().expect("model has no service shape")
     }
 
     /// Generates Rust code for the Smithy model.
@@ -161,8 +172,8 @@ impl SmithyModel {
     /// in the model. A model transform may add structures or operations that are not callable
     /// actions, and those must not appear here.
     fn generate_action<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
-        let service_shape = self.get_service().expect("Model has no service shape");
-        let service = service_shape.as_service().expect("Service shape is not a service");
+        let service_shape = self.service();
+        let service = service_shape.as_service().expect("service lookup returned a non-service shape");
 
         let mut actions: Vec<&str> = service
             .operations
@@ -255,7 +266,7 @@ impl SmithyModel {
 
     /// Generates code that belongs in `crate::error_meta` for all shapes in the model.
     fn generate_error_meta<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
-        let xmlns = self.xmlns.as_deref().expect("Model has not been resolved; no xmlns available");
+        let xmlns = self.xmlns.as_deref().expect("model has no XML namespace; call resolve() before generate()");
 
         // Error enum definition.
         writeln!(w.error_meta, "/// All possible error types for this service.")?;

@@ -168,3 +168,25 @@ Note that the regex statics were never the build-time cost they looked like -- t
 lines. What hoisting actually removed was the `validate()` bodies, which were 8.7%. The statics
 mattered for a different reason: 694 of them meant compiling `^[\w+=,.@-]+$` 235 times at runtime,
 on first use, in every process that touched an IAM request.
+
+## Known loose ends
+
+Things that are deliberate, or at least known, so they are not rediscovered as bugs:
+
+* **`TraitId` is a closed set.** `trait_id.rs` enumerates the ~30 Smithy and AWS traits shapegen
+  understands, and an unrecognized trait id in a model is a hard deserialization failure rather than
+  something skipped. That is fine for two pinned models and will break the first time an updated AWS
+  model introduces a trait. An `Unknown(String)` variant would fix it.
+* **`scratchstack-sts-ext.json` is inert.** Its five shapes -- `markerType`, `maxItemsType`,
+  `idType`, `booleanType`, `stringType` -- are referenced by nothing in `sts-2011-06-15.json`, and
+  primitives emit no code of their own, so the file currently contributes nothing to the build. They
+  look like groundwork for paginated STS operations; the pagination pair in particular mirrors IAM's.
+* **The two services handle bad documentation differently.** IAM repairs angle-bracketed placeholders
+  through `doc_rewrites`; STS instead carries `#[allow(rustdoc::invalid_html_tags)]` on its
+  `operation` module. The allow is still load-bearing -- removing it produces one
+  "improperly nested Markdown paragraph" warning -- but a targeted `doc_rewrite` would be the
+  consistent fix.
+* **`rust_typename` still returns `String`.** Several implementations compute it (`crate::types::X`,
+  `Vec<T>`) rather than returning a cached field, and `Member` reaches through an
+  `Rc<RefCell<Shape>>`, so it cannot hand out a borrow. `smithy_name` has the same constraint. Since
+  generation is 0.33 s of a 16 s build, the allocation is not worth a `Cow` in the signature.

@@ -28,17 +28,17 @@ pub struct Member {
 }
 
 impl ShapeInfo for Member {
-    fn resolve(&mut self, _: &str, model: &SmithyModel) {
-        assert!(self.shape.is_none());
+    fn resolve(&mut self, shape_name: &str, model: &SmithyModel) {
+        assert!(self.shape.is_none(), "member of {shape_name} targeting {} has already been resolved", self.target);
 
         let Some(shape) = model.shapes.get(&self.target) else {
-            panic!("Member {} does not exist in SmithyModel", self.target);
+            panic!("shape {shape_name} has a member targeting {}, which is not in the model", self.target);
         };
         self.shape = Some(shape.clone());
     }
 
     fn smithy_name(&self) -> String {
-        self.shape.as_ref().expect("Member should be resolved before generating Rust code").borrow().smithy_name()
+        self.inner().borrow().smithy_name()
     }
 
     fn rust_typename(&self) -> String {
@@ -84,7 +84,7 @@ impl Member {
     /// Panics if the member is not resolved.
     #[must_use]
     pub(crate) fn inner(&self) -> Rc<RefCell<Shape>> {
-        self.shape.clone().expect("Member should be resolved before generating Rust code")
+        self.shape.clone().unwrap_or_else(|| panic!("member targeting {} was not resolved", self.target))
     }
 
     /// Indicates whether this member is an enum.

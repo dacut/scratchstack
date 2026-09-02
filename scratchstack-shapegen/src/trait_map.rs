@@ -56,7 +56,10 @@ impl TraitMap {
     /// If this trait has an error marker, return it.
     #[inline(always)]
     pub fn error(&self) -> Option<String> {
-        self.0.get(&TraitId::SmithyApiError).map(|value| value.as_str().unwrap().to_string())
+        let value = self.0.get(&TraitId::SmithyApiError)?;
+        let error =
+            value.as_str().unwrap_or_else(|| panic!("smithy.api#error must be a string, got {value}")).to_string();
+        Some(error)
     }
 
     /// Sets the error marker for these traits.

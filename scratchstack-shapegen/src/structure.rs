@@ -106,26 +106,21 @@ impl Structure {
     /// For error structures, returns the AWS error code (string) to use for this structure.
     #[must_use]
     fn error_code(&self) -> String {
-        let default_error_code =
-            self.base.rust_typename().strip_suffix("Exception").unwrap_or(&self.base.rust_typename()).to_string();
-
-        if let Some(qe_any) = self.base.traits.aws_query_error() {
-            if let Some(qe_map) = qe_any.as_object() {
-                if let Some(code_any) = qe_map.get("code") {
-                    if let Some(code) = code_any.as_str() {
-                        code.to_string()
-                    } else {
-                        default_error_code
-                    }
-                } else {
-                    default_error_code
-                }
-            } else {
-                default_error_code
-            }
-        } else {
-            default_error_code
+        // An explicit awsQueryError code wins; otherwise the type name without its `Exception`
+        // suffix, which is the convention the AWS models follow.
+        if let Some(code) = self
+            .base
+            .traits
+            .aws_query_error()
+            .as_ref()
+            .and_then(|query_error| query_error.get("code"))
+            .and_then(|code| code.as_str())
+        {
+            return code.to_string();
         }
+
+        let rust_typename = self.base.rust_typename();
+        rust_typename.strip_suffix("Exception").unwrap_or(&rust_typename).to_string()
     }
 
     /// Indicates whether this structure is eligible for CLI shorthand parsing.

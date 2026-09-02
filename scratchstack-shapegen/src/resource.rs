@@ -67,8 +67,4 @@ pub struct Resource {
 
 impl ShapeInfo for Resource {
     forward_shape_info!(Resource, base);
-
-    fn derive_builder_validator(&self, _: &str, _: &str) -> Option<String> {
-        unimplemented!("derive_builder_validator cannot be called on Resource types")
-    }
 }
