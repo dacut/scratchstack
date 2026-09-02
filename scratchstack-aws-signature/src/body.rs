@@ -3,7 +3,9 @@ use {bytes::Bytes, std::future::Future, tower::BoxError};
 
 /// A trait for converting various body types into a [`Bytes`] object.
 ///
-/// This requires reading the entire body into memory.
+/// This requires reading the entire body into memory. AWS SigV4 signs the body, so there is no
+/// way to validate a request without it; a service that must bound memory use should cap the
+/// request size before validation rather than expecting this trait to do it.
 pub trait IntoRequestBytes {
     /// Convert this object into a [`Bytes`] object.
     fn into_request_bytes(self) -> impl Future<Output = Result<Bytes, BoxError>> + Send;
@@ -13,7 +15,7 @@ pub trait IntoRequestBytes {
 impl IntoRequestBytes for () {
     /// Convert the unit type `()` into an empty [`Bytes`] object.
     ///
-    /// This is infalliable.
+    /// This is infallible.
     async fn into_request_bytes(self) -> Result<Bytes, BoxError> {
         Ok(Bytes::new())
     }
@@ -23,7 +25,7 @@ impl IntoRequestBytes for () {
 impl IntoRequestBytes for Vec<u8> {
     /// Convert a `Vec<u8>` into a [`Bytes`] object.
     ///
-    /// This is infalliable.
+    /// This is infallible.
     async fn into_request_bytes(self) -> Result<Bytes, BoxError> {
         Ok(Bytes::from(self))
     }
@@ -33,7 +35,7 @@ impl IntoRequestBytes for Vec<u8> {
 impl IntoRequestBytes for Bytes {
     /// Identity transformation: return the [`Bytes`] object as-is.
     ///
-    /// This is infalliable.
+    /// This is infallible.
     async fn into_request_bytes(self) -> Result<Bytes, BoxError> {
         Ok(self)
     }

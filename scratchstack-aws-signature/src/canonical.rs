@@ -3,9 +3,10 @@
 //! This includes various URL and header canonicalization functions, as well as the ability to
 //! create an AWS SigV4 canonical request.
 //!
-//! **Stability of this module is not guaranteed except for items exposed at the crate root**.
-//! The functions and types are subject to change in minor/patch versions. This is exposed for
-//! testing purposes only.
+//! **Stability of this module is not guaranteed except for items re-exported at the crate root**
+//! ([`SignedHeaderRequirements`] and its implementations). Everything else is subject to change
+//! in minor/patch versions, and is exposed for testing and for others exploring AWS SigV4
+//! internals.
 
 use {
     crate::{
@@ -61,7 +62,9 @@ struct AuthParams {
     #[builder(into)]
     pub signature: String,
 
-    /// The headers that are required to be signed in the request.
+    /// The headers the request claims to have signed, taken from `SignedHeaders`. This is what
+    /// the client asserts, not what the service requires; see [`SignedHeaderRequirements`] for
+    /// the latter.
     #[builder(into)]
     pub signed_headers: Vec<String>,
 
@@ -357,7 +360,7 @@ impl CanonicalRequest {
         result
     }
 
-    /// Create a [SigV4Authenticator] for the request. This performs steps 1-8 from the AWS Auth Error Ordering
+    /// Create a [`SigV4Authenticator`] for the request. This performs steps 1-8 from the AWS Auth Error Ordering
     /// workflow.
     #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
     #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
@@ -403,7 +406,7 @@ impl CanonicalRequest {
             .build())
     }
 
-    /// Create an [AuthParams] structure, either from the `Authorization` header or the query strings as appropriate.
+    /// Create an [`AuthParams`] structure, either from the `Authorization` header or the query strings as appropriate.
     /// This performs step 5 and either performs steps 6a-6d or 7a-7d from the AWS Auth Error Ordering workflow.
     #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
     #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
@@ -683,7 +686,8 @@ pub trait SignedHeaderRequirements {
     /// Return the headers that must be present in SignedHeaders if they are present in the request.
     fn if_in_request(&self) -> &[Cow<'_, str>];
 
-    /// Return the prefixes that must be present in SignedHeaders if any headers with that prefix.
+    /// Return the prefixes for which any matching header in the request must be present in
+    /// SignedHeaders.
     fn prefixes(&self) -> &[Cow<'_, str>];
 }
 
@@ -894,6 +898,9 @@ enum UriElement {
 }
 
 /// Convert a [`HashMap`] of query parameters to a string for the canonical request.
+///
+/// The `X-Amz-Signature` parameter is omitted: a presigned URL's signature cannot be part of the
+/// input to its own signature calculation.
 #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
 #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
 #[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
@@ -924,7 +931,7 @@ pub fn canonicalize_uri_path(uri_path: &str, s3: bool) -> Result<String, Signatu
         return Ok("/".to_string());
     }
 
-    // All other paths must be abolute.
+    // All other paths must be absolute.
     if !uri_path.starts_with('/') {
         return Err(SignatureError::InvalidURIPath(format!("Path is not absolute: {}", uri_path).into()));
     }
@@ -1031,8 +1038,8 @@ fn get_content_type_and_charset(headers: &HeaderMap<HeaderValue>) -> Option<Cont
     })
 }
 
-/// Indicates whether the specified byte is RFC3986 unreserved -- i.e., can be represented without being
-/// percent-encoded, e.g. '?' -> '%3F'.
+/// Indicates whether the specified byte is RFC3986 unreserved -- i.e., can appear in a URI as
+/// itself. Reserved bytes must be percent-encoded instead, e.g. `?` becomes `%3F`.
 #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
 #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
 #[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
@@ -1053,7 +1060,9 @@ pub fn latin1_to_string(bytes: &[u8]) -> String {
     result
 }
 
-/// Returns a sorted dictionary containing the header names and their values.
+/// Returns a map of lowercased header names to their values, in the order they appeared in
+/// the request. The map itself is unordered; the canonical request is ordered by the sorted
+/// `SignedHeaders` list instead.
 #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
 #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
 #[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
@@ -1122,6 +1131,7 @@ pub fn normalize_uri_path_component(path: &str) -> Result<String, SignatureError
 /// * Percent-encoded values are upper-cased (`%2a` becomes `%2A`)
 /// * Percent-encoded values in the unreserved space (`%41`-`%5A`, `%61`-`%7A`, `%30`-`%39`, `%2D`, `%2E`, `%5F`,
 ///   `%7E`) are converted to normal characters.
+/// * A literal `+` is treated as a plus-encoded space and rewritten as `%20`.
 ///
 /// If a percent encoding is incomplete, an error is returned.
 #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
@@ -1194,7 +1204,7 @@ fn normalize_uri_element(uri_el: &str, uri_el_type: UriElement) -> Result<String
 }
 
 /// Normalize the query parameters by normalizing the keys and values of each parameter and return a `HashMap` mapping
-/// each key to a *vector* of values (since it is valid for a query parameters to appear multiple times).
+/// each key to a *vector* of values (since a query parameter may validly appear multiple times).
 ///
 /// The order of the values matches the order that they appeared in the query string -- this is important for SigV4
 /// validation.
@@ -1311,7 +1321,9 @@ pub const fn u8_to_upper_hex(b: u8) -> [u8; 2] {
 
 /// Unescapes a URI percent-encoded string.
 ///
-/// This function panics if the input string contains invalid percent encodings.
+/// # Panics
+/// Panics if the input contains an incomplete or non-hexadecimal percent escape. Callers pass
+/// values that [`normalize_query_string_element`] has already accepted, which rules both out.
 #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
 #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
 #[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
@@ -1574,7 +1586,7 @@ mod tests {
     }
 
     /// Check for query parameters without a value, e.g. ?Key2&
-    /// https://github.com/dacut/scratchstack-aws-signature/issues/2
+    /// <https://github.com/dacut/scratchstack-aws-signature/issues/2>
     #[test_log::test]
     fn normalize_query_parameters_missing_value() {
         let result = query_string_to_normalized_map("Key1=Value1&Key2&Key3=Value3");

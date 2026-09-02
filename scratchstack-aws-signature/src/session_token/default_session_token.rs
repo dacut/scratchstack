@@ -496,7 +496,7 @@ fn invalid_session_token_error(request_id: RequestId) -> SignatureError {
     InvalidSessionTokenError::builder().message(MSG_SECURITY_TOKEN_INVALID).request_id(request_id).build().into()
 }
 
-// Compile-time checks that `DefaultSessionTokenExtractor` satisfies the bounds the rest of the
+// Compile-time checks that `PostcardSessionTokenExtractor` satisfies the bounds the rest of the
 // framework expects: the `Service` associated types (asserted individually so a mismatch produces
 // a plain type error naming the offending type), a `Send` future, and `ExtractSessionToken`.
 const _: () = {

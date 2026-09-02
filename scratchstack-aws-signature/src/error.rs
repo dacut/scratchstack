@@ -172,6 +172,11 @@ macro_rules! signature_errors {
             }
 
             /// The message describing this error.
+            ///
+            /// Always `Some`: every variant carries a message, defaulting to a fixed one for its
+            /// error code. The `Option` mirrors
+            /// [`ProvideErrorMetadata::message`][scratchstack_core::error::ProvideErrorMetadata::message],
+            /// which this delegates to.
             pub fn message(&self) -> Option<&str> {
                 match self {
                     $( Self::$variant(e) => Some(e.message.as_str()), )*
@@ -223,14 +228,16 @@ signature_errors! {
         MSG_INTERNAL_SERVICE_ERROR;
 
     /// The request signature does not conform to AWS standards. Sample messages:
-    /// `Authorization header requires 'Credential' parameter. Authorization=...`
-    /// `Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header.`
-    /// `Date must be in ISO-8601 'basic format'. Got '...'.`
-    /// `Unsupported AWS 'algorithm': 'AWS4-HMAC-SHA512'`
+    /// * `Authorization header requires 'Credential' parameter. Authorization=...`
+    /// * `Authorization header requires existence of either a 'X-Amz-Date' or a 'Date' header.`
+    /// * `Date must be in ISO-8601 'basic format'. Got '...'.`
+    /// * `Unsupported AWS 'algorithm': 'AWS4-HMAC-SHA512'`
     IncompleteSignature => IncompleteSignatureError, caller_facing, ERR_CODE_INCOMPLETE_SIGNATURE, StatusCode::BAD_REQUEST,
         MSG_INCOMPLETE_SIGNATURE;
 
-    /// The request body used an unsupported character set encoding. Currently only UTF-8 is supported.
+    /// The request body declared a character set that could not be resolved, or did not decode
+    /// cleanly in the character set it declared. Any encoding label the WHATWG Encoding Standard
+    /// recognizes is accepted; a body with no `charset` parameter is read as UTF-8.
     InvalidBodyEncoding => InvalidBodyEncodingError, caller_facing, ERR_CODE_INVALID_BODY_ENCODING, StatusCode::BAD_REQUEST,
         MSG_INVALID_BODY_ENCODING;
 
@@ -265,8 +272,9 @@ signature_errors! {
     MalformedQueryString => MalformedQueryStringError, caller_facing, ERR_CODE_MALFORMED_QUERY_STRING, StatusCode::BAD_REQUEST,
         MSG_MALFORMED_QUERY_STRING;
 
-    /// The request must contain either a valid (registered) AWS access key ID or X.509 certificate. Sample messages:
-    /// `Request is missing Authentication Token`
+    /// The request must contain either a valid (registered) AWS access key ID or X.509
+    /// certificate. Sample message:
+    /// * `Request is missing Authentication Token`
     MissingAuthenticationToken => MissingAuthenticationTokenError, caller_facing, ERR_CODE_MISSING_AUTHENTICATION_TOKEN,
         StatusCode::BAD_REQUEST, MSG_REQUEST_MISSING_AUTH_TOKEN;
 
@@ -275,9 +283,9 @@ signature_errors! {
         MSG_MISSING_REQUIRED_HEADER;
 
     /// Signature did not match the calculated signature value. Example messages:
-    /// `The request signature we calculated does not match the signature you provided.`
-    /// `Signature expired: 20210502T144040Z is now earlier than 20210502T173143Z (20210502T174643Z - 15 min.)`
-    /// `Signature not yet current: 20210502T183640Z is still later than 20210502T175140Z (20210502T173640Z + 15 min.)`
+    /// * `The request signature we calculated does not match the signature you provided.`
+    /// * `Signature expired: 20210502T144040Z is now earlier than 20210502T173143Z (20210502T174643Z - 15 min.)`
+    /// * `Signature not yet current: 20210502T183640Z is still later than 20210502T175140Z (20210502T173640Z + 15 min.)`
     SignatureDoesNotMatch => SignatureDoesNotMatchError, caller_facing, ERR_CODE_SIGNATURE_DOES_NOT_MATCH, StatusCode::FORBIDDEN,
         MSG_REQUEST_SIGNATURE_MISMATCH;
 }
@@ -356,7 +364,8 @@ impl From<Box<dyn Error + Send + Sync>> for SignatureError {
     }
 }
 
-/// Error returned by `KSecretKey::from_str` when the secret key cannot fit in the expected size.
+/// Error returned by [`KSecretKey::from_str`][crate::KSecretKey] when the secret key does not
+/// fit in the expected size.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KeyLengthError {
     /// The key is too long.

@@ -4,9 +4,14 @@
 //! and [SigV4S3](https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-authenticating-requests.html)
 //! server-side validation algorithms.
 //!
-//! **Stability of this module is not guaranteed except for items exposed at the crate root**.
-//! The functions and types are subject to change in minor/patch versions. This is exposed for
-//! testing purposes only.
+//! **Stability of this module is not guaranteed**, with one exception: the functions and types
+//! here are subject to change in minor/patch versions, and are exposed for testing and for
+//! others exploring AWS SigV4 internals.
+//!
+//! The exception is [`SigV4AuthenticatorResponse`], which is stable. It is what
+//! [`sigv4_validate_request`][crate::sigv4_validate_request] returns and what
+//! [`StreamingSignatureState`][crate::StreamingSignatureState] carries, so it is part of the
+//! crate's ordinary API despite living here.
 
 use {
     crate::{
@@ -99,7 +104,11 @@ impl SigV4Authenticator {
     }
 
     /// Verify the request parameters make sense for the region, service, and specified timestamp.
-    /// This must be called successfully before calling [validate_signature][Self::validate_signature].
+    ///
+    /// [`validate_signature`][Self::validate_signature] and
+    /// [`validate_signature_with_key`][Self::validate_signature_with_key] call this themselves;
+    /// call it directly only before using the lower-level accessors, which assume the credential
+    /// has already been checked for shape.
     #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
     #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
     #[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
@@ -193,8 +202,9 @@ impl SigV4Authenticator {
         Ok(())
     }
 
-    /// Return the signing key (`kSigning` from the [AWS documentation](https://docs.aws.amazon.com/general/latest/gr/sigv4-calculate-signature.html))
-    /// for the request.
+    /// Ask `get_signing_key` for the principal and signing key (`kSigning` from the
+    /// [AWS documentation](https://docs.aws.amazon.com/general/latest/gr/sigv4-calculate-signature.html))
+    /// for this request.
     #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
     #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
     #[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
@@ -209,7 +219,8 @@ impl SigV4Authenticator {
         S: Service<GetSigningKeyRequest, Response = GetSigningKeyResponse, Error = SignatureError, Future = F> + Send,
         F: Future<Output = Result<GetSigningKeyResponse, SignatureError>> + Send,
     {
-        let access_key = self.credential().split('/').next().expect("prevalidate must been called first").to_string();
+        let access_key =
+            self.credential().split('/').next().expect("prevalidate must have been called first").to_string();
 
         let req = GetSigningKeyRequest::builder()
             .access_key(access_key)
