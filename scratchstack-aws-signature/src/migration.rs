@@ -147,7 +147,9 @@
 //! An `x-amz-content-sha256: UNSIGNED-PAYLOAD` header used to leave the body out of the
 //! signature for every service. It now does so only with
 //! [`SignatureOptions::s3`][crate::SignatureOptions::s3] set, and the header must then be in
-//! `SignedHeaders`; for other services the body is always hashed, as AWS does. Under S3 rules an
+//! `SignedHeaders`; for other services the body is always hashed, as AWS does, and
+//! [`sigv4_validate_streaming_headers`][crate::sigv4_validate_streaming_headers] -- which has no
+//! body to hash -- refuses a marker passed as the body hash outright. Under S3 rules an
 //! `x-amz-security-token` header must likewise be signed. Both are refused with
 //! `SignatureDoesNotMatch`. AWS SDKs sign both headers already, so conforming clients see no
 //! change.

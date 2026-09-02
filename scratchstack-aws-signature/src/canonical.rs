@@ -251,6 +251,11 @@ impl CanonicalRequest {
     ///
     /// This version does not allow `options.url_encode_form` to be set since the body is not
     /// processed. If this is set, a [`SignatureError::InternalServiceError`] will be returned.
+    ///
+    /// A `body_hash` that is a payload marker (`UNSIGNED-PAYLOAD` or a `STREAMING-*` value)
+    /// rather than a digest is accepted only under S3 rules, or for a presigned URL; otherwise
+    /// the request is refused with [`SignatureError::SignatureDoesNotMatch`], since there is no
+    /// body here to hash in its place.
     #[cfg_attr(doc, doc(cfg(feature = "unstable")))]
     #[cfg_attr(any(doc, feature = "unstable"), qualifiers(pub))]
     #[cfg_attr(not(any(doc, feature = "unstable")), qualifiers(pub(crate)))]
@@ -270,8 +275,16 @@ impl CanonicalRequest {
         let headers = normalize_headers(request.headers());
 
         // A marker rather than a digest means the caller took the hash from the request's
-        // x-amz-content-sha256 header, which must then be signed.
-        let content_sha256_must_be_signed = !is_presigned_url(&query_parameters) && is_payload_marker(body_hash);
+        // x-amz-content-sha256 header. Only S3 accepts that, and then the header must be signed
+        // (checked in get_auth_parameters). Elsewhere the buffered path hashes the body whatever
+        // the header says; here there is no body to hash, so the request is refused outright.
+        // A presigned URL is canonicalized as UNSIGNED-PAYLOAD for every service, so it is exempt.
+        let marker = is_payload_marker(body_hash);
+        let presigned = is_presigned_url(&query_parameters);
+        if marker && !presigned && !options.s3 {
+            return Err(SignatureError::SignatureDoesNotMatch(MSG_PAYLOAD_MARKER_REQUIRES_S3.into()));
+        }
+        let content_sha256_must_be_signed = marker && !presigned;
 
         Ok(CanonicalRequest {
             request_method: request.method().to_string(),
