@@ -25,12 +25,20 @@ pub struct ShapeBase {
 }
 
 impl ShapeBase {
-    /// Resolves the stored names of this shape, panicking if they are already set.
+    /// Resolves the stored names of this shape.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this shape has already been resolved, or if `smithy_name` is not an absolute shape
+    /// id -- one of the form `namespace#Name`. Relative ids are not resolvable: shapegen has no
+    /// notion of a current namespace to complete them against.
     pub fn resolve(&mut self, smithy_name: &str) {
-        assert!(self.smithy_name.is_none());
-        assert!(self.rust_typename.is_none());
+        assert!(self.smithy_name.is_none(), "shape {smithy_name} has already been resolved");
+        assert!(self.rust_typename.is_none(), "shape {smithy_name} has already been resolved");
 
-        let hash_pos = smithy_name.find('#').unwrap();
+        let hash_pos = smithy_name.find('#').unwrap_or_else(|| {
+            panic!("shape id {smithy_name} is not absolute; it has no '#' separating the namespace")
+        });
         let simple_typename = &smithy_name[hash_pos + 1..];
         let rust_typename = simple_typename.to_pascal_case();
 
@@ -38,16 +46,31 @@ impl ShapeBase {
         self.rust_typename = Some(rust_typename);
     }
 
-    /// Returns the Smithy name of this shape, panicking if it is not set.
+    /// Returns the Smithy name of this shape.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the shape has not been resolved. Built-in `smithy.api#` shapes are skipped by
+    /// [`SmithyModel::resolve`](crate::SmithyModel::resolve), so reaching this on one means
+    /// something is generating code for a shape that has no declaration of its own.
     #[inline(always)]
     pub fn smithy_name(&self) -> String {
-        self.smithy_name.clone().expect("ShapeBase should have a Smithy name after resolution")
+        self.smithy_name.clone().expect("shape has no Smithy name; it was not resolved")
     }
 
-    /// Returns the Rust typename of this shape, panicking if it is not set.
+    /// Returns the Rust typename of this shape.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the shape has not been resolved.
     #[inline(always)]
     pub fn rust_typename(&self) -> String {
-        self.rust_typename.clone().expect("ShapeBase should have a Rust typename after resolution")
+        self.rust_typename.clone().unwrap_or_else(|| {
+            panic!(
+                "shape {} has no Rust type name; it was not resolved",
+                self.smithy_name.as_deref().unwrap_or("(unnamed)")
+            )
+        })
     }
 
     /// Writes documentation for this shape to the provided writer.

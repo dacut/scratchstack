@@ -188,8 +188,4 @@ impl ShapeInfo for Operation {
 
         Ok(())
     }
-
-    fn derive_builder_validator(&self, _: &str, _: &str) -> Option<String> {
-        unimplemented!("derive_builder_validator cannot be called on Operation types")
-    }
 }

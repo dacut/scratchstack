@@ -42,21 +42,3 @@ impl ShapeInfo for Map {
         Ok(())
     }
 }
-
-impl Map {
-    /// Generates code that belogs in `crate::types` for this map.
-    pub fn generate_types(&self, w: &mut dyn Write) -> IoResult<()> {
-        if !self.is_builtin() {
-            // Declaration
-            let rust_typename = self.rust_typename();
-            self.base.traits.write_docs(w, "")?;
-            writeln!(
-                w,
-                "pub type {rust_typename} = ::std::collections::BTreeMap<{}, {}>;",
-                self.key.rust_typename(),
-                self.value.rust_typename()
-            )?;
-        }
-        Ok(())
-    }
-}

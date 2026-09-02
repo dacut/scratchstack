@@ -116,12 +116,11 @@ pub trait ShapeInfo {
     ///
     /// This is the portion of the Smithy name after the '#' character.
     fn simple_name(&self) -> String {
-        let rpos = self.smithy_name().rfind('#');
-        if let Some(pos) = rpos {
-            self.smithy_name()[pos + 1..].to_string()
-        } else {
-            self.smithy_name()
+        let mut smithy_name = self.smithy_name();
+        if let Some(pos) = smithy_name.rfind('#') {
+            smithy_name.drain(..=pos);
         }
+        smithy_name
     }
 
     /// Returns the Rust type name of this shape.
@@ -252,34 +251,208 @@ pub(crate) fn validator_fn_name_for(simple_name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        std::io::{Result as IoResult, Write},
-    };
+    use {super::*, std::path::Path};
 
-    const IAM_MODEL: &str = include_str!("iam-2010-05-08.json");
-    struct NullWriter;
-    impl Write for NullWriter {
-        fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-            Ok(buf.len())
-        }
+    /// A model exercising the constructs the generators actually branch on: a service, an
+    /// operation, a constrained string reused by two fields, a length-constrained list, an enum,
+    /// and an error.
+    const FIXTURE: &str = r##"{
+      "smithy": "2.0",
+      "shapes": {
+        "com.example#Example": {
+          "type": "service",
+          "version": "2020-01-01",
+          "operations": [{"target": "com.example#CreateWidget"}],
+          "traits": {"smithy.api#xmlNamespace": {"uri": "https://example.amazonaws.com/doc/2020-01-01/"}}
+        },
+        "com.example#CreateWidget": {
+          "type": "operation",
+          "input": {"target": "com.example#CreateWidgetRequest"},
+          "output": {"target": "com.example#CreateWidgetResponse"}
+        },
+        "com.example#CreateWidgetRequest": {
+          "type": "structure",
+          "traits": {"smithy.api#input": {}},
+          "members": {
+            "WidgetName": {"target": "com.example#widgetNameType", "traits": {"smithy.api#required": {}}},
+            "OwnerName": {"target": "com.example#widgetNameType"},
+            "Tags": {"target": "com.example#tagListType"},
+            "Size": {"target": "com.example#sizeType"}
+          }
+        },
+        "com.example#CreateWidgetResponse": {
+          "type": "structure",
+          "traits": {"smithy.api#output": {}},
+          "members": {"Widget": {"target": "com.example#Widget"}}
+        },
+        "com.example#Widget": {
+          "type": "structure",
+          "members": {"Name": {"target": "com.example#widgetNameType"}}
+        },
+        "com.example#widgetNameType": {
+          "type": "string",
+          "traits": {"smithy.api#pattern": "^[\\w+=,.@-]+$", "smithy.api#length": {"min": 1, "max": 64}}
+        },
+        "com.example#tagListType": {
+          "type": "list",
+          "member": {"target": "com.example#widgetNameType"},
+          "traits": {"smithy.api#length": {"max": 50}}
+        },
+        "com.example#sizeType": {
+          "type": "integer",
+          "traits": {"smithy.api#range": {"min": 1, "max": 100}}
+        },
+        "com.example#Colour": {
+          "type": "enum",
+          "members": {"RED": {"target": "smithy.api#Unit", "traits": {"smithy.api#enumValue": "red"}}}
+        },
+        "com.example#NoSuchWidget": {
+          "type": "structure",
+          "traits": {"smithy.api#error": "client", "smithy.api#httpError": 404},
+          "members": {"message": {"target": "com.example#errorMessageType"}}
+        },
+        "com.example#errorMessageType": {"type": "string"}
+      }
+    }"##;
 
-        fn flush(&mut self) -> IoResult<()> {
-            Ok(())
+    /// The five generated modules, as strings.
+    struct Generated {
+        action: String,
+        error_meta: String,
+        operation: String,
+        types: String,
+        types_error: String,
+    }
+
+    fn generate(model_json: &str) -> Generated {
+        let mut model: SmithyModel = serde_json::from_str(model_json).expect("fixture should deserialize");
+        model.add_default_shapes();
+        model.resolve();
+
+        let mut w = Writers::builder()
+            .action(Vec::new())
+            .error_meta(Vec::new())
+            .operation(Vec::new())
+            .types(Vec::new())
+            .types_error(Vec::new())
+            .build();
+        model.generate(&mut w).expect("generation should succeed");
+
+        let to_string = |bytes: Vec<u8>| String::from_utf8(bytes).expect("generated code should be UTF-8");
+        Generated {
+            action: to_string(w.action),
+            error_meta: to_string(w.error_meta),
+            operation: to_string(w.operation),
+            types: to_string(w.types),
+            types_error: to_string(w.types_error),
         }
     }
 
     #[test]
-    fn test_deserialize_service_model() {
-        let mut m: SmithyModel = serde_json::from_str(IAM_MODEL).expect("Failed to deserialize IAM service model");
-        m.resolve();
+    fn constrained_shape_gets_exactly_one_validator() {
+        let generated = generate(FIXTURE);
+
+        // One function and one compiled pattern for the shape, however many fields target it --
+        // three do here, across two structures.
+        assert_eq!(generated.types.matches("pub(crate) fn validate_widget_name_type").count(), 1);
+        assert_eq!(generated.types.matches("::regex::Regex::new").count(), 1);
+        assert_eq!(generated.operation.matches("::regex::Regex::new").count(), 0);
+    }
+
+    #[test]
+    fn validators_are_called_with_the_field_name_not_the_struct_name() {
+        let generated = generate(FIXTURE);
+
+        assert!(generated.operation.contains(r#"validate_widget_name_type(value, "WidgetName")"#));
+        assert!(generated.operation.contains(r#"validate_widget_name_type(value, "OwnerName")"#));
+        assert!(
+            !generated.operation.contains("CreateWidgetRequest must match"),
+            "the error should name the field, not the structure"
+        );
+    }
+
+    #[test]
+    fn list_validator_delegates_to_its_element() {
+        let generated = generate(FIXTURE);
+
+        assert!(generated.types.contains("pub(crate) fn validate_tag_list_type"));
+        assert!(generated.types.contains("validate_widget_name_type(el, field)"));
+        // A slice, so clippy's ptr_arg lint does not fire on the generated code.
+        assert!(generated.types.contains("validate_tag_list_type(value: &[::std::string::String]"));
+    }
+
+    #[test]
+    fn numeric_range_constraints_are_validated() {
+        let generated = generate(FIXTURE);
+
+        assert!(generated.types.contains("pub(crate) fn validate_size_type"));
+        assert!(generated.types.contains("*value < 1"));
+        assert!(generated.types.contains("*value > 100"));
+    }
+
+    #[test]
+    fn string_length_counts_code_points_not_bytes() {
+        let generated = generate(FIXTURE);
+
+        assert!(generated.types.contains("value.chars().count() > 64"));
+        assert!(!generated.types.contains("value.len() > 64"), "Smithy length counts code points");
+    }
+
+    #[test]
+    fn action_enum_lists_operations_bound_to_the_service() {
+        let generated = generate(FIXTURE);
+
+        assert!(generated.action.contains(r#"pub const VERSION: &str = "2020-01-01";"#));
+        assert!(generated.action.contains("    CreateWidget,"));
+        assert!(generated.action.contains(r#""CreateWidget" => ::std::result::Result::Ok(Self::CreateWidget)"#));
+    }
+
+    #[test]
+    fn errors_reach_both_the_error_module_and_the_union_enum() {
+        let generated = generate(FIXTURE);
+
+        assert!(generated.types_error.contains("pub struct NoSuchWidget"));
+        assert!(generated.error_meta.contains("NoSuchWidget(::std::boxed::Box<crate::types::error::NoSuchWidget>)"));
+        assert!(generated.types_error.contains("::scratchstack_core::http::StatusCode::NOT_FOUND"));
+    }
+
+    #[test]
+    fn cli_shorthand_policy_decides_which_shapes_get_parsers() {
+        let mut model: SmithyModel = serde_json::from_str(FIXTURE).expect("fixture should deserialize");
+        model.add_default_shapes();
+        model.cli_shorthand = CliShorthand::All;
+        model.resolve();
+
         let mut w = Writers::builder()
-            .action(NullWriter)
-            .error_meta(NullWriter)
-            .operation(NullWriter)
-            .types(NullWriter)
-            .types_error(NullWriter)
+            .action(Vec::new())
+            .error_meta(Vec::new())
+            .operation(Vec::new())
+            .types(Vec::new())
+            .types_error(Vec::new())
             .build();
-        m.generate(&mut w).expect("Failed to generate Rust code for IAM service model");
+        model.generate(&mut w).expect("generation should succeed");
+        let operation = String::from_utf8(w.operation).expect("generated code should be UTF-8");
+
+        // `All` reaches request structures; the default `ValueTypes` does not.
+        assert!(operation.contains("ShorthandValue> for CreateWidgetRequest"));
+        assert!(!generate(FIXTURE).operation.contains("ShorthandValue> for CreateWidgetRequest"));
+    }
+
+    /// Generation over the real IAM model: 749 shapes, and the only coverage of constructs the
+    /// fixture does not reach.
+    ///
+    /// The model belongs to `scratchstack-shapes-iam`; shapegen used to keep its own copy, which
+    /// was a megabyte of duplicated JSON with nothing keeping the two in sync.
+    #[test]
+    fn generates_the_iam_model() {
+        let model_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../scratchstack-shapes-iam/iam-2010-05-08.json");
+        let model_json = std::fs::read_to_string(&model_path)
+            .unwrap_or_else(|e| panic!("could not read {}: {e}", model_path.display()));
+
+        let generated = generate(&model_json);
+
+        assert!(generated.action.contains("    CreateUser,"));
+        assert!(generated.types.contains("pub(crate) fn validate_account_id_type"));
+        assert!(generated.operation.contains("pub struct CreateUserRequest"));
     }
 }

@@ -1,12 +1,33 @@
 //! Extensions on string types.
 
-/// Rust keywords that cannot be used as identifiers. These are used to determine when to use raw
-/// identifiers in the generated code.
+/// Rust keywords a generated identifier must be escaped past, by writing it `r#name`.
+///
+/// Every strict and reserved keyword of the 2015 through 2024 editions *except* the four in
+/// [`UNESCAPABLE_RUST_IDENTS`], which cannot be raw identifiers at all.
 const RUST_IDENTS: &[&str] = &[
-    "abstract", "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern",
-    "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
-    "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where", "while",
+    "abstract", "as", "async", "await", "become", "box", "break", "const", "continue", "do", "dyn", "else", "enum",
+    "extern", "false", "final", "fn", "for", "gen", "if", "impl", "in", "let", "loop", "macro", "match", "mod", "move",
+    "mut", "override", "priv", "pub", "ref", "return", "static", "struct", "trait", "true", "try", "type", "typeof",
+    "unsafe", "unsized", "use", "virtual", "where", "while", "yield",
 ];
+
+/// Keywords that `r#` cannot escape -- `r#self` and its three companions are rejected by the parser.
+///
+/// A member with one of these names gets a trailing underscore instead. No IAM or STS member hits
+/// this today, but the previous list had all four among the escapable keywords, so one would have
+/// produced code that does not compile. The reserved words above were missing entirely.
+const UNESCAPABLE_RUST_IDENTS: &[&str] = &["Self", "crate", "self", "super"];
+
+/// Escapes an identifier that collides with a Rust keyword.
+fn escape_rust_ident(ident: String) -> String {
+    if UNESCAPABLE_RUST_IDENTS.contains(&ident.as_str()) {
+        format!("{ident}_")
+    } else if RUST_IDENTS.contains(&ident.as_str()) {
+        format!("r#{ident}")
+    } else {
+        ident
+    }
+}
 
 pub trait StrExt {
     /// Indicates whether this Smithy identifier is a builtin type.
@@ -40,7 +61,9 @@ impl StrExt for str {
     }
 
     fn is_screaming_snake_case(&self) -> bool {
-        self.chars().all(|c| c.is_ascii_uppercase() || c == '_')
+        // Digits count: `SSH_KEY_2` is SCREAMING_SNAKE_CASE, and rejecting it would send the name
+        // down the path that preserves inner capitals, yielding `SSHKEY2` rather than `SshKey2`.
+        !self.is_empty() && self.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
     }
 
     fn to_pascal_case(&self) -> String {
@@ -72,11 +95,7 @@ impl StrExt for str {
             }
         }
 
-        if RUST_IDENTS.contains(&result.as_str()) {
-            result = format!("r#{result}");
-        }
-
-        result
+        escape_rust_ident(result)
     }
 
     fn to_rust_ident_affixed(&self, prefix: &str, suffix: &str) -> String {
@@ -99,28 +118,57 @@ impl StrExt for str {
 
         result.push_str(suffix);
 
-        if RUST_IDENTS.contains(&result.as_str()) {
-            result = format!("r#{result}");
-        }
-
-        result
+        escape_rust_ident(result)
     }
 }
 
-impl StrExt for String {
-    fn is_smithy_builtin(&self) -> bool {
-        self.as_str().is_smithy_builtin()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pascal_case_folds_screaming_snake_but_keeps_mixed_case() {
+        assert_eq!("SSH_PUBLIC_KEY".to_pascal_case(), "SshPublicKey");
+        assert_eq!("SSH_KEY_2".to_pascal_case(), "SshKey2");
+        assert_eq!("accountIdType".to_pascal_case(), "AccountIdType");
+        assert_eq!("ListAccounts".to_pascal_case(), "ListAccounts");
     }
 
-    fn is_screaming_snake_case(&self) -> bool {
-        self.as_str().is_screaming_snake_case()
+    #[test]
+    fn rust_idents_are_snake_case() {
+        assert_eq!("UserName".to_rust_ident(), "user_name");
+        assert_eq!("MaxItems".to_rust_ident(), "max_items");
+        assert_eq!("SAMLMetadataDocument".to_rust_ident(), "samlmetadata_document");
     }
 
-    fn to_pascal_case(&self) -> String {
-        self.as_str().to_pascal_case()
+    #[test]
+    fn keywords_are_escaped() {
+        assert_eq!("Type".to_rust_ident(), "r#type");
+        assert_eq!("Match".to_rust_ident(), "r#match");
+        assert_eq!("Yield".to_rust_ident(), "r#yield");
     }
 
-    fn to_rust_ident_affixed(&self, prefix: &str, suffix: &str) -> String {
-        self.as_str().to_rust_ident_affixed(prefix, suffix)
+    #[test]
+    fn keywords_that_cannot_be_raw_get_an_underscore() {
+        // `r#self` and friends are rejected by the parser, so these must not be escaped with `r#`.
+        for keyword in UNESCAPABLE_RUST_IDENTS {
+            let escaped = escape_rust_ident((*keyword).to_string());
+            assert_eq!(escaped, format!("{keyword}_"), "{keyword} must not become a raw identifier");
+        }
+    }
+
+    #[test]
+    fn affixes_are_applied_before_the_keyword_check() {
+        // `set_r#type` is not a valid identifier; prefixing removes the collision entirely.
+        assert_eq!("Type".to_rust_ident_affixed("set_", ""), "set_type");
+        assert_eq!("Self".to_rust_ident_affixed("set_", ""), "set_self");
+    }
+
+    #[test]
+    fn screaming_snake_case_detection() {
+        assert!("SSH_PUBLIC_KEY".is_screaming_snake_case());
+        assert!("SSH_KEY_2".is_screaming_snake_case());
+        assert!(!"accountIdType".is_screaming_snake_case());
+        assert!(!"".is_screaming_snake_case());
     }
 }

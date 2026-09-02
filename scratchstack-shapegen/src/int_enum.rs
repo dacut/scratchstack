@@ -50,7 +50,8 @@ impl ShapeInfo for IntEnum {
 impl IntEnum {
     /// Generates code that belogs in `crate::types` for this enum.
     pub fn generate_types(&self, w: &mut dyn Write) -> IoResult<()> {
-        let rust_type = self.rust_typename();
+        // The bare name: `rust_typename` is module-qualified, for naming the type from elsewhere.
+        let rust_type = self.base.rust_typename();
 
         self.base.traits.write_docs(w, "")?;
 
@@ -65,7 +66,9 @@ impl IntEnum {
         for (member_name, member) in self.members.iter() {
             member.traits.write_docs(w, "    ")?;
             let rust_member_name = member_name.to_pascal_case();
-            let value = member.traits.enum_value_as_i64().expect("enumValue trait must be an integer");
+            let value = member.traits.enum_value_as_i64().unwrap_or_else(|| {
+                panic!("intEnum {rust_type} variant {member_name} has no integer smithy.api#enumValue")
+            });
 
             if &rust_member_name != member_name {
                 writeln!(w, "    #[serde(rename = \"{member_name}\")]")?;
