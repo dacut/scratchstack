@@ -1,8 +1,8 @@
 use {
-    crate::{ShapeBase, ShapeInfo, SmithyModel, TraitMap},
-    indoc::formatdoc,
+    crate::{ShapeBase, ShapeInfo, SmithyModel, TraitMap, escape_braces, usize_literal},
+    proc_macro2::{Literal, TokenStream},
+    quote::quote,
     serde::{Deserialize, Serialize},
-    std::io::{Result as IoResult, Write},
 };
 
 /// The `unit` type in Smithy is similar to `Void` and `None` in other languages. It is used
@@ -211,54 +211,67 @@ impl ShapeInfo for SmithyString {
         self.base.resolve(shape_name);
     }
 
-    fn derive_builder_validator(&self, var: &str, field_name: &str) -> Option<String> {
+    fn validator_body(&self) -> Option<TokenStream> {
         if self.is_builtin() {
             return None;
         }
 
         let simple_name = self.simple_name(); // Used in error messages
-        let mut output = String::with_capacity(1024);
+        let mut checks = TokenStream::new();
 
-        if let Some(pat) = self.base.traits.pattern() {
-            let escaped_pat = pat.replace("\\", "\\\\").replace("\"", "\\\"").replace("{", "{{").replace("}", "}}");
-            output += &formatdoc!("
-                static PAT: ::std::sync::LazyLock<::regex::Regex> = ::std::sync::LazyLock::new(||::regex::Regex::new(r\"{pat}\").expect(\"Invalid regex pattern in Smithy model\"));
-                if !PAT.is_match({var}) {{
-                    return Err(format!(\"{field_name} must match the regex {escaped_pat} for {simple_name}: {{{var}}}\"));
-                }}
-            ");
+        if let Some(pattern) = self.base.traits.pattern() {
+            // A plain string literal rather than a raw one: `Literal::string` escapes whatever the
+            // model contains, so no choice of `r#""#` delimiters can collide with the pattern.
+            let pattern_literal = Literal::string(pattern);
+            let message =
+                format!("{{field}} must match the regex {} for {simple_name}: {{value}}", escape_braces(pattern));
+
+            checks.extend(quote! {
+                static PAT: ::std::sync::LazyLock<::regex::Regex> = ::std::sync::LazyLock::new(|| {
+                    ::regex::Regex::new(#pattern_literal).expect("Invalid regex pattern in Smithy model")
+                });
+                if !PAT.is_match(value) {
+                    return ::std::result::Result::Err(::std::format!(#message));
+                }
+            });
         }
 
-        if let Some(lc) = self.base.traits.length_constraint() {
-            if let Some(min) = lc.min
+        if let Some(length) = self.base.traits.length_constraint() {
+            // Smithy's `length` on a string counts Unicode code points, not bytes.
+            if let Some(min) = length.min
                 && min > 0
             {
-                let cond = if min > 1 {
-                    format!("{var}.chars().count() < {min}")
+                let message = format!("{{field}} must be at least {min} characters long for {simple_name}: {{value}}");
+                let too_short = if min > 1 {
+                    let min = usize_literal(min);
+                    quote!(value.chars().count() < #min)
                 } else {
-                    format!("{var}.is_empty()")
+                    quote!(value.is_empty())
                 };
 
-                output += &formatdoc!("
-                    if {cond} {{
-                        return Err(format!(\"{field_name} must be at least {min} characters long for {simple_name}: {{{var}}}\"));
-                    }}
-                ");
+                checks.extend(quote! {
+                    if #too_short {
+                        return ::std::result::Result::Err(::std::format!(#message));
+                    }
+                });
             }
 
-            if let Some(max) = lc.max {
-                output += &formatdoc!("
-                    if {var}.chars().count() > {max} {{
-                        return Err(format!(\"{field_name} must be at most {max} characters long for {simple_name}: {{{var}}}\")); 
-                    }}
-                ");
+            if let Some(max) = length.max {
+                let message = format!("{{field}} must be at most {max} characters long for {simple_name}: {{value}}");
+                let max = usize_literal(max);
+
+                checks.extend(quote! {
+                    if value.chars().count() > #max {
+                        return ::std::result::Result::Err(::std::format!(#message));
+                    }
+                });
             }
         }
 
-        if !output.is_empty() {
-            Some(output)
-        } else {
+        if checks.is_empty() {
             None
+        } else {
+            Some(checks)
         }
     }
 
@@ -280,22 +293,15 @@ impl ShapeInfo for SmithyString {
         }
     }
 
-    fn write_validator_fn(&self, w: &mut dyn Write) -> IoResult<()> {
-        let Some(fn_name) = self.validator_fn_name() else {
-            return Ok(());
-        };
-        let Some(body) = self.derive_builder_validator("value", "{field}") else {
-            return Ok(());
-        };
-
-        crate::write_validator_fn(w, &fn_name, &self.rust_typename(), &self.simple_name(), &body)
-    }
-
     fn is_primitive(&self) -> bool {
         true
     }
 }
 
+// `bigInteger` and `bigDecimal` map to `aws_smithy_types`, which the generated crates do not
+// depend on, so a model using either would not compile today. Neither IAM nor STS has one. They
+// carry no validator: `BigDecimal` had one comparing against an integer literal, which would not
+// have compiled either, and it was unreachable.
 impl ShapeInfo for SmithyBigInteger {
     fn smithy_name(&self) -> String {
         self.base.smithy_name()
@@ -325,34 +331,6 @@ impl ShapeInfo for SmithyBigDecimal {
 
     fn resolve(&mut self, shape_name: &str, _model: &SmithyModel) {
         self.base.resolve(shape_name);
-    }
-
-    fn derive_builder_validator(&self, var: &str, field_name: &str) -> Option<String> {
-        if self.is_builtin() {
-            return None;
-        }
-
-        let simple_name = self.simple_name(); // Used in error messages
-        let mut output = String::with_capacity(1024);
-
-        if let Some(rc) = self.base.traits.range_constraint() {
-            if let Some(min) = rc.min {
-                output += &format!(
-                    "if *{var} < {min} {{ return Err(format!(\"{field_name} for {simple_name} must be >= {min}: {{{var}}}\")); }}\n"
-                );
-            }
-            if let Some(max) = rc.max {
-                output += &format!(
-                    "if *{var} > {max} {{ return Err(format!(\"{field_name} for {simple_name} must be <= {max}: {{{var}}}\")); }}\n"
-                );
-            }
-        }
-
-        if !output.is_empty() {
-            Some(output)
-        } else {
-            None
-        }
     }
 
     fn is_primitive(&self) -> bool {
@@ -407,20 +385,36 @@ macro_rules! impl_numeric {
                 self.base.resolve(shape_name);
             }
 
-            fn derive_builder_validator(&self, var: &str, field_name: &str) -> Option<String> {
+            fn validator_body(&self) -> Option<TokenStream> {
                 let simple_name = self.simple_name();
-                let mut output = String::new();
+                let range = self.base.traits.range_constraint()?;
+                let mut checks = TokenStream::new();
 
-                if let Some(rc) = self.base.traits.range_constraint() {
-                    if let Some(min) = rc.min {
-                        output += &format!("if *{var} < {min} {{ return Err(format!(\"{field_name} for {simple_name} must be >= {min}: {{{var}}}\")); }}\n");
-                    }
-                    if let Some(max) = rc.max {
-                        output += &format!("if *{var} > {max} {{ return Err(format!(\"{field_name} for {simple_name} must be <= {max}: {{{var}}}\")); }}\n");
-                    }
+                if let Some(min) = range.min {
+                    let message = format!("{{field}} for {simple_name} must be >= {min}: {{value}}");
+                    let min = Literal::i64_unsuffixed(min);
+                    checks.extend(quote! {
+                        if *value < #min {
+                            return ::std::result::Result::Err(::std::format!(#message));
+                        }
+                    });
                 }
 
-                Some(output)
+                if let Some(max) = range.max {
+                    let message = format!("{{field}} for {simple_name} must be <= {max}: {{value}}");
+                    let max = Literal::i64_unsuffixed(max);
+                    checks.extend(quote! {
+                        if *value > #max {
+                            return ::std::result::Result::Err(::std::format!(#message));
+                        }
+                    });
+                }
+
+                if checks.is_empty() {
+                    None
+                } else {
+                    Some(checks)
+                }
             }
 
             fn validator_fn_name(&self) -> Option<String> {
@@ -436,22 +430,11 @@ macro_rules! impl_numeric {
                 }
             }
 
-            fn write_validator_fn(&self, w: &mut dyn ::std::io::Write) -> IoResult<()> {
-                let Some(fn_name) = self.validator_fn_name() else {
-                    return Ok(());
-                };
-                let Some(body) = self.derive_builder_validator("value", "{field}") else {
-                    return Ok(());
-                };
-
-                crate::write_validator_fn(w, &fn_name, &self.rust_typename(), &self.simple_name(), &body)
-            }
-
             fn is_primitive(&self) -> bool {
                 true
             }
         }
-    }
+    };
 }
 
 impl_numeric!(SmithyByte, i8, as_i64);

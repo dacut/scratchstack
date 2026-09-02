@@ -1,7 +1,6 @@
 use {
     crate::{StrExt as _, TraitMap},
     serde::{Deserialize, Serialize},
-    std::io::{Result as IoResult, Write},
 };
 
 /// Basic features of a shape.
@@ -71,11 +70,5 @@ impl ShapeBase {
                 self.smithy_name.as_deref().unwrap_or("(unnamed)")
             )
         })
-    }
-
-    /// Writes documentation for this shape to the provided writer.
-    #[inline(always)]
-    pub fn write_docs(&self, w: &mut impl Write, indent: &str) -> IoResult<()> {
-        self.traits.write_docs(w, indent)
     }
 }

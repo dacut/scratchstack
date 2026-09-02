@@ -1,7 +1,6 @@
 use {
-    crate::{Member, ShapeBase, ShapeInfo, SmithyModel, Writers},
+    crate::{Member, Modules, ShapeBase, ShapeInfo, SmithyModel},
     serde::{Deserialize, Serialize},
-    std::io::{Result as IoResult, Write},
 };
 
 /// The map type represents a map data structure that maps string keys to homogeneous values. A
@@ -38,7 +37,5 @@ impl ShapeInfo for Map {
         self.value.resolve(shape_name, model);
     }
 
-    fn generate<W: Write>(&self, _: &mut Writers<W>) -> IoResult<()> {
-        Ok(())
-    }
+    fn generate(&self, _: &mut Modules) {}
 }

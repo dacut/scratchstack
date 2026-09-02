@@ -1,13 +1,11 @@
 use {
     crate::{
-        Enum, IntEnum, List, Map, Member, Operation, Resource, Service, ShapeInfo, SmithyModel, Structure, TraitMap,
-        Union, Writers, primitive,
+        Enum, IntEnum, List, Map, Member, Modules, Operation, Resource, Service, ShapeInfo, SmithyModel, Structure,
+        TraitMap, Union, primitive,
     },
+    proc_macro2::TokenStream,
     serde::{Deserialize, Serialize},
-    std::{
-        collections::BTreeMap,
-        io::{Result as IoResult, Write},
-    },
+    std::collections::BTreeMap,
 };
 
 /// Smithy shape definition.
@@ -262,23 +260,17 @@ impl ShapeInfo for Shape {
     }
 
     #[inline(always)]
-    fn derive_builder_validator(&self, var: &str, field_name: &str) -> Option<String> {
-        unwrap_inner!(self => derive_builder_validator(var, field_name))
-    }
-
-    #[inline(always)]
     fn validator_fn_name(&self) -> Option<String> {
         unwrap_inner!(self => validator_fn_name())
     }
 
-    #[inline(always)]
-    fn write_validator_fn(&self, w: &mut dyn Write) -> IoResult<()> {
-        unwrap_inner!(self => write_validator_fn(w))
+    fn validator_fn(&self) -> Option<TokenStream> {
+        unwrap_inner!(self => validator_fn())
     }
 
     #[inline(always)]
-    fn generate<W: Write>(&self, w: &mut Writers<W>) -> IoResult<()> {
-        unwrap_inner!(self => generate(w))
+    fn generate(&self, m: &mut Modules) {
+        unwrap_inner!(self => generate(m))
     }
 
     #[inline(always)]
