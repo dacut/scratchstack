@@ -76,8 +76,9 @@
 //!
 //! `sensitive-logging` emits log records carrying the contents of an authorization request --
 //! policy documents, principals, resources, and session data. It is off by default, and the
-//! records are not compiled in at all without it. It forwards to the feature of the same name in
-//! `scratchstack-core`, which provides the [`sensitive_log`] family of macros.
+//! records are not compiled in at all without it. The [`sensitive_log`] family of macros comes
+//! from `scratchstack-core`, but the gate is this crate's own feature: enabling it here does not
+//! switch on any other crate's sensitive records, and vice versa.
 
 #![warn(clippy::all)]
 #![allow(clippy::manual_range_contains)]

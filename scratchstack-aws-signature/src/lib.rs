@@ -29,10 +29,11 @@
 //! Two are off by default:
 //! * `sensitive-logging`: Compiles in trace records that carry request material -- canonical
 //!   requests with their headers and query parameters, which include credentials -- for
-//!   debugging signature mismatches during development. It forwards to the feature of the same
-//!   name in `scratchstack-core`. Without it, those records are not compiled in at all, and
-//!   what the crate's `Debug` output and ordinary trace records show has session tokens and
-//!   `Authorization` headers redacted.
+//!   debugging signature mismatches during development. The macros come from
+//!   `scratchstack-core`, but the gate is this crate's own feature: enabling it here does not
+//!   switch on any other crate's sensitive records, and vice versa. Without it, those records
+//!   are not compiled in at all, and what the crate's `Debug` output and ordinary trace records
+//!   show has session tokens and `Authorization` headers redacted.
 //! * `unstable`: Allows access to unstable APIs (structs, traits, functions) such as
 //!   [`canonical::normalize_uri_path_component`]. These APIs are not needed for normal use of
 //!   this crate; they are provided for others exploring AWS SigV4 internals.

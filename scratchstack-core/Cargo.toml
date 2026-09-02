@@ -22,7 +22,6 @@ query = ["axum/query"]
 tokio = ["axum/tokio"]
 tower-log = ["axum/tower-log"]
 tracing = ["axum/tracing"]
-sensitive-logging = []
 tls = ["axum", "dep:tokio-rustls", "tokio/net"]
 
 [dependencies]
