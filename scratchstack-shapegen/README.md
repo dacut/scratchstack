@@ -63,6 +63,15 @@ The distribution is very flat — no single item exceeds 0.2% — so read it by 
 top-N. Note that every generated `Serialize` impl is monomorphized four times, once per `quick_xml`
 serializer type.
 
+### Where generation time goes
+
+```sh
+cargo run --example phases -p scratchstack-shapegen -- scratchstack-shapes-iam/iam-2010-05-08.json
+```
+
+Breaks the build script's work into parsing, resolution, token building and rendering. This is the
+source of the phase figures quoted below.
+
 ### Volume proxies
 
 ```sh
