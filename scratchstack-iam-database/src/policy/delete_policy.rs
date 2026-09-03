@@ -28,11 +28,21 @@ impl RequestExecutor for DeletePolicyRequest {
 ///
 /// # Errors
 ///
-/// A [`NoSuchEntityException`] if no policy matches the ARN, and a [`DeleteConflictException`] if
-/// one does but any of the conditions above is unmet. Those are checked before the delete, and
-/// each says which condition it was and how many rows are holding the policy; a foreign-key
-/// violation from the delete itself is reported the same way, for a row that arrived after the
-/// checks ran.
+/// A [`ValidationError`](scratchstack_shapes_iam::types::error::ValidationError) if `policy_arn`
+/// is not a well-formed policy ARN: unparseable, carrying a region, naming a resource type other
+/// than `policy`, or carrying a name [`validate_policy_name`](crate::policy::validate_policy_name)
+/// rejects.
+///
+/// A [`NoSuchEntityException`] if the ARN is well formed but names no policy.
+///
+/// A [`DeleteConflictException`] if it names a policy that is still held. The three checks that
+/// run before the delete each name the condition and count the rows holding the policy:
+/// attachments, permissions boundaries, and non-default versions. The foreign-key violation the
+/// delete itself can raise is the same type but a coarser message -- it says only that the policy
+/// is attached to an entity or is set as a permissions boundary, naming neither which nor how
+/// many, because it fires for a row that arrived after those checks ran and so was never counted.
+///
+/// An `InternalFailure` for any other database error.
 pub async fn delete_policy(
     tx: &mut PgTransaction<'_>,
     policy_arn: &str,
