@@ -141,6 +141,19 @@ impl ConnectionUrlBuilder {
     }
 
     /// Build the connection URL string.
+    ///
+    /// A password is emitted only alongside a username. It occupies the second half of the URL's
+    /// userinfo field, so without a username there is nowhere in the URL to put it. Setting one
+    /// without the other drops it and logs a warning rather than failing: the URL that results
+    /// connects with no credential at all, which a trust-authenticated server will accept, and a
+    /// caller who meant to supply a password would otherwise have no sign that it went nowhere.
+    ///
+    /// An unset host becomes `localhost`. An unset port or database is left out entirely, so the
+    /// server's defaults apply.
+    ///
+    /// Every component is percent-encoded, so a username, password, host or database name
+    /// containing `@`, `:`, `/` or `?` cannot break the URL apart -- which is what lets a Unix
+    /// socket directory be passed as the host.
     pub fn build(self) -> String {
         let mut result = "postgres://".to_string();
         if let Some(username) = self.username {
@@ -154,6 +167,8 @@ impl ConnectionUrlBuilder {
             }
 
             result.push('@');
+        } else if self.password.is_some() {
+            log::warn!("A password was set on a connection URL with no username; it is not part of the URL");
         }
 
         if let Some(host) = self.host {
@@ -353,6 +368,32 @@ mod tests {
         // the request id that ties its complaint to that log entry.
         assert_eq!(e.message.as_deref(), Some(constants::MSG_INTERNAL_FAILURE));
         assert_eq!(e.request_id, Some(request_id.to_string()));
+    }
+
+    #[test]
+    fn test_password_without_username_is_dropped() {
+        // A password lives in the second half of the userinfo field, so there is nowhere to put
+        // it without a username. It is dropped, and `build` logs that it was.
+        let url = ConnectionUrlBuilder::default()
+            .password("secret") // codeql[rust/hard-coded-cryptographic-value]
+            .host("db.example")
+            .database("mydb")
+            .build();
+        assert_eq!(url, "postgres://db.example/mydb");
+        assert!(!url.contains("secret"), "the dropped password must not appear anywhere in {url}");
+    }
+
+    #[test]
+    fn test_unset_host_defaults_to_localhost() {
+        assert_eq!(ConnectionUrlBuilder::default().build(), "postgres://localhost");
+        assert_eq!(ConnectionUrlBuilder::default().database("mydb").build(), "postgres://localhost/mydb");
+    }
+
+    #[test]
+    fn test_unset_port_and_database_are_omitted() {
+        // Left out rather than defaulted, so the server's own defaults apply.
+        let url = ConnectionUrlBuilder::default().username("alice").host("db.example").build();
+        assert_eq!(url, "postgres://alice@db.example");
     }
 
     #[test]
