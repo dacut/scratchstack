@@ -37,7 +37,8 @@ struct ListUserTagsRow {
     value: String,
 }
 
-/// List the tags for a user from the database.
+/// List the tags for a user from the database. Returns [`NoSuchEntityException`] if the user
+/// does not exist.
 pub async fn list_user_tags(
     tx: &mut PgTransaction<'_>,
     account_id: &str,
