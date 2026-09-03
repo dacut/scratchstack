@@ -399,7 +399,6 @@ impl TempDatabase {
                 self.state = TempDatabaseState::Stopped;
             }
         }
-        log::info!("Stopping PostgreSQL database");
 
         Ok(())
     }

@@ -171,8 +171,12 @@ pub(crate) const STS_API_VERSION: &str = "2011-06-15";
 // Regular expressions
 
 /// Regular expression for account aliases.
+///
+/// Every character after the first is either an alphanumeric or a hyphen paired with the
+/// alphanumeric that must follow it, which is what bars a trailing hyphen and a doubled one. The
+/// length bounds are not expressed here; [`crate::account::validate_account_alias`] applies them.
 pub static ACCOUNT_ALIAS_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[a-z0-9]([a-z0-9]|-[a-z0-9])+[a-z0-9]$").unwrap());
+    LazyLock::new(|| Regex::new(r"^[a-z0-9]([a-z0-9]|-[a-z0-9])*$").unwrap());
 
 /// Regular expression for tag keys.
 pub static TAG_KEY_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\p{L}\p{Z}\p{N}_.:/=+\-@]+$").unwrap());
