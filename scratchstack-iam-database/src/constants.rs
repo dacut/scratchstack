@@ -47,6 +47,15 @@ pub(crate) const IAM_PAGINATION_KEY: &[u8; PAGINATION_KEY_SIZE] = b"\xb2\xa5\xac
 pub(crate) const IAM_PAGINATION_KEY_ID: Uuid =
     Uuid::from_bytes([0x1d, 0x78, 0xc0, 0x8d, 0x6c, 0x63, 0x44, 0x8a, 0xa0, 0x04, 0x77, 0xa3, 0xc6, 0xee, 0x90, 0x1e]);
 
+/// The symbols `validate_iam_resource_name` accepts alongside ASCII alphanumerics, written as the
+/// name-validation messages spell them out.
+///
+/// Test-only. Those messages have to be single literals to read as one sentence, so they cannot
+/// be built from this; instead each module's tests assert that its message lists exactly this
+/// set, which is what stops the two drifting apart as they had for group, user and policy names.
+#[cfg(test)]
+pub(crate) const IAM_RESOURCE_NAME_SYMBOLS: &str = "+=,.@-_";
+
 /// The maximum number of versions allowed per managed policy.
 pub(crate) const MAX_POLICY_VERSIONS: i64 = 5;
 
