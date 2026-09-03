@@ -23,7 +23,7 @@ impl RequestExecutor for DeletePolicyRequest {
 /// Delete a managed policy. The policy must have no attachments to users, groups, or roles, must
 /// not be used as a permissions boundary, and must have only the default version remaining (all
 /// other versions must have been deleted via
-/// [`delete_policy_version`][crate::policy::delete_policy_version] first). On success the
+/// [`delete_policy_version`][fn@crate::policy::delete_policy_version] first). On success the
 /// remaining default version and all tags are removed along with the policy via FK cascade.
 ///
 /// # Errors

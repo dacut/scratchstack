@@ -33,7 +33,7 @@ pub(crate) const DEFAULT_SESSION_ENCRYPTION_TOKEN_LIFETIME_SECS: i64 = 24 * 60 *
 
 /// Default duration for an assumed role session (1 hour).
 ///
-/// Ref: https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html
+/// Ref: [AWS AssumeRole](https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html)
 pub(crate) const DEFAULT_ROLE_SESSION_DURATION_SECS: i32 = 60 * 60;
 
 /// The current version of the IAM API implemented.
@@ -61,7 +61,7 @@ pub(crate) const MAX_POLICY_VERSIONS: i64 = 5;
 
 /// The maximum allowed duration for assumed role sessions (12 hours).
 ///
-/// Ref: https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html
+/// Ref: [AWS AssumeRole](https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html)
 pub(crate) const MAX_ROLE_SESSION_DURATION_SECS: i32 = 12 * 60 * 60;
 
 /// The maximum allowed timestamp error for decrypting session tokens (15 minutes).
@@ -69,7 +69,7 @@ pub(crate) const MAX_SESSION_TOKEN_TIMESTAMP_ERROR_SECS: i64 = 15 * 60;
 
 /// The minimum allowed duration for assumed role sessions (15 minutes).
 ///
-/// Ref: https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html
+/// Ref: [AWS AssumeRole](https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html)
 pub(crate) const MIN_ROLE_SESSION_DURATION_SECS: i32 = 15 * 60;
 
 /// Error message: `"The AWS access key provided does not exist in our records"`
