@@ -75,6 +75,27 @@ pub async fn test_get_signing_key_short_access_key(pool: &sqlx::PgPool) {
     assert_invalid_client_token_id(e, MSG_ACCESS_KEY_PROVIDED_DOES_NOT_EXIST);
 }
 
+/// An access key whose four-byte prefix ends inside a multi-byte character is rejected rather
+/// than panicking.
+///
+/// Access keys reach the lookup as the Latin-1 decoding of the credential in the `Authorization`
+/// header, so every byte at or above 0x80 becomes a two-byte character. That lets a caller
+/// present a key that clears the 20-byte length check and whose fourth byte lands inside a
+/// character, which the `[..4]` slice this once used would panic on. The length and boundary
+/// assertions are what make this input the case it claims to be; without them the test would
+/// still pass if the string stopped having either property.
+pub async fn test_get_signing_key_prefix_splits_multibyte_char(pool: &sqlx::PgPool) {
+    // 'Ã' occupies bytes 3..5, so the prefix ends inside it.
+    let access_key_id = format!("ABC\u{00C3}{}", "X".repeat(16));
+    assert!(access_key_id.len() >= 20, "sanity: clears the byte-length check");
+    assert!(!access_key_id.is_char_boundary(4), "sanity: byte 4 falls inside a character");
+
+    let e = get_signing_key(pool, &access_key_id, None)
+        .await
+        .expect_err("An access key whose prefix splits a character must be rejected");
+    assert_invalid_client_token_id(e, MSG_ACCESS_KEY_PROVIDED_DOES_NOT_EXIST);
+}
+
 /// An access key with an unrecognized prefix is rejected.
 pub async fn test_get_signing_key_unknown_prefix(pool: &sqlx::PgPool) {
     let e = get_signing_key(pool, "AKIBEXAMPLEACCESSKEYID123", None)
