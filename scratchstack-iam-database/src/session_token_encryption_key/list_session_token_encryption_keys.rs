@@ -156,7 +156,7 @@ pub async fn list_session_token_encryption_keys(
                 }
             }
             _ => {
-                log::warn!("Received unsupported filter key: {:?}", filter.name);
+                log::warn!("{request_id}: Received unsupported filter key: {:?}", filter.name);
                 continue;
             }
         }

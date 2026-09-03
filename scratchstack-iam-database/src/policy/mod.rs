@@ -261,7 +261,7 @@ pub(crate) fn resolve_policy_account_id<'arn>(
 /// `ValidationError` if the ARN is unparseable or does not point at a policy resource.
 pub(crate) fn parse_policy_arn(policy_arn: &str, request_id: RequestId) -> Result<IamResourceArn, IamError> {
     let arn = IamResourceArn::from_str(policy_arn).map_err(|e| {
-        log::info!("Failed to parse policy ARN: {e}");
+        log::info!("{request_id}: Failed to parse policy ARN: {e}");
         ValidationError::builder().message("Invalid policy ARN").request_id(request_id).build()
     })?;
 
@@ -318,7 +318,7 @@ pub(crate) async fn get_permissions_boundary_id(
     let permissions_boundary = match IamResourceArn::from_str(permissions_boundary) {
         Ok(arn) => arn,
         Err(e) => {
-            log::info!("Failed to parse permissions boundary ARN: {e}");
+            log::info!("{request_id}: Failed to parse permissions boundary ARN: {e}");
             let message = "Invalid permissions boundary ARN".to_string();
 
             return Err(ValidationError::builder().message(message).request_id(request_id).build().into());
