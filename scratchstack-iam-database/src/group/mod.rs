@@ -60,12 +60,40 @@ pub(crate) fn group_arn_resource(path: &str, group_name: &str) -> String {
 
 /// Validate that the group name is valid according to AWS IAM rules.
 pub fn validate_group_name(group_name: impl AsRef<str>, request_id: RequestId) -> Result<(), ValidationError> {
-    const MESSAGE: &str = "Group name must contain only alphanumeric characters or the following symbols: =,.@- and must be between 1 and 128 characters long.";
+    const MESSAGE: &str = "Group name must contain only alphanumeric characters or the following symbols: +=,.@-_ and must be between 1 and 128 characters long.";
 
     let group_name = group_name.as_ref();
     if group_name.len() > 128 || validate_iam_resource_name(group_name).is_err() {
         Err(ValidationError::builder().message(MESSAGE).request_id(request_id).build())
     } else {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The message must list every symbol the validator accepts. A caller told a legal character
+    /// is illegal has no reason to try it, and three of these four messages omitted `+` and `_`
+    /// for exactly that reason.
+    #[test_log::test]
+    fn group_name_message_lists_every_accepted_symbol() {
+        validate_group_name(format!("Name{IAM_RESOURCE_NAME_SYMBOLS}"), RequestId::new())
+            .expect("every symbol the message lists must be accepted");
+
+        let err = validate_group_name("has a space", RequestId::new()).expect_err("a space is not accepted");
+        let message = err.message.expect("a validation error carries a message");
+        assert!(
+            message.contains(IAM_RESOURCE_NAME_SYMBOLS),
+            "message must list {IAM_RESOURCE_NAME_SYMBOLS}: {message}"
+        );
+    }
+
+    #[test_log::test]
+    fn group_name_length_bound_matches_the_message() {
+        validate_group_name("a".repeat(128), RequestId::new()).expect("the documented maximum must be accepted");
+        validate_group_name("a".repeat(128 + 1), RequestId::new()).expect_err("one over the maximum must be rejected");
+        validate_group_name("", RequestId::new()).expect_err("an empty name must be rejected");
     }
 }

@@ -72,3 +72,31 @@ pub fn validate_role_name(role_name: impl AsRef<str>, request_id: RequestId) -> 
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The message must list every symbol the validator accepts. A caller told a legal character
+    /// is illegal has no reason to try it, and three of these four messages omitted `+` and `_`
+    /// for exactly that reason.
+    #[test_log::test]
+    fn role_name_message_lists_every_accepted_symbol() {
+        validate_role_name(format!("Name{IAM_RESOURCE_NAME_SYMBOLS}"), RequestId::new())
+            .expect("every symbol the message lists must be accepted");
+
+        let err = validate_role_name("has a space", RequestId::new()).expect_err("a space is not accepted");
+        let message = err.message.expect("a validation error carries a message");
+        assert!(
+            message.contains(IAM_RESOURCE_NAME_SYMBOLS),
+            "message must list {IAM_RESOURCE_NAME_SYMBOLS}: {message}"
+        );
+    }
+
+    #[test_log::test]
+    fn role_name_length_bound_matches_the_message() {
+        validate_role_name("a".repeat(64), RequestId::new()).expect("the documented maximum must be accepted");
+        validate_role_name("a".repeat(64 + 1), RequestId::new()).expect_err("one over the maximum must be rejected");
+        validate_role_name("", RequestId::new()).expect_err("an empty name must be rejected");
+    }
+}
