@@ -131,15 +131,16 @@ pub enum TempDatabaseState {
     SetUp,
 
     /// The database instance is fully set up and the PostgreSQL server process is running, but the database has not
-    /// been bootstrapped by creating a `scratchstack` user and an `iam` database.
+    /// been bootstrapped by creating the [`SCRATCHSTACK_USER`] role and the [`SCRATCHSTACK_DATABASE`] database.
     RunningNotBootstrapped,
 
     /// The database instance is fully set up, the PostgreSQL server process is running, and the database has been
-    /// bootstrapped by creating a `scratchstack` user and an `iam` database.
+    /// bootstrapped by creating the [`SCRATCHSTACK_USER`] role and the [`SCRATCHSTACK_DATABASE`] database.
     RunningBootstrapped,
 
-    /// The database instance is fully set up and the database has been bootstrapped by creating a `scratchstack` user
-    /// and an `iam` database, but has been stopped by shutting down the PostgreSQL server process.
+    /// The database instance is fully set up and the database has been bootstrapped by creating the
+    /// [`SCRATCHSTACK_USER`] role and the [`SCRATCHSTACK_DATABASE`] database, but has been stopped by shutting down
+    /// the PostgreSQL server process.
     Stopped,
 }
 
@@ -321,8 +322,10 @@ impl TempDatabase {
         }
     }
 
-    /// Bootstrap the database by setting up a `scratchstack` user with a randomly generated
-    /// password and creating a database named `iam` owned by the `scratchstack` user.
+    /// Bootstrap the database by creating the [`SCRATCHSTACK_USER`] role with a randomly generated password and
+    /// the [`SCRATCHSTACK_DATABASE`] database owned by it.
+    ///
+    /// Both names are links rather than literals so this cannot drift from what the code creates.
     pub async fn bootstrap(&mut self) -> Result<(), PgError> {
         if self.state == TempDatabaseState::Stopped {
             self.start().await?;
