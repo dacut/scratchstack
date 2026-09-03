@@ -25,6 +25,14 @@ impl RequestExecutor for DeletePolicyRequest {
 /// other versions must have been deleted via
 /// [`delete_policy_version`][crate::policy::delete_policy_version] first). On success the
 /// remaining default version and all tags are removed along with the policy via FK cascade.
+///
+/// # Errors
+///
+/// A [`NoSuchEntityException`] if no policy matches the ARN, and a [`DeleteConflictException`] if
+/// one does but any of the conditions above is unmet. Those are checked before the delete, and
+/// each says which condition it was and how many rows are holding the policy; a foreign-key
+/// violation from the delete itself is reported the same way, for a row that arrived after the
+/// checks ran.
 pub async fn delete_policy(
     tx: &mut PgTransaction<'_>,
     policy_arn: &str,

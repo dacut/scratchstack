@@ -48,6 +48,13 @@ struct SessionTokenEncryptionKeyRow {
 /// Update the expiration windows of an existing session token encryption key. Any field left
 /// `None` retains its current value. The resulting set must satisfy
 /// `issue_valid_from <= issue_expires_at <= accept_expires_at`.
+///
+/// # Errors
+///
+/// A [`NoSuchEntityException`] if no key carries `stek_id`, and a [`ValidationError`] if `stek_id`
+/// is not a well-formed key id or if the fields that result -- the ones supplied together with
+/// the ones retained -- do not satisfy the ordering above. The check is on the resulting set
+/// rather than on the arguments, so moving one bound past a bound left untouched is refused.
 pub async fn update_session_token_encryption_key(
     tx: &mut PgTransaction<'_>,
     stek_id: &str,
