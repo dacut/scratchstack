@@ -46,7 +46,7 @@ pub async fn create_policy_version(
     let arn = match IamResourceArn::from_str(policy_arn) {
         Ok(arn) => arn,
         Err(e) => {
-            log::info!("Failed to parse policy ARN: {e}");
+            log::info!("{request_id}: Failed to parse policy ARN: {e}");
             return Err(ValidationError::builder().message("Invalid policy ARN").request_id(request_id).build().into());
         }
     };

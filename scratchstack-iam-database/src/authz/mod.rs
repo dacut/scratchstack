@@ -50,7 +50,7 @@ pub async fn get_policies_by_ids(
     let mut policy_ids = Vec::with_capacity(prefixed_policy_ids.len());
     for prefixed_policy_id in prefixed_policy_ids {
         let Some(policy_id) = prefixed_policy_id.strip_prefix(IamResourceType::ManagedPolicy.as_str()) else {
-            log::warn!("Policy id {prefixed_policy_id} is not a prefixed managed policy id");
+            log::warn!("{request_id}: Policy id {prefixed_policy_id} is not a prefixed managed policy id");
             return Ok(None);
         };
         policy_ids.push(policy_id.to_string());
@@ -82,7 +82,7 @@ pub async fn get_policies_by_ids(
     for policy_id in &policy_ids {
         let Some(document) = documents.get(policy_id) else {
             // The policy was deleted (or lost its default version) after the id was recorded.
-            log::warn!("Managed policy id {policy_id} not found while fetching policy documents");
+            log::warn!("{request_id}: Managed policy id {policy_id} not found while fetching policy documents");
             return Ok(None);
         };
 

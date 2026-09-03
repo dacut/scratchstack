@@ -217,7 +217,7 @@ pub(crate) async fn decrypt_pagination_token<T: DeserializeOwned>(
     request_id: RequestId,
 ) -> Result<T, IamInvalidInput> {
     paginator.decrypt_token(token).await.map_err(|e| {
-        log::debug!("Failed to decrypt pagination token for {operation_name}: {e}");
+        log::debug!("{request_id}: Failed to decrypt pagination token for {operation_name}: {e}");
         IamInvalidInput::builder()
             .message(format!("The pagination marker is not valid for {operation_name}."))
             .request_id(request_id)

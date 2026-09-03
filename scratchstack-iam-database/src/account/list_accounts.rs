@@ -58,7 +58,7 @@ pub async fn list_accounts(
             ListAccountsFilterName::AccountAlias => "alias",
             ListAccountsFilterName::Email => "email",
             _ => {
-                log::warn!("Received unsupported filter key: {:?}", filter.name);
+                log::warn!("{request_id}: Received unsupported filter key: {:?}", filter.name);
                 continue;
             }
         };
