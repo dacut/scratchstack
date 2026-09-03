@@ -3,12 +3,9 @@ mod create_account;
 mod create_account_alias;
 mod list_account_aliases;
 mod list_accounts;
-pub use {
-    crate::constants::*, create_account::*, create_account_alias::*, list_account_aliases::*, list_accounts::*,
-    scratchstack_shapes_iam::types::error::ValidationError,
-};
+pub use {create_account::*, create_account_alias::*, list_account_aliases::*, list_accounts::*};
 
-use scratchstack_core::RequestId;
+use {crate::constants::*, scratchstack_core::RequestId, scratchstack_shapes_iam::types::error::ValidationError};
 
 /// Name of the unique index that enforces alias uniqueness on `iam.accounts(alias)`. Used to
 /// distinguish alias-collision unique-violation errors from other constraint errors (such as a
@@ -52,4 +49,37 @@ pub fn validate_account_id(account_id: impl AsRef<str>, request_id: RequestId) -
         let message = "Account ID must be a 12-digit number or the string \"aws\".".to_string();
         ValidationError::builder().message(message).request_id(request_id).build()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Aliases IAM accepts. The hyphen positions matter: one immediately before the final
+    /// character used to be rejected, which no rule in the message calls for.
+    #[test_log::test]
+    fn validate_account_alias_accepts_legal_aliases() {
+        for alias in [
+            "abc",
+            "a-bc",
+            "ab-cd",
+            "test-1",
+            "my-a",
+            "aws-account-a",
+            "aws-account-ab",
+            "a1b2c3",
+            "x".repeat(63).as_str(),
+        ] {
+            assert!(validate_account_alias(alias, RequestId::new()).is_ok(), "alias {alias:?} should be accepted");
+        }
+    }
+
+    /// The four rules the error message states: length, character set, no leading or trailing
+    /// hyphen, no consecutive hyphens.
+    #[test_log::test]
+    fn validate_account_alias_rejects_illegal_aliases() {
+        for alias in ["", "a", "ab", "-abc", "abc-", "a--b", "ab--cd", "AbC", "a_b", "a b", "x".repeat(64).as_str()] {
+            assert!(validate_account_alias(alias, RequestId::new()).is_err(), "alias {alias:?} should be rejected");
+        }
+    }
 }

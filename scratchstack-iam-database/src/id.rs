@@ -179,7 +179,15 @@ impl FromStr for IamId {
     type Err = InvalidIamId;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let iam_id_type = IamResourceType::from_str(&s[0..4])?;
+        // A string shorter than the resource type prefix, or one whose fourth byte falls inside a
+        // multi-byte character, carries no prefix to read. Neither is an id, so report that rather
+        // than slicing into it.
+        let Some(resource_type) = s.get(0..4) else {
+            return Err(InvalidIamId(s.to_string()));
+        };
+
+        // The prefix ends on a character boundary, so the remainder is safe to take directly.
+        let iam_id_type = IamResourceType::from_str(resource_type)?;
         let payload = base32::decode(ID_ALPHABET, &s[4..]).ok_or_else(|| InvalidIamId(s.to_string()))?;
         if payload.len() != 10 {
             return Err(InvalidIamId(s.to_string()));
@@ -402,6 +410,26 @@ mod tests {
         // "XXXX" is not a known resource type prefix.
         let err = IamId::from_str("XXXXAAAAAAAAAAAAAAAA").unwrap_err();
         assert_eq!(err.to_string(), "Invalid IAM id: XXXX");
+    }
+
+    #[test_log::test]
+    fn from_str_shorter_than_prefix() {
+        // Too short to carry a resource type prefix at all; this must report the string rather
+        // than slice past its end.
+        for s in ["", "A", "AK", "AKI"] {
+            let err = IamId::from_str(s).unwrap_err();
+            assert_eq!(err.to_string(), format!("Invalid IAM id: {s}"), "input {s:?}");
+        }
+    }
+
+    #[test_log::test]
+    fn from_str_prefix_splits_multibyte_char() {
+        // 'Ã' occupies bytes 3..5, so the four-byte prefix ends inside it. The string is long
+        // enough by every byte-length measure and still has no prefix to read.
+        let s = "AKI\u{00C3}AAAAAAAAAAAAAAAA";
+        assert!(s.len() > 20, "sanity: long enough to pass a byte-length check");
+        let err = IamId::from_str(s).unwrap_err();
+        assert_eq!(err.to_string(), format!("Invalid IAM id: {s}"));
     }
 
     #[test_log::test]

@@ -186,13 +186,21 @@ async fn get_signing_key_from_database(
 ) -> Result<GetSigningKeyResponse, SignatureError> {
     let access_key = req.access_key();
 
-    // Access keys are 20 characters (at least) in length.
+    // Access keys are 20 bytes (at least) in length.
     if access_key.len() < 20 {
         return Err(SignatureError::InvalidClientTokenId(MSG_ACCESS_KEY_PROVIDED_DOES_NOT_EXIST.into()));
     }
 
-    // The prefix tells us what kind of key it is.
-    let access_prefix = &access_key[..4];
+    // The prefix tells us what kind of key it is. It is taken rather than sliced because the
+    // access key reaches us as the Latin-1 decoding of the credential in the Authorization
+    // header: a byte at or above 0x80 becomes a two-byte character, so a caller can present 20
+    // bytes whose fourth lands inside one. Every prefix this service mints is ASCII, so such a
+    // key is not one it issued and is reported the way any unknown key is.
+    let Some(access_prefix) = access_key.get(..4) else {
+        return Err(SignatureError::InvalidClientTokenId(MSG_ACCESS_KEY_PROVIDED_DOES_NOT_EXIST.into()));
+    };
+
+    // The prefix ends on a character boundary, so the remainder is safe to take directly.
     let access_suffix = access_key[4..].to_string();
     match access_prefix {
         "AKIA" => {
