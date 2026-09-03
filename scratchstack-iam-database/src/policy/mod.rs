@@ -1,4 +1,4 @@
-//! Policy-level database operations.
+//! Policy database operations.
 mod create_policy;
 mod create_policy_version;
 mod delete_policy;

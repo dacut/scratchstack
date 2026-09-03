@@ -1,4 +1,4 @@
-//! Partition database level operations.
+//! Partition database operations.
 use {
     crate::{RequestExecutor, internal_failure},
     indoc::indoc,

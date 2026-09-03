@@ -1,4 +1,4 @@
-//! Account database level operations.
+//! Account database operations.
 mod create_account;
 mod create_account_alias;
 mod list_account_aliases;

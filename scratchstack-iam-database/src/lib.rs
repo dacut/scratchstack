@@ -1,4 +1,4 @@
-//! Scratchstack database schema and models
+//! IAM database schema and types for Scratchstack services.
 #![warn(clippy::all)]
 #![allow(clippy::manual_range_contains)]
 #![deny(
@@ -268,9 +268,13 @@ pub(crate) fn make_iam_paginator(
     .map_err(|e| internal_failure!(request_id; "Failed to create paginator for {operation_name}: {e}").into())
 }
 
-/// Construct an `OperationPaginator` for an STS operation.
+/// Construct an [`OperationPaginator`] for an STS operation.
 ///
-/// TODO: Remove if we don't need this.
+/// Unused: no STS operation implemented here paginates, `AssumeRole` being the only one. It is
+/// kept so the STS half matches the IAM half rather than being reconstructed from
+/// [`make_iam_paginator`] later, and because the fixed key it uses has an identity of its own --
+/// `STS_PAGINATION_KEY_ID` -- which a token issued under it would be read back through. Deleting
+/// it means deleting that key and the three STS constants alongside it.
 #[allow(dead_code)]
 pub(crate) fn make_paginator_sts(
     partition: &str,

@@ -1,4 +1,4 @@
-//! CreateAccountAlias database level operations.
+//! CreateAccountAlias database operation
 use {
     crate::{
         RequestExecutor,

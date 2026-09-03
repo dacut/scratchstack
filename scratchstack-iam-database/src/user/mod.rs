@@ -1,4 +1,4 @@
-//! User database level operations.
+//! User database operations.
 mod attach_user_policy;
 mod create_access_key;
 mod create_user;

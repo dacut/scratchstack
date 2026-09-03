@@ -1,4 +1,4 @@
-//! Database operations for session token encryption keys.
+//! Session token encryption key database operations.
 mod create_session_token_encryption_key;
 mod get_current_session_token_encryption_key;
 mod get_session_token_encryption_key;

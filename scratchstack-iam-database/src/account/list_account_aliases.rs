@@ -1,4 +1,4 @@
-//! ListAccountAliases database level operations.
+//! ListAccountAliases database operation
 use {
     crate::{RequestExecutor, account::validate_account_id, internal_failure},
     scratchstack_core::RequestId,

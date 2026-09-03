@@ -1,4 +1,4 @@
-//! Group-related database operations
+//! Group database operations.
 use {crate::constants::*, scratchstack_shapes_iam::types::error::ValidationError};
 
 mod add_user_to_group;
