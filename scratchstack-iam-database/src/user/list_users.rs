@@ -108,10 +108,11 @@ pub async fn list_users(
     sql.push(" ORDER BY u.user_name_lower ASC LIMIT ");
     sql.push_bind(max_items as i32 + 1);
 
-    let rows = sql.build_query_as::<ListUsersRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch users from database: {e}");
-        internal_failure(request_id)
-    })?;
+    let rows = sql
+        .build_query_as::<ListUsersRow>()
+        .fetch_all(tx.as_mut())
+        .await
+        .map_err(|e| internal_failure!(request_id; "Failed to fetch users from database: {e}"))?;
     let mut results = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
 
@@ -123,10 +124,9 @@ pub async fn list_users(
                         next_user_name: row.user_name_lower,
                     })
                     .await
-                    .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListUsers: {e}");
-                        internal_failure(request_id)
-                    })?,
+                    .map_err(
+                        |e| internal_failure!(request_id; "Failed to encrypt pagination token for ListUsers: {e}"),
+                    )?,
             );
             break;
         }
@@ -137,24 +137,21 @@ pub async fn list_users(
             .account_id(account_id)
             .resource(user_arn_resource(&row.path, &row.user_name_cased))
             .build()
-            .map_err(|e| {
-                log::error!("Failed to construct ARN for user: {e}");
-                internal_failure(request_id)
-            })?;
+            .map_err(|e| internal_failure!(request_id; "Failed to construct ARN for user: {e}"))?;
 
         let permissions_boundary = if let Some(pb_id) = row.permissions_boundary_managed_policy_id.as_deref() {
             // The FK on permissions_boundary_managed_policy_id guarantees the joined row exists,
             // so a missing pb_account_id/pb_path/pb_name_cased here indicates DB corruption.
-            let (pb_account_id, pb_path, pb_name_cased) =
-                match (row.pb_account_id.as_deref(), row.pb_path.as_deref(), row.pb_name_cased.as_deref()) {
-                    (Some(pb_account_id), Some(pb_path), Some(pb_name_cased)) => {
-                        (pb_account_id, pb_path, pb_name_cased)
-                    }
-                    _ => {
-                        log::error!("User references missing permissions boundary managed policy ID: {pb_id}");
-                        return Err(internal_failure(request_id).into());
-                    }
-                };
+            let (pb_account_id, pb_path, pb_name_cased) = match (
+                row.pb_account_id.as_deref(),
+                row.pb_path.as_deref(),
+                row.pb_name_cased.as_deref(),
+            ) {
+                (Some(pb_account_id), Some(pb_path), Some(pb_name_cased)) => (pb_account_id, pb_path, pb_name_cased),
+                _ => {
+                    return Err(internal_failure!(request_id; "User references missing permissions boundary managed policy ID: {pb_id}").into());
+                }
+            };
 
             // The boundary is named by the account owning the policy, not by the account owning
             // the user: an AWS-managed policy serving as a boundary belongs to the AWS account.
@@ -165,10 +162,9 @@ pub async fn list_users(
                     .permissions_boundary_arn(pb_arn.to_string())
                     .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                     .build()
-                    .map_err(|e| {
-                        log::error!("Failed to construct permissions boundary for user: {e}");
-                        internal_failure(request_id)
-                    })?,
+                    .map_err(
+                        |e| internal_failure!(request_id; "Failed to construct permissions boundary for user: {e}"),
+                    )?,
             )
         } else {
             None
@@ -183,10 +179,7 @@ pub async fn list_users(
                 .user_name(row.user_name_cased)
                 .set_permissions_boundary(permissions_boundary)
                 .build()
-                .map_err(|e| {
-                    log::error!("Failed to construct user object: {e}");
-                    internal_failure(request_id)
-                })?,
+                .map_err(|e| internal_failure!(request_id; "Failed to construct user object: {e}"))?,
         );
     }
 
@@ -196,8 +189,5 @@ pub async fn list_users(
         builder = builder.is_truncated(true).marker(next_marker);
     }
 
-    builder.build().map_err(|e| {
-        log::error!("Failed to build ListUsersResponse: {e}");
-        internal_failure(request_id).into()
-    })
+    builder.build().map_err(|e| internal_failure!(request_id; "Failed to build ListUsersResponse: {e}").into())
 }

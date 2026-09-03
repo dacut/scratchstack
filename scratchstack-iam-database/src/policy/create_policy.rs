@@ -117,15 +117,13 @@ pub async fn create_policy(
                     .build()
                     .into());
             }
-            log::error!("Failed to insert managed policy into database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to insert managed policy into database: {e}").into());
         }
     };
     let created_at: chrono::DateTime<chrono::Utc> = match result.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
-            log::error!("Failed to get created_at from database row: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to get created_at from database row: {e}").into());
         }
     };
 
@@ -139,8 +137,7 @@ pub async fn create_policy(
     .execute(tx.as_mut())
     .await
     {
-        log::error!("Failed to insert managed policy version into database: {e}");
-        return Err(internal_failure(request_id).into());
+        return Err(internal_failure!(request_id; "Failed to insert managed policy version into database: {e}").into());
     }
 
     // Insert tags.
@@ -160,8 +157,7 @@ pub async fn create_policy(
         .execute(tx.as_mut())
         .await
         {
-            log::error!("Failed to insert managed policy tag into database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to insert managed policy tag into database: {e}").into());
         }
     }
 
@@ -174,8 +170,7 @@ pub async fn create_policy(
     {
         Ok(arn) => arn,
         Err(e) => {
-            log::error!("Failed to construct ARN for new managed policy: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to construct ARN for new managed policy: {e}").into());
         }
     };
 
@@ -192,10 +187,7 @@ pub async fn create_policy(
         .policy_name(policy_name.to_string())
         .set_tags(tags.to_vec())
         .build()
-        .map_err(|e| {
-            log::error!("Failed to construct policy object for new managed policy: {e}");
-            internal_failure(request_id)
-        })?;
+        .map_err(|e| internal_failure!(request_id; "Failed to construct policy object for new managed policy: {e}"))?;
 
     Ok(CreatePolicyResponse {
         policy: Some(policy),

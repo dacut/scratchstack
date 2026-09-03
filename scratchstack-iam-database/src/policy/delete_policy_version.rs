@@ -77,8 +77,7 @@ pub async fn delete_policy_version(
             return Err(NoSuchEntityException::builder().message(message).request_id(request_id).build().into());
         }
         Err(e) => {
-            log::error!("Failed to query managed policy from database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to query managed policy from database: {e}").into());
         }
     };
 
@@ -98,8 +97,9 @@ pub async fn delete_policy_version(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to delete managed policy version from database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(
+                internal_failure!(request_id; "Failed to delete managed policy version from database: {e}").into()
+            );
         }
     };
 
@@ -127,8 +127,7 @@ pub async fn delete_policy_version(
         .execute(tx.as_mut())
         .await
     {
-        log::error!("Failed to recompute managed policy update_date: {e}");
-        return Err(internal_failure(request_id).into());
+        return Err(internal_failure!(request_id; "Failed to recompute managed policy update_date: {e}").into());
     }
 
     Ok(())

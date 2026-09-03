@@ -113,10 +113,11 @@ pub async fn list_roles(
     sql.push(" ORDER BY r.role_name_lower ASC LIMIT ");
     sql.push_bind(max_items as i32 + 1);
 
-    let rows = sql.build_query_as::<ListRolesRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch roles from database: {e}");
-        internal_failure(request_id)
-    })?;
+    let rows = sql
+        .build_query_as::<ListRolesRow>()
+        .fetch_all(tx.as_mut())
+        .await
+        .map_err(|e| internal_failure!(request_id; "Failed to fetch roles from database: {e}"))?;
 
     let mut results: Vec<Role> = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -129,10 +130,9 @@ pub async fn list_roles(
                         next_role_name_lower: row.role_name_lower,
                     })
                     .await
-                    .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListRoles: {e}");
-                        internal_failure(request_id)
-                    })?,
+                    .map_err(
+                        |e| internal_failure!(request_id; "Failed to encrypt pagination token for ListRoles: {e}"),
+                    )?,
             );
             break;
         }
@@ -143,24 +143,21 @@ pub async fn list_roles(
             .account_id(account_id)
             .resource(role_arn_resource(&row.path, &row.role_name_cased))
             .build()
-            .map_err(|e| {
-                log::error!("Failed to construct ARN for role: {e}");
-                internal_failure(request_id)
-            })?;
+            .map_err(|e| internal_failure!(request_id; "Failed to construct ARN for role: {e}"))?;
 
         let permissions_boundary = if let Some(pb_id) = row.permissions_boundary_managed_policy_id.as_deref() {
             // The FK on permissions_boundary_managed_policy_id guarantees the joined row exists,
             // so a missing pb_account_id/pb_path/pb_name_cased here indicates DB corruption.
-            let (pb_account_id, pb_path, pb_name_cased) =
-                match (row.pb_account_id.as_deref(), row.pb_path.as_deref(), row.pb_name_cased.as_deref()) {
-                    (Some(pb_account_id), Some(pb_path), Some(pb_name_cased)) => {
-                        (pb_account_id, pb_path, pb_name_cased)
-                    }
-                    _ => {
-                        log::error!("Role references missing permissions boundary managed policy ID: {pb_id}");
-                        return Err(internal_failure(request_id).into());
-                    }
-                };
+            let (pb_account_id, pb_path, pb_name_cased) = match (
+                row.pb_account_id.as_deref(),
+                row.pb_path.as_deref(),
+                row.pb_name_cased.as_deref(),
+            ) {
+                (Some(pb_account_id), Some(pb_path), Some(pb_name_cased)) => (pb_account_id, pb_path, pb_name_cased),
+                _ => {
+                    return Err(internal_failure!(request_id; "Role references missing permissions boundary managed policy ID: {pb_id}").into());
+                }
+            };
 
             // The boundary is named by the account owning the policy, not by the account owning
             // the role: an AWS-managed policy serving as a boundary belongs to the AWS account.
@@ -171,10 +168,9 @@ pub async fn list_roles(
                     .permissions_boundary_arn(pb_arn.to_string())
                     .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                     .build()
-                    .map_err(|e| {
-                        log::error!("Failed to construct permissions boundary for role: {e}");
-                        internal_failure(request_id)
-                    })?,
+                    .map_err(
+                        |e| internal_failure!(request_id; "Failed to construct permissions boundary for role: {e}"),
+                    )?,
             )
         } else {
             None
@@ -193,10 +189,7 @@ pub async fn list_roles(
                 .role_name(row.role_name_cased)
                 .set_tags(Vec::<Tag>::new())
                 .build()
-                .map_err(|e| {
-                    log::error!("Failed to construct role object: {e}");
-                    internal_failure(request_id)
-                })?,
+                .map_err(|e| internal_failure!(request_id; "Failed to construct role object: {e}"))?,
         );
     }
 
@@ -206,8 +199,5 @@ pub async fn list_roles(
         builder = builder.is_truncated(true).marker(next_marker);
     }
 
-    builder.build().map_err(|e| {
-        log::error!("Failed to build ListRolesResponse: {e}");
-        internal_failure(request_id).into()
-    })
+    builder.build().map_err(|e| internal_failure!(request_id; "Failed to build ListRolesResponse: {e}").into())
 }

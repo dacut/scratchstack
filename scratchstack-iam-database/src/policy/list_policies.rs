@@ -170,10 +170,11 @@ pub async fn list_policies(
     sql.push(" ORDER BY account_id ASC, managed_policy_id ASC LIMIT ");
     sql.push_bind(max_items as i32 + 1);
 
-    let rows = sql.build_query_as::<ListPoliciesRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch managed policies from database: {e}");
-        internal_failure(request_id)
-    })?;
+    let rows = sql
+        .build_query_as::<ListPoliciesRow>()
+        .fetch_all(tx.as_mut())
+        .await
+        .map_err(|e| internal_failure!(request_id; "Failed to fetch managed policies from database: {e}"))?;
 
     let mut results: HashMap<String, Policy> = HashMap::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -187,10 +188,9 @@ pub async fn list_policies(
                         next_managed_policy_id: row.managed_policy_id,
                     })
                     .await
-                    .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListPolicies: {e}");
-                        internal_failure(request_id)
-                    })?,
+                    .map_err(
+                        |e| internal_failure!(request_id; "Failed to encrypt pagination token for ListPolicies: {e}"),
+                    )?,
             );
             break;
         }
@@ -207,10 +207,9 @@ pub async fn list_policies(
             .policy_name(row.managed_policy_name_cased)
             .update_date(row.update_date)
             .build()
-            .map_err(|e| {
-                log::error!("Failed to construct Policy object for ListPolicies result: {e}");
-                internal_failure(request_id)
-            })?;
+            .map_err(
+                |e| internal_failure!(request_id; "Failed to construct Policy object for ListPolicies result: {e}"),
+            )?;
         results.insert(row.managed_policy_id, policy);
     }
 
@@ -241,10 +240,7 @@ pub async fn list_policies(
     .bind(account_id)
     .fetch_all(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to fetch policy attachment counts from database: {e}");
-        internal_failure(request_id)
-    })?;
+    .map_err(|e| internal_failure!(request_id; "Failed to fetch policy attachment counts from database: {e}"))?;
     for row in attachment_rows.into_iter() {
         let attachment_count = min(row.attachment_count, i32::MAX as i64) as i32;
 
@@ -269,8 +265,7 @@ pub async fn list_policies(
     .fetch_all(tx.as_mut())
     .await
     .map_err(|e| {
-        log::error!("Failed to fetch policy permissions boundary usage counts from database: {e}");
-        internal_failure(request_id)
+        internal_failure!(request_id; "Failed to fetch policy permissions boundary usage counts from database: {e}")
     })?;
     for row in permissions_boundary_usage_rows.into_iter() {
         let usage_count = min(row.attachment_count, i32::MAX as i64) as i32;

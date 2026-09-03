@@ -95,8 +95,7 @@ async fn create_account_with_id(
                 .build()
                 .into());
         }
-        log::error!("Failed to insert account into database: {e}");
-        return Err(internal_failure(request_id).into());
+        return Err(internal_failure!(request_id; "Failed to insert account into database: {e}").into());
     }
 
     let mut acct_builder = Account::builder().account_id(account_id);
@@ -106,10 +105,7 @@ async fn create_account_with_id(
     if let Some(account_alias) = account_alias {
         acct_builder = acct_builder.account_alias(account_alias);
     }
-    let account = acct_builder.build().map_err(|e| {
-        log::error!("Failed to build Account: {e}");
-        internal_failure(request_id)
-    })?;
+    let account = acct_builder.build().map_err(|e| internal_failure!(request_id; "Failed to build Account: {e}"))?;
     Ok(CreateAccountResponse {
         account,
     })
@@ -128,8 +124,7 @@ async fn create_account_with_random_account_id(
         let mut savepoint = match tx.begin().await {
             Ok(sp) => sp,
             Err(e) => {
-                log::error!("Failed to create savepoint: {e}");
-                return Err(internal_failure(request_id).into());
+                return Err(internal_failure!(request_id; "Failed to create savepoint: {e}").into());
             }
         };
 
@@ -137,8 +132,7 @@ async fn create_account_with_random_account_id(
         {
             Ok(response) => {
                 if let Err(e) = savepoint.commit().await {
-                    log::error!("Failed to commit savepoint: {e}");
-                    return Err(internal_failure(request_id).into());
+                    return Err(internal_failure!(request_id; "Failed to commit savepoint: {e}").into());
                 }
                 return Ok(response);
             }
@@ -149,16 +143,14 @@ async fn create_account_with_random_account_id(
                 // error would keep looping, but collisions on 12-digit random IDs are
                 // extremely unlikely to repeat.
                 if let Err(e) = savepoint.rollback().await {
-                    log::error!("Failed to rollback savepoint: {e}");
-                    return Err(internal_failure(request_id).into());
+                    return Err(internal_failure!(request_id; "Failed to rollback savepoint: {e}").into());
                 }
                 continue;
             }
             Err(other) => {
                 // Validation error or something else — don't retry.
                 if let Err(e) = savepoint.rollback().await {
-                    log::error!("Failed to rollback savepoint: {e}");
-                    return Err(internal_failure(request_id).into());
+                    return Err(internal_failure!(request_id; "Failed to rollback savepoint: {e}").into());
                 }
                 return Err(other);
             }

@@ -68,8 +68,7 @@ pub async fn put_role_policy(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up role in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to look up role in database: {e}").into());
         }
     };
 
@@ -87,8 +86,7 @@ pub async fn put_role_policy(
     .execute(tx.as_mut())
     .await
     {
-        log::error!("Failed to insert/update role inline policy in database: {e}");
-        return Err(internal_failure(request_id).into());
+        return Err(internal_failure!(request_id; "Failed to insert/update role inline policy in database: {e}").into());
     }
 
     Ok(())

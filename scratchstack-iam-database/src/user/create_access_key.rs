@@ -83,10 +83,7 @@ pub async fn create_access_key(
     .bind(user_name.to_lowercase())
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to query user from database: {e}");
-        internal_failure(request_id)
-    })?;
+    .map_err(|e| internal_failure!(request_id; "Failed to query user from database: {e}"))?;
 
     let Some(user_info) = user_info else {
         return Err(NoSuchEntityException::builder()
@@ -114,15 +111,13 @@ pub async fn create_access_key(
     {
         Ok(row) => row,
         Err(e) => {
-            log::error!("Failed to insert access key into database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to insert access key into database: {e}").into());
         }
     };
     let created_at: chrono::DateTime<chrono::Utc> = match row.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
-            log::error!("Failed to get created_at from database row: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to get created_at from database row: {e}").into());
         }
     };
 
@@ -133,13 +128,10 @@ pub async fn create_access_key(
         .status(StatusType::Active)
         .user_name(user_name.to_string())
         .build()
-        .map_err(|e| {
-            log::error!("Failed to construct AccessKey response: {e}");
-            internal_failure(request_id)
-        })?;
+        .map_err(|e| internal_failure!(request_id; "Failed to construct AccessKey response: {e}"))?;
 
-    CreateAccessKeyResponse::builder().access_key(access_key).build().map_err(|e| {
-        log::error!("Failed to construct CreateAccessKeyResponse: {e}");
-        internal_failure(request_id).into()
-    })
+    CreateAccessKeyResponse::builder()
+        .access_key(access_key)
+        .build()
+        .map_err(|e| internal_failure!(request_id; "Failed to construct CreateAccessKeyResponse: {e}").into())
 }

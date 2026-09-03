@@ -57,8 +57,9 @@ pub async fn create_account_alias(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to create account alias for account {account_id}: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(
+                internal_failure!(request_id; "Failed to create account alias for account {account_id}: {e}").into()
+            );
         }
     };
 

@@ -75,10 +75,7 @@ pub async fn list_policy_versions(
     .bind(parts.resource_name_lower())
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to query managed policy from database: {e}");
-        internal_failure(request_id)
-    })?
+    .map_err(|e| internal_failure!(request_id; "Failed to query managed policy from database: {e}"))?
     .ok_or_else(|| {
         NoSuchEntityException::builder()
             .message(format!("Policy {policy_arn} was not found."))
@@ -105,10 +102,11 @@ pub async fn list_policy_versions(
     sql.push(" ORDER BY managed_policy_version DESC LIMIT ");
     sql.push_bind(max_items as i32 + 1);
 
-    let rows = sql.build_query_as::<ListPolicyVersionsRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch managed policy versions from database: {e}");
-        internal_failure(request_id)
-    })?;
+    let rows = sql
+        .build_query_as::<ListPolicyVersionsRow>()
+        .fetch_all(tx.as_mut())
+        .await
+        .map_err(|e| internal_failure!(request_id; "Failed to fetch managed policy versions from database: {e}"))?;
 
     let mut versions: Vec<PolicyVersion> = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -122,8 +120,7 @@ pub async fn list_policy_versions(
                     })
                     .await
                     .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListPolicyVersions: {e}");
-                        internal_failure(request_id)
+                        internal_failure!(request_id; "Failed to encrypt pagination token for ListPolicyVersions: {e}")
                     })?,
             );
             break;
@@ -135,10 +132,7 @@ pub async fn list_policy_versions(
                 .is_default_version(row.managed_policy_version == policy_row.default_version)
                 .version_id(format!("v{}", row.managed_policy_version))
                 .build()
-                .map_err(|e| {
-                    log::error!("Failed to construct PolicyVersion object: {e}");
-                    internal_failure(request_id)
-                })?,
+                .map_err(|e| internal_failure!(request_id; "Failed to construct PolicyVersion object: {e}"))?,
         );
     }
 

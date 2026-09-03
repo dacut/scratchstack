@@ -90,8 +90,7 @@ pub async fn update_group(
                     .build()
                     .into());
             }
-            log::error!("Failed to update group in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to update group in database: {e}").into());
         }
     };
 

@@ -47,8 +47,9 @@ pub async fn delete_role_permissions_boundary(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to clear role permissions boundary in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(
+                internal_failure!(request_id; "Failed to clear role permissions boundary in database: {e}").into()
+            );
         }
     };
 

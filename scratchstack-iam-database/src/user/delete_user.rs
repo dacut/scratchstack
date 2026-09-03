@@ -55,8 +55,7 @@ pub async fn delete_user(
                 );
                 return Err(DeleteConflictException::builder().message(message).request_id(request_id).build().into());
             }
-            log::error!("Failed to delete user from database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to delete user from database: {e}").into());
         }
     };
 

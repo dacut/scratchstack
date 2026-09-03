@@ -1,6 +1,6 @@
 //! CreateSessionTokenEncryptionKey database operation
 use {
-    crate::{RequestExecutor, constants::*, id::IamId},
+    crate::{RequestExecutor, constants::*, id::IamId, internal_failure},
     base64::{Engine as _, engine::general_purpose::URL_SAFE},
     chrono::{DateTime, Duration, Utc},
     indoc::indoc,
@@ -9,10 +9,7 @@ use {
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{CreateSessionTokenEncryptionKeyRequest, CreateSessionTokenEncryptionKeyResponse},
-        types::{
-            SessionTokenEncryptionAlgorithm, SessionTokenEncryptionKey,
-            error::{InternalFailure, ValidationError},
-        },
+        types::{SessionTokenEncryptionAlgorithm, SessionTokenEncryptionKey, error::ValidationError},
     },
     sqlx::{Row as _, postgres::PgTransaction, query},
 };
@@ -93,23 +90,13 @@ pub async fn create_session_token_encryption_key(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to create session token encryption key: {}", e);
-            return Err(InternalFailure::builder()
-                .message(MSG_INTERNAL_FAILURE.to_string())
-                .request_id(request_id)
-                .build()
-                .into());
+            return Err(internal_failure!(request_id; "Failed to create session token encryption key: {e}").into());
         }
     };
     let created_at: DateTime<Utc> = match result.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
-            log::error!("Failed to get created_at from database row: {}", e);
-            return Err(InternalFailure::builder()
-                .message(MSG_INTERNAL_FAILURE.to_string())
-                .request_id(request_id)
-                .build()
-                .into());
+            return Err(internal_failure!(request_id; "Failed to get created_at from database row: {e}").into());
         }
     };
 

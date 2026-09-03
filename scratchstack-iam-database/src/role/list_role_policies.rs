@@ -76,8 +76,7 @@ pub async fn list_role_policies(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up role in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to look up role in database: {e}").into());
         }
     };
 
@@ -99,10 +98,11 @@ pub async fn list_role_policies(
     sql.push("\nORDER BY policy_name_lower ASC LIMIT ");
     sql.push_bind(max_items as i32 + 1);
 
-    let rows = sql.build_query_as::<ListRolePoliciesRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch role inline policies from database: {e}");
-        internal_failure(request_id)
-    })?;
+    let rows = sql
+        .build_query_as::<ListRolePoliciesRow>()
+        .fetch_all(tx.as_mut())
+        .await
+        .map_err(|e| internal_failure!(request_id; "Failed to fetch role inline policies from database: {e}"))?;
 
     let mut results: Vec<String> = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -116,8 +116,7 @@ pub async fn list_role_policies(
                     })
                     .await
                     .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListRolePolicies: {e}");
-                        internal_failure(request_id)
+                        internal_failure!(request_id; "Failed to encrypt pagination token for ListRolePolicies: {e}")
                     })?,
             );
             break;
@@ -132,8 +131,5 @@ pub async fn list_role_policies(
         builder = builder.is_truncated(true).marker(next_marker);
     }
 
-    builder.build().map_err(|e| {
-        log::error!("Failed to build ListRolePoliciesResponse: {e}");
-        internal_failure(request_id).into()
-    })
+    builder.build().map_err(|e| internal_failure!(request_id; "Failed to build ListRolePoliciesResponse: {e}").into())
 }

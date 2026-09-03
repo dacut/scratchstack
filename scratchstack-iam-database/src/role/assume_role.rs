@@ -142,8 +142,7 @@ pub async fn assume_role(
         .build()
         .map_err(|e| {
             // This should never happen.
-            log::error!("Internal error creating assumed role principal: {e}");
-            internal_failure(request_id)
+            internal_failure!(request_id; "Internal error creating assumed role principal: {e}")
         })?;
 
     let mut tags = HashMap::with_capacity(request.tags.len());
@@ -220,10 +219,7 @@ pub async fn assume_role(
     .bind(role_arn.resource_path())
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to fetch role {role_arn} from database: {e}");
-        internal_failure(request_id)
-    })?
+    .map_err(|e| internal_failure!(request_id; "Failed to fetch role {role_arn} from database: {e}"))?
     .ok_or_else(|| {
         AccessDeniedException::builder()
             .message(format!("User is not authorized to perform: sts:AssumeRole on resource: {}", role_arn))
@@ -280,25 +276,23 @@ pub async fn assume_role(
     let stek = get_current_session_token_encryption_key(tx, None, request_id).await?.session_token_encryption_key;
     if stek.encryption_algorithm != SessionTokenEncryptionAlgorithm::Aes256Gcm {
         // This should never happen, as currently the only supported encryption algorithm is AES-256-GCM.
-        log::error!(
+        Err(internal_failure!(request_id;
             "Unsupported encryption algorithm for session token encryption key {}: {}",
             stek.session_token_encryption_key_id,
             stek.encryption_algorithm,
-        );
-        Err(internal_failure(request_id))?;
+        ))?;
     }
     log::info!(
-        "Encrypting session token with session token encryption key {} (algorithm: {})",
+        "{request_id}: Encrypting session token with session token encryption key {} (algorithm: {})",
         stek.session_token_encryption_key_id,
         stek.encryption_algorithm,
     );
 
     let raw_encryption_key = Zeroizing::new(URL_SAFE.decode(&stek.encryption_key).map_err(|e| {
-        log::error!(
+        internal_failure!(request_id;
             "Failed to decode encryption key for session token encryption key {}: {e}",
             stek.session_token_encryption_key_id,
-        );
-        internal_failure(request_id)
+        )
     })?);
     let key_info = SessionTokenEncryptionKeyInfo::builder()
         .session_token_encryption_key_id(stek.session_token_encryption_key_id)
@@ -308,10 +302,7 @@ pub async fn assume_role(
 
     let session_token_string = EncryptedSessionTokenData::encrypt(&session_token, &key_info, role_account_id)
         .and_then(|encrypted| encrypted.to_session_token())
-        .map_err(|e| {
-            log::error!("Failed to encrypt session token: {e}");
-            internal_failure(request_id)
-        })?;
+        .map_err(|e| internal_failure!(request_id; "Failed to encrypt session token: {e}"))?;
 
     Ok(AssumeRoleResponse {
         assumed_role_user: Some(assumed_role_user),

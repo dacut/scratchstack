@@ -74,10 +74,7 @@ pub async fn list_groups_for_user(
     .bind(&user_name_lower)
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to check if user exists in database: {e}");
-        internal_failure(request_id)
-    })?;
+    .map_err(|e| internal_failure!(request_id; "Failed to check if user exists in database: {e}"))?;
     if user_exists.is_none() {
         return Err(NoSuchEntityException::builder()
             .message(format!("The user with name {user_name} cannot be found."))
@@ -112,10 +109,11 @@ pub async fn list_groups_for_user(
     sql.push(" ORDER BY g.group_name_lower ASC LIMIT ");
     sql.push_bind(max_items as i32 + 1);
 
-    let rows = sql.build_query_as::<ListGroupsForUserRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch groups for user from database: {e}");
-        internal_failure(request_id)
-    })?;
+    let rows = sql
+        .build_query_as::<ListGroupsForUserRow>()
+        .fetch_all(tx.as_mut())
+        .await
+        .map_err(|e| internal_failure!(request_id; "Failed to fetch groups for user from database: {e}"))?;
     let mut results = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
 
@@ -128,8 +126,7 @@ pub async fn list_groups_for_user(
                     })
                     .await
                     .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListGroupsForUser: {e}");
-                        internal_failure(request_id)
+                        internal_failure!(request_id; "Failed to encrypt pagination token for ListGroupsForUser: {e}")
                     })?,
             );
             break;
@@ -141,10 +138,7 @@ pub async fn list_groups_for_user(
             .account_id(account_id)
             .resource(format!("group{}{}", row.path, row.group_name_cased))
             .build()
-            .map_err(|e| {
-                log::error!("Failed to construct ARN for group: {e}");
-                internal_failure(request_id)
-            })?;
+            .map_err(|e| internal_failure!(request_id; "Failed to construct ARN for group: {e}"))?;
 
         results.push(
             Group::builder()
@@ -154,10 +148,7 @@ pub async fn list_groups_for_user(
                 .group_id(format!("{}{}", IamResourceType::Group.as_str(), row.group_id))
                 .group_name(row.group_name_cased)
                 .build()
-                .map_err(|e| {
-                    log::error!("Failed to construct group object: {e}");
-                    internal_failure(request_id)
-                })?,
+                .map_err(|e| internal_failure!(request_id; "Failed to construct group object: {e}"))?,
         );
     }
 
@@ -167,8 +158,5 @@ pub async fn list_groups_for_user(
         builder = builder.is_truncated(true).marker(next_marker);
     }
 
-    builder.build().map_err(|e| {
-        log::error!("Failed to build ListGroupsForUserResponse: {e}");
-        internal_failure(request_id).into()
-    })
+    builder.build().map_err(|e| internal_failure!(request_id; "Failed to build ListGroupsForUserResponse: {e}").into())
 }

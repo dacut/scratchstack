@@ -57,8 +57,7 @@ pub async fn delete_user_policy(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up user in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to look up user in database: {e}").into());
         }
     };
 
@@ -73,8 +72,7 @@ pub async fn delete_user_policy(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to delete user inline policy from database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to delete user inline policy from database: {e}").into());
         }
     };
 

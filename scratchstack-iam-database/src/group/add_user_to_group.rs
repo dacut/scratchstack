@@ -57,8 +57,7 @@ pub async fn add_user_to_group(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up group in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to look up group in database: {e}").into());
         }
     };
 
@@ -82,8 +81,7 @@ pub async fn add_user_to_group(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up user in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to look up user in database: {e}").into());
         }
     };
 
@@ -98,8 +96,7 @@ pub async fn add_user_to_group(
     .execute(tx.as_mut())
     .await
     {
-        log::error!("Failed to add user to group in database: {e}");
-        return Err(internal_failure(request_id).into());
+        return Err(internal_failure!(request_id; "Failed to add user to group in database: {e}").into());
     }
 
     Ok(())

@@ -97,8 +97,7 @@ pub async fn tag_policy(
         .execute(tx.as_mut())
         .await
         {
-            log::error!("Failed to insert/update managed policy tag: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to insert/update managed policy tag: {e}").into());
         }
     }
 

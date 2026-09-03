@@ -55,8 +55,9 @@ pub async fn put_role_permissions_boundary(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to set role permissions boundary in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(
+                internal_failure!(request_id; "Failed to set role permissions boundary in database: {e}").into()
+            );
         }
     };
 

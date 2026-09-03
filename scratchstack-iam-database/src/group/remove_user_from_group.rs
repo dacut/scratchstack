@@ -62,8 +62,7 @@ pub async fn remove_user_from_group(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up group in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to look up group in database: {e}").into());
         }
     };
 
@@ -87,8 +86,7 @@ pub async fn remove_user_from_group(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up user in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to look up user in database: {e}").into());
         }
     };
 
@@ -104,8 +102,7 @@ pub async fn remove_user_from_group(
     .execute(tx.as_mut())
     .await
     {
-        log::error!("Failed to remove user from group in database: {e}");
-        return Err(internal_failure(request_id).into());
+        return Err(internal_failure!(request_id; "Failed to remove user from group in database: {e}").into());
     }
 
     Ok(())

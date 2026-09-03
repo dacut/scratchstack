@@ -71,12 +71,11 @@ pub async fn delete_policy(
         Ok(Some(row)) => row,
         Ok(None) => {
             let message = format!("Policy {policy_arn} was not found.");
-            log::info!("{}", message);
+            log::info!("{request_id}: {message}");
             return Err(NoSuchEntityException::builder().message(message).request_id(request_id).build().into());
         }
         Err(e) => {
-            log::error!("Failed to query managed policy from database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to query managed policy from database: {e}").into());
         }
     };
 
@@ -107,8 +106,9 @@ pub async fn delete_policy(
     {
         Ok(row) => row,
         Err(e) => {
-            log::error!("Failed to query DeletePolicy conflict counts from database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(
+                internal_failure!(request_id; "Failed to query DeletePolicy conflict counts from database: {e}").into(),
+            );
         }
     };
 
@@ -157,8 +157,7 @@ pub async fn delete_policy(
             return Err(DeleteConflictException::builder().message(message).request_id(request_id).build().into());
         }
 
-        log::error!("Failed to delete managed policy from database: {e}");
-        return Err(internal_failure(request_id).into());
+        return Err(internal_failure!(request_id; "Failed to delete managed policy from database: {e}").into());
     }
 
     Ok(())
