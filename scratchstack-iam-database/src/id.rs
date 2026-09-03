@@ -22,9 +22,13 @@ const RESOURCE_ID_BITS: u32 = 39;
 /// The underlying structure of an IAM identifier.
 ///
 /// The actual format used by AWS is not publicly documented beyond the
-/// [first four characters](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_identifiers.html#identifiers-unique-ids),
-/// but all returned values are strings of length 20 (ASIA) or 21 (all other types) in base-32
-/// encoding.
+/// [first four characters](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_identifiers.html#identifiers-unique-ids).
+/// Observed values are base-32, and either 20 or 21 characters long depending on the resource
+/// type.
+///
+/// Identifiers minted here are always 20 characters, whatever the resource type: the
+/// four-character prefix, then the ten-byte payload described below. Ten bytes is 80 bits, which
+/// is exactly sixteen base-32 characters with nothing left over to pad.
 ///
 /// Older generation access keys start with a 0 bit and don't seem to include the account id in any
 /// obviously discernible manner. There is an apparent checksum in these ids, as simple tampering
@@ -307,6 +311,52 @@ mod tests {
         let s = id.to_string();
         let parsed = IamId::from_str(&s).expect("Failed to parse IamId");
         assert_eq!(id, parsed);
+    }
+
+    /// Every identifier this crate mints is 20 characters: the four-character prefix plus the
+    /// ten-byte payload, which is 80 bits and so encodes to exactly sixteen base-32 characters
+    /// with no padding. AWS returns 21 for some resource types; this does not, and the struct
+    /// doc says so.
+    #[test_log::test]
+    fn display_is_always_twenty_characters() {
+        let resource_types = [
+            IamResourceType::AccessKey,
+            IamResourceType::BearerToken,
+            IamResourceType::Certificate,
+            IamResourceType::ContextSpecificCredential,
+            IamResourceType::Group,
+            IamResourceType::InstanceProfile,
+            IamResourceType::ManagedPolicy,
+            IamResourceType::ManagedPolicyVersion,
+            IamResourceType::Role,
+            IamResourceType::SessionTokenEncryptionKey,
+            IamResourceType::SshPublicKey,
+            IamResourceType::TemporaryAccessKey,
+            IamResourceType::User,
+        ];
+
+        // Both bit fields at their extremes, so a zero payload and a saturated one are covered
+        // as well as a realistic value.
+        let ids = [(0, 0), (557925715019, 258422848521), ((1 << ACCOUNT_ID_BITS) - 1, (1 << RESOURCE_ID_BITS) - 1)];
+
+        for resource_type in resource_types {
+            for (account_id, resource_id) in ids {
+                let id = IamId::builder()
+                    .resource_type(resource_type)
+                    .account_id(account_id)
+                    .resource_id(resource_id)
+                    .build()
+                    .expect("ids at the field bounds must build");
+                let rendered = id.to_string();
+
+                assert_eq!(
+                    rendered.chars().count(),
+                    20,
+                    "{resource_type:?} with {account_id}/{resource_id} rendered {rendered:?}"
+                );
+                assert_eq!(IamId::from_str(&rendered).expect("must parse back"), id);
+            }
+        }
     }
 
     #[test_log::test]
