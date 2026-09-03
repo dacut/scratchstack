@@ -53,10 +53,9 @@ pub async fn get_current_session_token_encryption_key(
     .bind(as_of)
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to fetch current session token encryption key from database: {e}");
-        internal_failure(request_id)
-    })?;
+    .map_err(
+        |e| internal_failure!(request_id; "Failed to fetch current session token encryption key from database: {e}"),
+    )?;
 
     let row = row.ok_or_else(|| {
         NoSuchEntityException::builder()
@@ -68,10 +67,9 @@ pub async fn get_current_session_token_encryption_key(
         format!("{}{}", IamResourceType::SessionTokenEncryptionKey.as_str(), row.session_token_encryption_key_id);
 
     let encryption_algorithm = SessionTokenEncryptionAlgorithm::from_str(&row.encryption_algorithm).map_err(|e| {
-        log::error!(
+        internal_failure!(request_id;
             "Invalid encryption algorithm stored in database for session token encryption key {session_token_encryption_key_id}: {e}",
-        );
-        internal_failure(request_id)
+        )
     })?;
 
     Ok(GetCurrentSessionTokenEncryptionKeyResponse {

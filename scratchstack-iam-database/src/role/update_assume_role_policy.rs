@@ -60,8 +60,7 @@ pub async fn update_assume_role_policy(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to update role trust policy in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to update role trust policy in database: {e}").into());
         }
     };
 

@@ -78,10 +78,11 @@ pub async fn list_accounts(
     sql.push(" ORDER BY account_id ASC LIMIT ");
     sql.push_bind(max_items as i32 + 1);
 
-    let rows = sql.build_query_as::<ListAccountsRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch accounts from database: {e}");
-        internal_failure(request_id)
-    })?;
+    let rows = sql
+        .build_query_as::<ListAccountsRow>()
+        .fetch_all(tx.as_mut())
+        .await
+        .map_err(|e| internal_failure!(request_id; "Failed to fetch accounts from database: {e}"))?;
 
     let mut accounts = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -100,10 +101,9 @@ pub async fn list_accounts(
                         next_account_id: last_account_id,
                     })
                     .await
-                    .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListAccounts: {e}");
-                        internal_failure(request_id)
-                    })?,
+                    .map_err(
+                        |e| internal_failure!(request_id; "Failed to encrypt pagination token for ListAccounts: {e}"),
+                    )?,
             );
             break;
         }

@@ -1,8 +1,8 @@
 //! ListSessionTokenEncryptionKeys database operation
 use {
     crate::{
-        RequestExecutor, constants::*, constrain_max_items, decrypt_pagination_token, make_iam_paginator,
-        partition::get_current_partition_or_fail,
+        RequestExecutor, constants::*, constrain_max_items, decrypt_pagination_token, internal_failure,
+        make_iam_paginator, partition::get_current_partition_or_fail,
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
@@ -13,8 +13,7 @@ use {
         operation::{ListSessionTokenEncryptionKeysRequest, ListSessionTokenEncryptionKeysResponse},
         types::{
             ListSessionTokenEncryptionKeysFilter, ListSessionTokenEncryptionKeysFilterName,
-            SessionTokenEncryptionAlgorithm, SessionTokenEncryptionKey,
-            error::{InternalFailure, ValidationError},
+            SessionTokenEncryptionAlgorithm, SessionTokenEncryptionKey, error::ValidationError,
         },
     },
     serde::{Deserialize, Serialize},
@@ -204,10 +203,9 @@ pub async fn list_session_token_encryption_keys(
     sql.push(" ORDER BY session_token_encryption_key_id ASC LIMIT ");
     sql.push_bind(max_items as i32 + 1);
 
-    let rows = sql.build_query_as::<ListSessionTokenEncryptionKeysRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch session token encryption keys from database: {e}");
-        InternalFailure::builder().message(MSG_INTERNAL_FAILURE.to_string()).request_id(request_id).build()
-    })?;
+    let rows = sql.build_query_as::<ListSessionTokenEncryptionKeysRow>().fetch_all(tx.as_mut()).await.map_err(
+        |e| internal_failure!(request_id; "Failed to fetch session token encryption keys from database: {e}"),
+    )?;
 
     let mut result = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -220,24 +218,16 @@ pub async fn list_session_token_encryption_keys(
                         next_session_token_encryption_key_id: row.session_token_encryption_key_id.clone(),
                     })
                     .await
-                    .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token: {e}");
-                        InternalFailure::builder()
-                            .message(MSG_INTERNAL_FAILURE.to_string())
-                            .request_id(request_id)
-                            .build()
-                    })?,
+                    .map_err(|e| internal_failure!(request_id; "Failed to encrypt pagination token: {e}"))?,
             );
             break;
         }
 
         let session_token_encryption_key_id =
             format!("{}{}", IamResourceType::SessionTokenEncryptionKey.as_str(), row.session_token_encryption_key_id);
-        let encryption_algorithm =
-            SessionTokenEncryptionAlgorithm::from_str(&row.encryption_algorithm).map_err(|e| {
-                log::error!("Failed to parse encryption algorithm from database value: {e}");
-                InternalFailure::builder().message(MSG_INTERNAL_FAILURE.to_string()).request_id(request_id).build()
-            })?;
+        let encryption_algorithm = SessionTokenEncryptionAlgorithm::from_str(&row.encryption_algorithm).map_err(
+            |e| internal_failure!(request_id; "Failed to parse encryption algorithm from database value: {e}"),
+        )?;
 
         result.push(SessionTokenEncryptionKey {
             session_token_encryption_key_id,

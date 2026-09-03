@@ -57,8 +57,7 @@ pub async fn untag_policy(
         .execute(tx.as_mut())
         .await
         {
-            log::error!("Failed to delete managed policy tag: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to delete managed policy tag: {e}").into());
         }
     }
 

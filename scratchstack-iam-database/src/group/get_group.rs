@@ -96,10 +96,7 @@ pub async fn get_group_path_and_name(
     .bind(group_name.to_lowercase())
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to fetch group from database: {e}");
-        internal_failure(request_id)
-    })?;
+    .map_err(|e| internal_failure!(request_id; "Failed to fetch group from database: {e}"))?;
 
     Ok(row.map(|row| (row.get(0), row.get(1))))
 }
@@ -138,10 +135,7 @@ pub async fn get_group(
     .bind(&group_name_lower)
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to fetch group from database: {e}");
-        internal_failure(request_id)
-    })?;
+    .map_err(|e| internal_failure!(request_id; "Failed to fetch group from database: {e}"))?;
 
     let row = row.ok_or_else(|| {
         NoSuchEntityException::builder()
@@ -161,10 +155,7 @@ pub async fn get_group(
         .account_id(account_id)
         .resource(group_arn_resource(&path, &group_name_cased))
         .build()
-        .map_err(|e| {
-            log::error!("Failed to construct ARN for group: {e}");
-            internal_failure(request_id)
-        })?;
+        .map_err(|e| internal_failure!(request_id; "Failed to construct ARN for group: {e}"))?;
 
     let group = Group::builder()
         .arn(arn.to_string())
@@ -173,10 +164,7 @@ pub async fn get_group(
         .group_id(format!("{}{}", IamResourceType::Group.as_str(), group_id))
         .group_name(group_name_cased)
         .build()
-        .map_err(|e| {
-            log::error!("Failed to construct group object: {e}");
-            internal_failure(request_id)
-        })?;
+        .map_err(|e| internal_failure!(request_id; "Failed to construct group object: {e}"))?;
 
     let paginator = make_iam_paginator(&partition, OP_GET_GROUP, request_id)?;
 
@@ -209,10 +197,11 @@ pub async fn get_group(
     sql.push(" ORDER BY u.user_name_lower ASC LIMIT ");
     sql.push_bind(max_items as i32 + 1);
 
-    let rows = sql.build_query_as::<GetGroupMemberRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch group members from database: {e}");
-        internal_failure(request_id)
-    })?;
+    let rows = sql
+        .build_query_as::<GetGroupMemberRow>()
+        .fetch_all(tx.as_mut())
+        .await
+        .map_err(|e| internal_failure!(request_id; "Failed to fetch group members from database: {e}"))?;
     let mut users = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
 
@@ -224,10 +213,9 @@ pub async fn get_group(
                         next_user_name: row.user_name_lower,
                     })
                     .await
-                    .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for GetGroup: {e}");
-                        internal_failure(request_id)
-                    })?,
+                    .map_err(
+                        |e| internal_failure!(request_id; "Failed to encrypt pagination token for GetGroup: {e}"),
+                    )?,
             );
             break;
         }
@@ -238,24 +226,21 @@ pub async fn get_group(
             .account_id(&row.user_account_id)
             .resource(user_arn_resource(&row.path, &row.user_name_cased))
             .build()
-            .map_err(|e| {
-                log::error!("Failed to construct ARN for group member: {e}");
-                internal_failure(request_id)
-            })?;
+            .map_err(|e| internal_failure!(request_id; "Failed to construct ARN for group member: {e}"))?;
 
         let permissions_boundary = if let Some(pb_id) = row.permissions_boundary_managed_policy_id.as_deref() {
             // The FK on permissions_boundary_managed_policy_id guarantees the joined row exists,
             // so a missing pb_account_id/pb_path/pb_name_cased here indicates DB corruption.
-            let (pb_account_id, pb_path, pb_name_cased) =
-                match (row.pb_account_id.as_deref(), row.pb_path.as_deref(), row.pb_name_cased.as_deref()) {
-                    (Some(pb_account_id), Some(pb_path), Some(pb_name_cased)) => {
-                        (pb_account_id, pb_path, pb_name_cased)
-                    }
-                    _ => {
-                        log::error!("Group member references missing permissions boundary managed policy ID: {pb_id}");
-                        return Err(internal_failure(request_id).into());
-                    }
-                };
+            let (pb_account_id, pb_path, pb_name_cased) = match (
+                row.pb_account_id.as_deref(),
+                row.pb_path.as_deref(),
+                row.pb_name_cased.as_deref(),
+            ) {
+                (Some(pb_account_id), Some(pb_path), Some(pb_name_cased)) => (pb_account_id, pb_path, pb_name_cased),
+                _ => {
+                    return Err(internal_failure!(request_id; "Group member references missing permissions boundary managed policy ID: {pb_id}").into());
+                }
+            };
 
             // The boundary is named by the account owning the policy, not by the account owning
             // the user: an AWS-managed policy serving as a boundary belongs to the AWS account.
@@ -267,8 +252,7 @@ pub async fn get_group(
                     .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                     .build()
                     .map_err(|e| {
-                        log::error!("Failed to construct permissions boundary for group member: {e}");
-                        internal_failure(request_id)
+                        internal_failure!(request_id; "Failed to construct permissions boundary for group member: {e}")
                     })?,
             )
         } else {
@@ -284,10 +268,7 @@ pub async fn get_group(
                 .user_name(row.user_name_cased)
                 .set_permissions_boundary(permissions_boundary)
                 .build()
-                .map_err(|e| {
-                    log::error!("Failed to construct group member object: {e}");
-                    internal_failure(request_id)
-                })?,
+                .map_err(|e| internal_failure!(request_id; "Failed to construct group member object: {e}"))?,
         );
     }
 
@@ -297,8 +278,5 @@ pub async fn get_group(
         builder = builder.is_truncated(true).marker(next_marker);
     }
 
-    builder.build().map_err(|e| {
-        log::error!("Failed to build GetGroupResponse: {e}");
-        internal_failure(request_id).into()
-    })
+    builder.build().map_err(|e| internal_failure!(request_id; "Failed to build GetGroupResponse: {e}").into())
 }

@@ -67,10 +67,7 @@ pub async fn list_role_tags(
     .bind(&role_name_lower)
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to check if role exists in database: {e}");
-        internal_failure(request_id)
-    })?;
+    .map_err(|e| internal_failure!(request_id; "Failed to check if role exists in database: {e}"))?;
 
     let role_id: String = match role_row {
         Some(row) => row.get(0),
@@ -101,10 +98,11 @@ pub async fn list_role_tags(
     sql.push("\nORDER BY key_lower ASC LIMIT ");
     sql.push_bind(max_items as i32 + 1);
 
-    let rows = sql.build_query_as::<ListRoleTagsRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch role tags from database: {e}");
-        internal_failure(request_id)
-    })?;
+    let rows = sql
+        .build_query_as::<ListRoleTagsRow>()
+        .fetch_all(tx.as_mut())
+        .await
+        .map_err(|e| internal_failure!(request_id; "Failed to fetch role tags from database: {e}"))?;
     let mut results = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
 
@@ -116,18 +114,20 @@ pub async fn list_role_tags(
                         next_key_lower: row.key_lower,
                     })
                     .await
-                    .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListRoleTags: {e}");
-                        internal_failure(request_id)
-                    })?,
+                    .map_err(
+                        |e| internal_failure!(request_id; "Failed to encrypt pagination token for ListRoleTags: {e}"),
+                    )?,
             );
             break;
         }
 
-        results.push(Tag::builder().key(row.key_cased).value(row.value).build().map_err(|e| {
-            log::error!("Failed to construct tag object: {e}");
-            internal_failure(request_id)
-        })?);
+        results.push(
+            Tag::builder()
+                .key(row.key_cased)
+                .value(row.value)
+                .build()
+                .map_err(|e| internal_failure!(request_id; "Failed to construct tag object: {e}"))?,
+        );
     }
 
     let mut builder = ListRoleTagsResponse::builder();
@@ -136,8 +136,5 @@ pub async fn list_role_tags(
         builder = builder.is_truncated(true).marker(next_marker);
     }
 
-    builder.build().map_err(|e| {
-        log::error!("Failed to build ListRoleTagsResponse: {e}");
-        internal_failure(request_id).into()
-    })
+    builder.build().map_err(|e| internal_failure!(request_id; "Failed to build ListRoleTagsResponse: {e}").into())
 }

@@ -27,7 +27,7 @@ use {
         error_meta::Error as IamError,
         types::{
             Tag,
-            error::{InternalFailure, NoSuchEntityException, ValidationError},
+            error::{NoSuchEntityException, ValidationError},
         },
     },
     sqlx::{FromRow, Row as _, postgres::PgTransaction, query, query_as},
@@ -69,10 +69,7 @@ pub(crate) fn build_policy_arn(
         .account_id(account_id)
         .resource(policy_arn_resource(path, policy_name))
         .build()
-        .map_err(|e| {
-            log::error!("Failed to construct ARN for managed policy: {e}");
-            internal_failure(request_id).into()
-        })
+        .map_err(|e| internal_failure!(request_id; "Failed to construct ARN for managed policy: {e}").into())
 }
 
 /// Fetch the tags attached to a managed policy.
@@ -97,10 +94,7 @@ pub(crate) async fn fetch_policy_tags(
     .bind(managed_policy_id)
     .fetch_all(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to fetch managed policy tags: {e}");
-        internal_failure(request_id)
-    })?;
+    .map_err(|e| internal_failure!(request_id; "Failed to fetch managed policy tags: {e}"))?;
 
     let mut tags = Vec::with_capacity(rows.len());
     for row in rows.into_iter() {
@@ -142,10 +136,7 @@ pub(crate) async fn get_policy_attachment_count(
     .bind(account_id)
     .fetch_one(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to query attachment count for managed policy: {e}");
-        internal_failure(request_id)
-    })?;
+    .map_err(|e| internal_failure!(request_id; "Failed to query attachment count for managed policy: {e}"))?;
 
     row.try_get::<i64, _>(0)
         .map(|count| {
@@ -155,10 +146,7 @@ pub(crate) async fn get_policy_attachment_count(
                 count as i32
             }
         })
-        .map_err(|e| {
-            log::error!("Failed to get attachment_count from database row: {e}");
-            internal_failure(request_id).into()
-        })
+        .map_err(|e| internal_failure!(request_id; "Failed to get attachment_count from database row: {e}").into())
 }
 
 /// Calculate the number of entities in `account_id` that the policy `managed_policy_id` bounds.
@@ -184,10 +172,9 @@ async fn get_policy_permissions_boundary_usage_count(
     .bind(account_id)
     .fetch_one(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to query permissions boundary usage count for managed policy: {e}");
-        internal_failure(request_id)
-    })?;
+    .map_err(
+        |e| internal_failure!(request_id; "Failed to query permissions boundary usage count for managed policy: {e}"),
+    )?;
 
     row.try_get::<i64, _>("usage_count")
         .map(|count| {
@@ -197,10 +184,7 @@ async fn get_policy_permissions_boundary_usage_count(
                 count as i32
             }
         })
-        .map_err(|e| {
-            log::error!("Failed to get usage_count from database row: {e}");
-            internal_failure(request_id).into()
-        })
+        .map_err(|e| internal_failure!(request_id; "Failed to get usage_count from database row: {e}").into())
 }
 
 /// Look up the `managed_policy_id` for a policy named by ARN; returns NoSuchEntity if not found.
@@ -224,10 +208,7 @@ async fn lookup_managed_policy_id(
     .bind(policy_arn.resource_name_lower())
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to query managed policy from database: {e}");
-        internal_failure(request_id)
-    })?
+    .map_err(|e| internal_failure!(request_id; "Failed to query managed policy from database: {e}"))?
     .ok_or_else(|| {
         NoSuchEntityException::builder()
             .message(format!("Policy {policy_arn} was not found."))
@@ -235,10 +216,7 @@ async fn lookup_managed_policy_id(
             .build()
     })?
     .try_get(0)
-    .map_err(|e| {
-        log::error!("Failed to get managed_policy_id from database row: {e}");
-        internal_failure(request_id).into()
-    })
+    .map_err(|e| internal_failure!(request_id; "Failed to get managed_policy_id from database row: {e}").into())
 }
 
 /// Resolve the account the managed policy `policy_arn` names is stored under, confined to the
@@ -376,9 +354,7 @@ pub(crate) async fn get_permissions_boundary_id(
     {
         Ok(results) => results,
         Err(e) => {
-            log::error!("Failed to query permissions boundary from database: {e}");
-            let message = "Internal failure".to_string();
-            return Err(ValidationError::builder().message(message).request_id(request_id).build().into());
+            return Err(internal_failure!(request_id; "Failed to query permissions boundary from database: {e}").into());
         }
     };
 
@@ -389,17 +365,17 @@ pub(crate) async fn get_permissions_boundary_id(
     }
 
     if results.len() > 1 {
-        let message = "Multiple permissions boundary policies found with the same name and path; this is a database integrity error".to_string(
-        );
-        return Err(InternalFailure::builder().message(message).request_id(request_id).build().into());
+        return Err(internal_failure!(request_id;
+            "Multiple permissions boundary policies found for {permissions_boundary}; this is a database integrity error")
+        .into());
     }
 
     let mp_id: &str = match results[0].try_get(0) {
         Ok(mp_id) => mp_id,
         Err(e) => {
-            log::error!("Failed to get permissions boundary ID from database row: {e}");
-            let message = "Internal failure".to_string();
-            return Err(InternalFailure::builder().message(message).request_id(request_id).build().into());
+            return Err(
+                internal_failure!(request_id; "Failed to get permissions boundary ID from database row: {e}").into()
+            );
         }
     };
     Ok(mp_id.to_string())

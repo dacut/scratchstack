@@ -68,8 +68,7 @@ pub async fn update_role(
         {
             Ok(result) => result,
             Err(e) => {
-                log::error!("Failed to update role in database: {e}");
-                return Err(internal_failure(request_id).into());
+                return Err(internal_failure!(request_id; "Failed to update role in database: {e}").into());
             }
         };
 
@@ -90,10 +89,7 @@ pub async fn update_role(
         .bind(role_name.to_lowercase())
         .fetch_optional(tx.as_mut())
         .await
-        .map_err(|e| {
-            log::error!("Failed to query role in database: {e}");
-            internal_failure(request_id)
-        })?;
+        .map_err(|e| internal_failure!(request_id; "Failed to query role in database: {e}"))?;
 
         if result.is_none() {
             return Err(NoSuchEntityException::builder()
@@ -104,8 +100,7 @@ pub async fn update_role(
         }
     }
 
-    UpdateRoleResponse::builder().build().map_err(|e| {
-        log::error!("Failed to build UpdateRoleResponse: {e}");
-        internal_failure(request_id).into()
-    })
+    UpdateRoleResponse::builder()
+        .build()
+        .map_err(|e| internal_failure!(request_id; "Failed to build UpdateRoleResponse: {e}").into())
 }

@@ -35,18 +35,16 @@ pub async fn list_account_aliases(
         .fetch_optional(tx.as_mut())
         .await
         .map_err(|e| {
-            log::error!(
+            internal_failure!(request_id;
                 "ListAccountAliases query failed for account {account_id} (query: SELECT alias FROM iam.accounts WHERE account_id = $1): {e}"
-            );
-            internal_failure(request_id)
+            )
         })?;
 
     match result {
         Some(row) => {
-            let alias: Option<String> = row.try_get(0).map_err(|e| {
-                log::error!("Failed to get account alias for account {account_id}: {e}");
-                internal_failure(request_id)
-            })?;
+            let alias: Option<String> = row.try_get(0).map_err(
+                |e| internal_failure!(request_id; "Failed to get account alias for account {account_id}: {e}"),
+            )?;
             Ok(ListAccountAliasesResponse {
                 account_aliases: alias.into_iter().collect(),
                 is_truncated: Some(false),

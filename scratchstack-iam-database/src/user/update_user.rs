@@ -94,8 +94,7 @@ pub async fn update_user(
                     .build()
                     .into());
             }
-            log::error!("Failed to update user in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to update user in database: {e}").into());
         }
     };
 

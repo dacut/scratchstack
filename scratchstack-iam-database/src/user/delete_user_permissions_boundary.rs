@@ -47,8 +47,9 @@ pub async fn delete_user_permissions_boundary(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to clear user permissions boundary in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(
+                internal_failure!(request_id; "Failed to clear user permissions boundary in database: {e}").into()
+            );
         }
     };
 

@@ -68,8 +68,7 @@ pub async fn put_group_policy(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up group in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to look up group in database: {e}").into());
         }
     };
 
@@ -87,8 +86,9 @@ pub async fn put_group_policy(
     .execute(tx.as_mut())
     .await
     {
-        log::error!("Failed to insert/update group inline policy in database: {e}");
-        return Err(internal_failure(request_id).into());
+        return Err(
+            internal_failure!(request_id; "Failed to insert/update group inline policy in database: {e}").into()
+        );
     }
 
     Ok(())

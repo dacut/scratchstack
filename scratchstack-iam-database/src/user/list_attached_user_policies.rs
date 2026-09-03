@@ -93,8 +93,7 @@ pub async fn list_attached_user_policies(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up user in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to look up user in database: {e}").into());
         }
     };
 
@@ -130,10 +129,11 @@ pub async fn list_attached_user_policies(
     sql.push(" ORDER BY mp.managed_policy_name_lower ASC, mp.managed_policy_id ASC LIMIT ");
     sql.push_bind(max_items as i32 + 1);
 
-    let rows = sql.build_query_as::<ListAttachedPolicyRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        log::error!("Failed to fetch attached user policies from database: {e}");
-        internal_failure(request_id)
-    })?;
+    let rows = sql
+        .build_query_as::<ListAttachedPolicyRow>()
+        .fetch_all(tx.as_mut())
+        .await
+        .map_err(|e| internal_failure!(request_id; "Failed to fetch attached user policies from database: {e}"))?;
 
     let mut results: Vec<AttachedPolicy> = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -148,8 +148,7 @@ pub async fn list_attached_user_policies(
                     })
                     .await
                     .map_err(|e| {
-                        log::error!("Failed to encrypt pagination token for ListAttachedUserPolicies: {e}");
-                        internal_failure(request_id)
+                        internal_failure!(request_id; "Failed to encrypt pagination token for ListAttachedUserPolicies: {e}")
                     })?,
             );
             break;
@@ -161,10 +160,7 @@ pub async fn list_attached_user_policies(
                 .policy_arn(arn.to_string())
                 .policy_name(row.managed_policy_name_cased)
                 .build()
-                .map_err(|e| {
-                    log::error!("Failed to construct AttachedPolicy: {e}");
-                    internal_failure(request_id)
-                })?,
+                .map_err(|e| internal_failure!(request_id; "Failed to construct AttachedPolicy: {e}"))?,
         );
     }
 
@@ -174,8 +170,7 @@ pub async fn list_attached_user_policies(
         builder = builder.is_truncated(true).marker(next_marker);
     }
 
-    builder.build().map_err(|e| {
-        log::error!("Failed to build ListAttachedUserPoliciesResponse: {e}");
-        internal_failure(request_id).into()
-    })
+    builder
+        .build()
+        .map_err(|e| internal_failure!(request_id; "Failed to build ListAttachedUserPoliciesResponse: {e}").into())
 }

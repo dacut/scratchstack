@@ -119,15 +119,13 @@ pub async fn create_user(
                     .build()
                     .into());
             }
-            log::error!("Failed to insert user into database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to insert user into database: {e}").into());
         }
     };
     let created_at: DateTime<Utc> = match result.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
-            log::error!("Failed to get created_at from database row: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to get created_at from database row: {e}").into());
         }
     };
 
@@ -147,8 +145,7 @@ pub async fn create_user(
         .execute(tx.as_mut())
         .await
         {
-            log::error!("Failed to insert user tag into database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to insert user tag into database: {e}").into());
         }
     }
 
@@ -161,8 +158,7 @@ pub async fn create_user(
     {
         Ok(arn) => arn,
         Err(e) => {
-            log::error!("Failed to construct ARN for new user: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to construct ARN for new user: {e}").into());
         }
     };
 
@@ -172,10 +168,9 @@ pub async fn create_user(
                 .permissions_boundary_arn(pb.to_string())
                 .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                 .build()
-                .map_err(|e| {
-                    log::error!("Failed to construct permissions boundary for new user: {e}");
-                    internal_failure(request_id)
-                })?,
+                .map_err(
+                    |e| internal_failure!(request_id; "Failed to construct permissions boundary for new user: {e}"),
+                )?,
         )
     } else {
         None
@@ -190,10 +185,7 @@ pub async fn create_user(
         .user_name(user_name.to_string())
         .set_permissions_boundary(permissions_boundary)
         .build()
-        .map_err(|e| {
-            log::error!("Failed to construct user object for new user: {e}");
-            internal_failure(request_id)
-        })?;
+        .map_err(|e| internal_failure!(request_id; "Failed to construct user object for new user: {e}"))?;
 
     Ok(CreateUserResponse::builder().user(user).build().unwrap())
 }

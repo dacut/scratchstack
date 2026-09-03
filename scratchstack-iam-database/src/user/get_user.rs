@@ -66,10 +66,7 @@ pub async fn get_user(
     .bind(&user_name_lower)
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to fetch user from database: {e}");
-        internal_failure(request_id)
-    })?;
+    .map_err(|e| internal_failure!(request_id; "Failed to fetch user from database: {e}"))?;
 
     let row = row.ok_or_else(|| {
         NoSuchEntityException::builder()
@@ -90,10 +87,7 @@ pub async fn get_user(
         .account_id(account_id)
         .resource(user_arn_resource(&path, &user_name_cased))
         .build()
-        .map_err(|e| {
-            log::error!("Failed to construct ARN for user: {e}");
-            internal_failure(request_id)
-        })?;
+        .map_err(|e| internal_failure!(request_id; "Failed to construct ARN for user: {e}"))?;
 
     let permissions_boundary = if let Some(pb_id) = permissions_boundary_id {
         let pb_row = query(indoc! {"
@@ -104,15 +98,13 @@ pub async fn get_user(
         .bind(&pb_id)
         .fetch_optional(tx.as_mut())
         .await
-        .map_err(|e| {
-            log::error!("Failed to fetch permissions boundary managed policy from database: {e}");
-            internal_failure(request_id)
-        })?;
+        .map_err(
+            |e| internal_failure!(request_id; "Failed to fetch permissions boundary managed policy from database: {e}"),
+        )?;
 
-        let pb_row = pb_row.ok_or_else(|| {
-            log::error!("User references missing permissions boundary managed policy ID: {pb_id}");
-            internal_failure(request_id)
-        })?;
+        let pb_row = pb_row.ok_or_else(
+            || internal_failure!(request_id; "User references missing permissions boundary managed policy ID: {pb_id}"),
+        )?;
 
         // The boundary is named by the account owning the policy, not by the account owning the
         // user: an AWS-managed policy serving as a boundary belongs to the AWS account, and
@@ -127,10 +119,7 @@ pub async fn get_user(
                 .permissions_boundary_arn(pb_arn.to_string())
                 .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                 .build()
-                .map_err(|e| {
-                    log::error!("Failed to construct permissions boundary for user: {e}");
-                    internal_failure(request_id)
-                })?,
+                .map_err(|e| internal_failure!(request_id; "Failed to construct permissions boundary for user: {e}"))?,
         )
     } else {
         None
@@ -146,19 +135,19 @@ pub async fn get_user(
     .bind(&user_id)
     .fetch_all(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to fetch user tags from database: {e}");
-        internal_failure(request_id)
-    })?;
+    .map_err(|e| internal_failure!(request_id; "Failed to fetch user tags from database: {e}"))?;
 
     let mut tags = Vec::with_capacity(tag_rows.len());
     for tag_row in tag_rows {
         let key: String = tag_row.get(0);
         let value: String = tag_row.get(1);
-        tags.push(Tag::builder().key(key).value(value).build().map_err(|e| {
-            log::error!("Failed to construct tag object: {e}");
-            internal_failure(request_id)
-        })?);
+        tags.push(
+            Tag::builder()
+                .key(key)
+                .value(value)
+                .build()
+                .map_err(|e| internal_failure!(request_id; "Failed to construct tag object: {e}"))?,
+        );
     }
 
     let user = User::builder()
@@ -170,10 +159,7 @@ pub async fn get_user(
         .user_name(user_name_cased)
         .set_permissions_boundary(permissions_boundary)
         .build()
-        .map_err(|e| {
-            log::error!("Failed to construct user object: {e}");
-            internal_failure(request_id)
-        })?;
+        .map_err(|e| internal_failure!(request_id; "Failed to construct user object: {e}"))?;
 
     Ok(GetUserResponse::builder().user(user).build().unwrap())
 }

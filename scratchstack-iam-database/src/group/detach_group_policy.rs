@@ -66,8 +66,7 @@ pub async fn detach_group_policy(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up managed policy in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to look up managed policy in database: {e}").into());
         }
     };
 
@@ -91,8 +90,7 @@ pub async fn detach_group_policy(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up group in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to look up group in database: {e}").into());
         }
     };
 
@@ -107,8 +105,7 @@ pub async fn detach_group_policy(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to detach policy from group in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to detach policy from group in database: {e}").into());
         }
     };
 

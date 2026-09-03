@@ -49,8 +49,7 @@ pub async fn update_role_description(
     {
         Ok(result) => result,
         Err(e) => {
-            log::error!("Failed to update role description in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to update role description in database: {e}").into());
         }
     };
 
@@ -64,8 +63,8 @@ pub async fn update_role_description(
 
     let role = get_role(tx, account_id, role_name, request_id).await?.role;
 
-    UpdateRoleDescriptionResponse::builder().role(role).build().map_err(|e| {
-        log::error!("Failed to build UpdateRoleDescriptionResponse: {e}");
-        internal_failure(request_id).into()
-    })
+    UpdateRoleDescriptionResponse::builder()
+        .role(role)
+        .build()
+        .map_err(|e| internal_failure!(request_id; "Failed to build UpdateRoleDescriptionResponse: {e}").into())
 }

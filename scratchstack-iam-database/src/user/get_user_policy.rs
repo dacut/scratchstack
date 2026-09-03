@@ -49,10 +49,7 @@ pub async fn get_user_policy(
     .bind(user_name.to_lowercase())
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to look up user in database: {e}");
-        internal_failure(request_id)
-    })?;
+    .map_err(|e| internal_failure!(request_id; "Failed to look up user in database: {e}"))?;
 
     let (user_id, user_name_cased): (String, String) = match user_row {
         Some(row) => (row.get(0), row.get(1)),
@@ -74,10 +71,7 @@ pub async fn get_user_policy(
     .bind(policy_name.to_ascii_lowercase())
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to fetch user inline policy from database: {e}");
-        internal_failure(request_id)
-    })?;
+    .map_err(|e| internal_failure!(request_id; "Failed to fetch user inline policy from database: {e}"))?;
 
     let (policy_name_cased, policy_document): (String, String) = match policy_row {
         Some(row) => (row.get(0), row.get(1)),
@@ -95,8 +89,5 @@ pub async fn get_user_policy(
         .policy_name(policy_name_cased)
         .policy_document(policy_document)
         .build()
-        .map_err(|e| {
-            log::error!("Failed to build GetUserPolicyResponse: {e}");
-            internal_failure(request_id).into()
-        })
+        .map_err(|e| internal_failure!(request_id; "Failed to build GetUserPolicyResponse: {e}").into())
 }

@@ -83,8 +83,7 @@ pub async fn tag_user(
                 .into());
         }
         Err(e) => {
-            log::error!("Failed to look up user in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to look up user in database: {e}").into());
         }
     };
 
@@ -106,8 +105,7 @@ pub async fn tag_user(
         .execute(tx.as_mut())
         .await
         {
-            log::error!("Failed to insert/update user tag in database: {e}");
-            return Err(internal_failure(request_id).into());
+            return Err(internal_failure!(request_id; "Failed to insert/update user tag in database: {e}").into());
         }
     }
 

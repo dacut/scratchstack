@@ -65,10 +65,7 @@ pub async fn set_default_policy_version(
     .bind(parts.resource_name_lower())
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to query managed policy from database: {e}");
-        internal_failure(request_id)
-    })?
+    .map_err(|e| internal_failure!(request_id; "Failed to query managed policy from database: {e}"))?
     .ok_or_else(|| {
         NoSuchEntityException::builder()
             .message(format!("Policy {policy_arn} was not found."))
@@ -88,10 +85,7 @@ pub async fn set_default_policy_version(
     .bind(version_number)
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to query managed policy version from database: {e}");
-        internal_failure(request_id)
-    })?;
+    .map_err(|e| internal_failure!(request_id; "Failed to query managed policy version from database: {e}"))?;
 
     if version_exists.is_none() {
         return Err(NoSuchEntityException::builder()
@@ -110,10 +104,7 @@ pub async fn set_default_policy_version(
     .bind(&policy_row.managed_policy_id)
     .execute(tx.as_mut())
     .await
-    .map_err(|e| {
-        log::error!("Failed to update managed policy default_version: {e}");
-        internal_failure(request_id)
-    })?;
+    .map_err(|e| internal_failure!(request_id; "Failed to update managed policy default_version: {e}"))?;
 
     Ok(())
 }
