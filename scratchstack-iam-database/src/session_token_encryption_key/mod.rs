@@ -9,19 +9,7 @@ pub use {
     get_session_token_encryption_key::*, list_session_token_encryption_keys::*, update_session_token_encryption_key::*,
 };
 
-use {
-    bon::Builder,
-    indoc::indoc,
-    scratchstack_aws_signature::{AES256_KEY_LENGTH, SignatureError, internal_service_error},
-    scratchstack_core::RequestId,
-    scratchstack_shapes_iam::types::error::ValidationError,
-    sqlx::{postgres::PgPool, query},
-    std::{
-        pin::Pin,
-        task::{Context, Poll},
-    },
-    tower::Service,
-};
+use {scratchstack_core::RequestId, scratchstack_shapes_iam::types::error::ValidationError};
 
 /// Validate that a session token encryption key id is well-formed: it must start with the `STEK`
 /// prefix and be 16..=128 characters of `[A-Za-z0-9_]`. The shape-level validation on
@@ -44,62 +32,4 @@ pub(crate) fn validate_session_token_encryption_key_id(
             .build());
     }
     Ok(())
-}
-
-/// A session token encryption key service that utilizes a database for storage.
-///
-/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
-/// [`DatabaseKeyService::builder`] rather than struct literal syntax, so that adding a field stays a
-/// non-breaking change. The fields remain public for reading.
-///
-/// ```compile_fail,E0639
-/// # use scratchstack_iam_database::session_token_encryption_key::DatabaseKeyService;
-/// let _ = DatabaseKeyService {
-///     db_pool: todo!(),
-/// };
-/// ```
-#[derive(Builder, Clone)]
-#[non_exhaustive]
-pub struct DatabaseKeyService {
-    /// The pool to use for database connections.
-    pub db_pool: PgPool,
-}
-
-impl Service<String> for DatabaseKeyService {
-    type Response = [u8; AES256_KEY_LENGTH];
-    type Error = SignatureError;
-    type Future = Pin<Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>>;
-
-    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, key_id: String) -> Self::Future {
-        let pool = self.db_pool.clone();
-        Box::pin(async move {
-            pool.acquire().await.map_err(|e| {
-                log::error!("Failed to acquire database connection: {e}");
-                internal_service_error!("{}", e)
-            })?;
-
-            let mut tx = pool.begin().await.map_err(|e| {
-                log::error!("Failed to begin database transaction: {e}");
-                internal_service_error!("{}", e)
-            })?;
-
-            query(indoc! {"
-                SELECT encryption_algorithm, encryption_key, accept_expires_at
-                FROM iam.session_token_encryption_keys
-                WHERE session_token_encryption_key_id = $1
-            "})
-            .bind(&key_id)
-            .fetch_one(tx.as_mut())
-            .await
-            .map_err(|e| {
-                log::error!("Failed to fetch session token encryption key: {e}");
-                internal_service_error!("{}", e)
-            })?;
-            todo!()
-        })
-    }
 }
