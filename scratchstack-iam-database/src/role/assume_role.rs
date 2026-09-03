@@ -48,10 +48,45 @@ impl RequestExecutor for AssumeRoleRequest {
     }
 }
 
-/// Assume a role, returning a set of temporary credentials. Returns `ValidationError` if the
-/// request is invalid in some way, such as if the request does not include exactly one policy ARN.
-/// Returns `NoSuchEntity` if the role does not exist or if a managed policy specified as the
-/// session permissions boundary does not exist.
+/// Assume a role, returning temporary credentials for a role session: an `ASIA` access key id, a
+/// secret key, and a session token carrying the session's principal, policies and metadata.
+///
+/// # Errors
+///
+/// [`AccessDeniedException`] if the role does not exist. That is deliberate rather than a stand-in
+/// for `NoSuchEntityException`: a caller that may not assume a role and a caller naming a role
+/// that is not there are told the same thing, so `sts:AssumeRole` cannot be used to probe which
+/// roles an account has.
+///
+/// [`ValidationError`] if the request does not describe a session this service can mint --
+///
+/// * the role ARN is unparseable, does not name a role, or carries a non-numeric account id;
+/// * a session policy ARN is unparseable, or names a policy the role's account cannot reach --
+///   managed policies are not shared across accounts, and an ARN naming any other account is
+///   reported as a policy that does not exist rather than as a refusal, so assuming a role
+///   tells the caller nothing about another account's policies;
+/// * `role_session_name` is not 2 to 64 characters of the IAM resource-name character set;
+/// * a tag key or value is invalid, or two tag keys differ only in case;
+/// * `duration_seconds` is outside 15 minutes to 12 hours.
+///
+/// [`MalformedPolicyDocumentException`] if the inline session policy in `policy` does not parse.
+///
+/// `InternalFailure` if the database is unreachable or the session token cannot be encrypted.
+///
+/// # Session policies
+///
+/// Any number of managed session policies may be given, including none. They are recorded in the
+/// session token by id rather than by document, and the documents are resolved when a request is
+/// authorized -- see [`crate::authz::get_policies_by_ids`]. An entry of `policy_arns` with no
+/// `arn` set is skipped rather than rejected.
+///
+/// # Session duration
+///
+/// `duration_seconds` is clamped down to the role's `max_session_duration` rather than rejected
+/// for exceeding it, so asking for twelve hours against a one-hour role yields one-hour
+/// credentials and no error. AWS fails the request instead. A role whose `max_session_duration`
+/// is unset is treated as one hour, so it clamps too. The expiry returned in the credentials is
+/// always the duration that was actually applied.
 pub async fn assume_role(
     tx: &mut PgTransaction<'_>,
     request: &AssumeRoleRequest,
