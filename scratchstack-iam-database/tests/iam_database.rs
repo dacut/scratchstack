@@ -349,6 +349,7 @@ async fn subtest_get_signing_key(pool: &PgPool) {
     gsk::test_get_signing_key_long_term(pool).await;
     gsk::test_get_signing_key_long_term_with_session_token(pool).await;
     gsk::test_get_signing_key_short_access_key(pool).await;
+    gsk::test_get_signing_key_prefix_splits_multibyte_char(pool).await;
     gsk::test_get_signing_key_unknown_prefix(pool).await;
     gsk::test_get_signing_key_nonexistent(pool).await;
 }
