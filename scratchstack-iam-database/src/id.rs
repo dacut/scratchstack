@@ -60,8 +60,11 @@ const RESOURCE_ID_BITS: u32 = 39;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub struct IamId {
-    /// The resource type that the identifier represents. This is a 4-character string that is unique across
-    /// all resource types.
+    /// The resource type the identifier represents.
+    ///
+    /// This is an [`IamResourceType`] rather than a string. Each variant renders through
+    /// [`IamResourceType::as_str`] to a distinct four-character prefix -- `AKIA` for an access
+    /// key, `AIDA` for a user -- and that prefix is what an identifier's string form begins with.
     pub resource_type: IamResourceType,
 
     /// The account ID that the identifier belongs to. This is a 12-digit number that is unique
