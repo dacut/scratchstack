@@ -20,7 +20,7 @@ This project uses an embedded PostgreSQL database to execute tests, so unit test
 more comprehensive and feel a bit more like integration tests, but still do not require off-host
 network connections.
 
-* For the scratchstack-database package, these are in the tests/iam_database.rs file.
+* For the scratchstack-iam-database package, these are in the tests/iam_database.rs file.
 * For the scratchstack-bootstrap package, these are in the src/tests.rs file.
 
 Keep structures ordered alphabetically.

@@ -1,7 +1,13 @@
-# scratchstack-database
-Scratchstack native database operations and types
+# scratchstack-iam-database
+
+IAM database schema and types for Scratchstack services.
 
 ## API Implementation Checklist
+
+Each entry is an API this crate implements against the database. The IAM list is
+the whole AWS IAM API, so the unchecked entries are the work remaining; the STS
+list is the whole AWS STS API on the same basis. The Scratchstack extensions have
+no AWS counterpart and are listed in full.
 
 ### IAM
 * [ ] AcceptDelegationRequest
@@ -164,7 +170,7 @@ Scratchstack native database operations and types
 * [x] UntagUser
 * [x] UpdateAccessKey
 * [ ] UpdateAccountPasswordPolicy
-* [ ] UpdateAssumeRolePolicy
+* [x] UpdateAssumeRolePolicy
 * [ ] UpdateDelegationRequest
 * [x] UpdateGroup
 * [ ] UpdateLoginProfile
@@ -180,3 +186,32 @@ Scratchstack native database operations and types
 * [ ] UploadServerCertificate
 * [ ] UploadSigningCertificate
 * [ ] UploadSSHPublicKey
+
+### STS
+
+* [x] AssumeRole
+* [ ] AssumeRoleWithSAML
+* [ ] AssumeRoleWithWebIdentity
+* [ ] AssumeRoot
+* [ ] DecodeAuthorizationMessage
+* [ ] GetAccessKeyInfo
+* [ ] GetCallerIdentity
+* [ ] GetDelegatedAccessToken
+* [ ] GetFederationToken
+* [ ] GetSessionToken
+* [ ] GetWebIdentityToken
+
+### Scratchstack extensions
+
+These have no AWS counterpart. They are declared in
+`scratchstack-shapes-iam/scratchstack-iam-ext.json`, and all of them are implemented.
+
+* [x] CreateAccount
+* [x] CreateSessionTokenEncryptionKey
+* [x] GetCurrentPartition
+* [x] GetCurrentSessionTokenEncryptionKey
+* [x] GetSessionTokenEncryptionKey
+* [x] ListAccounts
+* [x] ListSessionTokenEncryptionKeys
+* [x] SetCurrentPartition
+* [x] UpdateSessionTokenEncryptionKey
