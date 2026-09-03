@@ -16,7 +16,7 @@ pub fn validate_path(path: impl AsRef<str>, request_id: RequestId) -> Result<(),
 
 /// Validate that the path prefix is valid.
 ///
-/// Unlike `validate_path`, this function does not require the path to end with a slash.
+/// Unlike [`validate_path`], this function does not require the path to end with a slash.
 pub fn validate_path_prefix(path_prefix: impl AsRef<str>, request_id: RequestId) -> Result<(), ValidationError> {
     validate_iam_path_prefix(path_prefix.as_ref()).map_err(|_| {
          let message = "Path prefix must start with a slash, can contain any printable ASCII characters (codes 33–126), and must be at most 512 characters long.".to_string();

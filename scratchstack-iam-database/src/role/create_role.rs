@@ -1,4 +1,4 @@
-//! CreateRole databse operation
+//! CreateRole database operation
 use {
     crate::{
         RequestExecutor,

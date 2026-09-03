@@ -1,4 +1,4 @@
-//! Role database level operations.
+//! Role database operations.
 mod assume_role;
 mod attach_role_policy;
 mod create_role;
