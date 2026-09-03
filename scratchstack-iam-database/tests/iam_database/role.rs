@@ -1631,6 +1631,71 @@ pub async fn test_put_role_permissions_boundary_nonexistent_policy(pool: &sqlx::
     assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
 }
 
+/// A deprecated managed policy is not attachable, so it cannot serve as a permissions boundary.
+///
+/// The refusal is the same `NoSuchEntity` a policy that is simply absent gets, carrying the same
+/// "does not exist or is not attachable" message. Telling the two apart would tell a caller
+/// whether a policy it may not use exists.
+pub async fn test_put_role_permissions_boundary_deprecated_policy(pool: &sqlx::PgPool) {
+    // Nothing in the API deprecates a policy -- `CreatePolicy` always writes `deprecated = false`
+    // -- so the row is seeded directly, as the AWS-managed boundary test above does.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    sqlx::query(
+        "INSERT INTO iam.managed_policies(managed_policy_id, account_id, managed_policy_name_lower,
+             managed_policy_name_cased, path, default_version, deprecated, latest_version)
+         VALUES ('DEPRECATEDBOUNDPOL1', '123456789012', 'deprecated-boundary', 'Deprecated-Boundary',
+             '/boundaries/', 1, true, 1)",
+    )
+    .execute(&mut *tx)
+    .await
+    .expect("Failed to seed deprecated boundary policy");
+    sqlx::query(
+        r#"INSERT INTO iam.managed_policy_versions(managed_policy_id, managed_policy_version, policy_document)
+         VALUES ('DEPRECATEDBOUNDPOL1', 1,
+             '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}')"#,
+    )
+    .execute(&mut *tx)
+    .await
+    .expect("Failed to seed deprecated boundary policy version");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let err = PutRolePermissionsBoundaryInternalRequest::builder()
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .permissions_boundary("arn:test-partition:iam::123456789012:policy/boundaries/Deprecated-Boundary")
+        .build()
+        .expect("Failed to build PutRolePermissionsBoundaryInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect_err("A deprecated policy must not be accepted as a permissions boundary");
+    tx.rollback().await.expect("Failed to rollback transaction");
+
+    assert!(matches!(err, IamError::NoSuchEntityException(_)), "Expected NoSuchEntity, got: {err:?}");
+    assert!(
+        err.to_string().contains("does not exist or is not attachable"),
+        "Expected the attachability message, got: {err}"
+    );
+
+    // The same policy undeprecated is accepted, so the test is failing on `deprecated` rather
+    // than on the seeded row being unreachable for some other reason.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    sqlx::query("UPDATE iam.managed_policies SET deprecated = false WHERE managed_policy_id = 'DEPRECATEDBOUNDPOL1'")
+        .execute(&mut *tx)
+        .await
+        .expect("Failed to undeprecate the boundary policy");
+    PutRolePermissionsBoundaryInternalRequest::builder()
+        .role_name("LambdaExecutor")
+        .account_id("123456789012")
+        .permissions_boundary("arn:test-partition:iam::123456789012:policy/boundaries/Deprecated-Boundary")
+        .build()
+        .expect("Failed to build PutRolePermissionsBoundaryInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("An attachable policy must be accepted as a permissions boundary");
+    tx.rollback().await.expect("Failed to rollback transaction");
+}
+
 /// PutRolePermissionsBoundary with a malformed PB ARN must fail with ValidationError.
 pub async fn test_put_role_permissions_boundary_invalid_arn(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
