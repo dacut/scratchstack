@@ -325,17 +325,13 @@ pub(crate) fn policy_arn_resource(path: &str, policy_name: &str) -> String {
 /// names an account that is neither `account_id` nor `aws`. IAM does not share managed policies
 /// across accounts; only the AWS-managed ones are reachable from every account.
 ///
-/// A [`NoSuchEntityException`] if no policy matches, carrying IAM's wording for it: "Scope ARN:
-/// ... does not exist or is not attachable".
-///
-/// # Attachability is not checked
-///
-/// Only existence is. The message above is quoted from IAM, and its second clause describes a
-/// condition this function does not test, even though the crate models it: a managed policy is
-/// attachable when it is not `deprecated`, which is what [`get_policy`](fn@get_policy) and
-/// [`list_policies`](fn@list_policies) report as `is_attachable`. A deprecated policy will
-/// therefore be accepted here as a
-/// permissions boundary.
+/// A [`NoSuchEntityException`] if no attachable policy matches, carrying IAM's wording for it:
+/// "Scope ARN: ... does not exist or is not attachable". Both halves of that sentence are tested:
+/// a managed policy is attachable when it is not `deprecated`, which is what
+/// [`get_policy`](fn@get_policy) and [`list_policies`](fn@list_policies) report as
+/// `is_attachable`, and a deprecated policy is refused as a boundary rather than accepted. The
+/// two share one message on purpose, as IAM shares it: telling them apart would tell a caller
+/// whether a policy it may not use exists.
 pub(crate) async fn get_permissions_boundary_id(
     tx: &mut PgTransaction<'_>,
     account_id: &str,
@@ -368,10 +364,13 @@ pub(crate) async fn get_permissions_boundary_id(
         return Err(ValidationError::builder().message(message).request_id(request_id).build().into());
     };
 
+    // `NOT deprecated` is what makes a managed policy attachable, and is what `get_policy` and
+    // `list_policies` report as `is_attachable`. Excluding deprecated policies here is what makes
+    // the "does not exist or is not attachable" below true of both halves.
     let results = match query(indoc! {"
             SELECT managed_policy_id
             FROM iam.managed_policies
-            WHERE account_id = $1 AND path = $2 AND managed_policy_name_lower = $3
+            WHERE account_id = $1 AND path = $2 AND managed_policy_name_lower = $3 AND NOT deprecated
         "})
     .bind(pb_account_id)
     .bind(permissions_boundary.resource_path())

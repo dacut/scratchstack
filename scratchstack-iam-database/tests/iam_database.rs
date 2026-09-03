@@ -752,6 +752,7 @@ async fn subtest_put_role_permissions_boundary(pool: &PgPool) {
     role::test_put_role_permissions_boundary_simple(pool).await;
     role::test_put_role_permissions_boundary_nonexistent_role(pool).await;
     role::test_put_role_permissions_boundary_nonexistent_policy(pool).await;
+    role::test_put_role_permissions_boundary_deprecated_policy(pool).await;
     role::test_put_role_permissions_boundary_invalid_arn(pool).await;
     role::test_put_role_permissions_boundary_invalid_name();
 }
