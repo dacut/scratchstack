@@ -26,7 +26,7 @@ impl RequestExecutor for UntagPolicyRequest {
 ///
 /// Tag keys are matched case-insensitively, so untagging `dept` removes a tag stored as `Dept`.
 /// That is a deliberate departure from IAM, which treats policy tag keys as case sensitive; see
-/// [`crate::policy::tag_policy`] for why.
+/// [`tag_policy`](fn@crate::policy::tag_policy) for why.
 pub async fn untag_policy(
     tx: &mut PgTransaction<'_>,
     policy_arn: &str,
