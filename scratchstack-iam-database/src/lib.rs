@@ -30,43 +30,18 @@ use {
     sqlx::postgres::PgTransaction,
 };
 
-/// Account-related database operations.
 pub mod account;
-
-/// Authorization support: gathering the policies that apply to a principal.
 pub mod authz;
-
-/// Constants used across database operations.
 pub mod constants;
-
-/// Group-related database operations.
 pub mod group;
-
-/// IAM identifier parsing and construction utilities.
 pub mod id;
-
-/// Database migration utilities.
 pub mod migrate;
-
-/// Partition-related database operations.
 pub mod partition;
-
-/// Path-related utilities.
 pub mod path;
-
-/// Policy-related database operations.
 pub mod policy;
-
-/// Role-related database operations.
 pub mod role;
-
-/// Session token encryption key-related database operations.
 pub mod session_token_encryption_key;
-
-/// Tag-related utilities.
 pub mod tag;
-
-/// User-related database operations.
 pub mod user;
 
 #[cfg(feature = "gsk-direct")]
@@ -74,7 +49,6 @@ mod gsk_direct;
 #[cfg(feature = "gsk-direct")]
 pub use gsk_direct::*;
 
-/// Database utilities.
 #[cfg(feature = "utils")]
 pub mod utils;
 

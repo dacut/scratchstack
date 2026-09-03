@@ -1,4 +1,4 @@
-//! Utility functions and types for testing the `scratchstack-database` crate.
+//! Utility functions and types for testing the `scratchstack-iam-database` crate.
 use {
     crate::ConnectionUrlBuilder,
     log,
