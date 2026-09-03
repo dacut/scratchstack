@@ -132,8 +132,16 @@ impl IamId {
 
     /// Generate a new IAM identifier for the given resource type and account ID. The resource ID is
     /// generated randomly and is not guaranteed to be unique.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `account_id` does not fit in 40 bits.
+    ///
+    /// [`IamId::builder`] reports that same condition as an [`InvalidIamId`] instead. Reach for
+    /// the builder when the account id came from outside, and for this when the caller has
+    /// already established that it is one.
     pub fn new(resource_type: IamResourceType, account_id: u64) -> Self {
-        assert!(account_id < (1 << ACCOUNT_ID_BITS));
+        assert!(account_id < (1 << ACCOUNT_ID_BITS), "Account id {account_id} does not fit in {ACCOUNT_ID_BITS} bits");
         let resource_id = random::<u64>() & ((1 << RESOURCE_ID_BITS) - 1);
         Self {
             resource_type,
@@ -365,6 +373,14 @@ mod tests {
         assert_eq!(id.resource_type, IamResourceType::User);
         assert_eq!(id.account_id, 123456789012);
         assert!(id.resource_id < (1 << 39), "resource_id must fit in 39 bits");
+    }
+
+    /// The panic documented on [`IamId::new`]. The message matches the wording
+    /// `IamId::builder` uses for the same condition, so the two report it the same way.
+    #[test_log::test]
+    #[should_panic(expected = "Account id 1099511627776 does not fit in 40 bits")]
+    fn new_panics_on_out_of_range_account_id() {
+        let _ = IamId::new(IamResourceType::User, 1 << ACCOUNT_ID_BITS);
     }
 
     #[test_log::test]
