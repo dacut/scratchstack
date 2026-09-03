@@ -257,8 +257,13 @@ pub(crate) fn resolve_policy_account_id<'arn>(
         .into())
 }
 
-/// Parse a policy ARN and extract the account id, path, and lowercase policy name. Returns a
-/// `ValidationError` if the ARN is unparseable or does not point at a policy resource.
+/// Parse a policy ARN into the [`IamResourceArn`] its account id, path and name can be read from.
+///
+/// # Errors
+///
+/// A [`ValidationError`] if the ARN does not parse; if it carries a region, since IAM is global
+/// and a policy ARN has none; if it names a resource type other than `policy`; or if the resource
+/// name is not one [`validate_policy_name`] accepts.
 pub(crate) fn parse_policy_arn(policy_arn: &str, request_id: RequestId) -> Result<IamResourceArn, IamError> {
     let arn = IamResourceArn::from_str(policy_arn).map_err(|e| {
         log::info!("{request_id}: Failed to parse policy ARN: {e}");
@@ -286,8 +291,13 @@ pub(crate) fn parse_policy_arn(policy_arn: &str, request_id: RequestId) -> Resul
     Ok(arn)
 }
 
-/// Parse a policy version id of the form `v<N>` or `v<N>.<suffix>` into its numeric portion.
-/// Returns `None` if the input does not start with `v` followed by digits.
+/// Parse a policy version id of the form `v<N>` or `v<N>.<suffix>` into `N`.
+///
+/// Returns `None` unless the input is `v` followed by a positive integer. Positive is part of the
+/// rule rather than an accident of parsing: versions are numbered from 1 -- `create_policy` gives
+/// a new policy `v1` -- and `iam.managed_policy_versions` carries a
+/// `CHECK (managed_policy_version > 0)`, so `v0` names a version no policy can have. It is
+/// refused here rather than turned into a query that is guaranteed to match nothing.
 pub(crate) fn parse_policy_version_id(version_id: &str) -> Option<i64> {
     let digits = version_id.strip_prefix('v')?;
     let digits = digits.split('.').next().unwrap_or(digits);
@@ -307,8 +317,25 @@ pub(crate) fn policy_arn_resource(path: &str, policy_name: &str) -> String {
     }
 }
 
-/// Returns the policy id for the given permissions boundary ARN and account id, if it exists and is attachable.
-/// Otherwise, returns an appropriate error.
+/// Returns the `managed_policy_id` of the managed policy that `permissions_boundary` names.
+///
+/// # Errors
+///
+/// A [`ValidationError`] if the ARN does not parse, names a resource type other than `policy`, or
+/// names an account that is neither `account_id` nor `aws`. IAM does not share managed policies
+/// across accounts; only the AWS-managed ones are reachable from every account.
+///
+/// A [`NoSuchEntityException`] if no policy matches, carrying IAM's wording for it: "Scope ARN:
+/// ... does not exist or is not attachable".
+///
+/// # Attachability is not checked
+///
+/// Only existence is. The message above is quoted from IAM, and its second clause describes a
+/// condition this function does not test, even though the crate models it: a managed policy is
+/// attachable when it is not `deprecated`, which is what [`get_policy`](fn@get_policy) and
+/// [`list_policies`](fn@list_policies) report as `is_attachable`. A deprecated policy will
+/// therefore be accepted here as a
+/// permissions boundary.
 pub(crate) async fn get_permissions_boundary_id(
     tx: &mut PgTransaction<'_>,
     account_id: &str,
