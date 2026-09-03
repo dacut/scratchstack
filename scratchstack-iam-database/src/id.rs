@@ -327,27 +327,11 @@ mod tests {
     /// doc says so.
     #[test_log::test]
     fn display_is_always_twenty_characters() {
-        let resource_types = [
-            IamResourceType::AccessKey,
-            IamResourceType::BearerToken,
-            IamResourceType::Certificate,
-            IamResourceType::ContextSpecificCredential,
-            IamResourceType::Group,
-            IamResourceType::InstanceProfile,
-            IamResourceType::ManagedPolicy,
-            IamResourceType::ManagedPolicyVersion,
-            IamResourceType::Role,
-            IamResourceType::SessionTokenEncryptionKey,
-            IamResourceType::SshPublicKey,
-            IamResourceType::TemporaryAccessKey,
-            IamResourceType::User,
-        ];
-
         // Both bit fields at their extremes, so a zero payload and a saturated one are covered
         // as well as a realistic value.
         let ids = [(0, 0), (557925715019, 258422848521), ((1 << ACCOUNT_ID_BITS) - 1, (1 << RESOURCE_ID_BITS) - 1)];
 
-        for resource_type in resource_types {
+        for resource_type in ALL_RESOURCE_TYPES {
             for (account_id, resource_id) in ids {
                 let id = IamId::builder()
                     .resource_type(resource_type)
@@ -394,26 +378,61 @@ mod tests {
 
     // ── IamResourceType ──────────────────────────────────────────────────────
 
+    /// Every [`IamResourceType`] variant.
+    ///
+    /// One list, used by every test below that needs to walk the variants, so they cannot drift
+    /// apart. Adding a variant upstream is caught by [`expected_prefix`], whose match is
+    /// exhaustive; extend this list at the same time.
+    const ALL_RESOURCE_TYPES: [IamResourceType; 13] = [
+        IamResourceType::AccessKey,
+        IamResourceType::BearerToken,
+        IamResourceType::Certificate,
+        IamResourceType::ContextSpecificCredential,
+        IamResourceType::Group,
+        IamResourceType::InstanceProfile,
+        IamResourceType::ManagedPolicy,
+        IamResourceType::ManagedPolicyVersion,
+        IamResourceType::Role,
+        IamResourceType::SessionTokenEncryptionKey,
+        IamResourceType::SshPublicKey,
+        IamResourceType::TemporaryAccessKey,
+        IamResourceType::User,
+    ];
+
+    /// The four-character prefix a variant renders to, restated independently of `as_str`.
+    ///
+    /// The match is exhaustive on purpose. A variant added to [`IamResourceType`] stops this
+    /// compiling, which is the only thing that keeps a test named `all_variants` honest:
+    /// `SessionTokenEncryptionKey` was absent from these tests for exactly as long as nothing
+    /// here had to account for it.
+    fn expected_prefix(resource_type: IamResourceType) -> &'static str {
+        match resource_type {
+            IamResourceType::AccessKey => "AKIA",
+            IamResourceType::BearerToken => "ABIA",
+            IamResourceType::Certificate => "ASCA",
+            IamResourceType::ContextSpecificCredential => "ACCA",
+            IamResourceType::Group => "AGPA",
+            IamResourceType::InstanceProfile => "AIPA",
+            IamResourceType::ManagedPolicy => "ANPA",
+            IamResourceType::ManagedPolicyVersion => "ANVA",
+            IamResourceType::Role => "AROA",
+            IamResourceType::SessionTokenEncryptionKey => "STEK",
+            IamResourceType::SshPublicKey => "APKA",
+            IamResourceType::TemporaryAccessKey => "ASIA",
+            IamResourceType::User => "AIDA",
+        }
+    }
+
     #[test_log::test]
     fn resource_type_all_variants() {
-        let cases = [
-            (IamResourceType::AccessKey, "AKIA"),
-            (IamResourceType::BearerToken, "ABIA"),
-            (IamResourceType::Certificate, "ASCA"),
-            (IamResourceType::ContextSpecificCredential, "ACCA"),
-            (IamResourceType::Group, "AGPA"),
-            (IamResourceType::InstanceProfile, "AIPA"),
-            (IamResourceType::ManagedPolicy, "ANPA"),
-            (IamResourceType::ManagedPolicyVersion, "ANVA"),
-            (IamResourceType::Role, "AROA"),
-            (IamResourceType::SshPublicKey, "APKA"),
-            (IamResourceType::TemporaryAccessKey, "ASIA"),
-            (IamResourceType::User, "AIDA"),
-        ];
-
-        for (rt, s) in cases {
-            assert_eq!(rt.as_str(), s, "as_str mismatch for {rt:?}");
-            assert_eq!(IamResourceType::from_str(s).expect("from_str failed"), rt, "from_str mismatch for {s}");
+        for resource_type in ALL_RESOURCE_TYPES {
+            let prefix = expected_prefix(resource_type);
+            assert_eq!(resource_type.as_str(), prefix, "as_str mismatch for {resource_type:?}");
+            assert_eq!(
+                IamResourceType::from_str(prefix).expect("from_str failed"),
+                resource_type,
+                "from_str mismatch for {prefix}"
+            );
         }
     }
 
@@ -426,20 +445,7 @@ mod tests {
 
     #[test_log::test]
     fn resource_type_derived_traits() {
-        let types = [
-            IamResourceType::AccessKey,
-            IamResourceType::BearerToken,
-            IamResourceType::Certificate,
-            IamResourceType::ContextSpecificCredential,
-            IamResourceType::Group,
-            IamResourceType::InstanceProfile,
-            IamResourceType::ManagedPolicy,
-            IamResourceType::ManagedPolicyVersion,
-            IamResourceType::Role,
-            IamResourceType::SshPublicKey,
-            IamResourceType::TemporaryAccessKey,
-            IamResourceType::User,
-        ];
+        let types = ALL_RESOURCE_TYPES;
 
         // Clone + Copy
         let t = types[0];
