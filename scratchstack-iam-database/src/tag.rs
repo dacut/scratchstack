@@ -19,9 +19,11 @@ const MAX_TAG_VALUE_CHARS: usize = 256;
 /// numbers, plus `_.:/=+-@`. The length is counted in characters rather than bytes, as IAM counts
 /// it, so a key of 128 CJK characters fits where its 384 bytes would not.
 ///
-/// Note that tag key rules vary between AWS services. Note also that the generated `Tag` shape
-/// validates its own key against the same pattern but bounds the length in *bytes*, so a long
-/// non-ASCII key can be refused there, with a different message, before reaching this.
+/// Note that tag key rules vary between AWS services.
+///
+/// The generated shapes carry this same pattern and the same character-counted bound wherever a
+/// tag key appears -- inside `Tag`, and through `tagKeyListType` for the untag operations, whose
+/// list validator checks each element -- so the two agree rather than layering different rules.
 pub fn validate_tag_key(tag_key: impl AsRef<str>, request_id: RequestId) -> Result<(), ValidationError> {
     validate_tag_key_inner(tag_key.as_ref(), request_id)
 }
