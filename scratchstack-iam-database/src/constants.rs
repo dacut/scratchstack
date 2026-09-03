@@ -178,8 +178,16 @@ pub(crate) const STS_API_VERSION: &str = "2011-06-15";
 pub static ACCOUNT_ALIAS_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-z0-9]([a-z0-9]|-[a-z0-9])*$").unwrap());
 
-/// Regular expression for tag keys.
+/// Regular expression for tag keys: Unicode letters, separators and numbers, plus `_.:/=+-@`,
+/// one or more of them.
+///
+/// This is the pattern the IAM API model gives for `tagKeyType`, character for character. No
+/// length is expressed here; [`crate::tag::validate_tag_key`] applies the 128-character bound.
 pub static TAG_KEY_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\p{L}\p{Z}\p{N}_.:/=+\-@]+$").unwrap());
 
-/// Regular expression for tag values.
+/// Regular expression for tag values: [`TAG_KEY_REGEX`] permitting the empty string, since IAM
+/// lets a tag carry a key with no value.
+///
+/// This is the pattern the IAM API model gives for `tagValueType`, character for character. No
+/// length is expressed here; [`crate::tag::validate_tag_value`] applies the 256-character bound.
 pub static TAG_VALUE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\p{L}\p{Z}\p{N}_.:/=+\-@]*$").unwrap());
