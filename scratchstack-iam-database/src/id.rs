@@ -27,10 +27,10 @@ const RESOURCE_ID_BITS: u32 = 39;
 /// encoding.
 ///
 /// Older generation access keys start with a 0 bit and don't seem to include the account id in any
-/// obviously discernable manner. There is an apparent checksum in these ids, as simple tampering
+/// obviously discernible manner. There is an apparent checksum in these ids, as simple tampering
 /// causes STS GetAccessKeyInfo to fail with "Access key ID is not valid."
 ///
-/// Never generation access key start with a 1 bit and include the account id in the next 40 bits.
+/// Newer generation access keys start with a 1 bit and include the account id in the next 40 bits.
 /// The remaining 39 bits are presumably a unique identifier for the resource.
 ///
 /// This implementation follows the newer AWS format.
