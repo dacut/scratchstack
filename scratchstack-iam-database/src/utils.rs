@@ -159,7 +159,7 @@ pub struct TempDatabase {
     #[allow(dead_code)]
     bootstrap_password: String,
 
-    /// The scratchstack user password for the database (randomly generated)
+    /// The scratchstack user password for the database, which is randomly generated on creation.
     scratchstack_password: String,
 
     /// The current state of the database.
@@ -238,7 +238,12 @@ impl TempDatabase {
         &self.bootstrap_password
     }
 
-    /// Return the scratchstack user password for the database, which is randomly generated during bootstrapping.
+    /// Return the scratchstack user password for the database, which is randomly generated on creation.
+    ///
+    /// The password is settled by [`TempDatabase::new`], as the bootstrap password is. What
+    /// [`TempDatabase::bootstrap`] creates is the [`SCRATCHSTACK_USER`] role that authenticates
+    /// with it, so reading this before bootstrapping returns the password a role that does not yet
+    /// exist will have.
     #[inline]
     pub fn scratchstack_password(&self) -> &str {
         &self.scratchstack_password
