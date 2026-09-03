@@ -167,7 +167,7 @@ pub async fn delete_policy(
     .await
     {
         if let sqlx::Error::Database(db_err) = &e
-            && db_err.code().as_deref() == Some("23503")
+            && db_err.code().as_deref() == Some(SQLSTATE_FOREIGN_KEY_VIOLATION)
         {
             let message = format!(
                 "Cannot delete policy {policy_arn} because it is attached to an entity or is set as a permissions boundary."

@@ -48,7 +48,7 @@ pub async fn delete_role(
         Ok(result) => result,
         Err(e) => {
             if let sqlx::Error::Database(db_err) = &e
-                && db_err.code().as_deref() == Some("23503")
+                && db_err.code().as_deref() == Some(SQLSTATE_FOREIGN_KEY_VIOLATION)
             {
                 let message = format!(
                     "Cannot delete role {role_name} because it has attached managed policies, inline policies, or other dependent resources. You must remove them before deleting the role."
