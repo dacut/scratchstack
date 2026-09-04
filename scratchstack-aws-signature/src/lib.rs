@@ -17,7 +17,7 @@
 //! crate for you.
 //!
 //! Users upgrading from an earlier version should consult the [migration guides][migration],
-//! which cover 0.11 to 0.12 and 0.10 to 0.11.
+//! which cover 0.11 to 0.12 and 0.10 to 0.12.
 //!
 //! # Feature flags
 //! Two flags are enabled by default:
