@@ -106,7 +106,7 @@ async fn test_delete_policy_authorization() {
     assert_eq!(status, StatusCode::NOT_FOUND, "unexpected response: {body}");
     assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
 
-    // A policy that something still depends on cannot be deleted, whichever kind of dependant it
+    // A policy that something still depends on cannot be deleted, whichever kind of dependent it
     // is: an entity carrying it, an entity bounded by it, or a version of the policy itself.
     for (resource, policy_name) in [
         ("policy/Attached-Policy", "Attached-Policy"),

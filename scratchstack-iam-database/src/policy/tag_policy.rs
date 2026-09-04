@@ -42,7 +42,7 @@ impl RequestExecutor for TagPolicyRequest {
 /// spellings cannot both exist, so no condition can be surprised by which one it found.
 ///
 /// The cost is that a policy tagged `Dept` here cannot also be tagged `dept`, and a request
-/// asking for the second overwrites the first. That is a narrower behaviour than IAM's, not a
+/// asking for the second overwrites the first. That is a narrower behavior than IAM's, not a
 /// wider one, so a caller written against IAM cannot do anything here that IAM would refuse.
 ///
 /// Change this only with the condition-key half in view: making keys case sensitive without also

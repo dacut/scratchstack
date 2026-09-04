@@ -494,7 +494,7 @@ impl CanonicalRequest {
             return Err(SignatureError::SignatureDoesNotMatch(MSG_HOST_AUTHORITY_MUST_BE_SIGNED.into()));
         }
 
-        // Rule 8a: A payload hash taken from the x-amz-content-sha256 header is only honoured if
+        // Rule 8a: A payload hash taken from the x-amz-content-sha256 header is only honored if
         // that header is signed.
         if self.content_sha256_must_be_signed
             && !params.signed_headers.iter().any(|header| header == HDR_X_AMZ_CONTENT_SHA256)
@@ -701,7 +701,7 @@ impl CanonicalRequest {
 
         let session_token = self.query_parameters.get(QP_X_AMZ_SECURITY_TOKEN).map(|t| unescape_uri_encoding(&t[0]));
 
-        // Rule 7d: X-Amz-Expires, when present, bounds how long the presigned URL is honoured, so
+        // Rule 7d: X-Amz-Expires, when present, bounds how long the presigned URL is honored, so
         // it has to be a usable number before the timestamp checks that depend on it.
         let expires = match self.query_parameters.get(QP_X_AMZ_EXPIRES) {
             None => None,

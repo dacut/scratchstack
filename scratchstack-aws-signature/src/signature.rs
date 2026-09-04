@@ -34,7 +34,7 @@ use {
 #[non_exhaustive]
 pub struct SignatureOptions {
     /// Canonicalize requests according to S3 rules and allow S3-style streaming requests. This
-    /// also honours an `x-amz-content-sha256: UNSIGNED-PAYLOAD` header, leaving the body out of
+    /// also honors an `x-amz-content-sha256: UNSIGNED-PAYLOAD` header, leaving the body out of
     /// the signature; the header must then be signed. Other services hash the body whatever the
     /// header says, as AWS does.
     #[builder(default = false)]
@@ -1617,7 +1617,7 @@ mod tests {
     /// so the very same request no longer matches its signature. A client cannot opt out of body
     /// integrity just by naming the header.
     #[test_log::test(tokio::test)]
-    async fn test_unsigned_payload_honoured_for_s3_only() {
+    async fn test_unsigned_payload_honored_for_s3_only() {
         let mut get_signing_key_svc = service_for_signing_key_fn(get_signing_key);
 
         let result = sigv4_validate_request(
@@ -1630,7 +1630,7 @@ mod tests {
             SignatureOptions::S3,
         )
         .await;
-        assert!(result.is_ok(), "S3 rules must honour UNSIGNED-PAYLOAD: {:?}", result.err());
+        assert!(result.is_ok(), "S3 rules must honor UNSIGNED-PAYLOAD: {:?}", result.err());
 
         let e = expect_err!(
             sigv4_validate_request(
@@ -1648,7 +1648,7 @@ mod tests {
         assert_eq!(e, MSG_REQUEST_SIGNATURE_MISMATCH);
     }
 
-    /// When `UNSIGNED-PAYLOAD` is honoured, the header that carries it has to be signed, so the
+    /// When `UNSIGNED-PAYLOAD` is honored, the header that carries it has to be signed, so the
     /// claim that the body is unsigned is itself covered by the signature.
     #[test_log::test(tokio::test)]
     async fn test_unsigned_payload_header_must_be_signed() {

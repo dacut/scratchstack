@@ -420,7 +420,7 @@ async fn test_attach_role_policy_authorization() {
     assert!(body.contains("<Code>AccessDenied</Code>"), "unexpected body: {body}");
 
     // A role under no boundary supplies no key, and StringNotEquals does not match a key that
-    // is absent, so the deny does not fire and the broad allow stands. This is IAM's behaviour
+    // is absent, so the deny does not fire and the broad allow stands. This is IAM's behavior
     // and is the reason such a guard has to be written with a Null condition or an IfExists
     // operator to cover unbounded roles; asserting it here keeps the omission from being read
     // as a missing key.
