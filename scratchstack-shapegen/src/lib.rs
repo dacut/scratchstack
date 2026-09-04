@@ -231,7 +231,7 @@ mod tests {
           "type": "integer",
           "traits": {"smithy.api#range": {"min": 1, "max": 100}}
         },
-        "com.example#Colour": {
+        "com.example#Color": {
           "type": "enum",
           "members": {"RED": {"target": "smithy.api#Unit", "traits": {"smithy.api#enumValue": "red"}}}
         },
@@ -388,7 +388,7 @@ mod tests {
         // Value types -- structures and enums alike -- get one under `All` and `ValueTypes`.
         for generated in [&all, &value_types] {
             assert!(contains(&generated.types, "ShorthandValue> for Widget"));
-            assert!(contains(&generated.types, "ShorthandValue> for Colour"));
+            assert!(contains(&generated.types, "ShorthandValue> for Color"));
         }
 
         // `None` means none, for every shape kind and in every module.
@@ -396,7 +396,7 @@ mod tests {
         assert!(!contains(&none.operation, "ShorthandValue>"), "no request should get one either");
 
         // But `None` is about shorthand, not about clap: an enum keeps its `ValueEnum`.
-        assert!(contains(&none.types, "impl ::clap::ValueEnum for Colour"));
+        assert!(contains(&none.types, "impl ::clap::ValueEnum for Color"));
     }
 
     /// Generation over the real IAM model: 749 shapes, and the only coverage of constructs the

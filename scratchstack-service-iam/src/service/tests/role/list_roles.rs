@@ -6,7 +6,7 @@ const TRUST_POLICY: &str = r#"{"Version":"2012-10-17","Statement":[{"Effect":"Al
 /// Seed data for the `ListRoles` authorization tests. `Broad-Lister` may list roles;
 /// `Account-Lister` only when `aws:ResourceAccount` is its own account, and `Other-Account-Lister`
 /// only when it is a different one; `Path-Lister` is granted the action on a single role ARN,
-/// which `iam:ListRoles` does not honour. The roles are spread across two paths so that
+/// which `iam:ListRoles` does not honor. The roles are spread across two paths so that
 /// `PathPrefix` has something to filter, and are named so that the order they page in is the
 /// order they are written here.
 const LIST_ROLES_TEST_DATA: &str = r#"

@@ -88,10 +88,10 @@ impl IntoRequestBytes for scratchstack_core::axum::body::Body {
 mod tests {
     use {super::IntoRequestBytes, crate::SignatureError, bytes::Bytes};
 
-    /// The in-memory bodies honour the bound too, so a caller feeding pre-read bodies gets the
+    /// The in-memory bodies honor the bound too, so a caller feeding pre-read bodies gets the
     /// same answer the streaming Axum body gives.
     #[tokio::test]
-    async fn in_memory_bodies_honour_the_bound() {
+    async fn in_memory_bodies_honor_the_bound() {
         assert_eq!(Bytes::from_static(b"12345").into_request_bytes(5).await.unwrap(), Bytes::from_static(b"12345"));
         assert_eq!(b"12345".to_vec().into_request_bytes(5).await.unwrap(), Bytes::from_static(b"12345"));
         assert!(().into_request_bytes(0).await.is_ok());
