@@ -37,5 +37,5 @@ impl ShapeInfo for Map {
         self.value.resolve(shape_name, model);
     }
 
-    fn generate(&self, _: &mut Modules) {}
+    fn generate(&self, _: &SmithyModel, _: &mut Modules) {}
 }

@@ -1,7 +1,7 @@
 use {
     super::{
-        CliShorthand, Member, Modules, ShapeBase, ShapeInfo, SmithyModel, StrExt, doc_tokens, ident, status_code_const,
-        type_tokens,
+        CliShorthand, Member, Modules, Protocol, ShapeBase, ShapeInfo, SmithyModel, StrExt, doc_tokens, ident,
+        status_code_const, type_tokens,
     },
     proc_macro2::TokenStream,
     quote::quote,
@@ -68,7 +68,7 @@ impl ShapeInfo for Structure {
     /// * `crate::types` for regular structures
     /// * `crate::types::error` for structures that are marked with the error trait.
     /// * `crates::operation::<op-name>` for structures that are used as the input or output of an operation.`
-    fn generate(&self, m: &mut Modules) {
+    fn generate(&self, model: &SmithyModel, m: &mut Modules) {
         let is_error = self.base.traits.is_error();
         let is_input = self.base.traits.is_input();
         let is_output = self.base.traits.is_output();
@@ -81,7 +81,7 @@ impl ShapeInfo for Structure {
 
         if is_error {
             m.types_error.extend(self.error_decl());
-            m.types_error.extend(self.error_impl());
+            m.types_error.extend(self.error_impl(model));
         } else if is_input || is_output {
             m.operation.extend(self.rust_decl());
             m.operation.extend(self.rust_impl());
@@ -420,16 +420,17 @@ impl Structure {
     }
 
     /// The `Display`, `Error`, `ProvideErrorMetadata`, `ProvideRequestId`, `Deserialize`,
-    /// `Serialize`, `ProvideXmlNamespace` and `Responder` implementations for an error structure.
-    fn error_impl(&self) -> TokenStream {
+    /// `Serialize` and `Responder` implementations for an error structure, plus
+    /// `ProvideXmlNamespace` under the AWS query protocol.
+    ///
+    /// `Serialize` and `Responder` are the protocol's, not the shape's: the query protocol writes
+    /// an `<Error>` element carrying the type, code and message, while the JSON protocols write
+    /// the message alone and send the code as the `x-amzn-ErrorType` header.
+    fn error_impl(&self, model: &SmithyModel) -> TokenStream {
         let type_name = self.base.rust_typename();
         let name = ident(&type_name);
         let visitor = ident(&format!("{type_name}Visitor"));
         let code = self.error_code();
-        let xmlns = self
-            .xmlns
-            .as_deref()
-            .unwrap_or_else(|| panic!("error shape {type_name} has no XML namespace; resolve() before generate()"));
         let http_status = type_tokens(status_code_const(
             self.base
                 .traits
@@ -447,6 +448,106 @@ impl Structure {
         };
         let error_type = ident(error_type_name);
         let display_prefix = type_name.clone();
+
+        let protocol = model.protocol.expect("the model has no protocol; call resolve() before generate()");
+
+        // How an error goes on the wire is the protocol's business rather than the shape's. The
+        // query protocol renders an `<Error>` element carrying the type, code and message; the
+        // JSON protocols write the message alone, since the code travels as a header, and have no
+        // XML namespace to provide.
+        let (serialize_impl, xml_namespace_impl, responder_impl) = match protocol {
+            Protocol::AwsQuery => {
+                let xmlns = self.xmlns.as_deref().unwrap_or_else(|| {
+                    panic!("error shape {type_name} has no XML namespace; call resolve() before generate()")
+                });
+
+                let serialize_impl = quote! {
+                    // This renders the inner `<Error>` element; the request id belongs to the
+                    // surrounding envelope and is deliberately not emitted here.
+                    //
+                    // The fields are named as a structure's rather than entered as a map's. An XML
+                    // response is rendered through a serializer that gives a map the query
+                    // protocol's form -- `<entry>` wrapping a `<key>` and a `<value>` -- and it
+                    // cannot tell a structure spelled as a map from a map of data, so an error
+                    // spelled that way would go out as entry pairs.
+                    impl ::serde::Serialize for #name {
+                        fn serialize<S: ::serde::ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                            use ::serde::ser::SerializeStruct as _;
+                            let mut e = serializer.serialize_struct("Error", 3)?;
+                            e.serialize_field("Type", #error_type_name)?;
+                            e.serialize_field("Code", #code)?;
+                            match self.message.as_ref() {
+                                ::std::option::Option::Some(message) => e.serialize_field("Message", message)?,
+                                ::std::option::Option::None => e.skip_field("Message")?,
+                            }
+                            e.end()
+                        }
+                    }
+                };
+
+                let xml_namespace_impl = quote! {
+                    impl ::scratchstack_core::ProvideXmlNamespace for #name {
+                        fn xml_namespace(&self) -> &str {
+                            #xmlns
+                        }
+                    }
+                };
+
+                let responder_impl = quote! {
+                    impl ::scratchstack_core::response::Responder for #name {
+                        fn respond(&self)
+                            -> ::scratchstack_core::http::Response<::scratchstack_core::axum::body::Body>
+                        {
+                            ::scratchstack_core::response::ErrorResponseEnvelope::new(self).respond()
+                        }
+                    }
+                };
+
+                (serialize_impl, xml_namespace_impl, responder_impl)
+            }
+
+            Protocol::AwsJson1_0 | Protocol::AwsJson1_1 | Protocol::RestJson1 => {
+                // The content type names the protocol, so the responder has to carry it.
+                let content_type = protocol.content_type();
+
+                let serialize_impl = quote! {
+                    // The code and the request id are headers under these protocols rather than
+                    // body fields, so the message is all there is to write -- and it is spelled in
+                    // lower case, unlike the query protocol's `Message`. An error carrying no
+                    // message serializes as an empty object.
+                    impl ::serde::Serialize for #name {
+                        fn serialize<S: ::serde::ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                            use ::serde::ser::SerializeStruct as _;
+                            let mut e = serializer.serialize_struct(#type_name, 1)?;
+                            match self.message.as_ref() {
+                                ::std::option::Option::Some(message) => e.serialize_field("message", message)?,
+                                ::std::option::Option::None => e.skip_field("message")?,
+                            }
+                            e.end()
+                        }
+                    }
+                };
+
+                let responder_impl = quote! {
+                    impl ::scratchstack_core::response::Responder for #name {
+                        fn respond(&self)
+                            -> ::scratchstack_core::http::Response<::scratchstack_core::axum::body::Body>
+                        {
+                            ::scratchstack_core::response::json_error_response(
+                                self,
+                                ::scratchstack_core::http::HeaderValue::from_static(#content_type),
+                            )
+                        }
+                    }
+                };
+
+                (serialize_impl, TokenStream::new(), responder_impl)
+            }
+
+            Protocol::Ec2Query | Protocol::RestXml => {
+                panic!("error shape {type_name} uses the {protocol} protocol, which is not supported")
+            }
+        };
 
         quote! {
             impl ::std::fmt::Display for #name {
@@ -522,38 +623,11 @@ impl Structure {
                 }
             }
 
-            // This renders the inner `<Error>` element; the request id belongs to the surrounding
-            // envelope and is deliberately not emitted here.
-            //
-            // The fields are named as a structure's rather than entered as a map's. An XML response
-            // is rendered through a serializer that gives a map the query protocol's form --
-            // `<entry>` wrapping a `<key>` and a `<value>` -- and it cannot tell a structure spelled
-            // as a map from a map of data, so an error spelled that way would go out as entry pairs.
-            impl ::serde::Serialize for #name {
-                fn serialize<S: ::serde::ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                    use ::serde::ser::SerializeStruct as _;
-                    let mut e = serializer.serialize_struct("Error", 3)?;
-                    e.serialize_field("Type", #error_type_name)?;
-                    e.serialize_field("Code", #code)?;
-                    match self.message.as_ref() {
-                        ::std::option::Option::Some(message) => e.serialize_field("Message", message)?,
-                        ::std::option::Option::None => e.skip_field("Message")?,
-                    }
-                    e.end()
-                }
-            }
+            #serialize_impl
 
-            impl ::scratchstack_core::ProvideXmlNamespace for #name {
-                fn xml_namespace(&self) -> &str {
-                    #xmlns
-                }
-            }
+            #xml_namespace_impl
 
-            impl ::scratchstack_core::response::Responder for #name {
-                fn respond(&self) -> ::scratchstack_core::http::Response<::scratchstack_core::axum::body::Body> {
-                    ::scratchstack_core::response::ErrorResponseEnvelope::new(self).respond()
-                }
-            }
+            #responder_impl
         }
     }
 

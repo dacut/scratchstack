@@ -1,5 +1,11 @@
 use {
-    crate::{CliShorthand, Modules, Shape, ShapeInfo as _, doc_tokens, ident, primitive::SmithyUnit},
+    crate::{
+        CliShorthand, Modules, Protocol, Shape, ShapeBase, ShapeInfo as _, doc_tokens, ident,
+        primitive::{
+            SmithyBigDecimal, SmithyBigInteger, SmithyBoolean, SmithyByte, SmithyDocument, SmithyDouble, SmithyFloat,
+            SmithyInteger, SmithyLong, SmithyShort, SmithyString, SmithyTimestamp, SmithyUnit,
+        },
+    },
     proc_macro2::TokenStream,
     quote::quote,
     serde::{Deserialize, Serialize},
@@ -33,6 +39,10 @@ pub struct SmithyModel {
     #[serde(skip, default)]
     pub cli_shorthand: CliShorthand,
 
+    /// The protocol used by the service, taken from the service's aws.protocols trait.
+    #[serde(skip, default)]
+    pub protocol: Option<Protocol>,
+
     /// The XML namespace for this service, taken from the service shape's `xmlNamespace` trait.
     ///
     /// This is resolved during a call to [`resolve`][Self::resolve] and handed down to every shape
@@ -42,6 +52,23 @@ pub struct SmithyModel {
 }
 
 impl SmithyModel {
+    /// Drops every shape outside `namespace`, keeping the Smithy prelude.
+    ///
+    /// A model built by `smithy build` carries the definitions of the traits the service used,
+    /// along with the shapes those definitions reference: `aws.api#service`,
+    /// `aws.protocols#awsJson1_1`, `aws.protocols#HttpConfiguration` and the like. None of them is
+    /// part of the service's API, and generating them collides with it -- `aws.api#service` and a
+    /// service's own `Service` structure both want to be `crate::types::Service`, and three
+    /// separate namespaces each define a `StringList`. Traits are read from each shape's own trait
+    /// map rather than from these definitions, so dropping them costs nothing.
+    ///
+    /// The `smithy.api#` shapes are kept: members target the prelude's `String`, `Boolean` and so
+    /// on, and both [`resolve`][Self::resolve] and [`generate`][Self::generate] skip them already.
+    pub fn retain_namespace(&mut self, namespace: &str) {
+        let prefix = format!("{namespace}#");
+        self.shapes.retain(|shape_id, _| shape_id.starts_with(&prefix) || shape_id.starts_with("smithy.api#"));
+    }
+
     /// Adds default shapes to the model if they do not already exist.
     pub fn add_default_shapes(&mut self) {
         self.shapes.entry("smithy.api#Unit".to_string()).or_insert_with(|| {
@@ -55,17 +82,24 @@ impl SmithyModel {
     /// The service's XML namespace is resolved first, since individual shapes copy it out of the
     /// model as they resolve.
     pub fn resolve(&mut self) {
-        let xmlns = {
-            let service_shape = self.service();
-            let service = service_shape.as_service().expect("service lookup returned a non-service shape");
-            service
-                .base
-                .traits
-                .xml_namespace()
-                .expect("the service shape has no smithy.api#xmlNamespace trait; the AWS query protocol needs one")
-                .to_string()
-        };
-        self.xmlns = Some(xmlns);
+        self.add_builtins();
+
+        self.resolve_protocol();
+        let protocol = self.protocol.expect("protocol should have been resolved");
+
+        if protocol == Protocol::AwsQuery {
+            let xmlns = {
+                let service_shape = self.service();
+                let service = service_shape.as_service().expect("service lookup returned a non-service shape");
+                service
+                    .base
+                    .traits
+                    .xml_namespace()
+                    .expect("the service shape has no smithy.api#xmlNamespace trait; the AWS query protocol needs one")
+                    .to_string()
+            };
+            self.xmlns = Some(xmlns);
+        }
 
         for (shape_name, shape) in &self.shapes {
             if shape_name.starts_with("smithy.api#") {
@@ -74,6 +108,227 @@ impl SmithyModel {
 
             let mut shape = shape.borrow_mut();
             shape.resolve(shape_name, self);
+        }
+    }
+
+    /// Resolves the protocol for the service shape.
+    ///
+    /// # Panics
+    /// Panics if the service shape has zero or more than one protocol trait.
+    fn resolve_protocol(&mut self) {
+        let protocols = {
+            let service_shape = self.service();
+            let service = service_shape.as_service().expect("service lookup returned a non-service shape");
+            service.base.traits.protocols()
+        };
+
+        if protocols.is_empty() {
+            panic!("the service shape has no protocol trait; at least one is required");
+        }
+        if protocols.len() > 1 {
+            panic!("the service shape has more than one protocol trait; only one is allowed");
+        }
+        let protocol = protocols.iter().next().unwrap();
+        self.protocol = Some(*protocol);
+    }
+
+    /// Adds built-in shapes to the model.
+    ///
+    /// These shape names are generated by apparently newer versions of the Smithy CLI.
+    fn add_builtins(&mut self) {
+        if self.shapes.get("smithy.api#Boolean").is_none() {
+            let base = ShapeBase {
+                smithy_name: Some("smithy.api#Boolean".to_string()),
+                rust_typename: Some("bool".to_string()),
+                ..Default::default()
+            };
+
+            self.shapes.insert(
+                "smithy.api#Boolean".to_string(),
+                Rc::new(RefCell::new(Shape::Boolean(SmithyBoolean {
+                    base,
+                }))),
+            );
+        }
+
+        if self.shapes.get("smithy.api#BigInteger").is_none() {
+            let base = ShapeBase {
+                smithy_name: Some("smithy.api#BigInteger".to_string()),
+                rust_typename: Some("::aws_smithy_types::BigInteger".to_string()),
+                ..Default::default()
+            };
+
+            self.shapes.insert(
+                "smithy.api#BigInteger".to_string(),
+                Rc::new(RefCell::new(Shape::BigInteger(SmithyBigInteger {
+                    base,
+                }))),
+            );
+        }
+
+        if self.shapes.get("smithy.api#BigDecimal").is_none() {
+            let base = ShapeBase {
+                smithy_name: Some("smithy.api#BigDecimal".to_string()),
+                rust_typename: Some("::aws_smithy_types::BigDecimal".to_string()),
+                ..Default::default()
+            };
+
+            self.shapes.insert(
+                "smithy.api#BigDecimal".to_string(),
+                Rc::new(RefCell::new(Shape::BigDecimal(SmithyBigDecimal {
+                    base,
+                }))),
+            );
+        }
+
+        if self.shapes.get("smithy.api#Byte").is_none() {
+            let base = ShapeBase {
+                smithy_name: Some("smithy.api#Byte".to_string()),
+                rust_typename: Some("i8".to_string()),
+                ..Default::default()
+            };
+
+            self.shapes.insert(
+                "smithy.api#Byte".to_string(),
+                Rc::new(RefCell::new(Shape::Byte(SmithyByte {
+                    base,
+                }))),
+            );
+        }
+
+        if self.shapes.get("smithy.api#Document").is_none() {
+            let base = ShapeBase {
+                smithy_name: Some("smithy.api#Document".to_string()),
+                rust_typename: Some("::aws_smithy_types::Document".to_string()),
+                ..Default::default()
+            };
+
+            self.shapes.insert(
+                "smithy.api#Document".to_string(),
+                Rc::new(RefCell::new(Shape::Document(SmithyDocument {
+                    base,
+                }))),
+            );
+        }
+
+        if self.shapes.get("smithy.api#Float").is_none() {
+            let base = ShapeBase {
+                smithy_name: Some("smithy.api#Float".to_string()),
+                rust_typename: Some("f32".to_string()),
+                ..Default::default()
+            };
+
+            self.shapes.insert(
+                "smithy.api#Float".to_string(),
+                Rc::new(RefCell::new(Shape::Float(SmithyFloat {
+                    base,
+                }))),
+            );
+        }
+
+        if self.shapes.get("smithy.api#Double").is_none() {
+            let base = ShapeBase {
+                smithy_name: Some("smithy.api#Double".to_string()),
+                rust_typename: Some("f64".to_string()),
+                ..Default::default()
+            };
+
+            self.shapes.insert(
+                "smithy.api#Double".to_string(),
+                Rc::new(RefCell::new(Shape::Double(SmithyDouble {
+                    base,
+                }))),
+            );
+        }
+
+        if self.shapes.get("smithy.api#Integer").is_none() {
+            let base = ShapeBase {
+                smithy_name: Some("smithy.api#Integer".to_string()),
+                rust_typename: Some("i32".to_string()),
+                ..Default::default()
+            };
+
+            self.shapes.insert(
+                "smithy.api#Integer".to_string(),
+                Rc::new(RefCell::new(Shape::Integer(SmithyInteger {
+                    base,
+                }))),
+            );
+        }
+
+        if self.shapes.get("smithy.api#Long").is_none() {
+            let base = ShapeBase {
+                smithy_name: Some("smithy.api#Long".to_string()),
+                rust_typename: Some("i64".to_string()),
+                ..Default::default()
+            };
+
+            self.shapes.insert(
+                "smithy.api#Long".to_string(),
+                Rc::new(RefCell::new(Shape::Long(SmithyLong {
+                    base,
+                }))),
+            );
+        }
+
+        if self.shapes.get("smithy.api#Short").is_none() {
+            let base = ShapeBase {
+                smithy_name: Some("smithy.api#Short".to_string()),
+                rust_typename: Some("i16".to_string()),
+                ..Default::default()
+            };
+
+            self.shapes.insert(
+                "smithy.api#Short".to_string(),
+                Rc::new(RefCell::new(Shape::Short(SmithyShort {
+                    base,
+                }))),
+            );
+        }
+
+        if self.shapes.get("smithy.api#String").is_none() {
+            let base = ShapeBase {
+                smithy_name: Some("smithy.api#String".to_string()),
+                rust_typename: Some("String".to_string()),
+                ..Default::default()
+            };
+
+            self.shapes.insert(
+                "smithy.api#String".to_string(),
+                Rc::new(RefCell::new(Shape::String(SmithyString {
+                    base,
+                }))),
+            );
+        }
+
+        if self.shapes.get("smithy.api#Timestamp").is_none() {
+            let base = ShapeBase {
+                smithy_name: Some("smithy.api#Timestamp".to_string()),
+                rust_typename: Some("chrono::DateTime<chrono::Utc>".to_string()),
+                ..Default::default()
+            };
+
+            self.shapes.insert(
+                "smithy.api#Timestamp".to_string(),
+                Rc::new(RefCell::new(Shape::Timestamp(SmithyTimestamp {
+                    base,
+                }))),
+            );
+        }
+
+        if self.shapes.get("smithy.api#Unit").is_none() {
+            let base = ShapeBase {
+                smithy_name: Some("smithy.api#Unit".to_string()),
+                rust_typename: Some("()".to_string()),
+                ..Default::default()
+            };
+
+            self.shapes.insert(
+                "smithy.api#Unit".to_string(),
+                Rc::new(RefCell::new(Shape::Unit(SmithyUnit {
+                    base,
+                }))),
+            );
         }
     }
 
@@ -107,7 +362,7 @@ impl SmithyModel {
         self.generate_validators(m);
 
         for shape in self.shapes.values() {
-            shape.borrow().generate(m);
+            shape.borrow().generate(self, m);
         }
 
         self.generate_action(m);
@@ -275,7 +530,7 @@ impl SmithyModel {
 
     /// Generates code that belongs in `crate::error_meta` for all shapes in the model.
     fn generate_error_meta(&self, m: &mut Modules) {
-        let xmlns = self.xmlns.as_deref().expect("model has no XML namespace; call resolve() before generate()");
+        let protocol = self.protocol.expect("the model has no protocol; resolve() before generate()");
         let errors = self.error_typenames();
 
         let variants = self.shapes.values().filter_map(|shape| match &*shape.borrow() {
@@ -298,6 +553,37 @@ impl SmithyModel {
                 quote!(Self::#name(inner) => #arm,)
             });
             quote!(#(#arms)*)
+        };
+
+        // Every generated error responds for itself; an `Unhandled` error is a `GenericError`,
+        // which does not. The query protocol can wrap one in the envelope it already has, but a
+        // `GenericError` serializes its fields in PascalCase -- the form a query-protocol client
+        // parses -- so the JSON protocols render it through `JsonErrorBody` rather than serializing
+        // it directly.
+        let unhandled_respond = match protocol {
+            Protocol::AwsQuery => {
+                let xmlns =
+                    self.xmlns.as_deref().expect("model has no XML namespace; call resolve() before generate()");
+
+                quote! {
+                    ::scratchstack_core::response::ErrorResponseEnvelope::new_with_xmlns(inner, #xmlns).respond()
+                }
+            }
+
+            Protocol::AwsJson1_0 | Protocol::AwsJson1_1 | Protocol::RestJson1 => {
+                let content_type = protocol.content_type();
+
+                quote! {
+                    ::scratchstack_core::response::json_error_response(
+                        &::scratchstack_core::response::JsonErrorBody::new(inner),
+                        ::scratchstack_core::http::HeaderValue::from_static(#content_type),
+                    )
+                }
+            }
+
+            Protocol::Ec2Query | Protocol::RestXml => {
+                panic!("the {protocol} protocol is not supported")
+            }
         };
 
         let display_arms = arms(|_| quote!(inner.fmt(f)));
@@ -384,10 +670,7 @@ impl SmithyModel {
                 fn respond(&self) -> ::scratchstack_core::http::Response<::scratchstack_core::axum::body::Body> {
                     match self {
                         #respond_arms
-                        Self::Unhandled(inner) => {
-                            ::scratchstack_core::response::ErrorResponseEnvelope::new_with_xmlns(inner, #xmlns)
-                                .respond()
-                        }
+                        Self::Unhandled(inner) => #unhandled_respond,
                     }
                 }
             }

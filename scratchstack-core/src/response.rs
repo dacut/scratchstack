@@ -3,13 +3,16 @@
 use {
     crate::{
         ProvideRequestId, ProvideXmlNamespace,
-        constants::{HDR_KEY_CACHE_CONTROL, HDR_KEY_CONTENT_TYPE, HDR_VAL_NO_STORE, HDR_VAL_TEXT_XML},
-        error::ProvideErrorMetadata,
+        constants::{
+            HDR_KEY_CACHE_CONTROL, HDR_KEY_CONTENT_TYPE, HDR_KEY_X_AMZN_ERROR_TYPE, HDR_KEY_X_AMZN_REQUEST_ID,
+            HDR_VAL_NO_STORE, HDR_VAL_TEXT_XML,
+        },
+        error::{ErrorType, ProvideErrorMetadata},
         xml::QuerySerializer,
     },
     axum::body::Body,
     bon::Builder,
-    http::{Response, StatusCode},
+    http::{HeaderValue, Response, StatusCode},
     log::error,
     quick_xml::{SeError, escape::escape, se::Serializer as QuickXmlSerializer},
     serde::{
@@ -17,6 +20,15 @@ use {
         ser::{SerializeStruct as _, Serializer},
     },
 };
+
+/// The error code reported when a response cannot be serialized.
+const CODE_INTERNAL_FAILURE: &str = "InternalFailure";
+
+/// The body of a JSON `InternalFailure` response.
+///
+/// This is written out by hand rather than serialized, since serialization is what failed wherever
+/// it is used; it holds nothing the caller supplied, so there is nothing in it to escape.
+const JSON_INTERNAL_FAILURE_BODY: &str = r#"{"message":"Internal failure"}"#;
 
 /// Trait for generating an HTTP response from a struct.
 pub trait Responder {
@@ -61,6 +73,22 @@ struct ErrorResponse<'a, E> {
     error: &'a E,
 }
 
+/// The body of a JSON-protocol error response, rendered from an error's metadata.
+///
+/// This is the JSON counterpart to [`ErrorResponseEnvelope`]: it renders the message alone, and
+/// takes it from [`ProvideErrorMetadata`] rather than from the error's own [`Serialize`]. That is
+/// what lets an error that serializes some other way -- a [`GenericError`][crate::GenericError],
+/// whose fields are PascalCase because that is the form a query-protocol client parses -- still go
+/// out in the JSON protocols' form. An error that already serializes as its message can be handed
+/// to [`json_error_response`] directly.
+pub struct JsonErrorBody<'a, E>
+where
+    E: ?Sized,
+{
+    /// The error itself.
+    error: &'a E,
+}
+
 /// The `<ResponseMetadata>` element carried by successful AWS query-protocol responses.
 ///
 /// Note the asymmetry with errors, which carry `<RequestId>` as a direct child of
@@ -95,7 +123,121 @@ where
     Ok(xml)
 }
 
+/// Serializes a value into an Axum JSON response.
+///
+/// The JSON protocols have no response envelope: the body is the value itself, and the request id
+/// goes out in `x-amzn-RequestId` rather than in the body.
+///
+/// The content type names the protocol, so it is the caller's to supply:
+/// `application/x-amz-json-1.1` for awsJson1_1, `application/json` for restJson1.
+///
+/// If serialization fails, this sends an `InternalFailure` error response instead, discarding the
+/// status the caller asked for: the failure is the service's, whatever the response was going to
+/// say.
+pub fn json_response<T>(value: &T, status_code: StatusCode, content_type: HeaderValue) -> Response<Body>
+where
+    T: Serialize + ProvideRequestId + ?Sized,
+{
+    let request_id = value.request_id();
+
+    let (status_code, code, body) = match json_body(value, request_id) {
+        Ok(body) => (status_code, None, body),
+        Err(body) => (StatusCode::INTERNAL_SERVER_ERROR, Some(CODE_INTERNAL_FAILURE), body.to_string()),
+    };
+
+    json_response_from_parts(body, status_code, content_type, code, request_id)
+}
+
+/// Serializes an error into an Axum JSON response.
+///
+/// The body holds the message alone. The JSON protocols carry the error code in the
+/// `x-amzn-ErrorType` header rather than in the body -- which is where the AWS SDKs read it from
+/// -- so it is not serialized into the body. The request id goes out in `x-amzn-RequestId`, as it
+/// does on every response this crate builds.
+///
+/// The content type names the protocol, so it is the caller's to supply:
+/// `application/x-amz-json-1.1` for awsJson1_1, `application/json` for restJson1.
+///
+/// If serialization fails, this reports `InternalFailure` in place of the error it was given.
+pub fn json_error_response<E>(error: &E, content_type: HeaderValue) -> Response<Body>
+where
+    E: Serialize + ProvideErrorMetadata + ProvideRequestId + ?Sized,
+{
+    let request_id = error.request_id();
+
+    let (status_code, code, body) = match json_body(error, request_id) {
+        Ok(body) => (error.http_status().unwrap_or(StatusCode::INTERNAL_SERVER_ERROR), error.code(), body),
+        Err(body) => (StatusCode::INTERNAL_SERVER_ERROR, CODE_INTERNAL_FAILURE, body.to_string()),
+    };
+
+    json_response_from_parts(body, status_code, content_type, Some(code), request_id)
+}
+
+/// Serializes `value` as JSON, or reports the `InternalFailure` body it could not be serialized as.
+///
+/// `Err` carries a body rather than the error itself: there is nothing a caller can do with a
+/// serialization failure except send `InternalFailure` in place of what it meant to send, so the
+/// failure is logged here and the replacement body handed back.
+fn json_body<T>(value: &T, request_id: Option<&str>) -> Result<String, &'static str>
+where
+    T: Serialize + ?Sized,
+{
+    match serde_json::to_string(value) {
+        Ok(body) => Ok(body),
+        Err(e) => {
+            match request_id {
+                Some(request_id) => error!("{request_id}: Failed to serialize to JSON: {e}"),
+                None => error!("Failed to serialize to JSON: {e}"),
+            }
+
+            Err(JSON_INTERNAL_FAILURE_BODY)
+        }
+    }
+}
+
+/// Assembles a JSON response from an already-serialized body.
+///
+/// `code` is sent as `x-amzn-ErrorType` and belongs on error responses; a successful response
+/// passes `None`.
+fn json_response_from_parts(
+    body: String,
+    status_code: StatusCode,
+    content_type: HeaderValue,
+    code: Option<&str>,
+    request_id: Option<&str>,
+) -> Response<Body> {
+    let mut response = Response::new(Body::from(body));
+    *response.status_mut() = status_code;
+    response.headers_mut().insert(HDR_KEY_CONTENT_TYPE, content_type);
+    response.headers_mut().insert(HDR_KEY_CACHE_CONTROL, HDR_VAL_NO_STORE);
+    if let Some(code) = code {
+        insert_str_header(&mut response, HDR_KEY_X_AMZN_ERROR_TYPE, code);
+    }
+    if let Some(request_id) = request_id {
+        insert_str_header(&mut response, HDR_KEY_X_AMZN_REQUEST_ID, request_id);
+    }
+    response
+}
+
+/// Inserts `value` under the header `name`, omitting the header if the value cannot be encoded.
+///
+/// Neither an error code nor a request id can hold a character a header field rejects, so this
+/// does not drop a header in practice. A value that somehow does is logged and left off rather
+/// than replaced with one a client would read as real.
+fn insert_str_header(response: &mut Response<Body>, name: &'static str, value: &str) {
+    match HeaderValue::from_str(value) {
+        Ok(header_value) => {
+            response.headers_mut().insert(name, header_value);
+        }
+        Err(e) => error!("Cannot send the {name} header with value {value:?}: {e}"),
+    }
+}
+
 /// Serializes a struct into an Axum XML response.
+///
+/// The query protocol writes the request id into the body as well, but the header goes out either
+/// way: `x-amzn-RequestId` is where the AWS SDKs read it from, and it is the only place a client
+/// can find it on a response whose body it could not parse.
 ///
 /// If serialization fails, this returns an `InternalFailure` response instead. That fallback envelope is assembled
 /// by hand rather than serialized, since serialization is what just failed, so the namespace and request id are
@@ -106,8 +248,8 @@ where
 {
     let request_id = envelope.request_id();
 
-    let xml = match serialize_query_xml(envelope) {
-        Ok(xml) => xml,
+    let (status_code, xml) = match serialize_query_xml(envelope) {
+        Ok(xml) => (status_code, xml),
         Err(e) => {
             let xmlns = envelope.xml_namespace();
             match request_id {
@@ -124,11 +266,8 @@ where
             }
             body += "</ErrorResponse>";
 
-            let mut response = Response::new(Body::from(body));
-            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            response.headers_mut().insert(HDR_KEY_CONTENT_TYPE, HDR_VAL_TEXT_XML);
-            response.headers_mut().insert(HDR_KEY_CACHE_CONTROL, HDR_VAL_NO_STORE);
-            return response;
+            // The requested status is discarded: a serialization failure is ours, not the caller's.
+            (StatusCode::INTERNAL_SERVER_ERROR, body)
         }
     };
 
@@ -136,6 +275,9 @@ where
     *response.status_mut() = status_code;
     response.headers_mut().insert(HDR_KEY_CONTENT_TYPE, HDR_VAL_TEXT_XML);
     response.headers_mut().insert(HDR_KEY_CACHE_CONTROL, HDR_VAL_NO_STORE);
+    if let Some(request_id) = request_id {
+        insert_str_header(&mut response, HDR_KEY_X_AMZN_REQUEST_ID, request_id);
+    }
     response
 }
 
@@ -221,19 +363,84 @@ where
     }
 }
 
+impl<'a, E> JsonErrorBody<'a, E>
+where
+    E: ProvideErrorMetadata + ProvideRequestId + ?Sized,
+{
+    /// Renders the given error as a JSON-protocol error body.
+    pub fn new(error: &'a E) -> Self {
+        Self {
+            error,
+        }
+    }
+}
+
+impl<E> ProvideErrorMetadata for JsonErrorBody<'_, E>
+where
+    E: ProvideErrorMetadata + ?Sized,
+{
+    fn error_type(&self) -> ErrorType {
+        self.error.error_type()
+    }
+
+    fn code(&self) -> &str {
+        self.error.code()
+    }
+
+    fn message(&self) -> Option<&str> {
+        self.error.message()
+    }
+
+    fn http_status(&self) -> Option<StatusCode> {
+        self.error.http_status()
+    }
+}
+
+impl<E> ProvideRequestId for JsonErrorBody<'_, E>
+where
+    E: ProvideRequestId + ?Sized,
+{
+    fn request_id(&self) -> Option<&str> {
+        self.error.request_id()
+    }
+}
+
+impl<E> Serialize for JsonErrorBody<'_, E>
+where
+    E: ProvideErrorMetadata + ?Sized,
+{
+    /// The code and the request id are headers under the JSON protocols rather than body fields,
+    /// so the message is all there is to write -- in lower case, unlike the query protocol's
+    /// `Message`. An error carrying no message renders as an empty object.
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut error = serializer.serialize_struct("Error", 1)?;
+        match self.error.message() {
+            Some(message) => error.serialize_field("message", &message)?,
+            None => error.skip_field("message")?,
+        }
+        error.end()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {
-        super::{ErrorResponseEnvelope, Responder as _, serialize_query_xml, xml_response},
+        super::{
+            ErrorResponseEnvelope, Responder as _, json_error_response, json_response, serialize_query_xml,
+            xml_response,
+        },
         crate::{
             ProvideRequestId, ProvideXmlNamespace,
-            constants::{HDR_KEY_CACHE_CONTROL, HDR_KEY_CONTENT_TYPE, HDR_VAL_NO_STORE, HDR_VAL_TEXT_XML},
+            constants::{
+                HDR_KEY_CACHE_CONTROL, HDR_KEY_CONTENT_TYPE, HDR_KEY_X_AMZN_ERROR_TYPE, HDR_KEY_X_AMZN_REQUEST_ID,
+                HDR_VAL_NO_STORE, HDR_VAL_TEXT_XML,
+            },
             error::{ErrorType, ProvideErrorMetadata},
         },
-        http::StatusCode,
+        http::{HeaderValue, StatusCode},
         pretty_assertions::assert_eq,
         quick_xml::{Reader, XmlVersion, escape::unescape, events::Event},
-        serde::{Serialize, Serializer},
+        serde::{Serialize, Serializer, ser::SerializeStruct as _},
         std::collections::BTreeMap,
     };
 
@@ -358,6 +565,9 @@ mod tests {
         assert_eq!(response.headers().get(HDR_KEY_CONTENT_TYPE), Some(&HDR_VAL_TEXT_XML));
         assert_eq!(response.headers().get(HDR_KEY_CACHE_CONTROL), Some(&HDR_VAL_NO_STORE));
 
+        // The request id goes out in the header as well as in the body.
+        assert_eq!(response.headers().get(HDR_KEY_X_AMZN_REQUEST_ID).unwrap(), "11111111-2222-3333-4444-555555555555");
+
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read body");
         let body = String::from_utf8(body.to_vec()).expect("body is not UTF-8");
         assert!(body.contains("<Code>NoSuchEntity</Code>"), "unexpected body: {body}");
@@ -372,6 +582,10 @@ mod tests {
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(response.headers().get(HDR_KEY_CONTENT_TYPE), Some(&HDR_VAL_TEXT_XML));
         assert_eq!(response.headers().get(HDR_KEY_CACHE_CONTROL), Some(&HDR_VAL_NO_STORE));
+
+        // Every character of the request id is one a header field accepts, so it goes out as-is:
+        // the escaping below is the XML body's business, not the header's.
+        assert_eq!(response.headers().get(HDR_KEY_X_AMZN_REQUEST_ID).unwrap(), HOSTILE_REQUEST_ID);
 
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read body");
         let body = String::from_utf8(body.to_vec()).expect("body is not UTF-8");
@@ -428,6 +642,7 @@ mod tests {
 
         let response = xml_response(&NoRequestId, StatusCode::OK);
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(response.headers().get(HDR_KEY_X_AMZN_REQUEST_ID).is_none());
 
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read body");
         let body = String::from_utf8(body.to_vec()).expect("body is not UTF-8");
@@ -490,6 +705,200 @@ mod tests {
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         assert_eq!(response.headers().get("content-type").unwrap(), "text/xml; charset=utf-8");
         assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+    }
+
+    const AWS_JSON_1_1: HeaderValue = HeaderValue::from_static("application/x-amz-json-1.1");
+
+    /// A stand-in for a generated error type under the JSON protocols, which write the message
+    /// alone: the code and the request id go out as headers.
+    struct JsonTestError {
+        code: &'static str,
+        error_type: ErrorType,
+        http_status: StatusCode,
+        message: Option<&'static str>,
+        request_id: Option<&'static str>,
+    }
+
+    impl Serialize for JsonTestError {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            let mut e = serializer.serialize_struct("JsonTestError", 1)?;
+            match self.message {
+                Some(message) => e.serialize_field("message", message)?,
+                None => e.skip_field("message")?,
+            }
+            e.end()
+        }
+    }
+
+    impl ProvideErrorMetadata for JsonTestError {
+        fn error_type(&self) -> ErrorType {
+            self.error_type
+        }
+
+        fn code(&self) -> &str {
+            self.code
+        }
+
+        fn message(&self) -> Option<&str> {
+            self.message
+        }
+
+        fn http_status(&self) -> Option<StatusCode> {
+            Some(self.http_status)
+        }
+    }
+
+    impl ProvideRequestId for JsonTestError {
+        fn request_id(&self) -> Option<&str> {
+            self.request_id
+        }
+    }
+
+    async fn body_of(response: axum::response::Response) -> String {
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read body");
+        String::from_utf8(body.to_vec()).expect("body is not UTF-8")
+    }
+
+    /// The code has no place in a JSON error body; a client that cannot find it in
+    /// `x-amzn-ErrorType` has no way to tell one error from another.
+    #[test_log::test(tokio::test)]
+    async fn json_error_response_sends_the_code_and_request_id_as_headers() {
+        let error = JsonTestError {
+            code: "ResourceNotFoundException",
+            error_type: ErrorType::Sender,
+            http_status: StatusCode::NOT_FOUND,
+            message: Some("The resource does not exist."),
+            request_id: Some("11111111-2222-3333-4444-555555555555"),
+        };
+        let response = json_error_response(&error, AWS_JSON_1_1);
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(response.headers().get(HDR_KEY_CONTENT_TYPE), Some(&AWS_JSON_1_1));
+        assert_eq!(response.headers().get(HDR_KEY_CACHE_CONTROL), Some(&HDR_VAL_NO_STORE));
+        assert_eq!(response.headers().get(HDR_KEY_X_AMZN_ERROR_TYPE).unwrap(), "ResourceNotFoundException");
+        assert_eq!(response.headers().get(HDR_KEY_X_AMZN_REQUEST_ID).unwrap(), "11111111-2222-3333-4444-555555555555");
+
+        // The message alone, spelled in lower case -- no `Type`, `Code` or `RequestId`.
+        assert_eq!(body_of(response).await, r#"{"message":"The resource does not exist."}"#);
+    }
+
+    /// An error with nothing to say still has to be a JSON object, and a header is left off rather
+    /// than sent empty.
+    #[test_log::test(tokio::test)]
+    async fn json_error_response_omits_what_it_does_not_have() {
+        let error = JsonTestError {
+            code: "InternalFailure",
+            error_type: ErrorType::Receiver,
+            http_status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: None,
+            request_id: None,
+        };
+        let response = json_error_response(&error, AWS_JSON_1_1);
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(response.headers().get(HDR_KEY_X_AMZN_ERROR_TYPE).unwrap(), "InternalFailure");
+        assert!(response.headers().get(HDR_KEY_X_AMZN_REQUEST_ID).is_none());
+        assert_eq!(body_of(response).await, "{}");
+    }
+
+    /// A serialization failure is ours: the requested status is discarded and the body says so.
+    #[test_log::test(tokio::test)]
+    async fn json_error_response_falls_back_when_serialization_fails() {
+        struct FailingError;
+
+        impl Serialize for FailingError {
+            fn serialize<S: Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+                Err(serde::ser::Error::custom("deliberate serialization failure"))
+            }
+        }
+
+        impl ProvideErrorMetadata for FailingError {
+            fn error_type(&self) -> ErrorType {
+                ErrorType::Sender
+            }
+
+            fn code(&self) -> &str {
+                "NoSuchEntity"
+            }
+
+            fn message(&self) -> Option<&str> {
+                None
+            }
+
+            fn http_status(&self) -> Option<StatusCode> {
+                Some(StatusCode::NOT_FOUND)
+            }
+        }
+
+        impl ProvideRequestId for FailingError {
+            fn request_id(&self) -> Option<&str> {
+                Some("11111111-2222-3333-4444-555555555555")
+            }
+        }
+
+        let response = json_error_response(&FailingError, AWS_JSON_1_1);
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(response.headers().get(HDR_KEY_X_AMZN_ERROR_TYPE).unwrap(), "InternalFailure");
+        assert_eq!(response.headers().get(HDR_KEY_X_AMZN_REQUEST_ID).unwrap(), "11111111-2222-3333-4444-555555555555");
+        assert_eq!(body_of(response).await, r#"{"message":"Internal failure"}"#);
+    }
+
+    /// A successful JSON response is the result shape itself: no envelope, no request id in the
+    /// body, and nothing that would make a client look for an error code.
+    #[test_log::test(tokio::test)]
+    async fn json_response_writes_the_value_alone() {
+        #[derive(Serialize)]
+        struct TestResult {
+            #[serde(rename = "UserName")]
+            user_name: &'static str,
+        }
+
+        /// A stand-in for a generated response envelope under the JSON protocols, which serializes
+        /// as the result it carries.
+        struct TestEnvelope {
+            request_id: Option<&'static str>,
+            result: TestResult,
+        }
+
+        impl Serialize for TestEnvelope {
+            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                self.result.serialize(serializer)
+            }
+        }
+
+        impl ProvideRequestId for TestEnvelope {
+            fn request_id(&self) -> Option<&str> {
+                self.request_id
+            }
+        }
+
+        let envelope = TestEnvelope {
+            request_id: Some("11111111-2222-3333-4444-555555555555"),
+            result: TestResult {
+                user_name: "alice",
+            },
+        };
+        let response = json_response(&envelope, StatusCode::OK, AWS_JSON_1_1);
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers().get(HDR_KEY_CONTENT_TYPE), Some(&AWS_JSON_1_1));
+        assert_eq!(response.headers().get(HDR_KEY_CACHE_CONTROL), Some(&HDR_VAL_NO_STORE));
+        assert_eq!(response.headers().get(HDR_KEY_X_AMZN_REQUEST_ID).unwrap(), "11111111-2222-3333-4444-555555555555");
+        assert!(response.headers().get(HDR_KEY_X_AMZN_ERROR_TYPE).is_none());
+        assert_eq!(body_of(response).await, r#"{"UserName":"alice"}"#);
+    }
+
+    /// A response that cannot be serialized goes out as an error, whatever status it was going to
+    /// carry -- and it has to say so as an error does, in the code header a client reads.
+    #[test_log::test(tokio::test)]
+    async fn json_response_falls_back_when_serialization_fails() {
+        let response = json_response(&FailingEnvelope, StatusCode::OK, AWS_JSON_1_1);
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(response.headers().get(HDR_KEY_X_AMZN_ERROR_TYPE).unwrap(), "InternalFailure");
+        assert_eq!(response.headers().get(HDR_KEY_X_AMZN_REQUEST_ID).unwrap(), HOSTILE_REQUEST_ID);
+        assert_eq!(body_of(response).await, r#"{"message":"Internal failure"}"#);
     }
 
     /// A stand-in for a generated shape carrying a list. Nothing about the declaration says

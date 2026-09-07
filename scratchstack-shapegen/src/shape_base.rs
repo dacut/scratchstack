@@ -4,7 +4,7 @@ use {
 };
 
 /// Basic features of a shape.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ShapeBase {
     /// The Smithy name of the shape.
     ///

@@ -1,5 +1,5 @@
 use {
-    crate::{CliShorthand, Member, Modules, ShapeBase, ShapeInfo, StrExt, doc_tokens, ident},
+    crate::{CliShorthand, Member, Modules, ShapeBase, ShapeInfo, SmithyModel, StrExt, doc_tokens, ident},
     proc_macro2::TokenStream,
     quote::quote,
     serde::{Deserialize, Serialize},
@@ -44,7 +44,7 @@ impl ShapeInfo for Enum {
         self.cli_shorthand = model.cli_shorthand;
     }
 
-    fn generate(&self, m: &mut Modules) {
+    fn generate(&self, _model: &SmithyModel, m: &mut Modules) {
         if self.base.traits.is_error() {
             m.types_error.extend(self.rust_decl());
             m.types_error.extend(self.display_impl());

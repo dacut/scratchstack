@@ -39,7 +39,7 @@ impl ShapeInfo for Union {
         }
     }
 
-    fn generate(&self, m: &mut Modules) {
+    fn generate(&self, _model: &SmithyModel, m: &mut Modules) {
         let name = ident(&self.base.rust_typename());
         let docs = doc_tokens(self.base.traits.documentation());
         let variants = self.members.iter().map(|(member_name, member)| {

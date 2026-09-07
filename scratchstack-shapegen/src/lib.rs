@@ -15,6 +15,7 @@ mod map;
 mod member;
 mod modules;
 mod operation;
+mod protocol;
 mod range_constraint;
 mod resource;
 mod service;
@@ -32,8 +33,9 @@ mod r#union;
 #[allow(unused_imports)]
 pub use {
     cli_shorthand::*, common_errors::*, r#enum::*, generator::*, int_enum::*, length_constraint::*, list::*, map::*,
-    member::*, modules::*, operation::*, range_constraint::*, resource::*, service::*, shape::*, shape_base::*,
-    shape_ref::*, smithy_model::*, str_ext::*, structure::*, trait_id::*, trait_map::*, transform::*, r#union::*,
+    member::*, modules::*, operation::*, protocol::*, range_constraint::*, resource::*, service::*, shape::*,
+    shape_base::*, shape_ref::*, smithy_model::*, str_ext::*, structure::*, trait_id::*, trait_map::*, transform::*,
+    r#union::*,
 };
 
 /// Trait for all named shapes.
@@ -101,7 +103,7 @@ pub trait ShapeInfo {
 
     /// Appends this shape's generated code to the appropriate module in `m`.
     #[allow(unused_variables)] // Makes code completion show `m` instead of `_m`.
-    fn generate(&self, m: &mut Modules) {}
+    fn generate(&self, model: &SmithyModel, m: &mut Modules) {}
 }
 
 /// Renders an HTTP status code as a `scratchstack_core::http::StatusCode` constant expression.
@@ -183,16 +185,20 @@ mod tests {
     use {super::*, std::path::Path};
 
     /// A model exercising the constructs the generators actually branch on: a service, an
-    /// operation, a constrained string reused by two fields, a length-constrained list, an enum,
-    /// and an error.
+    /// operation, a second operation whose output is the unit type -- the branch that writes an
+    /// envelope with no result in it -- a constrained string reused by several fields, a
+    /// length-constrained list, an enum, and an error.
     const FIXTURE: &str = r##"{
       "smithy": "2.0",
       "shapes": {
         "com.example#Example": {
           "type": "service",
           "version": "2020-01-01",
-          "operations": [{"target": "com.example#CreateWidget"}],
-          "traits": {"smithy.api#xmlNamespace": {"uri": "https://example.amazonaws.com/doc/2020-01-01/"}}
+          "operations": [{"target": "com.example#CreateWidget"}, {"target": "com.example#DeleteWidget"}],
+          "traits": {
+            "aws.protocols#awsQuery": {},
+            "smithy.api#xmlNamespace": {"uri": "https://example.amazonaws.com/doc/2020-01-01/"}
+          }
         },
         "com.example#CreateWidget": {
           "type": "operation",
@@ -208,6 +214,16 @@ mod tests {
             "Tags": {"target": "com.example#tagListType"},
             "Size": {"target": "com.example#sizeType"}
           }
+        },
+        "com.example#DeleteWidget": {
+          "type": "operation",
+          "input": {"target": "com.example#DeleteWidgetRequest"},
+          "output": {"target": "smithy.api#Unit"}
+        },
+        "com.example#DeleteWidgetRequest": {
+          "type": "structure",
+          "traits": {"smithy.api#input": {}},
+          "members": {"WidgetName": {"target": "com.example#widgetNameType", "traits": {"smithy.api#required": {}}}}
         },
         "com.example#CreateWidgetResponse": {
           "type": "structure",
@@ -349,6 +365,88 @@ mod tests {
         assert!(contains(&generated.action, r#"pub const VERSION: &str = "2020-01-01";"#));
         assert!(contains(&generated.action, "CreateWidget,"));
         assert!(contains(&generated.action, r#""CreateWidget" => ::std::result::Result::Ok(Self::CreateWidget)"#));
+    }
+
+    /// The query protocol's wire form, which the JSON test below is the counterpart to: the
+    /// envelope names the namespace and wraps the request id, and the error carries its type and
+    /// code in the body.
+    #[test]
+    fn query_protocol_wraps_responses_in_the_xml_envelope() {
+        let generated = generate(FIXTURE);
+
+        assert!(contains(&generated.operation, r#"s.serialize_field("@xmlns""#));
+        assert!(contains(&generated.operation, r#"s.serialize_field("CreateWidgetResult", &self.result)"#));
+        assert!(contains(&generated.operation, "ResponseMetadata"));
+        assert!(contains(&generated.operation, "::scratchstack_core::response::xml_response"));
+        assert!(contains(&generated.operation, "impl ::scratchstack_core::ProvideXmlNamespace"));
+
+        // An operation with no output keeps the envelope, minus the result element: two fields
+        // rather than three. The needles stop short of the closing parenthesis, since
+        // `prettyplease` may break the call's arguments across lines.
+        assert!(contains(&generated.operation, r#""DeleteWidgetResponse", 2"#));
+        assert!(!contains(&generated.operation, "DeleteWidgetResult"), "wrote a result element for a unit output");
+
+        assert!(contains(&generated.types_error, r#"e.serialize_field("Type", "Sender")"#));
+        assert!(contains(&generated.types_error, r#"e.serialize_field("Code", "NoSuchWidget")"#));
+        assert!(contains(&generated.types_error, r#"e.serialize_field("Message", message)"#));
+        assert!(contains(&generated.types_error, "ErrorResponseEnvelope::new(self)"));
+        assert!(contains(&generated.error_meta, "ErrorResponseEnvelope::new_with_xmlns"));
+    }
+
+    /// The JSON protocols have no envelope and no namespace: a response is the result shape itself
+    /// and an error is its message alone, with the code and the request id going out as headers.
+    /// The fixture is the query one with its protocol trait swapped, so the protocol is the only
+    /// thing these differ by.
+    #[test]
+    fn json_protocol_responses_carry_no_envelope() {
+        let generated = generate(&FIXTURE.replace("aws.protocols#awsQuery", "aws.protocols#awsJson1_1"));
+
+        // Nothing anywhere claims an XML namespace, and nothing renders one.
+        for module in [&generated.operation, &generated.types_error, &generated.error_meta] {
+            assert!(!contains(module, "ProvideXmlNamespace"), "generated an XML namespace impl: {module}");
+            assert!(!contains(module, "@xmlns"), "rendered an XML namespace: {module}");
+        }
+
+        // The envelope serializes as the result it carries, and responds as JSON.
+        assert!(contains(&generated.operation, "::serde::Serialize::serialize(&self.result, serializer)"));
+        assert!(contains(&generated.operation, "::scratchstack_core::response::json_response"));
+        // The needles are separate because `prettyplease` may break the call across lines, which
+        // leaves a space and a trailing comma inside the parentheses that a single needle misses.
+        assert!(contains(&generated.operation, "HeaderValue::from_static"));
+        assert!(contains(&generated.operation, r#""application/x-amz-json-1.1""#));
+        assert!(!contains(&generated.operation, "ResponseMetadata"), "wrapped the request id in the body");
+
+        // An operation with no output answers with an empty object rather than with nothing: a
+        // struct of no fields, which serde_json renders as `{}`.
+        assert!(contains(&generated.operation, r#""DeleteWidgetResponse", 0"#));
+        assert!(!contains(&generated.operation, "DeleteWidgetResult"), "wrote a result element for a unit output");
+
+        // The error body is the message under its lower-case name, and nothing else.
+        assert!(contains(&generated.types_error, r#"e.serialize_field("message", message)"#));
+        assert!(!contains(&generated.types_error, r#"serialize_field("Code""#), "wrote the code into the body");
+        assert!(!contains(&generated.types_error, r#"serialize_field("Type""#), "wrote the type into the body");
+        assert!(contains(&generated.types_error, "::scratchstack_core::response::json_error_response"));
+
+        // An `Unhandled` error is a `GenericError`, which has to be rendered rather than serialized.
+        assert!(contains(&generated.error_meta, "JsonErrorBody::new(inner)"));
+    }
+
+    /// Shapes outside the service's namespace are dropped rather than generated. A built model
+    /// imports the definitions of the traits it used, and `aws.api#service` would otherwise
+    /// generate a `Service` type colliding with the service's own.
+    #[test]
+    fn foreign_shapes_are_dropped_but_the_prelude_is_kept() {
+        let mut model: SmithyModel = serde_json::from_str(FIXTURE).expect("fixture should deserialize");
+        model.shapes.insert(
+            "aws.api#service".to_string(),
+            serde_json::from_str(r#"{"type": "structure", "members": {}}"#).expect("shape should deserialize"),
+        );
+        model.add_default_shapes();
+        model.retain_namespace("com.example");
+
+        assert!(!model.shapes.contains_key("aws.api#service"));
+        assert!(model.shapes.contains_key("com.example#Widget"));
+        assert!(model.shapes.contains_key("smithy.api#Unit"), "the prelude is what members target");
     }
 
     #[test]
