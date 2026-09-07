@@ -2,7 +2,7 @@ $version: "2"
 namespace net.scratchstack.access
 // use aws.api#service
 // use aws.auth#sigv4
-use aws.protocols#awsJson1_1
+ use aws.protocols#awsJson1_1
 
 /// The Scratchstack Access Service provides authentication and authorization capabilities to
 /// services implementing AWS SigV4 signature authentication.
@@ -269,7 +269,7 @@ structure Service {
     ServiceGlobalName: serviceDnsNameType
 
     /// The regional DNS name of the service.
-    ServiceRegionalname: serviceDnsNameType
+    ServiceRegionalName: serviceDnsNameType
 }
 
 /// A single tag, either specified in a request or applied to a resource.

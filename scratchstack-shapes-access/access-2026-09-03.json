@@ -1529,7 +1529,7 @@
                         "smithy.api#documentation": "The global DNS name of the service, without a region identifier."
                     }
                 },
-                "ServiceRegionalname": {
+                "ServiceRegionalName": {
                     "target": "net.scratchstack.access#serviceDnsNameType",
                     "traits": {
                         "smithy.api#documentation": "The regional DNS name of the service."
