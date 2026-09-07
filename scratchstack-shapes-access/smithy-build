@@ -1,4 +1,0 @@
-#!/bin/bash -ex
-rm -f access-2026-09-03.json
-smithy build
-jq --indent 2 -f smithy-build.filters generated-clients/source/model/model.json > access-2026-09-03.json
