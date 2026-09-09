@@ -14,6 +14,10 @@ const ACCOUNT_ID_FIELD_NAME: &str = "account_id";
 /// The Smithy shape id for the account id type.
 const ACCOUNT_ID_SHAPE_ID: &str = "com.amazonaws.iam#accountIdType";
 
+/// The IAM APIs whose internal requests carry the service-role flag: the two that write a role's
+/// own attributes.
+const IAM_IS_SERVICE_API: &[&str] = &["CreateRole", "UpdateRole"];
+
 /// The Smithy namespace for IAM.
 const IAM_NAMESPACE: &str = "com.amazonaws.iam";
 
@@ -70,6 +74,16 @@ const IAM_PROBLEMATIC_REGEX_1: &str = r"^[a-z0-9]([a-z0-9]|-(?!-)){1,61}[a-z0-9]
 /// length constraint recovers the bound the original expressed.
 const IAM_PROBLEMATIC_REGEX_1_REPLACEMENT: &str = r"^[a-z0-9]([-a-z0-9]){1,61}[a-z0-9]$";
 
+/// Documentation to use for the service-role flag in internal request types. The flag is not part
+/// of the IAM API: only a caller holding an internal request can set it.
+const IS_SERVICE_DOCUMENTATION: &str = "Whether this role belongs to a Scratchstack service. This flag is internal.";
+
+/// The field name to use for the service-role flag in internal request types.
+const IS_SERVICE_FIELD_NAME: &str = "is_service";
+
+/// The Smithy shape id for the service-role flag's type.
+const IS_SERVICE_SHAPE_ID: &str = "com.amazonaws.iam#booleanType";
+
 fn main() -> AnyResult<()> {
     ShapeGenerator::builder()
         .namespace(IAM_NAMESPACE)
@@ -87,11 +101,18 @@ fn main() -> AnyResult<()> {
                 .replacing("<task-uuid>", "<i>task-uuid</i>"),
         ])
         // Each IAM API gets a companion request type carrying an account id, so a service
-        // implementation can address any account rather than inferring one from the caller. These
-        // are ordinary structures once derived; nothing in the generator knows they exist.
+        // implementation can address any account rather than inferring one from the caller. The two
+        // role-writing APIs carry a service-role flag as well, which a public caller likewise has
+        // no way to set. These are ordinary structures once derived; nothing in the generator knows
+        // they exist.
         .derived_structs(
             DerivedStructs::new("InternalRequest")
                 .with_member(DerivedMember::new(ACCOUNT_ID_FIELD_NAME, ACCOUNT_ID_SHAPE_ID, ACCOUNT_ID_DOCUMENTATION))
+                .with_member(
+                    DerivedMember::new(IS_SERVICE_FIELD_NAME, IS_SERVICE_SHAPE_ID, IS_SERVICE_DOCUMENTATION)
+                        .optional()
+                        .only_for(IAM_IS_SERVICE_API),
+                )
                 .excluding(IAM_NO_INTERNAL_REQUEST_API),
         )
         .build()
