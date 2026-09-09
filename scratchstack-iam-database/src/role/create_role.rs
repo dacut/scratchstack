@@ -40,6 +40,7 @@ impl RequestExecutor for CreateRoleInternalRequest {
             &self.role_name,
             &self.assume_role_policy_document,
             self.description.as_deref(),
+            self.is_service,
             self.max_session_duration,
             self.path.as_deref(),
             self.permissions_boundary.as_deref(),
@@ -58,6 +59,7 @@ pub async fn create_role(
     role_name: &str,
     assume_role_policy_document: &str,
     description: Option<&str>,
+    is_service: Option<bool>,
     max_session_duration: Option<i32>,
     path: Option<&str>,
     permissions_boundary: Option<&str>,
@@ -109,8 +111,8 @@ pub async fn create_role(
             INSERT INTO iam.roles(
                 account_id, role_id, path, role_name_lower, role_name_cased,
                 permissions_boundary_managed_policy_id, description, assume_role_policy_document,
-                max_session_duration)
-            VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                max_session_duration, is_service)
+            VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING created_at
         "})
     .bind(account_id)
@@ -122,6 +124,9 @@ pub async fn create_role(
     .bind(description)
     .bind(assume_role_policy_document)
     .bind(max_session_duration)
+    // The column is NOT NULL: a role created without the flag is not service-owned, so say so
+    // rather than binding the absent flag straight through.
+    .bind(is_service.unwrap_or(false))
     .fetch_one(tx.as_mut())
     .await
     {

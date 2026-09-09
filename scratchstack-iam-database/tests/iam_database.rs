@@ -369,6 +369,7 @@ async fn subtest_create_role(pool: &PgPool) {
     role::test_create_role_invalid_max_session_duration();
     role::test_create_role_nonexistent_account(pool).await;
     role::test_create_role_nonexistent_permissions_boundary(pool).await;
+    role::test_create_role_is_service(pool).await;
 }
 
 /// AssumeRoleRequest
@@ -735,6 +736,8 @@ async fn subtest_update_role(pool: &PgPool) {
     role::test_update_role_max_session_duration_only(pool).await;
     role::test_update_role_both_fields(pool).await;
     role::test_update_role_no_fields(pool).await;
+    role::test_update_role_is_service_only(pool).await;
+    role::test_update_role_no_fields_keeps_is_service(pool).await;
     role::test_update_role_nonexistent(pool).await;
     role::test_update_role_invalid_max_session_duration();
     role::test_update_role_invalid_name();
