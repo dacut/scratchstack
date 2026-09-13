@@ -147,7 +147,7 @@ mod tests {
     /// external id, one trusting the account only from a CIDR block, one trusting a second
     /// account), and a managed policy usable as a session policy.
     const ASSUME_ROLE_TEST_DATA: &str = r#"
-        INSERT INTO iam.partition(partition) VALUES ('aws');
+        INSERT INTO cloud.partition(partition) VALUES ('aws');
 
         INSERT INTO iam.accounts(account_id, email, alias) VALUES
         ('123456789012', 'sts-test@example.com', 'sts-test'),

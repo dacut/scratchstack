@@ -1,7 +1,6 @@
 //! Partition database operations.
 use {
     crate::{RequestExecutor, internal_failure},
-    indoc::indoc,
     scratchstack_arn::utils::validate_partition,
     scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
@@ -29,7 +28,7 @@ pub async fn get_current_partition(
     tx: &mut PgTransaction<'_>,
     request_id: RequestId,
 ) -> Result<GetCurrentPartitionResponse, IamError> {
-    let result = match query("SELECT partition FROM iam.partition").fetch_all(tx.as_mut()).await {
+    let result = match query("SELECT partition FROM cloud.partition").fetch_all(tx.as_mut()).await {
         Ok(result) => result,
         Err(e) => {
             return Err(internal_failure!(request_id; "Failed to query partition from database: {e}").into());
@@ -105,21 +104,19 @@ pub async fn set_current_partition(
     }
 
     // Remove any partitions with differing names.
-    if let Err(e) =
-        query("DELETE FROM iam.partition WHERE partition != $1").bind(req.partition.clone()).execute(tx.as_mut()).await
+    if let Err(e) = query("DELETE FROM cloud.partition WHERE partition != $1")
+        .bind(req.partition.clone())
+        .execute(tx.as_mut())
+        .await
     {
         return Err(internal_failure!(request_id; "Failed to delete old partitions from database: {e}").into());
     }
 
     // Insert the new partition if it doesn't already exist.
-    if let Err(e) = query(indoc! {"
-            INSERT INTO iam.partition (partition)
-            VALUES ($1)
-            ON CONFLICT DO NOTHING
-        "})
-    .bind(req.partition.clone())
-    .execute(tx.as_mut())
-    .await
+    if let Err(e) = query("INSERT INTO cloud.partition (partition) VALUES ($1) ON CONFLICT DO NOTHING")
+        .bind(req.partition.clone())
+        .execute(tx.as_mut())
+        .await
     {
         return Err(internal_failure!(request_id; "Failed to insert partition into database: {e}").into());
     }
