@@ -1,0 +1,61 @@
+//! Tests for the Cloud database model and related functionality.
+//!
+//! The body of each test lives in a submodule under [tests/cloud/](cloud/); this file orchestrates
+//! a single end-to-end run because the test database is stateful between calls, in the same way
+//! [tests/iam.rs](iam.rs) does for the IAM model.
+#![cfg(feature = "utils")]
+#![warn(clippy::all)]
+#![allow(clippy::manual_range_contains)]
+#![deny(
+    missing_docs,
+    rustdoc::bare_urls,
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_codeblock_attributes,
+    rustdoc::invalid_html_tags,
+    rustdoc::private_intra_doc_links,
+    rustdoc::unescaped_backticks
+)]
+#![cfg_attr(doc, feature(doc_cfg))]
+
+use {
+    scratchstack_central_database::{migrate::MIGRATOR, utils::TempDatabase},
+    sqlx::{PgPool, raw_sql},
+};
+
+#[path = "cloud/quota.rs"]
+mod quota;
+
+const CLOUD_DATA: &str = include_str!("cloud.sql");
+
+/// Test the features of the cloud database model.
+///
+/// As with the IAM suite, this is one test rather than many: the database is stateful between
+/// calls, and each subtest is an async function awaited in order so that no single poll frame has
+/// to hold every sqlx future at once.
+#[test_log::test(tokio::test)]
+async fn test_cloud_database() {
+    let mut database = TempDatabase::new().await.expect("Failed to create temporary database");
+    database.bootstrap().await.expect("Failed to set up, start, and bootstrap PostgreSQL database");
+    let pool =
+        database.get_scratchstack_pool().await.expect("Failed to get PostgreSQL connection pool for scratchstack user");
+
+    let mut c = pool.acquire().await.expect("Failed to acquire connection from pool");
+    MIGRATOR.run(&mut *c).await.expect("Failed to run database migrations");
+    raw_sql(CLOUD_DATA).execute(&mut *c).await.expect("Failed to load cloud data into database");
+    drop(c);
+
+    subtest_create_quota_definition(&pool).await;
+    subtest_quota_definition_failures(&pool).await;
+}
+
+async fn subtest_create_quota_definition(pool: &PgPool) {
+    quota::test_create_quota_definition(pool).await;
+    quota::test_create_quota_definition_redefines(pool).await;
+}
+
+async fn subtest_quota_definition_failures(pool: &PgPool) {
+    quota::test_create_quota_definition_unknown_service(pool).await;
+    quota::test_create_quota_definition_unknown_unit(pool).await;
+    quota::test_redefine_quota_definition_unknown_unit(pool).await;
+    quota::test_create_quota_definition_contradictory_bounds(pool).await;
+}

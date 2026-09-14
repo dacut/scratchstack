@@ -1,0 +1,67 @@
+[package]
+name = "scratchstack-central-database"
+description = "Central Scratchstack database schema and accessors."
+
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[features]
+default = ["gsk-direct", "utils"]
+gsk-direct = []
+utils = ["dep:postgresql_commands", "dep:postgresql_embedded", "dep:tempfile"]
+
+[dependencies]
+ascii-casing = { workspace = true, features = ["serde"] }
+base32.workspace = true
+base64.workspace = true
+bon.workspace = true
+chrono = { workspace = true, features = ["clock", "serde", "std"] }
+indoc.workspace = true
+log.workspace = true
+pct-str.workspace = true
+postgresql_commands = { workspace = true, optional = true }
+postgresql_embedded = { workspace = true, optional = true, features = [
+    "theseus",
+    "tls-rustls-aws-lc-rs",
+    "tokio",
+] }
+rand = { workspace = true, features = ["std", "std_rng"] }
+regex.workspace = true
+scratchstack-arn = { workspace = true, features = ["iam"] }
+scratchstack-aspen.workspace = true
+scratchstack-aws-principal.workspace = true
+scratchstack-aws-signature = { workspace = true, features = ["unstable"] }
+scratchstack-core.workspace = true
+scratchstack-hakari = { workspace = true }
+scratchstack-pagination.workspace = true
+scratchstack-shapes-cloud.workspace = true
+scratchstack-shapes-iam.workspace = true
+scratchstack-shapes-sts.workspace = true
+serde = { workspace = true, features = ["derive"] }
+sqlx = { workspace = true, features = [
+    "bigdecimal",
+    "chrono",
+    "macros",
+    "migrate",
+    "postgres",
+    "runtime-tokio",
+    "tls-rustls",
+] }
+tempfile = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["macros", "rt"] }
+tower.workspace = true
+uuid.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+bigdecimal.workspace = true
+env_logger.workspace = true
+pretty_assertions.workspace = true
+rand = { workspace = true, features = ["thread_rng"] }
+regex.workspace = true
+serde_json.workspace = true
+test-log.workspace = true

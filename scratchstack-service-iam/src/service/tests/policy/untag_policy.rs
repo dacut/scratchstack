@@ -102,7 +102,7 @@ async fn test_untag_policy_authorization() {
     // still names it. IAM folds tag keys on users and roles only, and treats them as case
     // sensitive on managed policies; folding them here too is deliberate, so that a policy cannot
     // carry two spellings for a case-insensitive aws:ResourceTag lookup to choose between. See
-    // scratchstack_iam_database::policy::tag_policy.
+    // scratchstack_central_database::policy::tag_policy.
     let (principal, session_data) = database.user_identity("SVCUTPBROAD00001", "Broad-Untagger");
     let (status, body) =
         call(&svc_state, principal, session_data, &untag_policy_parameters(Some(&main_policy), &["PROJECT"])).await;

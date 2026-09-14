@@ -21,8 +21,8 @@ use {
     scratchstack_aspen::{AuthorizationResult, Context, Decision, PolicySet, PolicySource, authorize},
     scratchstack_aws_principal::{IamResourceType, Principal, SessionData, SessionValue},
     scratchstack_aws_signature::SessionPolicies,
+    scratchstack_central_database::authz::{get_policies_by_ids, get_policies_for_role, get_policies_for_user},
     scratchstack_core::RequestId,
-    scratchstack_iam_database::authz::{get_policies_by_ids, get_policies_for_role, get_policies_for_user},
     scratchstack_shapes_iam::error_meta::Error as IamError,
     sqlx::postgres::PgTransaction,
 };

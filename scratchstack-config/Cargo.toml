@@ -19,8 +19,8 @@ log.workspace = true
 rustls.workspace = true
 rustls-pemfile.workspace = true
 rustls-pki-types.workspace = true
-scratchstack-arn = { path = "../scratchstack-arn" }
-scratchstack-hakari = { path = "../scratchstack-hakari" }
+scratchstack-arn.workspace = true
+scratchstack-hakari.workspace = true
 serde = { workspace = true, features = ["derive"] }
 sqlx = { workspace = true, features = [
     "all-databases",

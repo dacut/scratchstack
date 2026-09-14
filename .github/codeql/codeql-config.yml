@@ -1,4 +1,4 @@
 paths-ignore:
-  - scratchstack-iam-database/tests/
+  - scratchstack-central-database/tests/
   - scratchstack-bootstrap/src/tests.rs
   - generate-env

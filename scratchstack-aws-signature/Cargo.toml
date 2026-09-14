@@ -46,13 +46,11 @@ rand.workspace = true
 regex.workspace = true
 # zeroize: scrub the hash state when it drops; HMAC's key-derived states are SHA-256 states.
 sha2 = { workspace = true, features = ["zeroize"] }
-scratchstack-arn.path = "../scratchstack-arn"
-scratchstack-aspen.path = "../scratchstack-aspen"
-scratchstack-aws-principal = { path = "../scratchstack-aws-principal", features = [
-    "serde",
-] }
-scratchstack-core = { path = "../scratchstack-core", default-features = false }
-scratchstack-hakari = { path = "../scratchstack-hakari" }
+scratchstack-arn.workspace = true
+scratchstack-aspen.workspace = true
+scratchstack-aws-principal = { workspace = true, features = ["serde"] }
+scratchstack-core = { workspace = true, default-features = false }
+scratchstack-hakari.workspace = true
 serde = { workspace = true, features = ["derive"] }
 subtle.workspace = true
 tokio = { workspace = true, optional = true, features = ["io-util"] }

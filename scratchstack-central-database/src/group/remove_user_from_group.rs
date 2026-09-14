@@ -1,0 +1,109 @@
+//! RemoveUserFromGroup database operation
+use {
+    crate::{
+        RequestExecutor, account::validate_account_id, constants::*, group::validate_group_name, iam_internal_failure,
+        user::validate_user_name,
+    },
+    indoc::indoc,
+    scratchstack_core::RequestId,
+    scratchstack_shapes_iam::{
+        error_meta::Error as IamError, operation::RemoveUserFromGroupInternalRequest,
+        types::error::NoSuchEntityException,
+    },
+    sqlx::{Row as _, postgres::PgTransaction, query},
+};
+
+impl RequestExecutor for RemoveUserFromGroupInternalRequest {
+    type Response = ();
+    type Error = IamError;
+
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        remove_user_from_group(tx, &self.account_id, &self.group_name, &self.user_name, request_id).await
+    }
+}
+
+/// Remove a user from a group in the database.
+///
+/// The group and the user must both exist, and a missing one is reported as
+/// `NoSuchEntityException`. The membership itself need not: removing a user that is not in the
+/// group succeeds and changes nothing, as it does on AWS.
+pub async fn remove_user_from_group(
+    tx: &mut PgTransaction<'_>,
+    account_id: &str,
+    group_name: &str,
+    user_name: &str,
+    request_id: RequestId,
+) -> Result<(), IamError> {
+    validate_account_id(account_id, request_id)?;
+    let account_id = match account_id {
+        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
+        account_id => account_id,
+    };
+    validate_group_name(group_name, request_id)?;
+    validate_user_name(user_name, request_id)?;
+
+    // Look up the group_id.
+    let group_id: String = match query(indoc! {"
+            SELECT group_id
+            FROM iam.groups
+            WHERE account_id = $1 AND group_name_lower = $2
+        "})
+    .bind(account_id)
+    .bind(group_name.to_lowercase())
+    .fetch_optional(tx.as_mut())
+    .await
+    {
+        Ok(Some(row)) => row.get(0),
+        Ok(None) => {
+            return Err(NoSuchEntityException::builder()
+                .message(format!("The group with name {group_name} cannot be found."))
+                .request_id(request_id)
+                .build()
+                .into());
+        }
+        Err(e) => {
+            return Err(iam_internal_failure!(request_id; "Failed to look up group in database: {e}").into());
+        }
+    };
+
+    // Look up the user_id.
+    let user_id: String = match query(indoc! {"
+            SELECT user_id
+            FROM iam.users
+            WHERE account_id = $1 AND user_name_lower = $2
+        "})
+    .bind(account_id)
+    .bind(user_name.to_lowercase())
+    .fetch_optional(tx.as_mut())
+    .await
+    {
+        Ok(Some(row)) => row.get(0),
+        Ok(None) => {
+            return Err(NoSuchEntityException::builder()
+                .message(format!("The user with name {user_name} cannot be found."))
+                .request_id(request_id)
+                .build()
+                .into());
+        }
+        Err(e) => {
+            return Err(iam_internal_failure!(request_id; "Failed to look up user in database: {e}").into());
+        }
+    };
+
+    // Delete the membership. A user that is not in the group deletes no row, which is not an
+    // error: AWS treats removing a non-member as a no-op, so a caller reconciling a group's
+    // membership need not know which users are in it first.
+    if let Err(e) = query(indoc! {"
+            DELETE FROM iam.group_memberships
+            WHERE group_id = $1 AND user_id = $2
+        "})
+    .bind(&group_id)
+    .bind(&user_id)
+    .execute(tx.as_mut())
+    .await
+    {
+        return Err(iam_internal_failure!(request_id; "Failed to remove user from group in database: {e}").into());
+    }
+
+    Ok(())
+}

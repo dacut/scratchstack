@@ -1,0 +1,170 @@
+//! ListAccessKeys database operation
+use {
+    crate::{
+        RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, decrypt_pagination_token,
+        iam_internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, user::validate_user_name,
+    },
+    indoc::indoc,
+    scratchstack_core::RequestId,
+    scratchstack_shapes_iam::{
+        error_meta::Error as IamError,
+        operation::{ListAccessKeysInternalRequest, ListAccessKeysResponse},
+        types::{
+            AccessKeyMetadata, StatusType,
+            error::{NoSuchEntityException, ValidationError},
+        },
+    },
+    serde::{Deserialize, Serialize},
+    sqlx::{FromRow, QueryBuilder, postgres::PgTransaction, query_as},
+};
+
+impl RequestExecutor for ListAccessKeysInternalRequest {
+    type Response = ListAccessKeysResponse;
+    type Error = IamError;
+
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        list_access_keys(
+            tx,
+            &self.account_id,
+            self.user_name.as_deref(),
+            self.marker.as_deref(),
+            self.max_items,
+            request_id,
+        )
+        .await
+    }
+}
+
+/// The marker innards for a ListAccessKeys operation.
+#[derive(Deserialize, Serialize)]
+struct ListAccessKeysMarker {
+    next_access_key_id: String,
+}
+
+/// The rows returned by the ListAccessKeys query.
+#[derive(FromRow)]
+struct ListAccessKeysRow {
+    access_key_id: String,
+    enabled: bool,
+    created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(FromRow)]
+struct UserRow {
+    user_id: String,
+    user_name_cased: String,
+}
+
+/// List the access keys for a user. The user name is required by this implementation because
+/// there is no caller identity to fall back to.
+pub async fn list_access_keys(
+    tx: &mut PgTransaction<'_>,
+    account_id: &str,
+    user_name: Option<&str>,
+    marker: Option<&str>,
+    max_items: Option<i32>,
+    request_id: RequestId,
+) -> Result<ListAccessKeysResponse, IamError> {
+    validate_account_id(account_id, request_id)?;
+    let account_id = match account_id {
+        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
+        account_id => account_id,
+    };
+    let user_name = match user_name {
+        Some(name) => name,
+        None => {
+            return Err(ValidationError::builder()
+                .message("UserName is required for ListAccessKeys in this implementation.")
+                .request_id(request_id)
+                .build()
+                .into());
+        }
+    };
+    validate_user_name(user_name, request_id)?;
+    let max_items = constrain_max_items(max_items, request_id)?;
+    let partition = get_current_partition_or_fail(tx, request_id).await?;
+
+    let user_info: Option<UserRow> = query_as(indoc! {"
+            SELECT user_id, user_name_cased
+            FROM iam.users
+            WHERE account_id = $1 AND user_name_lower = $2
+        "})
+    .bind(account_id)
+    .bind(user_name.to_lowercase())
+    .fetch_optional(tx.as_mut())
+    .await
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to query user from database: {e}"))?;
+
+    let Some(user_info) = user_info else {
+        return Err(NoSuchEntityException::builder()
+            .message(format!("The user with name {user_name} cannot be found."))
+            .request_id(request_id)
+            .build()
+            .into());
+    };
+    let user_id = user_info.user_id;
+    let user_name = user_info.user_name_cased;
+    let paginator = make_iam_paginator(&partition, OP_LIST_ACCESS_KEYS, request_id)?;
+
+    let mut sql = QueryBuilder::new(indoc! {"
+        SELECT access_key_id, enabled, created_at
+        FROM iam.user_credentials
+        WHERE user_id = "});
+    sql.push_bind(user_id);
+
+    if let Some(marker) = marker {
+        let m: ListAccessKeysMarker =
+            decrypt_pagination_token(&paginator, marker, OP_LIST_ACCESS_KEYS, request_id).await?;
+        sql.push("\nAND access_key_id >= ");
+        sql.push_bind(m.next_access_key_id);
+    }
+
+    sql.push("\nORDER BY access_key_id ASC LIMIT ");
+    sql.push_bind(max_items as i32 + 1);
+
+    let rows = sql
+        .build_query_as::<ListAccessKeysRow>()
+        .fetch_all(tx.as_mut())
+        .await
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to fetch user access keys from database: {e}"))?;
+
+    let mut results: Vec<AccessKeyMetadata> = Vec::with_capacity(rows.len().min(max_items));
+    let mut next_marker = None;
+
+    for row in rows.into_iter() {
+        if results.len() == max_items {
+            next_marker = Some(
+                paginator
+                    .encrypt_token(&ListAccessKeysMarker {
+                        next_access_key_id: row.access_key_id,
+                    })
+                    .await
+                    .map_err(
+                        |e| iam_internal_failure!(request_id; "Failed to encrypt pagination token for ListAccessKeys: {e}"),
+                    )?,
+            );
+            break;
+        }
+
+        let metadata = AccessKeyMetadata::builder()
+            .access_key_id(format!("AKIA{}", row.access_key_id))
+            .create_date(row.created_at)
+            .status(if row.enabled {
+                StatusType::Active
+            } else {
+                StatusType::Inactive
+            })
+            .user_name(user_name.to_string())
+            .build()
+            .map_err(|e| iam_internal_failure!(request_id; "Failed to construct AccessKeyMetadata: {e}"))?;
+        results.push(metadata);
+    }
+
+    let mut builder = ListAccessKeysResponse::builder();
+    builder = builder.set_access_key_metadata(results);
+    if let Some(next_marker) = next_marker {
+        builder = builder.is_truncated(true).marker(next_marker);
+    }
+
+    builder.build().map_err(|e| iam_internal_failure!(request_id; "Failed to build ListAccessKeysResponse: {e}").into())
+}

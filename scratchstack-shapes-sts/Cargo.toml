@@ -26,10 +26,10 @@ chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true, optional = true, features = ["derive"] }
 log.workspace = true
 regex.workspace = true
-scratchstack-cli-utils = { path = "../scratchstack-cli-utils", optional = true }
-scratchstack-core.path = "../scratchstack-core"
-scratchstack-hakari.path = "../scratchstack-hakari"
-scratchstack-shapes-iam.path = "../scratchstack-shapes-iam"
+scratchstack-cli-utils = { workspace = true, optional = true }
+scratchstack-core.workspace = true
+scratchstack-hakari.workspace = true
+scratchstack-shapes-iam.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 

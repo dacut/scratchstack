@@ -4,6 +4,7 @@ use {
     crate::{ServiceDescriptor, ServiceState, constants::CT_APPLICATION_X_WWW_FORM_URLENCODED},
     log::info,
     scratchstack_aws_signature::{AwsSigV4VerifierLayer, NoSignedHeaderRequirements, XmlErrorMapper},
+    scratchstack_central_database::GetSigningKeyFromDatabase,
     scratchstack_config::ResolvedServiceConfig,
     scratchstack_core::{
         TlsListener,
@@ -14,7 +15,6 @@ use {
             serve::ListenerExt as _,
         },
     },
-    scratchstack_iam_database::GetSigningKeyFromDatabase,
     sqlx::postgres::PgPool,
     std::{net::SocketAddr, sync::Arc},
     tokio::net::TcpListener,

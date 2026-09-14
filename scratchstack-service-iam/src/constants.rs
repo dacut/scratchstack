@@ -34,7 +34,7 @@ pub(crate) const AWS_ACCOUNT_ID_NUMERIC: &str = "000000000000";
 /// Error message reported when a request names something that is not an IAM policy ARN at all.
 ///
 /// This and the two messages below repeat what
-/// [`scratchstack_iam_database::policy`] reports for the same input, so that a policy ARN is
+/// [`scratchstack_central_database::policy`] reports for the same input, so that a policy ARN is
 /// rejected in the same words whether the service or the database is the one that looks at it.
 pub(crate) const MSG_INVALID_POLICY_ARN: &str = "Invalid policy ARN";
 

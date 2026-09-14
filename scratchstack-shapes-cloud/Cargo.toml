@@ -26,9 +26,9 @@ bon.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true, optional = true, features = ["derive"] }
 regex.workspace = true
-scratchstack-cli-utils = { path = "../scratchstack-cli-utils", optional = true }
-scratchstack-core.path = "../scratchstack-core"
-scratchstack-hakari.path = "../scratchstack-hakari"
+scratchstack-cli-utils = { workspace = true, optional = true }
+scratchstack-core.workspace = true
+scratchstack-hakari.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 

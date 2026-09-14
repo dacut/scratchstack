@@ -1,0 +1,101 @@
+//! DeleteAccessKey database operation
+use {
+    crate::{
+        RequestExecutor,
+        account::validate_account_id,
+        constants::*,
+        iam_internal_failure,
+        user::{validate_access_key_id, validate_user_name},
+    },
+    indoc::indoc,
+    scratchstack_core::RequestId,
+    scratchstack_shapes_iam::{
+        error_meta::Error as IamError, operation::DeleteAccessKeyInternalRequest, types::error::NoSuchEntityException,
+    },
+    sqlx::{Row as _, postgres::PgTransaction, query},
+};
+
+impl RequestExecutor for DeleteAccessKeyInternalRequest {
+    type Response = ();
+    type Error = IamError;
+
+    async fn execute(&self, tx: &mut PgTransaction<'_>, request_id: RequestId) -> Result<Self::Response, Self::Error> {
+        delete_access_key(tx, &self.account_id, self.user_name.as_deref(), &self.access_key_id, request_id).await
+    }
+}
+
+/// Delete an access key. `user_name` is optional; when provided, the access key must belong to
+/// the named user (otherwise NoSuchEntity is returned).
+pub async fn delete_access_key(
+    tx: &mut PgTransaction<'_>,
+    account_id: &str,
+    user_name: Option<&str>,
+    access_key_id: &str,
+    request_id: RequestId,
+) -> Result<(), IamError> {
+    validate_account_id(account_id, request_id)?;
+    let account_id = match account_id {
+        AWS_ACCOUNT_ID => AWS_ACCOUNT_ID_NUMERIC,
+        account_id => account_id,
+    };
+    if let Some(name) = user_name {
+        validate_user_name(name, request_id)?;
+    }
+    validate_access_key_id(access_key_id, request_id)?;
+    let access_key_id_stored = &access_key_id[4..];
+
+    let row = query(indoc! {"
+            SELECT u.user_name_lower, u.account_id
+            FROM iam.user_credentials uc
+            INNER JOIN iam.users u ON uc.user_id = u.user_id
+            WHERE uc.access_key_id = $1
+        "})
+    .bind(access_key_id_stored)
+    .fetch_optional(tx.as_mut())
+    .await
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to look up access key in database: {e}"))?;
+
+    let (key_user_name_lower, key_account_id): (String, String) = match row {
+        Some(row) => (row.get(0), row.get(1)),
+        None => {
+            return Err(NoSuchEntityException::builder()
+                .message(format!("The access key with id {access_key_id} cannot be found."))
+                .request_id(request_id)
+                .build()
+                .into());
+        }
+    };
+
+    if key_account_id != account_id {
+        return Err(NoSuchEntityException::builder()
+            .message(format!("The access key with id {access_key_id} cannot be found."))
+            .request_id(request_id)
+            .build()
+            .into());
+    }
+    if let Some(name) = user_name
+        && name.to_lowercase() != key_user_name_lower
+    {
+        return Err(NoSuchEntityException::builder()
+            .message(format!("The access key with id {access_key_id} cannot be found."))
+            .request_id(request_id)
+            .build()
+            .into());
+    }
+
+    let result = query("DELETE FROM iam.user_credentials WHERE access_key_id = $1")
+        .bind(access_key_id_stored)
+        .execute(tx.as_mut())
+        .await
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to delete access key from database: {e}"))?;
+
+    if result.rows_affected() == 0 {
+        return Err(NoSuchEntityException::builder()
+            .message(format!("The access key with id {access_key_id} cannot be found."))
+            .request_id(request_id)
+            .build()
+            .into());
+    }
+
+    Ok(())
+}

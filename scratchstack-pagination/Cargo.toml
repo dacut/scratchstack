@@ -18,7 +18,7 @@ chrono = { workspace = true, features = ["now"] }
 lru.workspace = true
 postcard = { workspace = true, features = ["use-std"] }
 rand = { workspace = true, features = ["thread_rng"] }
-scratchstack-hakari = { path = "../scratchstack-hakari" }
+scratchstack-hakari.workspace = true
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["sync"] }
 tower = { workspace = true, features = ["util"] }

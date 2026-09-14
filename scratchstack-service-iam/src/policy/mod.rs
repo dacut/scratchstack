@@ -29,14 +29,14 @@ use {
     crate::{constants::*, service::internal_failure},
     pct_str::{PctString, UriReserved},
     scratchstack_arn::{Arn, IamResourceArn},
+    scratchstack_central_database::{
+        partition::get_current_partition_or_fail,
+        policy::{get_policy as read_policy, validate_policy_name},
+    },
     scratchstack_core::{
         RequestId,
         axum::{body::Body, response::Response},
         response::Responder as _,
-    },
-    scratchstack_iam_database::{
-        partition::get_current_partition_or_fail,
-        policy::{get_policy as read_policy, validate_policy_name},
     },
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -122,7 +122,7 @@ pub(crate) async fn policy_arn(
 /// An operation naming a managed policy by ARN needs that ARN as an [`Arn`] before it can do
 /// anything else: it is the resource the request is authorized against, and it is what says which
 /// account the policy belongs to. The checks here are the ones
-/// [`scratchstack_iam_database::policy`] makes of the same ARN, repeated so that an operation
+/// [`scratchstack_central_database::policy`] makes of the same ARN, repeated so that an operation
 /// that never reaches the database -- because the ARN names a policy outside the caller's reach
 /// -- rejects a malformed one in the same words as one that does.
 ///

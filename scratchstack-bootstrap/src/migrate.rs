@@ -2,7 +2,7 @@
 use {
     crate::{Cli, MSG_INTERNAL_FAILURE, Runnable},
     clap::Args,
-    scratchstack_iam_database::migrate::MIGRATOR,
+    scratchstack_central_database::migrate::MIGRATOR,
     scratchstack_shapes_iam::{error_meta::Error as IamError, types::error::InternalFailure},
     serde::{Deserialize, Serialize},
     std::ffi::OsString,
@@ -26,7 +26,7 @@ impl Runnable for MigrateCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let conn = args.connect(vars).await?;
+        let conn = args.connect::<_, Self::Error>(vars).await?;
 
         if let Some(downgrade_to) = self.downgrade_to {
             MIGRATOR.undo(&conn, downgrade_to).await.map_err(|e| {

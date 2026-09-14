@@ -2543,16 +2543,18 @@ dependencies = [
 name = "scratchstack-bootstrap"
 version = "0.12.0"
 dependencies = [
+ "bigdecimal",
  "chrono",
  "clap",
  "env_logger",
  "log",
  "pretty_assertions",
  "rpassword",
+ "scratchstack-central-database",
  "scratchstack-cli-utils",
  "scratchstack-core",
  "scratchstack-hakari",
- "scratchstack-iam-database",
+ "scratchstack-shapes-cloud",
  "scratchstack-shapes-iam",
  "scratchstack-shapes-sts",
  "serde",
@@ -2561,6 +2563,46 @@ dependencies = [
  "test-log",
  "tokio",
  "whoami",
+]
+
+[[package]]
+name = "scratchstack-central-database"
+version = "0.12.0"
+dependencies = [
+ "ascii-casing",
+ "base32",
+ "base64 0.23.1",
+ "bigdecimal",
+ "bon",
+ "chrono",
+ "env_logger",
+ "indoc",
+ "log",
+ "pct-str",
+ "postgresql_commands",
+ "postgresql_embedded",
+ "pretty_assertions",
+ "rand",
+ "regex",
+ "scratchstack-arn",
+ "scratchstack-aspen",
+ "scratchstack-aws-principal",
+ "scratchstack-aws-signature",
+ "scratchstack-core",
+ "scratchstack-hakari",
+ "scratchstack-pagination",
+ "scratchstack-shapes-cloud",
+ "scratchstack-shapes-iam",
+ "scratchstack-shapes-sts",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "test-log",
+ "tokio",
+ "tower",
+ "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -2699,44 +2741,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "scratchstack-iam-database"
-version = "0.12.0"
-dependencies = [
- "ascii-casing",
- "base32",
- "base64 0.23.1",
- "bon",
- "chrono",
- "env_logger",
- "indoc",
- "log",
- "pct-str",
- "postgresql_commands",
- "postgresql_embedded",
- "pretty_assertions",
- "rand",
- "regex",
- "scratchstack-arn",
- "scratchstack-aspen",
- "scratchstack-aws-principal",
- "scratchstack-aws-signature",
- "scratchstack-core",
- "scratchstack-hakari",
- "scratchstack-pagination",
- "scratchstack-shapes-iam",
- "scratchstack-shapes-sts",
- "serde",
- "serde_json",
- "sqlx",
- "tempfile",
- "test-log",
- "tokio",
- "tower",
- "uuid",
- "zeroize",
-]
-
-[[package]]
 name = "scratchstack-pagination"
 version = "0.12.0"
 dependencies = [
@@ -2771,10 +2775,10 @@ dependencies = [
  "scratchstack-aspen",
  "scratchstack-aws-principal",
  "scratchstack-aws-signature",
+ "scratchstack-central-database",
  "scratchstack-config",
  "scratchstack-core",
  "scratchstack-hakari",
- "scratchstack-iam-database",
  "scratchstack-shapes-iam",
  "sqlx",
  "tokio",
@@ -2794,10 +2798,10 @@ dependencies = [
  "scratchstack-aspen",
  "scratchstack-aws-principal",
  "scratchstack-aws-signature",
+ "scratchstack-central-database",
  "scratchstack-config",
  "scratchstack-core",
  "scratchstack-hakari",
- "scratchstack-iam-database",
  "scratchstack-service-common",
  "scratchstack-shapes-iam",
  "serde_urlencoded",
@@ -2820,9 +2824,9 @@ dependencies = [
  "scratchstack-aspen",
  "scratchstack-aws-principal",
  "scratchstack-aws-signature",
+ "scratchstack-central-database",
  "scratchstack-core",
  "scratchstack-hakari",
- "scratchstack-iam-database",
  "scratchstack-service-common",
  "scratchstack-shapes-iam",
  "scratchstack-shapes-sts",
@@ -3182,6 +3186,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05b44e85bf579a8eeb4ceaa77a3a523baf2bf0e9bac7e40f405d537b5d2d5ccb"
 dependencies = [
  "base64 0.22.1",
+ "bigdecimal",
  "bytes",
  "cfg-if",
  "chrono",
@@ -3257,6 +3262,7 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90b8020fe17c5f2c245bfa2505d7ef59c5604839527c740266ad2214acebea27"
 dependencies = [
+ "bigdecimal",
  "bitflags 2.13.1",
  "byteorder",
  "bytes",
@@ -3286,6 +3292,7 @@ checksum = "87a2bdd6e83f6b3ea525ca9fee568030508b58355a43d0b2c1674d5f79dcd65e"
 dependencies = [
  "atoi",
  "base64 0.22.1",
+ "bigdecimal",
  "bitflags 2.13.1",
  "byteorder",
  "chrono",
@@ -3302,6 +3309,7 @@ dependencies = [
  "log",
  "md-5",
  "memchr",
+ "num-bigint",
  "rand",
  "serde",
  "serde_json",

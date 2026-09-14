@@ -107,6 +107,7 @@ mod tests {
         http_body_util::BodyExt as _,
         pretty_assertions::assert_eq,
         scratchstack_aws_principal::{Principal, RootUser, SessionData, SessionValue, User},
+        scratchstack_central_database::{RequestExecutor as _, migrate::MIGRATOR, utils::TempDatabase},
         scratchstack_core::{
             RequestId,
             axum::{
@@ -116,7 +117,6 @@ mod tests {
                 response::Response,
             },
         },
-        scratchstack_iam_database::{RequestExecutor as _, migrate::MIGRATOR, utils::TempDatabase},
         scratchstack_shapes_iam::operation::CreateSessionTokenEncryptionKeyRequest,
         sqlx::{postgres::PgPoolOptions, raw_sql},
         std::{

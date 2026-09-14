@@ -21,11 +21,11 @@ clap = { workspace = true, features = ["derive"] }
 env_logger.workspace = true
 futures.workspace = true
 log.workspace = true
-scratchstack-config.path = "../scratchstack-config"
-scratchstack-hakari = { path = "../scratchstack-hakari" }
-scratchstack-service-common.path = "../scratchstack-service-common"
-scratchstack-service-iam = { path = "../scratchstack-service-iam", optional = true }
-scratchstack-service-sts = { path = "../scratchstack-service-sts", optional = true }
+scratchstack-config.workspace = true
+scratchstack-hakari.workspace = true
+scratchstack-service-common.workspace = true
+scratchstack-service-iam = { workspace = true, optional = true }
+scratchstack-service-sts = { workspace = true, optional = true }
 sqlx = { workspace = true, features = [
     "all-databases",
     "chrono",

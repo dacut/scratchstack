@@ -37,12 +37,12 @@ pub(crate) use {
 use {
     crate::{authz::EntityResource, constants::*, policy::encode_policy_document, service::internal_failure},
     scratchstack_arn::Arn,
+    scratchstack_central_database::{RequestExecutor as _, partition::get_current_partition_or_fail},
     scratchstack_core::{
         RequestId,
         axum::{body::Body, response::Response},
         response::Responder as _,
     },
-    scratchstack_iam_database::{RequestExecutor as _, partition::get_current_partition_or_fail},
     scratchstack_shapes_iam::{error_meta::Error as IamError, operation::GetRoleInternalRequest, types::Role},
     sqlx::postgres::PgTransaction,
     std::str::FromStr as _,

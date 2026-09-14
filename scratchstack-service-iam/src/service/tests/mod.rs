@@ -5,6 +5,7 @@ use {
     pct_str::PctStr,
     scratchstack_aws_principal::{AssumedRole, Principal, RootUser, SessionData, SessionValue, User},
     scratchstack_aws_signature::SessionPolicies,
+    scratchstack_central_database::{migrate::MIGRATOR, utils::TempDatabase},
     scratchstack_config::{ForwardedForConfig, Resolvable as _},
     scratchstack_core::{
         RequestId,
@@ -15,7 +16,6 @@ use {
             response::Response,
         },
     },
-    scratchstack_iam_database::{migrate::MIGRATOR, utils::TempDatabase},
     sqlx::{AssertSqlSafe, Row as _, query, raw_sql},
     std::{
         net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},

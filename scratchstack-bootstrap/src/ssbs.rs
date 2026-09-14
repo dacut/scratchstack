@@ -13,6 +13,8 @@
 #![cfg_attr(doc, feature(doc_cfg))]
 
 mod account;
+mod cloud;
+mod error;
 mod group;
 mod migrate;
 mod partition;
@@ -26,11 +28,17 @@ mod user;
 mod tests;
 
 use {
-    crate::{account::*, group::*, partition::*, policy::*, role::*, session_token_encryption_key::*, user::*},
+    crate::{
+        account::*, cloud::*, error::*, group::*, partition::*, policy::*, role::*, session_token_encryption_key::*,
+        user::*,
+    },
     clap::{Parser, Subcommand},
+    scratchstack_central_database::RequestExecutor,
     scratchstack_core::{RequestId, error::ProvideErrorMetadata},
-    scratchstack_iam_database::RequestExecutor,
-    scratchstack_shapes_iam::{error_meta::Error as IamError, types::error::InternalFailure},
+    scratchstack_shapes_cloud::{
+        error_meta::Error as CloudError, types::error::InternalFailure as CloudInternalFailure,
+    },
+    scratchstack_shapes_iam::{error_meta::Error as IamError, types::error::InternalFailure as IamInternalFailure},
     serde::Serialize as _,
     serde_json::ser::{PrettyFormatter, Serializer as JsonSerializer},
     sqlx::{
@@ -75,9 +83,9 @@ trait Runnable {
 #[derive(Debug, Parser)]
 #[command(name = "ssbs", version, about = "Scratchstack database bootstrap utility")]
 struct Cli {
-    /// The subcommand to run
+    /// The service containing the subcommand to run
     #[command(subcommand)]
-    command: Commands,
+    command: ServiceCommands,
 
     /// The database to connect to.
     #[arg(long, env = "PGDATABASE", default_value = "scratchstack_iam")]
@@ -107,8 +115,38 @@ struct Cli {
     force_password_prompt: bool,
 }
 
+/// The service whose subcommand should be run.
 #[derive(Debug, Subcommand)]
-enum Commands {
+enum ServiceCommands {
+    /// Cloud commands.
+    #[command(name = "cloud", subcommand)]
+    Cloud(CloudCommands),
+
+    /// Database commands.
+    #[command(name = "db", subcommand)]
+    Db(DbCommands),
+
+    /// Identity and Access Management (IAM) and Security Token Service (STS) commands.
+    #[command(name = "iam", subcommand)]
+    Iam(IamCommands),
+}
+
+#[derive(Debug, Subcommand)]
+enum CloudCommands {
+    /// Create a new quota definition.
+    #[command(name = "create-quota-definition")]
+    CreateQuotaDefinition(CreateQuotaDefinitionCommand),
+}
+
+#[derive(Debug, Subcommand)]
+enum DbCommands {
+    /// Migrate the database to the latest version or a specified version.
+    #[command(name = "migrate")]
+    Migrate(migrate::MigrateCommand),
+}
+
+#[derive(Debug, Subcommand)]
+enum IamCommands {
     /// Add a user to a group in an account.
     #[command(name = "add-user-to-group")]
     AddUserToGroup(AddUserToGroupInternalCommand),
@@ -347,10 +385,6 @@ enum Commands {
     #[command(name = "list-user-tags")]
     ListUserTags(ListUserTagsInternalCommand),
 
-    /// Migrate the database to the latest version or a specified version.
-    #[command(name = "migrate")]
-    Migrate(migrate::MigrateCommand),
-
     /// Add or replace an inline policy on an IAM group in an account.
     #[command(name = "put-group-policy")]
     PutGroupPolicy(PutGroupPolicyInternalCommand),
@@ -435,89 +469,117 @@ enum Commands {
     UntagUser(UntagUserInternalCommand),
 }
 
-impl Commands {
+impl ServiceCommands {
+    /// Return the AWS-style operation name for the service subcommand this wraps.
+    fn operation_name(&self) -> &'static str {
+        match self {
+            ServiceCommands::Cloud(command) => command.operation_name(),
+            ServiceCommands::Db(command) => command.operation_name(),
+            ServiceCommands::Iam(command) => command.operation_name(),
+        }
+    }
+}
+
+impl CloudCommands {
     /// Return the AWS-style operation name for this command.
     fn operation_name(&self) -> &'static str {
         match self {
-            Commands::AddUserToGroup(_) => "AddUserToGroup",
-            Commands::AssumeRole(_) => "AssumeRole",
-            Commands::AttachGroupPolicy(_) => "AttachGroupPolicy",
-            Commands::AttachRolePolicy(_) => "AttachRolePolicy",
-            Commands::AttachUserPolicy(_) => "AttachUserPolicy",
-            Commands::CreateAccessKey(_) => "CreateAccessKey",
-            Commands::CreateAccount(_) => "CreateAccount",
-            Commands::CreateAccountAlias(_) => "CreateAccountAlias",
-            Commands::CreateGroup(_) => "CreateGroup",
-            Commands::CreatePolicy(_) => "CreatePolicy",
-            Commands::CreatePolicyVersion(_) => "CreatePolicyVersion",
-            Commands::CreateRole(_) => "CreateRole",
-            Commands::CreateSessionTokenEncryptionKey(_) => "CreateSessionTokenEncryptionKey",
-            Commands::CreateUser(_) => "CreateUser",
-            Commands::DeleteAccessKey(_) => "DeleteAccessKey",
-            Commands::DeleteGroup(_) => "DeleteGroup",
-            Commands::DeleteGroupPolicy(_) => "DeleteGroupPolicy",
-            Commands::DeletePolicy(_) => "DeletePolicy",
-            Commands::DeletePolicyVersion(_) => "DeletePolicyVersion",
-            Commands::DeleteRole(_) => "DeleteRole",
-            Commands::DeleteRolePermissionsBoundary(_) => "DeleteRolePermissionsBoundary",
-            Commands::DeleteRolePolicy(_) => "DeleteRolePolicy",
-            Commands::DeleteUser(_) => "DeleteUser",
-            Commands::DeleteUserPermissionsBoundary(_) => "DeleteUserPermissionsBoundary",
-            Commands::DeleteUserPolicy(_) => "DeleteUserPolicy",
-            Commands::DetachGroupPolicy(_) => "DetachGroupPolicy",
-            Commands::DetachRolePolicy(_) => "DetachRolePolicy",
-            Commands::DetachUserPolicy(_) => "DetachUserPolicy",
-            Commands::GetCurrentPartition(_) => "GetCurrentPartition",
-            Commands::GetGroup(_) => "GetGroup",
-            Commands::GetGroupPolicy(_) => "GetGroupPolicy",
-            Commands::GetPolicy(_) => "GetPolicy",
-            Commands::GetPolicyVersion(_) => "GetPolicyVersion",
-            Commands::GetRole(_) => "GetRole",
-            Commands::GetRolePolicy(_) => "GetRolePolicy",
-            Commands::GetSessionTokenEncryptionKey(_) => "GetSessionTokenEncryptionKey",
-            Commands::GetUser(_) => "GetUser",
-            Commands::GetUserPolicy(_) => "GetUserPolicy",
-            Commands::ListAccessKeys(_) => "ListAccessKeys",
-            Commands::ListAccountAliases(_) => "ListAccountAliases",
-            Commands::ListAccounts(_) => "ListAccounts",
-            Commands::ListAttachedGroupPolicies(_) => "ListAttachedGroupPolicies",
-            Commands::ListAttachedRolePolicies(_) => "ListAttachedRolePolicies",
-            Commands::ListAttachedUserPolicies(_) => "ListAttachedUserPolicies",
-            Commands::ListEntitiesForPolicy(_) => "ListEntitiesForPolicy",
-            Commands::ListGroupPolicies(_) => "ListGroupPolicies",
-            Commands::ListGroups(_) => "ListGroups",
-            Commands::ListGroupsForUser(_) => "ListGroupsForUser",
-            Commands::ListPolicies(_) => "ListPolicies",
-            Commands::ListPolicyTags(_) => "ListPolicyTags",
-            Commands::ListPolicyVersions(_) => "ListPolicyVersions",
-            Commands::ListRolePolicies(_) => "ListRolePolicies",
-            Commands::ListRoles(_) => "ListRoles",
-            Commands::ListRoleTags(_) => "ListRoleTags",
-            Commands::ListSessionTokenEncryptionKeys(_) => "ListSessionTokenEncryptionKeys",
-            Commands::ListUserPolicies(_) => "ListUserPolicies",
-            Commands::ListUsers(_) => "ListUsers",
-            Commands::ListUserTags(_) => "ListUserTags",
-            Commands::Migrate(_) => "Migrate",
-            Commands::PutGroupPolicy(_) => "PutGroupPolicy",
-            Commands::PutRolePermissionsBoundary(_) => "PutRolePermissionsBoundary",
-            Commands::PutRolePolicy(_) => "PutRolePolicy",
-            Commands::PutUserPermissionsBoundary(_) => "PutUserPermissionsBoundary",
-            Commands::PutUserPolicy(_) => "PutUserPolicy",
-            Commands::RemoveUserFromGroup(_) => "RemoveUserFromGroup",
-            Commands::SetCurrentPartition(_) => "SetCurrentPartition",
-            Commands::SetDefaultPolicyVersion(_) => "SetDefaultPolicyVersion",
-            Commands::TagPolicy(_) => "TagPolicy",
-            Commands::TagRole(_) => "TagRole",
-            Commands::TagUser(_) => "TagUser",
-            Commands::UntagPolicy(_) => "UntagPolicy",
-            Commands::UntagRole(_) => "UntagRole",
-            Commands::UntagUser(_) => "UntagUser",
-            Commands::UpdateAccessKey(_) => "UpdateAccessKey",
-            Commands::UpdateGroup(_) => "UpdateGroup",
-            Commands::UpdateRole(_) => "UpdateRole",
-            Commands::UpdateRoleDescription(_) => "UpdateRoleDescription",
-            Commands::UpdateSessionTokenEncryptionKey(_) => "UpdateSessionTokenEncryptionKey",
-            Commands::UpdateUser(_) => "UpdateUser",
+            CloudCommands::CreateQuotaDefinition(_) => "CreateQuotaDefinition",
+        }
+    }
+}
+
+impl DbCommands {
+    /// Return the AWS-style operation name for this command.
+    fn operation_name(&self) -> &'static str {
+        match self {
+            DbCommands::Migrate(_) => "Migrate",
+        }
+    }
+}
+
+impl IamCommands {
+    /// Return the AWS-style operation name for this command.
+    fn operation_name(&self) -> &'static str {
+        match self {
+            IamCommands::AddUserToGroup(_) => "AddUserToGroup",
+            IamCommands::AssumeRole(_) => "AssumeRole",
+            IamCommands::AttachGroupPolicy(_) => "AttachGroupPolicy",
+            IamCommands::AttachRolePolicy(_) => "AttachRolePolicy",
+            IamCommands::AttachUserPolicy(_) => "AttachUserPolicy",
+            IamCommands::CreateAccessKey(_) => "CreateAccessKey",
+            IamCommands::CreateAccount(_) => "CreateAccount",
+            IamCommands::CreateAccountAlias(_) => "CreateAccountAlias",
+            IamCommands::CreateGroup(_) => "CreateGroup",
+            IamCommands::CreatePolicy(_) => "CreatePolicy",
+            IamCommands::CreatePolicyVersion(_) => "CreatePolicyVersion",
+            IamCommands::CreateRole(_) => "CreateRole",
+            IamCommands::CreateSessionTokenEncryptionKey(_) => "CreateSessionTokenEncryptionKey",
+            IamCommands::CreateUser(_) => "CreateUser",
+            IamCommands::DeleteAccessKey(_) => "DeleteAccessKey",
+            IamCommands::DeleteGroup(_) => "DeleteGroup",
+            IamCommands::DeleteGroupPolicy(_) => "DeleteGroupPolicy",
+            IamCommands::DeletePolicy(_) => "DeletePolicy",
+            IamCommands::DeletePolicyVersion(_) => "DeletePolicyVersion",
+            IamCommands::DeleteRole(_) => "DeleteRole",
+            IamCommands::DeleteRolePermissionsBoundary(_) => "DeleteRolePermissionsBoundary",
+            IamCommands::DeleteRolePolicy(_) => "DeleteRolePolicy",
+            IamCommands::DeleteUser(_) => "DeleteUser",
+            IamCommands::DeleteUserPermissionsBoundary(_) => "DeleteUserPermissionsBoundary",
+            IamCommands::DeleteUserPolicy(_) => "DeleteUserPolicy",
+            IamCommands::DetachGroupPolicy(_) => "DetachGroupPolicy",
+            IamCommands::DetachRolePolicy(_) => "DetachRolePolicy",
+            IamCommands::DetachUserPolicy(_) => "DetachUserPolicy",
+            IamCommands::GetCurrentPartition(_) => "GetCurrentPartition",
+            IamCommands::GetGroup(_) => "GetGroup",
+            IamCommands::GetGroupPolicy(_) => "GetGroupPolicy",
+            IamCommands::GetPolicy(_) => "GetPolicy",
+            IamCommands::GetPolicyVersion(_) => "GetPolicyVersion",
+            IamCommands::GetRole(_) => "GetRole",
+            IamCommands::GetRolePolicy(_) => "GetRolePolicy",
+            IamCommands::GetSessionTokenEncryptionKey(_) => "GetSessionTokenEncryptionKey",
+            IamCommands::GetUser(_) => "GetUser",
+            IamCommands::GetUserPolicy(_) => "GetUserPolicy",
+            IamCommands::ListAccessKeys(_) => "ListAccessKeys",
+            IamCommands::ListAccountAliases(_) => "ListAccountAliases",
+            IamCommands::ListAccounts(_) => "ListAccounts",
+            IamCommands::ListAttachedGroupPolicies(_) => "ListAttachedGroupPolicies",
+            IamCommands::ListAttachedRolePolicies(_) => "ListAttachedRolePolicies",
+            IamCommands::ListAttachedUserPolicies(_) => "ListAttachedUserPolicies",
+            IamCommands::ListEntitiesForPolicy(_) => "ListEntitiesForPolicy",
+            IamCommands::ListGroupPolicies(_) => "ListGroupPolicies",
+            IamCommands::ListGroups(_) => "ListGroups",
+            IamCommands::ListGroupsForUser(_) => "ListGroupsForUser",
+            IamCommands::ListPolicies(_) => "ListPolicies",
+            IamCommands::ListPolicyTags(_) => "ListPolicyTags",
+            IamCommands::ListPolicyVersions(_) => "ListPolicyVersions",
+            IamCommands::ListRolePolicies(_) => "ListRolePolicies",
+            IamCommands::ListRoles(_) => "ListRoles",
+            IamCommands::ListRoleTags(_) => "ListRoleTags",
+            IamCommands::ListSessionTokenEncryptionKeys(_) => "ListSessionTokenEncryptionKeys",
+            IamCommands::ListUserPolicies(_) => "ListUserPolicies",
+            IamCommands::ListUsers(_) => "ListUsers",
+            IamCommands::ListUserTags(_) => "ListUserTags",
+            IamCommands::PutGroupPolicy(_) => "PutGroupPolicy",
+            IamCommands::PutRolePermissionsBoundary(_) => "PutRolePermissionsBoundary",
+            IamCommands::PutRolePolicy(_) => "PutRolePolicy",
+            IamCommands::PutUserPermissionsBoundary(_) => "PutUserPermissionsBoundary",
+            IamCommands::PutUserPolicy(_) => "PutUserPolicy",
+            IamCommands::RemoveUserFromGroup(_) => "RemoveUserFromGroup",
+            IamCommands::SetCurrentPartition(_) => "SetCurrentPartition",
+            IamCommands::SetDefaultPolicyVersion(_) => "SetDefaultPolicyVersion",
+            IamCommands::TagPolicy(_) => "TagPolicy",
+            IamCommands::TagRole(_) => "TagRole",
+            IamCommands::TagUser(_) => "TagUser",
+            IamCommands::UntagPolicy(_) => "UntagPolicy",
+            IamCommands::UntagRole(_) => "UntagRole",
+            IamCommands::UntagUser(_) => "UntagUser",
+            IamCommands::UpdateAccessKey(_) => "UpdateAccessKey",
+            IamCommands::UpdateGroup(_) => "UpdateGroup",
+            IamCommands::UpdateRole(_) => "UpdateRole",
+            IamCommands::UpdateRoleDescription(_) => "UpdateRoleDescription",
+            IamCommands::UpdateSessionTokenEncryptionKey(_) => "UpdateSessionTokenEncryptionKey",
+            IamCommands::UpdateUser(_) => "UpdateUser",
         }
     }
 }
@@ -545,9 +607,12 @@ async fn main() {
     }
 }
 
+/// The JSON serializer that command responses are written into.
+type ResponseSerializer<'a> = JsonSerializer<&'a mut Vec<u8>, PrettyFormatter<'static>>;
+
 /// Execute the CLI with the given arguments, environment variables, and stdout writer. This is
 /// separated from the `main` function to allow for easier testing.
-pub(crate) async fn run<I, T, I2, W>(args: I, vars: I2, out: &mut W) -> Result<(), IamError>
+pub(crate) async fn run<I, T, I2, W>(args: I, vars: I2, out: &mut W) -> Result<(), ErrorWrapper>
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
@@ -556,357 +621,420 @@ where
 {
     let cli = Cli::parse_from(args);
     let formatter = PrettyFormatter::with_indent(b"    ");
-    let mut buffer = Vec::new();
-    let mut writer = JsonSerializer::with_formatter(&mut buffer, formatter);
 
-    match &cli.command {
-        Commands::AddUserToGroup(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::AssumeRole(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
+    if let ServiceCommands::Db(command) = &cli.command {
+        boxed_future(|| run_db(&cli, command, vars, out)).await?;
+    } else {
+        let mut buffer = Vec::new();
+        let mut writer = JsonSerializer::with_formatter(&mut buffer, formatter);
+
+        match &cli.command {
+            ServiceCommands::Cloud(command) => boxed_future(|| run_cloud(&cli, command, vars, &mut writer)).await?,
+            ServiceCommands::Db(_) => unreachable!(),
+            ServiceCommands::Iam(command) => boxed_future(|| run_iam(&cli, command, vars, &mut writer)).await?,
+        }
+
+        let buffer = writer.into_inner();
+        if !buffer.is_empty() {
+            writeln!(out, "{}", String::from_utf8_lossy(buffer)).map_err(|e| {
+                log::error!("Failed to write output: {e}");
+                ErrorWrapper::Iam(IamError::InternalFailure(
+                    IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into(),
+                ))
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Execute a cloud subcommand, serializing any response into `writer`.
+async fn run_cloud<I>(
+    cli: &Cli,
+    command: &CloudCommands,
+    vars: I,
+    writer: &mut ResponseSerializer<'_>,
+) -> Result<(), CloudError>
+where
+    I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+{
+    match command {
+        CloudCommands::CreateQuotaDefinition(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                CloudError::InternalFailure(
+                    CloudInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into(),
+                )
             })?
         }
-        Commands::AttachGroupPolicy(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::AttachRolePolicy(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::AttachUserPolicy(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::CreateAccessKey(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::CreateAccount(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::CreateAccountAlias(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::CreateGroup(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::CreatePolicy(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::CreatePolicyVersion(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::CreateRole(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::CreateSessionTokenEncryptionKey(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::CreateUser(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::DeleteAccessKey(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::DeleteGroup(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::DeleteGroupPolicy(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::DeletePolicy(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::DeletePolicyVersion(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::DeleteRole(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::DeleteRolePermissionsBoundary(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::DeleteRolePolicy(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::DeleteUserPermissionsBoundary(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::DeleteUser(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::DeleteUserPolicy(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::DetachGroupPolicy(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::DetachRolePolicy(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::DetachUserPolicy(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::GetCurrentPartition(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::GetGroup(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::GetGroupPolicy(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::GetPolicy(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::GetPolicyVersion(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::GetRole(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::GetRolePolicy(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::GetSessionTokenEncryptionKey(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::GetUser(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::GetUserPolicy(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListAccessKeys(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListAccountAliases(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListAccounts(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListAttachedGroupPolicies(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListAttachedRolePolicies(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListAttachedUserPolicies(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListEntitiesForPolicy(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListGroupPolicies(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListGroups(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListGroupsForUser(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListPolicies(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListPolicyTags(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListPolicyVersions(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListRolePolicies(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListRoles(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListRoleTags(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListSessionTokenEncryptionKeys(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListUserPolicies(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListUsers(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::ListUserTags(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::Migrate(sub) => {
-            boxed_future(|| sub.run(&cli, vars)).await?;
+    }
+
+    Ok(())
+}
+
+/// Execute a database subcommand, serializing any response into `writer`.
+async fn run_db<I, W>(cli: &Cli, command: &DbCommands, vars: I, out: &mut W) -> Result<(), IamError>
+where
+    I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+    W: Write + Send,
+{
+    match command {
+        DbCommands::Migrate(sub) => {
+            boxed_future(|| sub.run(cli, vars)).await?;
             writeln!(out, "Migration completed successfully.").map_err(|e| {
                 log::error!("Failed to write output: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
             })?
         }
-        Commands::PutGroupPolicy(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::PutRolePermissionsBoundary(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::PutRolePolicy(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::PutUserPermissionsBoundary(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::PutUserPolicy(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::RemoveUserFromGroup(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::SetCurrentPartition(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::SetDefaultPolicyVersion(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::TagPolicy(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::TagRole(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::TagUser(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::UntagPolicy(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::UntagRole(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::UpdateAccessKey(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::UpdateGroup(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::UpdateRole(sub) => {
-            let _ = boxed_future(|| sub.run(&cli, vars)).await?;
-        }
-        Commands::UpdateRoleDescription(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::UpdateSessionTokenEncryptionKey(sub) => {
-            let response = boxed_future(|| sub.run(&cli, vars)).await?;
-            response.serialize(&mut writer).map_err(|e| {
-                log::error!("Failed to serialize response: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            })?
-        }
-        Commands::UpdateUser(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
-        Commands::UntagUser(sub) => boxed_future(|| sub.run(&cli, vars)).await?,
     };
 
-    let buffer = writer.into_inner();
-    if !buffer.is_empty() {
-        writeln!(out, "{}", String::from_utf8_lossy(buffer)).map_err(|e| {
-            log::error!("Failed to write output: {e}");
-            IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-        })?;
+    Ok(())
+}
+
+/// Execute an IAM subcommand, serializing any response into `writer`.
+async fn run_iam<I>(
+    cli: &Cli,
+    command: &IamCommands,
+    vars: I,
+    writer: &mut ResponseSerializer<'_>,
+) -> Result<(), IamError>
+where
+    I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+{
+    match command {
+        IamCommands::AddUserToGroup(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::AssumeRole(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::AttachGroupPolicy(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::AttachRolePolicy(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::AttachUserPolicy(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::CreateAccessKey(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::CreateAccount(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::CreateAccountAlias(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::CreateGroup(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::CreatePolicy(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::CreatePolicyVersion(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::CreateRole(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::CreateSessionTokenEncryptionKey(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::CreateUser(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::DeleteAccessKey(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::DeleteGroup(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::DeleteGroupPolicy(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::DeletePolicy(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::DeletePolicyVersion(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::DeleteRole(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::DeleteRolePermissionsBoundary(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::DeleteRolePolicy(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::DeleteUserPermissionsBoundary(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::DeleteUser(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::DeleteUserPolicy(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::DetachGroupPolicy(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::DetachRolePolicy(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::DetachUserPolicy(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::GetCurrentPartition(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::GetGroup(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::GetGroupPolicy(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::GetPolicy(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::GetPolicyVersion(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::GetRole(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::GetRolePolicy(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::GetSessionTokenEncryptionKey(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::GetUser(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::GetUserPolicy(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListAccessKeys(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListAccountAliases(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListAccounts(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListAttachedGroupPolicies(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListAttachedRolePolicies(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListAttachedUserPolicies(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListEntitiesForPolicy(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListGroupPolicies(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListGroups(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListGroupsForUser(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListPolicies(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListPolicyTags(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListPolicyVersions(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListRolePolicies(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListRoles(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListRoleTags(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListSessionTokenEncryptionKeys(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListUserPolicies(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListUsers(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::ListUserTags(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::PutGroupPolicy(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::PutRolePermissionsBoundary(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::PutRolePolicy(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::PutUserPermissionsBoundary(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::PutUserPolicy(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::RemoveUserFromGroup(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::SetCurrentPartition(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::SetDefaultPolicyVersion(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::TagPolicy(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::TagRole(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::TagUser(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::UntagPolicy(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::UntagRole(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::UpdateAccessKey(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::UpdateGroup(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::UpdateRole(sub) => {
+            let _ = boxed_future(|| sub.run(cli, vars)).await?;
+        }
+        IamCommands::UpdateRoleDescription(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::UpdateSessionTokenEncryptionKey(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                IamError::InternalFailure(IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+            })?
+        }
+        IamCommands::UpdateUser(sub) => boxed_future(|| sub.run(cli, vars)).await?,
+        IamCommands::UntagUser(sub) => boxed_future(|| sub.run(cli, vars)).await?,
     }
 
     Ok(())
@@ -926,20 +1054,20 @@ pub(crate) async fn execute_in_transaction<R>(
 ) -> Result<R::Response, R::Error>
 where
     R: RequestExecutor + Sync,
-    R::Error: From<IamError>,
+    R::Error: CreateInternalFailure,
 {
     let request_id = RequestId::new();
     let conn = cli.connect(vars).await?;
     let mut tx = conn.begin().await.map_err(|e| {
         log::error!("Failed to begin transaction: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).request_id(request_id).build())
+        <R::Error as CreateInternalFailure>::create_internal_failure(request_id)
     })?;
 
     match request.execute(&mut tx, request_id).await {
         Ok(response) => {
             tx.commit().await.map_err(|e| {
                 log::error!("Failed to commit transaction: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).request_id(request_id).build())
+                <R::Error as CreateInternalFailure>::create_internal_failure(request_id)
             })?;
             Ok(response)
         }
@@ -958,13 +1086,16 @@ impl Cli {
     /// 1. The `username` field in this configuration, if specified.
     /// 2. The `PGUSER` environment variable, if set.
     /// 3. The current system user, as returned by the `whoami` crate.
-    pub(crate) fn get_username(&self) -> Result<String, IamError> {
+    pub(crate) fn get_username<E>(&self) -> Result<String, E>
+    where
+        E: CreateInternalFailure,
+    {
         if let Some(username) = &self.username {
             Ok(username.clone())
         } else {
             whoami::username().map_err(|e| {
                 log::error!("Failed to determine current username: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                <E as CreateInternalFailure>::create_internal_failure(RequestId::new())
             })
         }
     }
@@ -975,11 +1106,13 @@ impl Cli {
     }
 
     /// Get database connection options using the given password (or no password if `None`).
-    pub(crate) fn get_connection_options(&self, password: Option<&str>) -> Result<PgConnectOptions, IamError> {
+    pub(crate) fn get_connection_options<E>(&self, password: Option<&str>) -> Result<PgConnectOptions, E>
+    where
+        E: CreateInternalFailure,
+    {
         let mut opts = PgConnectOptions::new();
         opts = opts.application_name("scratchstack-bootstrap");
-
-        opts = opts.username(&self.get_username()?);
+        opts = opts.username(&self.get_username::<E>()?);
 
         if let Some(pw) = password
             && !pw.is_empty()
@@ -996,30 +1129,31 @@ impl Cli {
         Ok(opts)
     }
 
-    pub(crate) async fn connect<I>(&self, vars: I) -> Result<PgPool, IamError>
+    pub(crate) async fn connect<I, E>(&self, vars: I) -> Result<PgPool, E>
     where
         I: IntoIterator<Item = (OsString, String)> + Send,
+        E: CreateInternalFailure,
     {
         let pool_opts = PgPoolOptions::new().max_connections(1).acquire_timeout(Duration::from_secs(5));
 
         if self.force_password_prompt {
             // -W: always prompt before connecting
-            let username = self.get_username().map(Some).unwrap_or(None);
+            let username = self.get_username::<E>().map(Some).unwrap_or(None);
             let password = prompt_password(username)?;
             let opts = self.get_connection_options(Some(&password))?;
             return pool_opts.connect_with(opts).await.map_err(|e| {
                 log::error!("Failed to connect to database: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                <E as CreateInternalFailure>::create_internal_failure(RequestId::new())
             });
         }
 
         if self.no_password {
             // -w: never prompt; fail if the server requires a password
             let opts = self.get_connection_options(None)?;
-            return pool_opts.connect_with(opts).await.map_err(|e| {
-                log::error!("Failed to connect to database: {e}");
-                IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
-            });
+            return pool_opts
+                .connect_with(opts)
+                .await
+                .map_err(|_e| <E as CreateInternalFailure>::create_internal_failure(RequestId::new()));
         }
 
         // Default (psql-like): use PGPASSWORD if set, otherwise try without a password first.
@@ -1030,24 +1164,27 @@ impl Cli {
         match pool_opts.clone().connect_with(opts).await {
             Ok(pool) => Ok(pool),
             Err(e) if env_password.is_none() && is_auth_error(&e) => {
-                let username = self.get_username().map(Some).unwrap_or(None);
+                let username = self.get_username::<E>().map(Some).unwrap_or(None);
                 let password = prompt_password(username)?;
                 let opts = self.get_connection_options(Some(&password))?;
                 pool_opts.connect_with(opts).await.map_err(|e| {
                     log::error!("Failed to connect to database: {e}");
-                    IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+                    <E as CreateInternalFailure>::create_internal_failure(RequestId::new())
                 })
             }
             Err(e) => {
                 log::error!("Failed to connect to database: {e}");
-                Err(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into())
+                Err(<E as CreateInternalFailure>::create_internal_failure(RequestId::new()))
             }
         }
     }
 }
 
 /// Prompt for a password for the given username.
-pub(crate) fn prompt_password(username: Option<impl AsRef<str>>) -> Result<String, IamError> {
+pub(crate) fn prompt_password<E>(username: Option<impl AsRef<str>>) -> Result<String, E>
+where
+    E: CreateInternalFailure,
+{
     let prompt = if let Some(username) = &username {
         format!("Password for {}: ", username.as_ref())
     } else {
@@ -1056,7 +1193,7 @@ pub(crate) fn prompt_password(username: Option<impl AsRef<str>>) -> Result<Strin
 
     rpassword::prompt_password(&prompt).map_err(|e| {
         log::error!("Failed to prompt for password: {e}");
-        IamError::from(InternalFailure::builder().message(MSG_INTERNAL_FAILURE).build())
+        <E as CreateInternalFailure>::create_internal_failure(RequestId::new())
     })
 }
 

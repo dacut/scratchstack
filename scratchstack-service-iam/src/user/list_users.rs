@@ -6,12 +6,12 @@ use {
     },
     scratchstack_aws_principal::{Principal, SessionData, SessionValue},
     scratchstack_aws_signature::SessionPolicies,
+    scratchstack_central_database::RequestExecutor,
     scratchstack_core::{
         RequestId,
         axum::{body::Body, response::Response},
         response::Responder as _,
     },
-    scratchstack_iam_database::RequestExecutor,
     scratchstack_shapes_iam::{
         action::Action,
         operation::{ListUsersInternalRequest, ListUsersRequest, ListUsersResponseEnvelope},
