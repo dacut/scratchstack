@@ -368,6 +368,65 @@ mod tests {
         structure.members.keys().map(String::as_str).collect()
     }
 
+    /// A model with `CreateUser` and its input structure, and nothing else.
+    fn model_with_create_user() -> SmithyModel {
+        serde_json::from_str(
+            r#"{
+                "smithy": "2.0",
+                "shapes": {
+                    "com.example#CreateUser": {
+                        "type": "operation",
+                        "input": {"target": "com.example#CreateUserRequest"},
+                        "output": {"target": "com.example#CreateUserResponse"}
+                    },
+                    "com.example#CreateUserRequest": {"type": "structure"},
+                    "com.example#CreateUserResponse": {"type": "structure"}
+                }
+            }"#,
+        )
+        .expect("the test model should parse")
+    }
+
+    #[test]
+    fn apply_derives_a_structure_per_operation() {
+        let mut model = model_with_create_user();
+        DerivedStructs::new("InternalRequest")
+            .with_member(DerivedMember::new("account_id", "com.example#accountIdType", "The account."))
+            .apply(&mut model, "com.example");
+
+        let derived = model.get_shape("com.example#CreateUserInternalRequest").expect("CreateUser should derive one");
+        let borrowed = derived.borrow();
+        let Shape::Structure(structure) = &*borrowed else {
+            panic!("the derived shape should be a structure");
+        };
+        assert_eq!(member_names(structure), ["account_id"]);
+    }
+
+    #[test]
+    #[should_panic(expected = "names operation CreateRole, which derives no structure")]
+    fn apply_rejects_a_scoped_member_naming_an_operation_that_derives_nothing() {
+        // The model has no CreateRole, so `only_for(["CreateRole"])` would put the member nowhere.
+        // Silently dropping it is the failure this check exists to prevent.
+        let mut model = model_with_create_user();
+        rule().apply(&mut model, "com.example");
+    }
+
+    #[test]
+    #[should_panic(expected = "names operation CreateUser, which derives no structure")]
+    fn apply_rejects_a_scoped_member_naming_an_excluded_operation() {
+        // Excluding the only operation that would have carried the member leaves it homeless in
+        // exactly the same way, and is the easier mistake to make.
+        let mut model = model_with_create_user();
+        DerivedStructs::new("InternalRequest")
+            .excluding(["CreateUser"])
+            .with_member(
+                DerivedMember::new("is_service", "com.example#booleanType", "Service-owned.")
+                    .optional()
+                    .only_for(["CreateUser"]),
+            )
+            .apply(&mut model, "com.example");
+    }
+
     #[test]
     fn a_scoped_member_lands_only_on_the_operations_it_names() {
         assert_eq!(member_names(&rule().derive(&source(), "CreateRole")), ["account_id", "is_service"]);
