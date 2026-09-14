@@ -5,8 +5,8 @@ use {
         account::validate_account_id,
         constants::*,
         group::{group_arn_resource, is_group_name_unique_violation, validate_group_name},
+        iam_internal_failure,
         id::IamId,
-        internal_failure,
         partition::get_current_partition_or_fail,
         path::validate_path,
     },
@@ -76,13 +76,13 @@ pub async fn create_group(
                     .build()
                     .into());
             }
-            return Err(internal_failure!(request_id; "Failed to insert group into database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to insert group into database: {e}").into());
         }
     };
     let created_at: chrono::DateTime<chrono::Utc> = match result.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to get created_at from database row: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to get created_at from database row: {e}").into());
         }
     };
 
@@ -95,7 +95,7 @@ pub async fn create_group(
     {
         Ok(arn) => arn,
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to construct ARN for new group: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to construct ARN for new group: {e}").into());
         }
     };
 
@@ -106,7 +106,7 @@ pub async fn create_group(
         .group_id(group_id)
         .group_name(group_name.to_string())
         .build()
-        .map_err(|e| internal_failure!(request_id; "Failed to construct group object for new group: {e}"))?;
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to construct group object for new group: {e}"))?;
 
     Ok(CreateGroupResponse::builder().group(group).build().unwrap())
 }

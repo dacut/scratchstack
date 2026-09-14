@@ -1,7 +1,7 @@
 //! TagPolicy database operation
 use {
     crate::{
-        RequestExecutor, internal_failure,
+        RequestExecutor, iam_internal_failure,
         policy::{lookup_managed_policy_id, parse_policy_arn},
         tag::{validate_tag_key, validate_tag_keys_unique, validate_tag_value},
     },
@@ -97,7 +97,7 @@ pub async fn tag_policy(
         .execute(tx.as_mut())
         .await
         {
-            return Err(internal_failure!(request_id; "Failed to insert/update managed policy tag: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to insert/update managed policy tag: {e}").into());
         }
     }
 

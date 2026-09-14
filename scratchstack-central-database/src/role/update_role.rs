@@ -1,6 +1,8 @@
 //! UpdateRole database operation
 use {
-    crate::{RequestExecutor, account::validate_account_id, constants::*, internal_failure, role::validate_role_name},
+    crate::{
+        RequestExecutor, account::validate_account_id, constants::*, iam_internal_failure, role::validate_role_name,
+    },
     indoc::indoc,
     scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
@@ -73,7 +75,7 @@ pub async fn update_role(
         {
             Ok(result) => result,
             Err(e) => {
-                return Err(internal_failure!(request_id; "Failed to update role in database: {e}").into());
+                return Err(iam_internal_failure!(request_id; "Failed to update role in database: {e}").into());
             }
         };
 
@@ -94,7 +96,7 @@ pub async fn update_role(
         .bind(role_name.to_lowercase())
         .fetch_optional(tx.as_mut())
         .await
-        .map_err(|e| internal_failure!(request_id; "Failed to query role in database: {e}"))?;
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to query role in database: {e}"))?;
 
         if result.is_none() {
             return Err(NoSuchEntityException::builder()
@@ -107,5 +109,5 @@ pub async fn update_role(
 
     UpdateRoleResponse::builder()
         .build()
-        .map_err(|e| internal_failure!(request_id; "Failed to build UpdateRoleResponse: {e}").into())
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to build UpdateRoleResponse: {e}").into())
 }

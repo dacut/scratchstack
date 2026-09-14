@@ -3,7 +3,7 @@ use {
     crate::{
         RequestExecutor,
         constants::*,
-        constrain_max_items, decrypt_pagination_token, internal_failure, make_iam_paginator,
+        constrain_max_items, decrypt_pagination_token, iam_internal_failure, make_iam_paginator,
         partition::get_current_partition_or_fail,
         policy::{lookup_managed_policy_id, parse_policy_arn},
     },
@@ -79,7 +79,7 @@ pub async fn list_policy_tags(
         .build_query_as::<ListPolicyTagsRow>()
         .fetch_all(tx.as_mut())
         .await
-        .map_err(|e| internal_failure!(request_id; "Failed to fetch managed policy tags from database: {e}"))?;
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to fetch managed policy tags from database: {e}"))?;
     let mut results = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
 
@@ -92,7 +92,7 @@ pub async fn list_policy_tags(
                     })
                     .await
                     .map_err(
-                        |e| internal_failure!(request_id; "Failed to encrypt pagination token for ListPolicyTags: {e}"),
+                        |e| iam_internal_failure!(request_id; "Failed to encrypt pagination token for ListPolicyTags: {e}"),
                     )?,
             );
             break;
@@ -103,7 +103,7 @@ pub async fn list_policy_tags(
                 .key(row.key_cased)
                 .value(row.value)
                 .build()
-                .map_err(|e| internal_failure!(request_id; "Failed to construct tag object: {e}"))?,
+                .map_err(|e| iam_internal_failure!(request_id; "Failed to construct tag object: {e}"))?,
         );
     }
 
@@ -113,5 +113,5 @@ pub async fn list_policy_tags(
         builder = builder.is_truncated(true).marker(next_marker);
     }
 
-    builder.build().map_err(|e| internal_failure!(request_id; "Failed to build ListPolicyTagsResponse: {e}").into())
+    builder.build().map_err(|e| iam_internal_failure!(request_id; "Failed to build ListPolicyTagsResponse: {e}").into())
 }

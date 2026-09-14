@@ -1,7 +1,7 @@
 //! PutUserPermissionsBoundary database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, internal_failure,
+        RequestExecutor, account::validate_account_id, constants::*, iam_internal_failure,
         policy::get_permissions_boundary_id, user::validate_user_name,
     },
     indoc::indoc,
@@ -56,7 +56,7 @@ pub async fn put_user_permissions_boundary(
         Ok(result) => result,
         Err(e) => {
             return Err(
-                internal_failure!(request_id; "Failed to set user permissions boundary in database: {e}").into()
+                iam_internal_failure!(request_id; "Failed to set user permissions boundary in database: {e}").into()
             );
         }
     };

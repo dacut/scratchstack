@@ -1,7 +1,7 @@
 //! GetSessionTokenEncryptionKey database operation
 use {
     crate::{
-        RequestExecutor, internal_failure, session_token_encryption_key::validate_session_token_encryption_key_id,
+        RequestExecutor, iam_internal_failure, session_token_encryption_key::validate_session_token_encryption_key_id,
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
@@ -51,7 +51,9 @@ pub async fn get_session_token_encryption_key(
     .bind(stek_id_stored)
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to fetch session token encryption key from database: {e}"))?;
+    .map_err(
+        |e| iam_internal_failure!(request_id; "Failed to fetch session token encryption key from database: {e}"),
+    )?;
 
     let row = row.ok_or_else(|| {
         NoSuchEntityException::builder()
@@ -60,8 +62,9 @@ pub async fn get_session_token_encryption_key(
             .build()
     })?;
 
-    let encryption_algorithm = SessionTokenEncryptionAlgorithm::from_str(&row.encryption_algorithm)
-        .map_err(|e| internal_failure!(request_id; "Failed to parse encryption algorithm from database value: {e}"))?;
+    let encryption_algorithm = SessionTokenEncryptionAlgorithm::from_str(&row.encryption_algorithm).map_err(
+        |e| iam_internal_failure!(request_id; "Failed to parse encryption algorithm from database value: {e}"),
+    )?;
 
     let session_token_encryption_key = SessionTokenEncryptionKey {
         session_token_encryption_key_id: stek_id.to_string(),

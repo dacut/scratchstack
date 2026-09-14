@@ -1,7 +1,7 @@
 //! DeleteGroupPolicy database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, group::validate_group_name, internal_failure,
+        RequestExecutor, account::validate_account_id, constants::*, group::validate_group_name, iam_internal_failure,
         policy::validate_policy_name,
     },
     indoc::indoc,
@@ -57,7 +57,7 @@ pub async fn delete_group_policy(
                 .into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to look up group in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to look up group in database: {e}").into());
         }
     };
 
@@ -72,7 +72,9 @@ pub async fn delete_group_policy(
     {
         Ok(result) => result,
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to delete group inline policy from database: {e}").into());
+            return Err(
+                iam_internal_failure!(request_id; "Failed to delete group inline policy from database: {e}").into()
+            );
         }
     };
 

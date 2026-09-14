@@ -1,6 +1,6 @@
 //! DeletePolicy database operation
 use {
-    crate::{RequestExecutor, constants::*, internal_failure, policy::parse_policy_arn},
+    crate::{RequestExecutor, constants::*, iam_internal_failure, policy::parse_policy_arn},
     indoc::indoc,
     scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
@@ -93,7 +93,7 @@ pub async fn delete_policy(
             return Err(NoSuchEntityException::builder().message(message).request_id(request_id).build().into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to query managed policy from database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to query managed policy from database: {e}").into());
         }
     };
 
@@ -125,7 +125,8 @@ pub async fn delete_policy(
         Ok(row) => row,
         Err(e) => {
             return Err(
-                internal_failure!(request_id; "Failed to query DeletePolicy conflict counts from database: {e}").into(),
+                iam_internal_failure!(request_id; "Failed to query DeletePolicy conflict counts from database: {e}")
+                    .into(),
             );
         }
     };
@@ -175,7 +176,7 @@ pub async fn delete_policy(
             return Err(DeleteConflictException::builder().message(message).request_id(request_id).build().into());
         }
 
-        return Err(internal_failure!(request_id; "Failed to delete managed policy from database: {e}").into());
+        return Err(iam_internal_failure!(request_id; "Failed to delete managed policy from database: {e}").into());
     }
 
     Ok(())

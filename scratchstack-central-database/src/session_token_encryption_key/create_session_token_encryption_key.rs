@@ -1,6 +1,6 @@
 //! CreateSessionTokenEncryptionKey database operation
 use {
-    crate::{RequestExecutor, constants::*, id::IamId, internal_failure},
+    crate::{RequestExecutor, constants::*, iam_internal_failure, id::IamId},
     base64::{Engine as _, engine::general_purpose::URL_SAFE},
     chrono::{DateTime, Duration, Utc},
     indoc::indoc,
@@ -90,13 +90,13 @@ pub async fn create_session_token_encryption_key(
     {
         Ok(result) => result,
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to create session token encryption key: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to create session token encryption key: {e}").into());
         }
     };
     let created_at: DateTime<Utc> = match result.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to get created_at from database row: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to get created_at from database row: {e}").into());
         }
     };
 

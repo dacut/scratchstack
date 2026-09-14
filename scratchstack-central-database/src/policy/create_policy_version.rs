@@ -1,6 +1,6 @@
 //! CreatePolicyVersion database operation
 use {
-    crate::{RequestExecutor, constants::*, internal_failure},
+    crate::{RequestExecutor, constants::*, iam_internal_failure},
     indoc::indoc,
     scratchstack_arn::IamResourceArn,
     scratchstack_aspen::Policy as AspenPolicy,
@@ -89,7 +89,7 @@ pub async fn create_policy_version(
             return Err(NoSuchEntityException::builder().message(message).request_id(request_id).build().into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to query managed policy from database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to query managed policy from database: {e}").into());
         }
     };
 
@@ -119,14 +119,14 @@ pub async fn create_policy_version(
         Ok(row) => row,
         Err(e) => {
             return Err(
-                internal_failure!(request_id; "Failed to insert managed policy version into database: {e}").into()
+                iam_internal_failure!(request_id; "Failed to insert managed policy version into database: {e}").into(),
             );
         }
     };
 
     let created_at: chrono::DateTime<chrono::Utc> = version_row
         .try_get(0)
-        .map_err(|e| internal_failure!(request_id; "Failed to get created_at from database row: {e}"))?;
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to get created_at from database row: {e}"))?;
 
     // Update latest_version and update_date (and default_version if set_as_default).
     let update_query = if set_as_default {
@@ -150,7 +150,7 @@ pub async fn create_policy_version(
     };
 
     if let Err(e) = update_query.execute(tx.as_mut()).await {
-        return Err(internal_failure!(request_id; "Failed to update managed policy latest_version: {e}").into());
+        return Err(iam_internal_failure!(request_id; "Failed to update managed policy latest_version: {e}").into());
     }
 
     let version_id = format!("v{new_version}");
@@ -160,7 +160,7 @@ pub async fn create_policy_version(
         .is_default_version(set_as_default)
         .version_id(version_id)
         .build()
-        .map_err(|e| internal_failure!(request_id; "Failed to construct PolicyVersion object: {e}"))?;
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to construct PolicyVersion object: {e}"))?;
 
     Ok(CreatePolicyVersionResponse {
         policy_version: Some(policy_version),

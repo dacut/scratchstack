@@ -2,7 +2,7 @@
 use {
     crate::{
         RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, decrypt_pagination_token,
-        internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, path::validate_path_prefix,
+        iam_internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, path::validate_path_prefix,
         policy::build_policy_arn, role::role_arn_resource,
     },
     chrono::{DateTime, Utc},
@@ -117,7 +117,7 @@ pub async fn list_roles(
         .build_query_as::<ListRolesRow>()
         .fetch_all(tx.as_mut())
         .await
-        .map_err(|e| internal_failure!(request_id; "Failed to fetch roles from database: {e}"))?;
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to fetch roles from database: {e}"))?;
 
     let mut results: Vec<Role> = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -131,7 +131,7 @@ pub async fn list_roles(
                     })
                     .await
                     .map_err(
-                        |e| internal_failure!(request_id; "Failed to encrypt pagination token for ListRoles: {e}"),
+                        |e| iam_internal_failure!(request_id; "Failed to encrypt pagination token for ListRoles: {e}"),
                     )?,
             );
             break;
@@ -143,7 +143,7 @@ pub async fn list_roles(
             .account_id(account_id)
             .resource(role_arn_resource(&row.path, &row.role_name_cased))
             .build()
-            .map_err(|e| internal_failure!(request_id; "Failed to construct ARN for role: {e}"))?;
+            .map_err(|e| iam_internal_failure!(request_id; "Failed to construct ARN for role: {e}"))?;
 
         let permissions_boundary = if let Some(pb_id) = row.permissions_boundary_managed_policy_id.as_deref() {
             // The FK on permissions_boundary_managed_policy_id guarantees the joined row exists,
@@ -155,7 +155,7 @@ pub async fn list_roles(
             ) {
                 (Some(pb_account_id), Some(pb_path), Some(pb_name_cased)) => (pb_account_id, pb_path, pb_name_cased),
                 _ => {
-                    return Err(internal_failure!(request_id; "Role references missing permissions boundary managed policy ID: {pb_id}").into());
+                    return Err(iam_internal_failure!(request_id; "Role references missing permissions boundary managed policy ID: {pb_id}").into());
                 }
             };
 
@@ -169,7 +169,7 @@ pub async fn list_roles(
                     .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                     .build()
                     .map_err(
-                        |e| internal_failure!(request_id; "Failed to construct permissions boundary for role: {e}"),
+                        |e| iam_internal_failure!(request_id; "Failed to construct permissions boundary for role: {e}"),
                     )?,
             )
         } else {
@@ -189,7 +189,7 @@ pub async fn list_roles(
                 .role_name(row.role_name_cased)
                 .set_tags(Vec::<Tag>::new())
                 .build()
-                .map_err(|e| internal_failure!(request_id; "Failed to construct role object: {e}"))?,
+                .map_err(|e| iam_internal_failure!(request_id; "Failed to construct role object: {e}"))?,
         );
     }
 
@@ -199,5 +199,5 @@ pub async fn list_roles(
         builder = builder.is_truncated(true).marker(next_marker);
     }
 
-    builder.build().map_err(|e| internal_failure!(request_id; "Failed to build ListRolesResponse: {e}").into())
+    builder.build().map_err(|e| iam_internal_failure!(request_id; "Failed to build ListRolesResponse: {e}").into())
 }

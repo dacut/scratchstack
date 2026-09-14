@@ -1,7 +1,7 @@
 //! PutRolePermissionsBoundary database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, internal_failure,
+        RequestExecutor, account::validate_account_id, constants::*, iam_internal_failure,
         policy::get_permissions_boundary_id, role::validate_role_name,
     },
     indoc::indoc,
@@ -56,7 +56,7 @@ pub async fn put_role_permissions_boundary(
         Ok(result) => result,
         Err(e) => {
             return Err(
-                internal_failure!(request_id; "Failed to set role permissions boundary in database: {e}").into()
+                iam_internal_failure!(request_id; "Failed to set role permissions boundary in database: {e}").into()
             );
         }
     };

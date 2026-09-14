@@ -1,8 +1,8 @@
 //! GetRolePolicy database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, internal_failure, policy::validate_policy_name,
-        role::validate_role_name,
+        RequestExecutor, account::validate_account_id, constants::*, iam_internal_failure,
+        policy::validate_policy_name, role::validate_role_name,
     },
     indoc::indoc,
     scratchstack_core::RequestId,
@@ -49,7 +49,7 @@ pub async fn get_role_policy(
     .bind(role_name.to_lowercase())
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to look up role in database: {e}"))?;
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to look up role in database: {e}"))?;
 
     let (role_id, role_name_cased): (String, String) = match role_row {
         Some(row) => (row.get(0), row.get(1)),
@@ -71,7 +71,7 @@ pub async fn get_role_policy(
     .bind(policy_name.to_ascii_lowercase())
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to fetch role inline policy from database: {e}"))?;
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to fetch role inline policy from database: {e}"))?;
 
     let (policy_name_cased, policy_document): (String, String) = match policy_row {
         Some(row) => (row.get(0), row.get(1)),
@@ -89,5 +89,5 @@ pub async fn get_role_policy(
         .policy_name(policy_name_cased)
         .policy_document(policy_document)
         .build()
-        .map_err(|e| internal_failure!(request_id; "Failed to build GetRolePolicyResponse: {e}").into())
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to build GetRolePolicyResponse: {e}").into())
 }

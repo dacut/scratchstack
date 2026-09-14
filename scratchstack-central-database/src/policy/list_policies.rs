@@ -2,7 +2,7 @@
 use {
     crate::{
         RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, decrypt_pagination_token,
-        internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, path::validate_path_prefix,
+        iam_internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, path::validate_path_prefix,
         policy::build_policy_arn,
     },
     chrono::{DateTime, Utc},
@@ -174,7 +174,7 @@ pub async fn list_policies(
         .build_query_as::<ListPoliciesRow>()
         .fetch_all(tx.as_mut())
         .await
-        .map_err(|e| internal_failure!(request_id; "Failed to fetch managed policies from database: {e}"))?;
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to fetch managed policies from database: {e}"))?;
 
     let mut results: HashMap<String, Policy> = HashMap::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -189,7 +189,7 @@ pub async fn list_policies(
                     })
                     .await
                     .map_err(
-                        |e| internal_failure!(request_id; "Failed to encrypt pagination token for ListPolicies: {e}"),
+                        |e| iam_internal_failure!(request_id; "Failed to encrypt pagination token for ListPolicies: {e}"),
                     )?,
             );
             break;
@@ -208,7 +208,7 @@ pub async fn list_policies(
             .update_date(row.update_date)
             .build()
             .map_err(
-                |e| internal_failure!(request_id; "Failed to construct Policy object for ListPolicies result: {e}"),
+                |e| iam_internal_failure!(request_id; "Failed to construct Policy object for ListPolicies result: {e}"),
             )?;
         results.insert(row.managed_policy_id, policy);
     }
@@ -240,7 +240,7 @@ pub async fn list_policies(
     .bind(account_id)
     .fetch_all(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to fetch policy attachment counts from database: {e}"))?;
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to fetch policy attachment counts from database: {e}"))?;
     for row in attachment_rows.into_iter() {
         let attachment_count = min(row.attachment_count, i32::MAX as i64) as i32;
 
@@ -265,7 +265,7 @@ pub async fn list_policies(
     .fetch_all(tx.as_mut())
     .await
     .map_err(|e| {
-        internal_failure!(request_id; "Failed to fetch policy permissions boundary usage counts from database: {e}")
+        iam_internal_failure!(request_id; "Failed to fetch policy permissions boundary usage counts from database: {e}")
     })?;
     for row in permissions_boundary_usage_rows.into_iter() {
         let usage_count = min(row.attachment_count, i32::MAX as i64) as i32;

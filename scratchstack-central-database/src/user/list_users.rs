@@ -2,7 +2,7 @@
 use {
     crate::{
         RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, decrypt_pagination_token,
-        internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, path::validate_path_prefix,
+        iam_internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, path::validate_path_prefix,
         policy::build_policy_arn, user::user_arn_resource,
     },
     chrono::{DateTime, Utc},
@@ -112,7 +112,7 @@ pub async fn list_users(
         .build_query_as::<ListUsersRow>()
         .fetch_all(tx.as_mut())
         .await
-        .map_err(|e| internal_failure!(request_id; "Failed to fetch users from database: {e}"))?;
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to fetch users from database: {e}"))?;
     let mut results = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
 
@@ -125,7 +125,7 @@ pub async fn list_users(
                     })
                     .await
                     .map_err(
-                        |e| internal_failure!(request_id; "Failed to encrypt pagination token for ListUsers: {e}"),
+                        |e| iam_internal_failure!(request_id; "Failed to encrypt pagination token for ListUsers: {e}"),
                     )?,
             );
             break;
@@ -137,7 +137,7 @@ pub async fn list_users(
             .account_id(account_id)
             .resource(user_arn_resource(&row.path, &row.user_name_cased))
             .build()
-            .map_err(|e| internal_failure!(request_id; "Failed to construct ARN for user: {e}"))?;
+            .map_err(|e| iam_internal_failure!(request_id; "Failed to construct ARN for user: {e}"))?;
 
         let permissions_boundary = if let Some(pb_id) = row.permissions_boundary_managed_policy_id.as_deref() {
             // The FK on permissions_boundary_managed_policy_id guarantees the joined row exists,
@@ -149,7 +149,7 @@ pub async fn list_users(
             ) {
                 (Some(pb_account_id), Some(pb_path), Some(pb_name_cased)) => (pb_account_id, pb_path, pb_name_cased),
                 _ => {
-                    return Err(internal_failure!(request_id; "User references missing permissions boundary managed policy ID: {pb_id}").into());
+                    return Err(iam_internal_failure!(request_id; "User references missing permissions boundary managed policy ID: {pb_id}").into());
                 }
             };
 
@@ -163,7 +163,7 @@ pub async fn list_users(
                     .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                     .build()
                     .map_err(
-                        |e| internal_failure!(request_id; "Failed to construct permissions boundary for user: {e}"),
+                        |e| iam_internal_failure!(request_id; "Failed to construct permissions boundary for user: {e}"),
                     )?,
             )
         } else {
@@ -179,7 +179,7 @@ pub async fn list_users(
                 .user_name(row.user_name_cased)
                 .set_permissions_boundary(permissions_boundary)
                 .build()
-                .map_err(|e| internal_failure!(request_id; "Failed to construct user object: {e}"))?,
+                .map_err(|e| iam_internal_failure!(request_id; "Failed to construct user object: {e}"))?,
         );
     }
 
@@ -189,5 +189,5 @@ pub async fn list_users(
         builder = builder.is_truncated(true).marker(next_marker);
     }
 
-    builder.build().map_err(|e| internal_failure!(request_id; "Failed to build ListUsersResponse: {e}").into())
+    builder.build().map_err(|e| iam_internal_failure!(request_id; "Failed to build ListUsersResponse: {e}").into())
 }

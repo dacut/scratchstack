@@ -1,6 +1,6 @@
 //! GetCurrentSessionTokenEncryptionKey database operation
 use {
-    crate::{RequestExecutor, internal_failure},
+    crate::{RequestExecutor, iam_internal_failure},
     chrono::{DateTime, Utc},
     indoc::indoc,
     scratchstack_aws_principal::IamResourceType,
@@ -54,7 +54,7 @@ pub async fn get_current_session_token_encryption_key(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(
-        |e| internal_failure!(request_id; "Failed to fetch current session token encryption key from database: {e}"),
+        |e| iam_internal_failure!(request_id; "Failed to fetch current session token encryption key from database: {e}"),
     )?;
 
     let row = row.ok_or_else(|| {
@@ -67,7 +67,7 @@ pub async fn get_current_session_token_encryption_key(
         format!("{}{}", IamResourceType::SessionTokenEncryptionKey.as_str(), row.session_token_encryption_key_id);
 
     let encryption_algorithm = SessionTokenEncryptionAlgorithm::from_str(&row.encryption_algorithm).map_err(|e| {
-        internal_failure!(request_id;
+        iam_internal_failure!(request_id;
             "Invalid encryption algorithm stored in database for session token encryption key {session_token_encryption_key_id}: {e}",
         )
     })?;

@@ -1,7 +1,7 @@
 //! UpdateSessionTokenEncryptionKey database operation
 use {
     crate::{
-        RequestExecutor, internal_failure, session_token_encryption_key::validate_session_token_encryption_key_id,
+        RequestExecutor, iam_internal_failure, session_token_encryption_key::validate_session_token_encryption_key_id,
     },
     chrono::{DateTime, Utc},
     indoc::indoc,
@@ -75,7 +75,9 @@ pub async fn update_session_token_encryption_key(
     .bind(stek_id_stored)
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to fetch session token encryption key from database: {e}"))?;
+    .map_err(
+        |e| iam_internal_failure!(request_id; "Failed to fetch session token encryption key from database: {e}"),
+    )?;
 
     let row = row.ok_or_else(|| {
         NoSuchEntityException::builder()
@@ -84,8 +86,9 @@ pub async fn update_session_token_encryption_key(
             .build()
     })?;
 
-    let encryption_algorithm = SessionTokenEncryptionAlgorithm::from_str(&row.encryption_algorithm)
-        .map_err(|e| internal_failure!(request_id; "Failed to parse encryption algorithm from database value: {e}"))?;
+    let encryption_algorithm = SessionTokenEncryptionAlgorithm::from_str(&row.encryption_algorithm).map_err(
+        |e| iam_internal_failure!(request_id; "Failed to parse encryption algorithm from database value: {e}"),
+    )?;
 
     let new_issue_valid_from = issue_valid_from.unwrap_or(row.issue_valid_from);
     let new_issue_expires_at = issue_expires_at.unwrap_or(row.issue_expires_at);
@@ -118,7 +121,9 @@ pub async fn update_session_token_encryption_key(
         .bind(stek_id_stored)
         .execute(tx.as_mut())
         .await
-        .map_err(|e| internal_failure!(request_id; "Failed to update session token encryption key in database: {e}"))?;
+        .map_err(
+            |e| iam_internal_failure!(request_id; "Failed to update session token encryption key in database: {e}"),
+        )?;
     }
 
     let session_token_encryption_key = SessionTokenEncryptionKey {

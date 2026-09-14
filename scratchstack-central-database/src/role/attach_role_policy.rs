@@ -4,7 +4,7 @@ use {
         RequestExecutor,
         account::validate_account_id,
         constants::*,
-        internal_failure,
+        iam_internal_failure,
         policy::{parse_policy_arn, resolve_policy_account_id},
         role::validate_role_name,
     },
@@ -66,7 +66,7 @@ pub async fn attach_role_policy(
                 .into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to look up managed policy in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to look up managed policy in database: {e}").into());
         }
     };
 
@@ -90,7 +90,7 @@ pub async fn attach_role_policy(
                 .into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to look up role in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to look up role in database: {e}").into());
         }
     };
 
@@ -104,7 +104,7 @@ pub async fn attach_role_policy(
     .execute(tx.as_mut())
     .await
     {
-        return Err(internal_failure!(request_id; "Failed to attach policy to role in database: {e}").into());
+        return Err(iam_internal_failure!(request_id; "Failed to attach policy to role in database: {e}").into());
     }
 
     Ok(())

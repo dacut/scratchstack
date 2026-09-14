@@ -3,7 +3,7 @@ use {
     crate::{
         RequestExecutor,
         account::{is_alias_unique_violation, validate_account_alias, validate_account_id},
-        internal_failure,
+        iam_internal_failure,
     },
     indoc::indoc,
     scratchstack_core::RequestId,
@@ -58,7 +58,8 @@ pub async fn create_account_alias(
         }
         Err(e) => {
             return Err(
-                internal_failure!(request_id; "Failed to create account alias for account {account_id}: {e}").into()
+                iam_internal_failure!(request_id; "Failed to create account alias for account {account_id}: {e}")
+                    .into(),
             );
         }
     };

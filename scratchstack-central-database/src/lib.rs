@@ -225,7 +225,7 @@ pub(crate) async fn decrypt_pagination_token<T: DeserializeOwned>(
 /// Takes `format!`-style arguments after the semicolon:
 ///
 /// ```text
-/// internal_failure!(request_id; "Failed to fetch managed policy tags: {e}")
+/// iam_internal_failure!(request_id; "Failed to fetch managed policy tags: {e}")
 /// ```
 ///
 /// It evaluates to an [`IamInternalFailure`], so a call site needing the enclosing error enum
@@ -236,18 +236,18 @@ pub(crate) async fn decrypt_pagination_token<T: DeserializeOwned>(
 /// `RUST_LOG` module filtering and the file and line in the log record both key on. Fusing the
 /// two steps is the point: an internal failure that reached a caller with nothing in the log to
 /// explain it is the failure mode this guards against.
-macro_rules! internal_failure {
+macro_rules! iam_internal_failure {
     ($request_id:expr; $($arg:tt)+) => {{
         let request_id = $request_id;
         ::log::error!("{}: {}", request_id, ::std::format_args!($($arg)+));
-        $crate::new_internal_failure(request_id)
+        $crate::new_iam_internal_failure(request_id)
     }};
 }
-pub(crate) use internal_failure;
+pub(crate) use iam_internal_failure;
 
-/// Implementation detail of [`internal_failure!`]. Builds the error *without* logging; reaching
+/// Implementation detail of [`iam_internal_failure!`]. Builds the error *without* logging; reaching
 /// this directly would produce an internal failure that no log entry explains.
-pub(crate) fn new_internal_failure(request_id: RequestId) -> IamInternalFailure {
+pub(crate) fn new_iam_internal_failure(request_id: RequestId) -> IamInternalFailure {
     IamInternalFailure::builder().message(constants::MSG_INTERNAL_FAILURE).request_id(request_id).build()
 }
 
@@ -265,7 +265,7 @@ pub(crate) fn make_iam_paginator(
         constants::IAM_PAGINATION_KEY_ID,
         *constants::IAM_PAGINATION_KEY,
     )
-    .map_err(|e| internal_failure!(request_id; "Failed to create paginator for {operation_name}: {e}").into())
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to create paginator for {operation_name}: {e}").into())
 }
 
 /// Construct an [`OperationPaginator`] for an STS operation.
@@ -289,7 +289,7 @@ pub(crate) fn make_paginator_sts(
         constants::STS_PAGINATION_KEY_ID,
         *constants::STS_PAGINATION_KEY,
     )
-    .map_err(|e| internal_failure!(request_id; "Failed to create paginator for {operation_name}: {e}").into())
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to create paginator for {operation_name}: {e}").into())
 }
 
 #[cfg(test)]
@@ -340,7 +340,7 @@ mod tests {
     fn internal_failure_keeps_the_detail_out_of_the_error() {
         let request_id = RequestId::new();
         let detail = "connection to 10.0.0.1 refused";
-        let e = internal_failure!(request_id; "Database query failed: {detail}");
+        let e = iam_internal_failure!(request_id; "Database query failed: {detail}");
 
         // The detail went to the log and nowhere else; the caller gets the fixed message, and
         // the request id that ties its complaint to that log entry.

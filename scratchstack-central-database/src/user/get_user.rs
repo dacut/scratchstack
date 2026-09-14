@@ -4,7 +4,7 @@ use {
         RequestExecutor,
         account::validate_account_id,
         constants::*,
-        internal_failure,
+        iam_internal_failure,
         partition::get_current_partition_or_fail,
         policy::build_policy_arn,
         user::{user_arn_resource, validate_user_name},
@@ -66,7 +66,7 @@ pub async fn get_user(
     .bind(&user_name_lower)
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to fetch user from database: {e}"))?;
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to fetch user from database: {e}"))?;
 
     let row = row.ok_or_else(|| {
         NoSuchEntityException::builder()
@@ -87,7 +87,7 @@ pub async fn get_user(
         .account_id(account_id)
         .resource(user_arn_resource(&path, &user_name_cased))
         .build()
-        .map_err(|e| internal_failure!(request_id; "Failed to construct ARN for user: {e}"))?;
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to construct ARN for user: {e}"))?;
 
     let permissions_boundary = if let Some(pb_id) = permissions_boundary_id {
         let pb_row = query(indoc! {"
@@ -99,11 +99,11 @@ pub async fn get_user(
         .fetch_optional(tx.as_mut())
         .await
         .map_err(
-            |e| internal_failure!(request_id; "Failed to fetch permissions boundary managed policy from database: {e}"),
+            |e| iam_internal_failure!(request_id; "Failed to fetch permissions boundary managed policy from database: {e}"),
         )?;
 
         let pb_row = pb_row.ok_or_else(
-            || internal_failure!(request_id; "User references missing permissions boundary managed policy ID: {pb_id}"),
+            || iam_internal_failure!(request_id; "User references missing permissions boundary managed policy ID: {pb_id}"),
         )?;
 
         // The boundary is named by the account owning the policy, not by the account owning the
@@ -119,7 +119,9 @@ pub async fn get_user(
                 .permissions_boundary_arn(pb_arn.to_string())
                 .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                 .build()
-                .map_err(|e| internal_failure!(request_id; "Failed to construct permissions boundary for user: {e}"))?,
+                .map_err(
+                    |e| iam_internal_failure!(request_id; "Failed to construct permissions boundary for user: {e}"),
+                )?,
         )
     } else {
         None
@@ -135,7 +137,7 @@ pub async fn get_user(
     .bind(&user_id)
     .fetch_all(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to fetch user tags from database: {e}"))?;
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to fetch user tags from database: {e}"))?;
 
     let mut tags = Vec::with_capacity(tag_rows.len());
     for tag_row in tag_rows {
@@ -146,7 +148,7 @@ pub async fn get_user(
                 .key(key)
                 .value(value)
                 .build()
-                .map_err(|e| internal_failure!(request_id; "Failed to construct tag object: {e}"))?,
+                .map_err(|e| iam_internal_failure!(request_id; "Failed to construct tag object: {e}"))?,
         );
     }
 
@@ -159,7 +161,7 @@ pub async fn get_user(
         .user_name(user_name_cased)
         .set_permissions_boundary(permissions_boundary)
         .build()
-        .map_err(|e| internal_failure!(request_id; "Failed to construct user object: {e}"))?;
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to construct user object: {e}"))?;
 
     Ok(GetUserResponse::builder().user(user).build().unwrap())
 }

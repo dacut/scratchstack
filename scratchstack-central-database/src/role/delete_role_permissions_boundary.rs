@@ -1,6 +1,8 @@
 //! DeleteRolePermissionsBoundary database operation
 use {
-    crate::{RequestExecutor, account::validate_account_id, constants::*, internal_failure, role::validate_role_name},
+    crate::{
+        RequestExecutor, account::validate_account_id, constants::*, iam_internal_failure, role::validate_role_name,
+    },
     indoc::indoc,
     scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
@@ -48,7 +50,7 @@ pub async fn delete_role_permissions_boundary(
         Ok(result) => result,
         Err(e) => {
             return Err(
-                internal_failure!(request_id; "Failed to clear role permissions boundary in database: {e}").into()
+                iam_internal_failure!(request_id; "Failed to clear role permissions boundary in database: {e}").into(),
             );
         }
     };

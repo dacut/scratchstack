@@ -5,7 +5,7 @@ use {
         account::validate_account_id,
         constants::*,
         group::validate_group_name,
-        internal_failure,
+        iam_internal_failure,
         policy::{parse_policy_arn, resolve_policy_account_id},
     },
     indoc::indoc,
@@ -66,7 +66,7 @@ pub async fn attach_group_policy(
                 .into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to look up managed policy in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to look up managed policy in database: {e}").into());
         }
     };
 
@@ -90,7 +90,7 @@ pub async fn attach_group_policy(
                 .into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to look up group in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to look up group in database: {e}").into());
         }
     };
 
@@ -104,7 +104,7 @@ pub async fn attach_group_policy(
     .execute(tx.as_mut())
     .await
     {
-        return Err(internal_failure!(request_id; "Failed to attach policy to group in database: {e}").into());
+        return Err(iam_internal_failure!(request_id; "Failed to attach policy to group in database: {e}").into());
     }
 
     Ok(())

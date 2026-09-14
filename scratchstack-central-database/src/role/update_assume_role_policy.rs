@@ -1,6 +1,8 @@
 //! UpdateAssumeRolePolicy database operation
 use {
-    crate::{RequestExecutor, account::validate_account_id, constants::*, internal_failure, role::validate_role_name},
+    crate::{
+        RequestExecutor, account::validate_account_id, constants::*, iam_internal_failure, role::validate_role_name,
+    },
     indoc::indoc,
     scratchstack_aspen::Policy as AspenPolicy,
     scratchstack_core::RequestId,
@@ -60,7 +62,7 @@ pub async fn update_assume_role_policy(
     {
         Ok(result) => result,
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to update role trust policy in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to update role trust policy in database: {e}").into());
         }
     };
 

@@ -1,7 +1,7 @@
 //! PutGroupPolicy database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, group::validate_group_name, internal_failure,
+        RequestExecutor, account::validate_account_id, constants::*, group::validate_group_name, iam_internal_failure,
         policy::validate_policy_name,
     },
     indoc::indoc,
@@ -68,7 +68,7 @@ pub async fn put_group_policy(
                 .into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to look up group in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to look up group in database: {e}").into());
         }
     };
 
@@ -87,7 +87,7 @@ pub async fn put_group_policy(
     .await
     {
         return Err(
-            internal_failure!(request_id; "Failed to insert/update group inline policy in database: {e}").into()
+            iam_internal_failure!(request_id; "Failed to insert/update group inline policy in database: {e}").into()
         );
     }
 

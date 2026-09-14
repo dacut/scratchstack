@@ -4,7 +4,7 @@ use {
         RequestExecutor,
         account::validate_account_id,
         constants::*,
-        internal_failure,
+        iam_internal_failure,
         user::{validate_access_key_id, validate_user_name},
     },
     indoc::indoc,
@@ -71,7 +71,7 @@ pub async fn update_access_key(
     .bind(access_key_id_stored)
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to look up access key in database: {e}"))?;
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to look up access key in database: {e}"))?;
 
     let (key_user_name_lower, key_account_id): (String, String) = match row {
         Some(row) => (row.get(0), row.get(1)),
@@ -106,7 +106,7 @@ pub async fn update_access_key(
         .bind(access_key_id_stored)
         .execute(tx.as_mut())
         .await
-        .map_err(|e| internal_failure!(request_id; "Failed to update access key in database: {e}"))?;
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to update access key in database: {e}"))?;
 
     if result.rows_affected() == 0 {
         return Err(NoSuchEntityException::builder()

@@ -4,7 +4,7 @@ use {
         RequestExecutor,
         account::validate_account_id,
         constants::*,
-        internal_failure,
+        iam_internal_failure,
         role::validate_role_name,
         tag::{validate_tag_key, validate_tag_keys_unique, validate_tag_value},
     },
@@ -83,7 +83,7 @@ pub async fn tag_role(
                 .into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to look up role in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to look up role in database: {e}").into());
         }
     };
 
@@ -108,7 +108,7 @@ pub async fn tag_role(
         .execute(tx.as_mut())
         .await
         {
-            return Err(internal_failure!(request_id; "Failed to insert/update role tag in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to insert/update role tag in database: {e}").into());
         }
     }
 

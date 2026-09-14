@@ -1,7 +1,9 @@
 //! UpdateRoleDescription database operation
 use {
     super::get_role,
-    crate::{RequestExecutor, account::validate_account_id, constants::*, internal_failure, role::validate_role_name},
+    crate::{
+        RequestExecutor, account::validate_account_id, constants::*, iam_internal_failure, role::validate_role_name,
+    },
     indoc::indoc,
     scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
@@ -49,7 +51,7 @@ pub async fn update_role_description(
     {
         Ok(result) => result,
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to update role description in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to update role description in database: {e}").into());
         }
     };
 
@@ -66,5 +68,5 @@ pub async fn update_role_description(
     UpdateRoleDescriptionResponse::builder()
         .role(role)
         .build()
-        .map_err(|e| internal_failure!(request_id; "Failed to build UpdateRoleDescriptionResponse: {e}").into())
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to build UpdateRoleDescriptionResponse: {e}").into())
 }

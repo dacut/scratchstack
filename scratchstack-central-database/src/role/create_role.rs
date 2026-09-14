@@ -4,8 +4,8 @@ use {
         RequestExecutor,
         account::validate_account_id,
         constants::*,
+        iam_internal_failure,
         id::IamId,
-        internal_failure,
         partition::get_current_partition_or_fail,
         path::validate_path,
         policy::get_permissions_boundary_id,
@@ -146,13 +146,13 @@ pub async fn create_role(
                     .build()
                     .into());
             }
-            return Err(internal_failure!(request_id; "Failed to insert role into database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to insert role into database: {e}").into());
         }
     };
     let created_at: chrono::DateTime<chrono::Utc> = match result.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to get created_at from database row: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to get created_at from database row: {e}").into());
         }
     };
 
@@ -172,7 +172,7 @@ pub async fn create_role(
         .execute(tx.as_mut())
         .await
         {
-            return Err(internal_failure!(request_id; "Failed to insert role tag into database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to insert role tag into database: {e}").into());
         }
     }
 
@@ -185,7 +185,7 @@ pub async fn create_role(
     {
         Ok(arn) => arn,
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to construct ARN for new role: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to construct ARN for new role: {e}").into());
         }
     };
 
@@ -196,7 +196,7 @@ pub async fn create_role(
                 .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                 .build()
                 .map_err(
-                    |e| internal_failure!(request_id; "Failed to construct permissions boundary for new role: {e}"),
+                    |e| iam_internal_failure!(request_id; "Failed to construct permissions boundary for new role: {e}"),
                 )?,
         )
     } else {
@@ -215,7 +215,7 @@ pub async fn create_role(
         .role_name(role_name.to_string())
         .set_tags(tags.to_vec())
         .build()
-        .map_err(|e| internal_failure!(request_id; "Failed to construct role object for new role: {e}"))?;
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to construct role object for new role: {e}"))?;
 
     Ok(CreateRoleResponse::builder().role(role).build().unwrap())
 }

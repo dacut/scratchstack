@@ -1,7 +1,7 @@
 //! ListSessionTokenEncryptionKeys database operation
 use {
     crate::{
-        RequestExecutor, constants::*, constrain_max_items, decrypt_pagination_token, internal_failure,
+        RequestExecutor, constants::*, constrain_max_items, decrypt_pagination_token, iam_internal_failure,
         make_iam_paginator, partition::get_current_partition_or_fail,
     },
     chrono::{DateTime, Utc},
@@ -204,7 +204,7 @@ pub async fn list_session_token_encryption_keys(
     sql.push_bind(max_items as i32 + 1);
 
     let rows = sql.build_query_as::<ListSessionTokenEncryptionKeysRow>().fetch_all(tx.as_mut()).await.map_err(
-        |e| internal_failure!(request_id; "Failed to fetch session token encryption keys from database: {e}"),
+        |e| iam_internal_failure!(request_id; "Failed to fetch session token encryption keys from database: {e}"),
     )?;
 
     let mut result = Vec::with_capacity(rows.len().min(max_items));
@@ -218,7 +218,7 @@ pub async fn list_session_token_encryption_keys(
                         next_session_token_encryption_key_id: row.session_token_encryption_key_id.clone(),
                     })
                     .await
-                    .map_err(|e| internal_failure!(request_id; "Failed to encrypt pagination token: {e}"))?,
+                    .map_err(|e| iam_internal_failure!(request_id; "Failed to encrypt pagination token: {e}"))?,
             );
             break;
         }
@@ -226,7 +226,7 @@ pub async fn list_session_token_encryption_keys(
         let session_token_encryption_key_id =
             format!("{}{}", IamResourceType::SessionTokenEncryptionKey.as_str(), row.session_token_encryption_key_id);
         let encryption_algorithm = SessionTokenEncryptionAlgorithm::from_str(&row.encryption_algorithm).map_err(
-            |e| internal_failure!(request_id; "Failed to parse encryption algorithm from database value: {e}"),
+            |e| iam_internal_failure!(request_id; "Failed to parse encryption algorithm from database value: {e}"),
         )?;
 
         result.push(SessionTokenEncryptionKey {

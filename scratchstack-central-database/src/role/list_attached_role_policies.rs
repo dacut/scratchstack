@@ -2,7 +2,7 @@
 use {
     crate::{
         RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, decrypt_pagination_token,
-        internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, path::validate_path_prefix,
+        iam_internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, path::validate_path_prefix,
         policy::build_policy_arn, role::validate_role_name,
     },
     indoc::indoc,
@@ -93,7 +93,7 @@ pub async fn list_attached_role_policies(
                 .into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to look up role in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to look up role in database: {e}").into());
         }
     };
 
@@ -128,11 +128,10 @@ pub async fn list_attached_role_policies(
     sql.push(" ORDER BY mp.managed_policy_name_lower ASC, mp.managed_policy_id ASC LIMIT ");
     sql.push_bind(max_items as i32 + 1);
 
-    let rows = sql
-        .build_query_as::<ListAttachedRolePolicyRow>()
-        .fetch_all(tx.as_mut())
-        .await
-        .map_err(|e| internal_failure!(request_id; "Failed to fetch attached role policies from database: {e}"))?;
+    let rows =
+        sql.build_query_as::<ListAttachedRolePolicyRow>().fetch_all(tx.as_mut()).await.map_err(
+            |e| iam_internal_failure!(request_id; "Failed to fetch attached role policies from database: {e}"),
+        )?;
 
     let mut results: Vec<AttachedPolicy> = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -147,7 +146,7 @@ pub async fn list_attached_role_policies(
                     })
                     .await
                     .map_err(|e| {
-                        internal_failure!(request_id; "Failed to encrypt pagination token for ListAttachedRolePolicies: {e}")
+                        iam_internal_failure!(request_id; "Failed to encrypt pagination token for ListAttachedRolePolicies: {e}")
                     })?,
             );
             break;
@@ -159,7 +158,7 @@ pub async fn list_attached_role_policies(
                 .policy_arn(arn.to_string())
                 .policy_name(row.managed_policy_name_cased)
                 .build()
-                .map_err(|e| internal_failure!(request_id; "Failed to construct AttachedPolicy: {e}"))?,
+                .map_err(|e| iam_internal_failure!(request_id; "Failed to construct AttachedPolicy: {e}"))?,
         );
     }
 
@@ -171,5 +170,5 @@ pub async fn list_attached_role_policies(
 
     builder
         .build()
-        .map_err(|e| internal_failure!(request_id; "Failed to build ListAttachedRolePoliciesResponse: {e}").into())
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to build ListAttachedRolePoliciesResponse: {e}").into())
 }

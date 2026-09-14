@@ -2,7 +2,7 @@
 use {
     crate::{
         RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, decrypt_pagination_token,
-        internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, user::validate_user_name,
+        iam_internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, user::validate_user_name,
     },
     indoc::indoc,
     scratchstack_core::RequestId,
@@ -93,7 +93,7 @@ pub async fn list_access_keys(
     .bind(user_name.to_lowercase())
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to query user from database: {e}"))?;
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to query user from database: {e}"))?;
 
     let Some(user_info) = user_info else {
         return Err(NoSuchEntityException::builder()
@@ -126,7 +126,7 @@ pub async fn list_access_keys(
         .build_query_as::<ListAccessKeysRow>()
         .fetch_all(tx.as_mut())
         .await
-        .map_err(|e| internal_failure!(request_id; "Failed to fetch user access keys from database: {e}"))?;
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to fetch user access keys from database: {e}"))?;
 
     let mut results: Vec<AccessKeyMetadata> = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -140,7 +140,7 @@ pub async fn list_access_keys(
                     })
                     .await
                     .map_err(
-                        |e| internal_failure!(request_id; "Failed to encrypt pagination token for ListAccessKeys: {e}"),
+                        |e| iam_internal_failure!(request_id; "Failed to encrypt pagination token for ListAccessKeys: {e}"),
                     )?,
             );
             break;
@@ -156,7 +156,7 @@ pub async fn list_access_keys(
             })
             .user_name(user_name.to_string())
             .build()
-            .map_err(|e| internal_failure!(request_id; "Failed to construct AccessKeyMetadata: {e}"))?;
+            .map_err(|e| iam_internal_failure!(request_id; "Failed to construct AccessKeyMetadata: {e}"))?;
         results.push(metadata);
     }
 
@@ -166,5 +166,5 @@ pub async fn list_access_keys(
         builder = builder.is_truncated(true).marker(next_marker);
     }
 
-    builder.build().map_err(|e| internal_failure!(request_id; "Failed to build ListAccessKeysResponse: {e}").into())
+    builder.build().map_err(|e| iam_internal_failure!(request_id; "Failed to build ListAccessKeysResponse: {e}").into())
 }

@@ -1,8 +1,8 @@
 //! PutRolePolicy database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, internal_failure, policy::validate_policy_name,
-        role::validate_role_name,
+        RequestExecutor, account::validate_account_id, constants::*, iam_internal_failure,
+        policy::validate_policy_name, role::validate_role_name,
     },
     indoc::indoc,
     scratchstack_aspen::Policy as AspenPolicy,
@@ -68,7 +68,7 @@ pub async fn put_role_policy(
                 .into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to look up role in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to look up role in database: {e}").into());
         }
     };
 
@@ -86,7 +86,9 @@ pub async fn put_role_policy(
     .execute(tx.as_mut())
     .await
     {
-        return Err(internal_failure!(request_id; "Failed to insert/update role inline policy in database: {e}").into());
+        return Err(
+            iam_internal_failure!(request_id; "Failed to insert/update role inline policy in database: {e}").into()
+        );
     }
 
     Ok(())

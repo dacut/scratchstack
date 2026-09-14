@@ -1,7 +1,7 @@
 //! CreateAccessKey database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, id::IamId, internal_failure,
+        RequestExecutor, account::validate_account_id, constants::*, iam_internal_failure, id::IamId,
         user::validate_user_name,
     },
     indoc::indoc,
@@ -83,7 +83,7 @@ pub async fn create_access_key(
     .bind(user_name.to_lowercase())
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to query user from database: {e}"))?;
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to query user from database: {e}"))?;
 
     let Some(user_info) = user_info else {
         return Err(NoSuchEntityException::builder()
@@ -111,13 +111,13 @@ pub async fn create_access_key(
     {
         Ok(row) => row,
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to insert access key into database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to insert access key into database: {e}").into());
         }
     };
     let created_at: chrono::DateTime<chrono::Utc> = match row.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to get created_at from database row: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to get created_at from database row: {e}").into());
         }
     };
 
@@ -128,10 +128,10 @@ pub async fn create_access_key(
         .status(StatusType::Active)
         .user_name(user_name.to_string())
         .build()
-        .map_err(|e| internal_failure!(request_id; "Failed to construct AccessKey response: {e}"))?;
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to construct AccessKey response: {e}"))?;
 
     CreateAccessKeyResponse::builder()
         .access_key(access_key)
         .build()
-        .map_err(|e| internal_failure!(request_id; "Failed to construct CreateAccessKeyResponse: {e}").into())
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to construct CreateAccessKeyResponse: {e}").into())
 }

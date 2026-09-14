@@ -2,7 +2,7 @@
 use {
     crate::{
         RequestExecutor, account::validate_account_id, constants::*, constrain_max_items, decrypt_pagination_token,
-        internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, user::validate_user_name,
+        iam_internal_failure, make_iam_paginator, partition::get_current_partition_or_fail, user::validate_user_name,
     },
     indoc::indoc,
     scratchstack_core::RequestId,
@@ -76,7 +76,7 @@ pub async fn list_user_policies(
                 .into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to look up user in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to look up user in database: {e}").into());
         }
     };
 
@@ -98,11 +98,10 @@ pub async fn list_user_policies(
     sql.push("\nORDER BY policy_name_lower ASC LIMIT ");
     sql.push_bind(max_items as i32 + 1);
 
-    let rows = sql
-        .build_query_as::<ListUserPoliciesRow>()
-        .fetch_all(tx.as_mut())
-        .await
-        .map_err(|e| internal_failure!(request_id; "Failed to fetch user inline policies from database: {e}"))?;
+    let rows =
+        sql.build_query_as::<ListUserPoliciesRow>().fetch_all(tx.as_mut()).await.map_err(
+            |e| iam_internal_failure!(request_id; "Failed to fetch user inline policies from database: {e}"),
+        )?;
 
     let mut results: Vec<String> = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -116,7 +115,7 @@ pub async fn list_user_policies(
                     })
                     .await
                     .map_err(|e| {
-                        internal_failure!(request_id; "Failed to encrypt pagination token for ListUserPolicies: {e}")
+                        iam_internal_failure!(request_id; "Failed to encrypt pagination token for ListUserPolicies: {e}")
                     })?,
             );
             break;
@@ -131,5 +130,7 @@ pub async fn list_user_policies(
         builder = builder.is_truncated(true).marker(next_marker);
     }
 
-    builder.build().map_err(|e| internal_failure!(request_id; "Failed to build ListUserPoliciesResponse: {e}").into())
+    builder
+        .build()
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to build ListUserPoliciesResponse: {e}").into())
 }

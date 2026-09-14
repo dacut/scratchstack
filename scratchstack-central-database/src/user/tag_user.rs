@@ -4,7 +4,7 @@ use {
         RequestExecutor,
         account::validate_account_id,
         constants::*,
-        internal_failure,
+        iam_internal_failure,
         tag::{validate_tag_key, validate_tag_keys_unique, validate_tag_value},
         user::validate_user_name,
     },
@@ -83,7 +83,7 @@ pub async fn tag_user(
                 .into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to look up user in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to look up user in database: {e}").into());
         }
     };
 
@@ -105,7 +105,7 @@ pub async fn tag_user(
         .execute(tx.as_mut())
         .await
         {
-            return Err(internal_failure!(request_id; "Failed to insert/update user tag in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to insert/update user tag in database: {e}").into());
         }
     }
 

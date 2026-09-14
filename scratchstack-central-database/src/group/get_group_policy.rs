@@ -1,7 +1,7 @@
 //! GetGroupPolicy database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, group::validate_group_name, internal_failure,
+        RequestExecutor, account::validate_account_id, constants::*, group::validate_group_name, iam_internal_failure,
         policy::validate_policy_name,
     },
     indoc::indoc,
@@ -49,7 +49,7 @@ pub async fn get_group_policy(
     .bind(group_name.to_lowercase())
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to look up group in database: {e}"))?;
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to look up group in database: {e}"))?;
 
     let (group_id, group_name_cased): (String, String) = match group_row {
         Some(row) => (row.get(0), row.get(1)),
@@ -71,7 +71,7 @@ pub async fn get_group_policy(
     .bind(policy_name.to_ascii_lowercase())
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to fetch group inline policy from database: {e}"))?;
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to fetch group inline policy from database: {e}"))?;
 
     let (policy_name_cased, policy_document): (String, String) = match policy_row {
         Some(row) => (row.get(0), row.get(1)),
@@ -89,5 +89,5 @@ pub async fn get_group_policy(
         .policy_name(policy_name_cased)
         .policy_document(policy_document)
         .build()
-        .map_err(|e| internal_failure!(request_id; "Failed to build GetGroupPolicyResponse: {e}").into())
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to build GetGroupPolicyResponse: {e}").into())
 }

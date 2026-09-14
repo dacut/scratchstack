@@ -4,8 +4,8 @@ use {
         RequestExecutor,
         account::validate_account_id,
         constants::*,
+        iam_internal_failure,
         id::IamId,
-        internal_failure,
         partition::get_current_partition_or_fail,
         path::validate_path,
         policy::{is_policy_name_unique_violation, policy_arn_resource, validate_policy_name},
@@ -117,13 +117,13 @@ pub async fn create_policy(
                     .build()
                     .into());
             }
-            return Err(internal_failure!(request_id; "Failed to insert managed policy into database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to insert managed policy into database: {e}").into());
         }
     };
     let created_at: chrono::DateTime<chrono::Utc> = match result.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to get created_at from database row: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to get created_at from database row: {e}").into());
         }
     };
 
@@ -137,7 +137,9 @@ pub async fn create_policy(
     .execute(tx.as_mut())
     .await
     {
-        return Err(internal_failure!(request_id; "Failed to insert managed policy version into database: {e}").into());
+        return Err(
+            iam_internal_failure!(request_id; "Failed to insert managed policy version into database: {e}").into()
+        );
     }
 
     // Insert tags.
@@ -157,7 +159,9 @@ pub async fn create_policy(
         .execute(tx.as_mut())
         .await
         {
-            return Err(internal_failure!(request_id; "Failed to insert managed policy tag into database: {e}").into());
+            return Err(
+                iam_internal_failure!(request_id; "Failed to insert managed policy tag into database: {e}").into()
+            );
         }
     }
 
@@ -170,7 +174,7 @@ pub async fn create_policy(
     {
         Ok(arn) => arn,
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to construct ARN for new managed policy: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to construct ARN for new managed policy: {e}").into());
         }
     };
 
@@ -187,7 +191,9 @@ pub async fn create_policy(
         .policy_name(policy_name.to_string())
         .set_tags(tags.to_vec())
         .build()
-        .map_err(|e| internal_failure!(request_id; "Failed to construct policy object for new managed policy: {e}"))?;
+        .map_err(
+            |e| iam_internal_failure!(request_id; "Failed to construct policy object for new managed policy: {e}"),
+        )?;
 
     Ok(CreatePolicyResponse {
         policy: Some(policy),

@@ -1,8 +1,8 @@
 //! DeleteRolePolicy database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, internal_failure, policy::validate_policy_name,
-        role::validate_role_name,
+        RequestExecutor, account::validate_account_id, constants::*, iam_internal_failure,
+        policy::validate_policy_name, role::validate_role_name,
     },
     indoc::indoc,
     scratchstack_core::RequestId,
@@ -57,7 +57,7 @@ pub async fn delete_role_policy(
                 .into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to look up role in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to look up role in database: {e}").into());
         }
     };
 
@@ -72,7 +72,9 @@ pub async fn delete_role_policy(
     {
         Ok(result) => result,
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to delete role inline policy from database: {e}").into());
+            return Err(
+                iam_internal_failure!(request_id; "Failed to delete role inline policy from database: {e}").into()
+            );
         }
     };
 

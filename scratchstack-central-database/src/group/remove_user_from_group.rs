@@ -1,7 +1,7 @@
 //! RemoveUserFromGroup database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, group::validate_group_name, internal_failure,
+        RequestExecutor, account::validate_account_id, constants::*, group::validate_group_name, iam_internal_failure,
         user::validate_user_name,
     },
     indoc::indoc,
@@ -62,7 +62,7 @@ pub async fn remove_user_from_group(
                 .into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to look up group in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to look up group in database: {e}").into());
         }
     };
 
@@ -86,7 +86,7 @@ pub async fn remove_user_from_group(
                 .into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to look up user in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to look up user in database: {e}").into());
         }
     };
 
@@ -102,7 +102,7 @@ pub async fn remove_user_from_group(
     .execute(tx.as_mut())
     .await
     {
-        return Err(internal_failure!(request_id; "Failed to remove user from group in database: {e}").into());
+        return Err(iam_internal_failure!(request_id; "Failed to remove user from group in database: {e}").into());
     }
 
     Ok(())

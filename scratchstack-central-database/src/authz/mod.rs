@@ -1,7 +1,7 @@
 //! Authorization support: gathering the policies that apply to a principal.
 use {
     crate::{
-        group::group_arn_resource, internal_failure, partition::get_current_partition_or_fail,
+        group::group_arn_resource, iam_internal_failure, partition::get_current_partition_or_fail,
         policy::build_policy_arn, role::role_arn_resource, user::user_arn_resource,
     },
     indoc::indoc,
@@ -73,7 +73,7 @@ pub async fn get_policies_by_ids(
     .bind(&policy_ids)
     .fetch_all(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to fetch policy documents by id: {e}"))?;
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to fetch policy documents by id: {e}"))?;
 
     let documents: HashMap<String, String> =
         rows.into_iter().map(|row| (row.managed_policy_id, row.policy_document)).collect();
@@ -90,7 +90,7 @@ pub async fn get_policies_by_ids(
         // the stored document is corrupt. Fail closed rather than skip: skipping a document
         // could silently drop an explicit deny.
         let policy = Policy::from_str(document).map_err(|e| {
-            internal_failure!(request_id; "Failed to parse stored policy document for managed policy id {policy_id}: {e}")
+            iam_internal_failure!(request_id; "Failed to parse stored policy document for managed policy id {policy_id}: {e}")
         })?;
         policies.push(policy);
     }
@@ -131,7 +131,7 @@ pub async fn get_policies_for_role(
     .bind(account_id)
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to look up role for authorization: {e}"))?;
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to look up role for authorization: {e}"))?;
 
     let Some(role_row) = role_row else {
         // The role was deleted (or moved accounts) between the session's creation and now.
@@ -216,7 +216,7 @@ pub async fn get_policies_for_role(
     .bind(account_id)
     .fetch_all(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to gather policies for role: {e}"))?;
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to gather policies for role: {e}"))?;
 
     let mut policy_set = PolicySet::new();
     for row in rows.into_iter() {
@@ -224,7 +224,7 @@ pub async fn get_policies_for_role(
         // the stored document is corrupt. Fail closed rather than skip: skipping a document
         // could silently drop an explicit deny.
         let policy = Policy::from_str(&row.policy_document).map_err(|e| {
-            internal_failure!(request_id; "Failed to parse stored policy document ({}) for role id {role_id}: {e}", row.source)
+            iam_internal_failure!(request_id; "Failed to parse stored policy document ({}) for role id {role_id}: {e}", row.source)
         })?;
 
         let source = row_to_policy_source(&partition, &role_arn, &prefixed_role_id, row, request_id)?;
@@ -265,7 +265,7 @@ pub async fn get_policies_for_user(
     .bind(account_id)
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to look up user for authorization: {e}"))?;
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to look up user for authorization: {e}"))?;
 
     let Some(user_row) = user_row else {
         // The user was deleted (or moved accounts) between signature verification and now.
@@ -394,7 +394,7 @@ pub async fn get_policies_for_user(
     .bind(account_id)
     .fetch_all(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to gather policies for user: {e}"))?;
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to gather policies for user: {e}"))?;
 
     let mut policy_set = PolicySet::new();
     for row in rows.into_iter() {
@@ -402,7 +402,7 @@ pub async fn get_policies_for_user(
         // the stored document is corrupt. Fail closed rather than skip: skipping a document
         // could silently drop an explicit deny.
         let policy = Policy::from_str(&row.policy_document).map_err(|e| {
-            internal_failure!(request_id; "Failed to parse stored policy document ({}) for user id {user_id}: {e}", row.source)
+            iam_internal_failure!(request_id; "Failed to parse stored policy document ({}) for user id {user_id}: {e}", row.source)
         })?;
 
         let source = row_to_policy_source(&partition, &user_arn, &prefixed_user_id, row, request_id)?;
@@ -420,7 +420,7 @@ fn build_iam_arn(partition: &str, account_id: &str, resource: String, request_id
         .account_id(account_id)
         .resource(resource)
         .build()
-        .map_err(|e| internal_failure!(request_id; "Failed to construct IAM ARN: {e}").into())
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to construct IAM ARN: {e}").into())
 }
 
 /// Convert a gather-query row into the corresponding [PolicySource]. Missing columns that the
@@ -437,7 +437,7 @@ fn row_to_policy_source(
     macro_rules! required {
         ($field:ident) => {
             row.$field.ok_or_else(|| {
-                IamError::from(internal_failure!(request_id; concat!("Gather query returned a {} row without ", stringify!($field)), row.source))
+                IamError::from(iam_internal_failure!(request_id; concat!("Gather query returned a {} row without ", stringify!($field)), row.source))
             })?
         };
     }
@@ -491,7 +491,8 @@ fn row_to_policy_source(
             Ok(PolicySource::new_group_inline(group_arn.to_string(), group_id, required!(policy_name)))
         }
         source => {
-            Err(internal_failure!(request_id; "Gather query returned an unknown source discriminator: {source}").into())
+            Err(iam_internal_failure!(request_id; "Gather query returned an unknown source discriminator: {source}")
+                .into())
         }
     }
 }

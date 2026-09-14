@@ -1,7 +1,7 @@
 //! ListEntitiesForPolicy database operation
 use {
     crate::{
-        RequestExecutor, constants::*, constrain_max_items, decrypt_pagination_token, internal_failure,
+        RequestExecutor, constants::*, constrain_max_items, decrypt_pagination_token, iam_internal_failure,
         make_iam_paginator, partition::get_current_partition_or_fail, path::validate_path_prefix,
         policy::parse_policy_arn,
     },
@@ -169,7 +169,7 @@ pub async fn list_entities_for_policy(
                 .into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to look up managed policy in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to look up managed policy in database: {e}").into());
         }
     };
 
@@ -238,7 +238,7 @@ pub async fn list_entities_for_policy(
                         })
                         .await
                         .map_err(|e| {
-                            internal_failure!(request_id; "Failed to encrypt pagination token for ListEntitiesForPolicy: {e}")
+                            iam_internal_failure!(request_id; "Failed to encrypt pagination token for ListEntitiesForPolicy: {e}")
                         })?,
                 );
                 break;
@@ -249,21 +249,21 @@ pub async fn list_entities_for_policy(
                         .group_id(format!("{}{}", IamResourceType::Group.as_str(), row.entity_id))
                         .group_name(row.entity_name_cased)
                         .build()
-                        .map_err(|e| internal_failure!(request_id; "Failed to construct PolicyGroup: {e}"))?,
+                        .map_err(|e| iam_internal_failure!(request_id; "Failed to construct PolicyGroup: {e}"))?,
                 ),
                 EntitySection::Role => roles.push(
                     PolicyRole::builder()
                         .role_id(format!("{}{}", IamResourceType::Role.as_str(), row.entity_id))
                         .role_name(row.entity_name_cased)
                         .build()
-                        .map_err(|e| internal_failure!(request_id; "Failed to construct PolicyRole: {e}"))?,
+                        .map_err(|e| iam_internal_failure!(request_id; "Failed to construct PolicyRole: {e}"))?,
                 ),
                 EntitySection::User => users.push(
                     PolicyUser::builder()
                         .user_id(format!("{}{}", IamResourceType::User.as_str(), row.entity_id))
                         .user_name(row.entity_name_cased)
                         .build()
-                        .map_err(|e| internal_failure!(request_id; "Failed to construct PolicyUser: {e}"))?,
+                        .map_err(|e| iam_internal_failure!(request_id; "Failed to construct PolicyUser: {e}"))?,
                 ),
             }
         }
@@ -342,6 +342,6 @@ async fn fetch_section_rows(
     sql.push_bind(limit);
 
     sql.build_query_as::<EntityRow>().fetch_all(tx.as_mut()).await.map_err(|e| {
-        internal_failure!(request_id; "Failed to fetch attached entities for ListEntitiesForPolicy ({section}): {e}").into()
+        iam_internal_failure!(request_id; "Failed to fetch attached entities for ListEntitiesForPolicy ({section}): {e}").into()
     })
 }

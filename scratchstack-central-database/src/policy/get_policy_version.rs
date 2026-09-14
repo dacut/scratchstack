@@ -3,7 +3,7 @@ use {
     crate::{
         RequestExecutor,
         constants::*,
-        internal_failure,
+        iam_internal_failure,
         policy::{parse_policy_arn, parse_policy_version_id},
     },
     chrono::{DateTime, Utc},
@@ -70,7 +70,7 @@ pub async fn get_policy_version(
     .bind(version_number)
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to query managed policy version from database: {e}"))?
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to query managed policy version from database: {e}"))?
     .ok_or_else(|| {
         NoSuchEntityException::builder()
             .message(format!("Policy {policy_arn} version {version_id} was not found."))
@@ -84,7 +84,7 @@ pub async fn get_policy_version(
         .is_default_version(version_number == row.default_version)
         .version_id(format!("v{version_number}"))
         .build()
-        .map_err(|e| internal_failure!(request_id; "Failed to construct PolicyVersion object: {e}"))?;
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to construct PolicyVersion object: {e}"))?;
 
     Ok(GetPolicyVersionResponse {
         policy_version: Some(policy_version),

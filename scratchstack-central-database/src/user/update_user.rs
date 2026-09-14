@@ -4,7 +4,7 @@ use {
         RequestExecutor,
         account::validate_account_id,
         constants::*,
-        internal_failure,
+        iam_internal_failure,
         path::validate_path,
         user::{is_user_name_unique_violation, validate_user_name},
     },
@@ -94,7 +94,7 @@ pub async fn update_user(
                     .build()
                     .into());
             }
-            return Err(internal_failure!(request_id; "Failed to update user in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to update user in database: {e}").into());
         }
     };
 

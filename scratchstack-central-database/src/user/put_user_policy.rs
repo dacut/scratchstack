@@ -1,8 +1,8 @@
 //! PutUserPolicy database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, internal_failure, policy::validate_policy_name,
-        user::validate_user_name,
+        RequestExecutor, account::validate_account_id, constants::*, iam_internal_failure,
+        policy::validate_policy_name, user::validate_user_name,
     },
     indoc::indoc,
     scratchstack_aspen::Policy as AspenPolicy,
@@ -68,7 +68,7 @@ pub async fn put_user_policy(
                 .into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to look up user in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to look up user in database: {e}").into());
         }
     };
 
@@ -86,7 +86,9 @@ pub async fn put_user_policy(
     .execute(tx.as_mut())
     .await
     {
-        return Err(internal_failure!(request_id; "Failed to insert/update user inline policy in database: {e}").into());
+        return Err(
+            iam_internal_failure!(request_id; "Failed to insert/update user inline policy in database: {e}").into()
+        );
     }
 
     Ok(())

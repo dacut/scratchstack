@@ -1,6 +1,6 @@
 //! ListAccountAliases database operation
 use {
-    crate::{RequestExecutor, account::validate_account_id, internal_failure},
+    crate::{RequestExecutor, account::validate_account_id, iam_internal_failure},
     scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
@@ -35,7 +35,7 @@ pub async fn list_account_aliases(
         .fetch_optional(tx.as_mut())
         .await
         .map_err(|e| {
-            internal_failure!(request_id;
+            iam_internal_failure!(request_id;
                 "ListAccountAliases query failed for account {account_id} (query: SELECT alias FROM iam.accounts WHERE account_id = $1): {e}"
             )
         })?;
@@ -43,7 +43,7 @@ pub async fn list_account_aliases(
     match result {
         Some(row) => {
             let alias: Option<String> = row.try_get(0).map_err(
-                |e| internal_failure!(request_id; "Failed to get account alias for account {account_id}: {e}"),
+                |e| iam_internal_failure!(request_id; "Failed to get account alias for account {account_id}: {e}"),
             )?;
             Ok(ListAccountAliasesResponse {
                 account_aliases: alias.into_iter().collect(),

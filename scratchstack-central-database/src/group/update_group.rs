@@ -5,7 +5,7 @@ use {
         account::validate_account_id,
         constants::*,
         group::{is_group_name_unique_violation, validate_group_name},
-        internal_failure,
+        iam_internal_failure,
         path::validate_path,
     },
     indoc::indoc,
@@ -90,7 +90,7 @@ pub async fn update_group(
                     .build()
                     .into());
             }
-            return Err(internal_failure!(request_id; "Failed to update group in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to update group in database: {e}").into());
         }
     };
 

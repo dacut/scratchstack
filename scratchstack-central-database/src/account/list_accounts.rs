@@ -1,7 +1,7 @@
 //! ListAccounts database operation
 use {
     crate::{
-        RequestExecutor, constants::*, constrain_max_items, decrypt_pagination_token, internal_failure,
+        RequestExecutor, constants::*, constrain_max_items, decrypt_pagination_token, iam_internal_failure,
         make_iam_paginator, partition::get_current_partition_or_fail,
     },
     scratchstack_core::RequestId,
@@ -82,7 +82,7 @@ pub async fn list_accounts(
         .build_query_as::<ListAccountsRow>()
         .fetch_all(tx.as_mut())
         .await
-        .map_err(|e| internal_failure!(request_id; "Failed to fetch accounts from database: {e}"))?;
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to fetch accounts from database: {e}"))?;
 
     let mut accounts = Vec::with_capacity(rows.len().min(max_items));
     let mut next_marker = None;
@@ -102,7 +102,7 @@ pub async fn list_accounts(
                     })
                     .await
                     .map_err(
-                        |e| internal_failure!(request_id; "Failed to encrypt pagination token for ListAccounts: {e}"),
+                        |e| iam_internal_failure!(request_id; "Failed to encrypt pagination token for ListAccounts: {e}"),
                     )?,
             );
             break;

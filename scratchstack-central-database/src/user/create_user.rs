@@ -4,8 +4,8 @@ use {
         RequestExecutor,
         account::validate_account_id,
         constants::*,
+        iam_internal_failure,
         id::IamId,
-        internal_failure,
         partition::get_current_partition_or_fail,
         path::validate_path,
         policy::get_permissions_boundary_id,
@@ -119,13 +119,13 @@ pub async fn create_user(
                     .build()
                     .into());
             }
-            return Err(internal_failure!(request_id; "Failed to insert user into database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to insert user into database: {e}").into());
         }
     };
     let created_at: DateTime<Utc> = match result.try_get(0) {
         Ok(created_at) => created_at,
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to get created_at from database row: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to get created_at from database row: {e}").into());
         }
     };
 
@@ -145,7 +145,7 @@ pub async fn create_user(
         .execute(tx.as_mut())
         .await
         {
-            return Err(internal_failure!(request_id; "Failed to insert user tag into database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to insert user tag into database: {e}").into());
         }
     }
 
@@ -158,7 +158,7 @@ pub async fn create_user(
     {
         Ok(arn) => arn,
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to construct ARN for new user: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to construct ARN for new user: {e}").into());
         }
     };
 
@@ -169,7 +169,7 @@ pub async fn create_user(
                 .permissions_boundary_type(PermissionsBoundaryAttachmentType::Policy)
                 .build()
                 .map_err(
-                    |e| internal_failure!(request_id; "Failed to construct permissions boundary for new user: {e}"),
+                    |e| iam_internal_failure!(request_id; "Failed to construct permissions boundary for new user: {e}"),
                 )?,
         )
     } else {
@@ -185,7 +185,7 @@ pub async fn create_user(
         .user_name(user_name.to_string())
         .set_permissions_boundary(permissions_boundary)
         .build()
-        .map_err(|e| internal_failure!(request_id; "Failed to construct user object for new user: {e}"))?;
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to construct user object for new user: {e}"))?;
 
     Ok(CreateUserResponse::builder().user(user).build().unwrap())
 }

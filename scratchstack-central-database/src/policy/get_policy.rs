@@ -3,7 +3,7 @@ use {
     crate::{
         RequestExecutor,
         constants::*,
-        internal_failure,
+        iam_internal_failure,
         partition::get_current_partition_or_fail,
         policy::{
             build_policy_arn, fetch_policy_tags, get_policy_attachment_count,
@@ -80,7 +80,7 @@ pub async fn get_policy(
     .bind(parts.resource_name_lower())
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| internal_failure!(request_id; "Failed to query managed policy from database: {e}"))?
+    .map_err(|e| iam_internal_failure!(request_id; "Failed to query managed policy from database: {e}"))?
     .ok_or_else(|| {
         NoSuchEntityException::builder()
             .message(format!("Policy {policy_arn} was not found."))
@@ -123,7 +123,7 @@ pub async fn get_policy(
         .update_date(policy_row.update_date)
         .set_tags(tags)
         .build()
-        .map_err(|e| internal_failure!(request_id; "Failed to construct policy object: {e}"))?;
+        .map_err(|e| iam_internal_failure!(request_id; "Failed to construct policy object: {e}"))?;
     Ok(GetPolicyResponse {
         policy: Some(policy),
     })

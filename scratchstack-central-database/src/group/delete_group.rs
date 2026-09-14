@@ -1,7 +1,7 @@
 //! DeleteGroup database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, group::validate_group_name, internal_failure,
+        RequestExecutor, account::validate_account_id, constants::*, group::validate_group_name, iam_internal_failure,
     },
     indoc::indoc,
     scratchstack_core::RequestId,
@@ -57,7 +57,7 @@ pub async fn delete_group(
                 );
                 return Err(DeleteConflictException::builder().message(message).request_id(request_id).build().into());
             }
-            return Err(internal_failure!(request_id; "Failed to delete group from database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to delete group from database: {e}").into());
         }
     };
 

@@ -1,7 +1,7 @@
 //! UntagRole database operation
 use {
     crate::{
-        RequestExecutor, account::validate_account_id, constants::*, internal_failure, role::validate_role_name,
+        RequestExecutor, account::validate_account_id, constants::*, iam_internal_failure, role::validate_role_name,
         tag::validate_tag_key,
     },
     indoc::indoc,
@@ -70,7 +70,7 @@ pub async fn untag_role(
                 .into());
         }
         Err(e) => {
-            return Err(internal_failure!(request_id; "Failed to look up role in database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to look up role in database: {e}").into());
         }
     };
 
@@ -86,7 +86,7 @@ pub async fn untag_role(
         .execute(tx.as_mut())
         .await
         {
-            return Err(internal_failure!(request_id; "Failed to delete role tag from database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to delete role tag from database: {e}").into());
         }
     }
 

@@ -1,6 +1,8 @@
 //! DeleteUser database operation
 use {
-    crate::{RequestExecutor, account::validate_account_id, constants::*, internal_failure, user::validate_user_name},
+    crate::{
+        RequestExecutor, account::validate_account_id, constants::*, iam_internal_failure, user::validate_user_name,
+    },
     indoc::indoc,
     scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
@@ -55,7 +57,7 @@ pub async fn delete_user(
                 );
                 return Err(DeleteConflictException::builder().message(message).request_id(request_id).build().into());
             }
-            return Err(internal_failure!(request_id; "Failed to delete user from database: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to delete user from database: {e}").into());
         }
     };
 

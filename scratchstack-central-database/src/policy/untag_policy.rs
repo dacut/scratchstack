@@ -1,7 +1,7 @@
 //! UntagPolicy database operation
 use {
     crate::{
-        RequestExecutor, internal_failure,
+        RequestExecutor, iam_internal_failure,
         policy::{lookup_managed_policy_id, parse_policy_arn},
         tag::validate_tag_key,
     },
@@ -57,7 +57,7 @@ pub async fn untag_policy(
         .execute(tx.as_mut())
         .await
         {
-            return Err(internal_failure!(request_id; "Failed to delete managed policy tag: {e}").into());
+            return Err(iam_internal_failure!(request_id; "Failed to delete managed policy tag: {e}").into());
         }
     }
 
