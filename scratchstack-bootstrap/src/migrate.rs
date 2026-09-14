@@ -26,7 +26,7 @@ impl Runnable for MigrateCommand {
     where
         I: IntoIterator<Item = (OsString, String)> + Clone + Send,
     {
-        let conn = args.connect(vars).await?;
+        let conn = args.connect::<_, Self::Error>(vars).await?;
 
         if let Some(downgrade_to) = self.downgrade_to {
             MIGRATOR.undo(&conn, downgrade_to).await.map_err(|e| {

@@ -1,6 +1,7 @@
 use {
     crate::{
-        boxed_future, run, session_token_encryption_key::list_session_token_encryption_keys_filters_from_shorthand,
+        boxed_future, error::ErrorWrapper, run,
+        session_token_encryption_key::list_session_token_encryption_keys_filters_from_shorthand,
     },
     chrono::{DateTime, Utc},
     pretty_assertions::assert_eq,
@@ -7596,7 +7597,7 @@ trait TestHarness {
     fn port_str(&self) -> String;
 
     /// Runs the given CLI in a harness with the fake environment and stdout captured to a string.
-    fn run<I, S>(&self, args: I) -> impl Future<Output = Result<String, IamError>> + Send
+    fn run<I, S>(&self, args: I) -> impl Future<Output = Result<String, ErrorWrapper>> + Send
     where
         I: IntoIterator<Item = S>,
         S: Into<OsString>;
@@ -7616,7 +7617,7 @@ impl TestHarness for TempDatabase {
         self.settings().port.to_string()
     }
 
-    fn run<I, S>(&self, args: I) -> impl Future<Output = Result<String, IamError>> + Send
+    fn run<I, S>(&self, args: I) -> impl Future<Output = Result<String, ErrorWrapper>> + Send
     where
         I: IntoIterator<Item = S>,
         S: Into<OsString>,
@@ -7630,11 +7631,12 @@ impl TestHarness for TempDatabase {
             boxed_future(|| run(args, vars, &mut result)).await?;
             String::from_utf8(result).map_err(|e| {
                 log::error!("Failed to convert output to UTF-8: {e}");
-                IamError::from(
+                ErrorWrapper::from(IamError::InternalFailure(
                     scratchstack_shapes_iam::types::error::InternalFailure::builder()
                         .message("An internal error has occurred.")
-                        .build(),
-                )
+                        .build()
+                        .into(),
+                ))
             })
         }
     }
