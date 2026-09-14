@@ -38,10 +38,12 @@ scratchstack-aws-signature = { workspace = true, features = ["unstable"] }
 scratchstack-core.workspace = true
 scratchstack-hakari = { workspace = true }
 scratchstack-pagination.workspace = true
+scratchstack-shapes-cloud.workspace = true
 scratchstack-shapes-iam.workspace = true
 scratchstack-shapes-sts.workspace = true
 serde = { workspace = true, features = ["derive"] }
 sqlx = { workspace = true, features = [
+    "bigdecimal",
     "chrono",
     "macros",
     "migrate",

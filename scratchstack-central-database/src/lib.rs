@@ -18,6 +18,7 @@ use {
     scratchstack_pagination::{
         FixedKeyService, OperationPaginator, ScratchstackOperationMetadata, ScratchstackServiceMetadata,
     },
+    scratchstack_shapes_cloud::types::error::InternalFailure as CloudInternalFailure,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         types::error::{
@@ -32,6 +33,7 @@ use {
 
 pub mod account;
 pub mod authz;
+#[allow(unused)]
 pub mod constants;
 pub mod group;
 pub mod id;
@@ -39,6 +41,7 @@ pub mod migrate;
 pub mod partition;
 pub mod path;
 pub mod policy;
+pub mod quota;
 pub mod role;
 pub mod session_token_encryption_key;
 pub mod tag;
@@ -244,6 +247,26 @@ macro_rules! iam_internal_failure {
     }};
 }
 pub(crate) use iam_internal_failure;
+
+/// Records an internal failure on a Cloud operation. The Cloud counterpart of
+/// [`iam_internal_failure!`]; see that macro for what this is for and why it is a macro.
+///
+/// It evaluates to a [`CloudInternalFailure`], so a call site needing the enclosing error enum
+/// adds `.into()` exactly as it would around the bare error.
+macro_rules! cloud_internal_failure {
+    ($request_id:expr; $($arg:tt)+) => {{
+        let request_id = $request_id;
+        ::log::error!("{}: {}", request_id, ::std::format_args!($($arg)+));
+        $crate::new_cloud_internal_failure(request_id)
+    }};
+}
+pub(crate) use cloud_internal_failure;
+
+/// Implementation detail of [`cloud_internal_failure!`]. Builds the error *without* logging;
+/// reaching this directly would produce an internal failure that no log entry explains.
+pub(crate) fn new_cloud_internal_failure(request_id: RequestId) -> CloudInternalFailure {
+    CloudInternalFailure::builder().request_id(request_id).build()
+}
 
 /// Implementation detail of [`iam_internal_failure!`]. Builds the error *without* logging; reaching
 /// this directly would produce an internal failure that no log entry explains.

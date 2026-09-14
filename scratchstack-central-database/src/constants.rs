@@ -24,6 +24,15 @@ pub(crate) const AWS_ACCOUNT_ID: &str = "aws";
 /// The numeric account id for the AWS account.
 pub(crate) const AWS_ACCOUNT_ID_NUMERIC: &str = "000000000000";
 
+/// A fixed key for Cloud pagination operations. We really don't care if this is exposed since the
+/// user has raw access to the database anyway.
+pub(crate) const CLOUD_PAGINATION_KEY: &[u8; PAGINATION_KEY_SIZE] =
+b"\x44\x12\x9b\x0c\xa4\x87\xbc\xad\xda\x7e\x5c\x88\x24\x89\x72\x14\xd1\x67\x79\x5a\xaf\xcb\x65\x4f\x84\x84\x7b\x92\x26\xc7\xed\x4b";
+
+/// An identifier for the fixed Cloud pagination key: 93a18165-5822-43cf-ab2a-1a98e2bc8703
+pub(crate) const CLOUD_PAGINATION_KEY_ID: Uuid =
+    Uuid::from_bytes([0x93, 0xa1, 0x81, 0x65, 0x58, 0x22, 0x43, 0xcf, 0xab, 0x2a, 0x1a, 0x98, 0xe2, 0xbc, 0x87, 0x03]);
+
 /// Default lifetime for session encryption tokens (1 day).
 pub(crate) const DEFAULT_SESSION_ENCRYPTION_TOKEN_LIFETIME_SECS: i64 = 24 * 60 * 60;
 
@@ -141,11 +150,17 @@ pub(crate) const OP_LIST_USER_TAGS: &str = "ListUserTags";
 /// The size of the fixed pagination key in bytes.
 pub(crate) const PAGINATION_KEY_SIZE: usize = 32;
 
+/// The service identifier for the Cloud service, as a principal.
+pub(crate) const SERVICE_DNS_CLOUD: &str = "cloud.scratchstack.net";
+
 /// The service identifier for the IAM service, as a principal.
 pub(crate) const SERVICE_DNS_IAM: &str = "iam.amazonaws.com";
 
 /// The service identifier for the STS service, as a principal.
 pub(crate) const SERVICE_DNS_STS: &str = "sts.amazonaws.com";
+
+/// The service key for the Cloud service in an ARN or Aspen policy.
+pub(crate) const SERVICE_ID_CLOUD: &str = "cloud";
 
 /// The service key for the IAM service in an ARN or Aspen policy.
 pub(crate) const SERVICE_ID_IAM: &str = "iam";
