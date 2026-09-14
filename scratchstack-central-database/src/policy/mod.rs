@@ -65,7 +65,7 @@ pub(crate) fn build_policy_arn(
 ) -> Result<Arn, IamError> {
     Arn::builder()
         .partition(partition)
-        .service(SERVICE_KEY_IAM)
+        .service(SERVICE_ID_IAM)
         .account_id(account_id)
         .resource(policy_arn_resource(path, policy_name))
         .build()

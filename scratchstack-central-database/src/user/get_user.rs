@@ -83,7 +83,7 @@ pub async fn get_user(
 
     let arn = Arn::builder()
         .partition(partition.clone())
-        .service(SERVICE_KEY_IAM)
+        .service(SERVICE_ID_IAM)
         .account_id(account_id)
         .resource(user_arn_resource(&path, &user_name_cased))
         .build()

@@ -151,7 +151,7 @@ pub async fn create_user(
 
     let arn = match Arn::builder()
         .partition(partition)
-        .service(SERVICE_KEY_IAM)
+        .service(SERVICE_ID_IAM)
         .account_id(account_id)
         .resource(user_arn_resource(path, user_name))
         .build()

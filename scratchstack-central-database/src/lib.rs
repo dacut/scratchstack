@@ -257,7 +257,7 @@ pub(crate) fn make_iam_paginator(
     operation_name: &'static str,
     request_id: RequestId,
 ) -> Result<OperationPaginator<FixedKeyService, FixedKeyService>, IamError> {
-    let service_metadata = ScratchstackServiceMetadata::new(partition.to_string(), "", constants::SERVICE_ID_IAM);
+    let service_metadata = ScratchstackServiceMetadata::new(partition.to_string(), "", constants::SERVICE_DNS_IAM);
     let operation_metadata = ScratchstackOperationMetadata::new(constants::IAM_API_VERSION, operation_name);
     OperationPaginator::new_fixed_key(
         &service_metadata,
@@ -281,7 +281,7 @@ pub(crate) fn make_paginator_sts(
     operation_name: &'static str,
     request_id: RequestId,
 ) -> Result<OperationPaginator<FixedKeyService, FixedKeyService>, StsError> {
-    let service_metadata = ScratchstackServiceMetadata::new(partition.to_string(), "", constants::SERVICE_ID_STS);
+    let service_metadata = ScratchstackServiceMetadata::new(partition.to_string(), "", constants::SERVICE_DNS_STS);
     let operation_metadata = ScratchstackOperationMetadata::new(constants::STS_API_VERSION, operation_name);
     OperationPaginator::new_fixed_key(
         &service_metadata,

@@ -416,7 +416,7 @@ pub async fn get_policies_for_user(
 fn build_iam_arn(partition: &str, account_id: &str, resource: String, request_id: RequestId) -> Result<Arn, IamError> {
     Arn::builder()
         .partition(partition)
-        .service(crate::constants::SERVICE_KEY_IAM)
+        .service(crate::constants::SERVICE_ID_IAM)
         .account_id(account_id)
         .resource(resource)
         .build()

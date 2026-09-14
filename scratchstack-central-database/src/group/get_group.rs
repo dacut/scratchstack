@@ -151,7 +151,7 @@ pub async fn get_group(
 
     let arn = Arn::builder()
         .partition(partition.clone())
-        .service(SERVICE_KEY_IAM)
+        .service(SERVICE_ID_IAM)
         .account_id(account_id)
         .resource(group_arn_resource(&path, &group_name_cased))
         .build()
@@ -222,7 +222,7 @@ pub async fn get_group(
 
         let user_arn = Arn::builder()
             .partition(partition.clone())
-            .service(SERVICE_KEY_IAM)
+            .service(SERVICE_ID_IAM)
             .account_id(&row.user_account_id)
             .resource(user_arn_resource(&row.path, &row.user_name_cased))
             .build()

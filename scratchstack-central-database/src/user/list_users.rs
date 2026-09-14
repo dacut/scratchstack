@@ -133,7 +133,7 @@ pub async fn list_users(
 
         let arn = Arn::builder()
             .partition(partition.clone())
-            .service(SERVICE_KEY_IAM)
+            .service(SERVICE_ID_IAM)
             .account_id(account_id)
             .resource(user_arn_resource(&row.path, &row.user_name_cased))
             .build()

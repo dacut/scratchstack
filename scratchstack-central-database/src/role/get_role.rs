@@ -80,7 +80,7 @@ pub async fn get_role(
 
     let arn = Arn::builder()
         .partition(partition.clone())
-        .service(SERVICE_KEY_IAM)
+        .service(SERVICE_ID_IAM)
         .account_id(account_id)
         .resource(role_arn_resource(&path, &role_name_cased))
         .build()

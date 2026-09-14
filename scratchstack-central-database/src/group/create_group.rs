@@ -88,7 +88,7 @@ pub async fn create_group(
 
     let arn = match Arn::builder()
         .partition(partition)
-        .service(SERVICE_KEY_IAM)
+        .service(SERVICE_ID_IAM)
         .account_id(account_id)
         .resource(group_arn_resource(path, group_name))
         .build()

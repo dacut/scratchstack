@@ -18,10 +18,6 @@ pub(crate) const ARN_RESOURCE_TYPE_ROLE: &str = "role";
 /// The resource type for an IAM user in an ARN.
 pub(crate) const ARN_RESOURCE_TYPE_USER: &str = "user";
 
-/// The service name for IAM in an ARN.
-#[allow(dead_code)]
-pub(crate) const ARN_SERVICE_IAM: &str = "iam";
-
 /// The account id for the AWS account.
 pub(crate) const AWS_ACCOUNT_ID: &str = "aws";
 
@@ -146,17 +142,17 @@ pub(crate) const OP_LIST_USER_TAGS: &str = "ListUserTags";
 pub(crate) const PAGINATION_KEY_SIZE: usize = 32;
 
 /// The service identifier for the IAM service, as a principal.
-pub(crate) const SERVICE_ID_IAM: &str = "iam.amazonaws.com";
+pub(crate) const SERVICE_DNS_IAM: &str = "iam.amazonaws.com";
 
 /// The service identifier for the STS service, as a principal.
-pub(crate) const SERVICE_ID_STS: &str = "sts.amazonaws.com";
+pub(crate) const SERVICE_DNS_STS: &str = "sts.amazonaws.com";
 
-/// The service key for the IAM service in an ARN.
-pub(crate) const SERVICE_KEY_IAM: &str = "iam";
+/// The service key for the IAM service in an ARN or Aspen policy.
+pub(crate) const SERVICE_ID_IAM: &str = "iam";
 
-/// The service key for the STS service in an ARN.
+/// The service key for the STS service in an ARN or Aspen policy.
 #[allow(unused)]
-pub(crate) const SERVICE_KEY_STS: &str = "sts";
+pub(crate) const SERVICE_ID_STS: &str = "sts";
 
 /// The PostgreSQL SQLSTATE reported for a foreign-key violation, raised when a row still
 /// referenced by another table is deleted.
