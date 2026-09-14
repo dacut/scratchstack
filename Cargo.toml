@@ -18,6 +18,7 @@ members = [
     "scratchstack-shapegen",
     "scratchstack-shapegen-conformance",
     "scratchstack-shapes-access",
+    "scratchstack-shapes-cloud",
     "scratchstack-shapes-iam",
     "scratchstack-shapes-sts",
 ]
@@ -63,6 +64,7 @@ async-trait = "0.1"
 axum = "0.8"
 base32 = "0.5"
 base64 = "0.23"
+bigdecimal = "0.4"
 bon = "3.9"
 bytes = "1.2"
 chrono = { version = "0.4", default-features = false }

@@ -25,6 +25,7 @@
 //! Licensed under the Apache License, Version 2.0.
 
 use {
+    bigdecimal::BigDecimal,
     bon::Builder,
     chrono::{DateTime, Utc},
     std::{
@@ -200,6 +201,19 @@ where
             ShorthandValue::List(l) => l.iter().map(|v| T::try_from(v)).collect(),
             ShorthandValue::Scalar(_) => Ok(vec![T::try_from(value)?]),
             other => Err(format!("Expected a list/array, but got {other:?}")),
+        }
+    }
+}
+
+impl TryFrom<&ShorthandValue> for BigDecimal {
+    type Error = String;
+
+    fn try_from(value: &ShorthandValue) -> Result<Self, Self::Error> {
+        match value {
+            ShorthandValue::Scalar(s) => {
+                s.parse::<BigDecimal>().map_err(|e| format!("Failed to parse BigDecimal: {}", e))
+            }
+            other => Err(format!("Expected a scalar value, but got {other:?}")),
         }
     }
 }

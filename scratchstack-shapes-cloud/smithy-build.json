@@ -1,0 +1,33 @@
+{
+    "$schema": "smithy-build-schema.json",
+    "version": "1.0",
+    "outputDirectory": "generated-clients",
+    "sources": [
+        "cloud.smithy",
+        "operations/create-quota-definition.smithy",
+        "operations/create-quota-unit.smithy",
+        "operations/create-region.smithy",
+        "operations/create-service.smithy",
+        "operations/delete-quota.smithy",
+        "operations/delete-quota-definition.smithy",
+        "operations/delete-quota-unit.smithy",
+        "operations/delete-region.smithy",
+        "operations/delete-service.smithy",
+        "operations/get-current-partition.smithy",
+        "operations/get-quota.smithy",
+        "operations/get-quota-definition.smithy",
+        "operations/list-quotas.smithy",
+        "operations/list-quota-definitions.smithy",
+        "operations/list-quota-units.smithy",
+        "operations/list-regions.smithy",
+        "operations/set-current-partition.smithy",
+        "operations/set-quota.smithy",
+        "operations/update-quota-definition.smithy"
+    ],
+    "maven": {
+        "dependencies": [
+            "software.amazon.smithy:smithy-model:[1.54.0,2.0)",
+            "software.amazon.smithy:smithy-aws-traits:[1.54.0,2.0)"
+        ]
+    }
+}

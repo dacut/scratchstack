@@ -18,6 +18,7 @@ aes-gcm = { version = "0.11", features = ["zeroize"] }
 anstream = { version = "1" }
 axum = { version = "0.8", features = ["http2", "macros"] }
 base64 = { version = "0.22" }
+bigdecimal = { version = "0.4", features = ["serde"] }
 bitflags = { version = "2", default-features = false, features = ["serde"] }
 block-buffer = { version = "0.12", default-features = false, features = ["zeroize"] }
 byteorder = { version = "1", default-features = false, features = ["std"] }
@@ -43,7 +44,7 @@ hyper-util = { version = "0.1", features = ["http1", "http2", "server", "service
 libsqlite3-sys = { version = "0.37", default-features = false, features = ["bundled", "pkg-config", "unlock_notify", "vcpkg"] }
 log = { version = "0.4", default-features = false, features = ["std"] }
 memchr = { version = "2" }
-num-traits = { version = "0.2", default-features = false, features = ["std"] }
+num-traits = { version = "0.2", default-features = false, features = ["i128", "std"] }
 percent-encoding = { version = "2" }
 postcard = { version = "1", features = ["use-std"] }
 proc-macro2 = { version = "1" }
@@ -84,6 +85,7 @@ aes-gcm = { version = "0.11", features = ["zeroize"] }
 anstream = { version = "1" }
 axum = { version = "0.8", features = ["http2", "macros"] }
 base64 = { version = "0.22" }
+bigdecimal = { version = "0.4", features = ["serde"] }
 bitflags = { version = "2", default-features = false, features = ["serde"] }
 block-buffer = { version = "0.12", default-features = false, features = ["zeroize"] }
 byteorder = { version = "1", default-features = false, features = ["std"] }
@@ -110,7 +112,7 @@ hyper-util = { version = "0.1", features = ["http1", "http2", "server", "service
 libsqlite3-sys = { version = "0.37", default-features = false, features = ["bundled", "pkg-config", "unlock_notify", "vcpkg"] }
 log = { version = "0.4", default-features = false, features = ["std"] }
 memchr = { version = "2" }
-num-traits = { version = "0.2", default-features = false, features = ["std"] }
+num-traits = { version = "0.2", default-features = false, features = ["i128", "std"] }
 percent-encoding = { version = "2" }
 postcard = { version = "1", features = ["use-std"] }
 proc-macro2 = { version = "1" }
