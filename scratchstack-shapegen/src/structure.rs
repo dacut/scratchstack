@@ -160,17 +160,38 @@ impl Structure {
             let field_docs = doc_tokens(member.traits.documentation());
             let field_type = type_tokens(&self.field_type(member));
 
+            // `BigDecimal`'s own Serde impl writes a JSON string, but Smithy's `bigDecimal` is a
+            // JSON number on the wire, and a quoted `"1.5"` is not something a protocol-compatible
+            // client will read as one. These adapters write the number and keep every digit of it;
+            // going through `f64` instead would defeat the point of the type.
+            let big_decimal = if member.is_big_decimal() {
+                if member.is_required() {
+                    quote! { #[serde(with = "::bigdecimal::impl_serde::arbitrary_precision")] }
+                } else {
+                    // `with` supplies a `deserialize_with`, and serde then wants the field
+                    // present whatever its type: without `default` an absent `MinValue` is a
+                    // missing-field error rather than `None`.
+                    quote! {
+                        #[serde(default, with = "::bigdecimal::impl_serde::arbitrary_precision_option")]
+                    }
+                }
+            } else {
+                TokenStream::new()
+            };
+
             // An optional scalar is skipped when absent rather than serialized as an empty
             // element; a list is always present, empty or not.
             if member.is_required() || member.is_list() {
                 quote! {
                     #field_docs
+                    #big_decimal
                     #[serde(rename = #member_name)]
                     pub #field: #field_type,
                 }
             } else {
                 quote! {
                     #field_docs
+                    #big_decimal
                     #[serde(rename = #member_name, skip_serializing_if = "Option::is_none")]
                     pub #field: #field_type,
                 }

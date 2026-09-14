@@ -326,7 +326,7 @@ impl ShapeInfo for SmithyBigDecimal {
     }
 
     fn rust_typename(&self) -> String {
-        "::aws_smithy_types::BigDecimal".to_string()
+        "::bigdecimal::BigDecimal".to_string()
     }
 
     fn resolve(&mut self, shape_name: &str, _model: &SmithyModel) {
