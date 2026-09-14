@@ -58,6 +58,7 @@ uuid.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+bigdecimal.workspace = true
 env_logger.workspace = true
 pretty_assertions.workspace = true
 rand = { workspace = true, features = ["thread_rng"] }

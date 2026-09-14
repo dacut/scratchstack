@@ -197,6 +197,7 @@ structure Service {
 @pattern("^[0-9]+$")
 string accountIdType
 
+@length(min: 1, max: 256)
 string dnsNameType
 
 string descriptionType
@@ -208,7 +209,7 @@ list quotaDefinitionListType {
     member: QuotaDefinition
 }
 
-@length(min: 7)
+@length(min: 7, max: 64)
 @pattern("^quota-.*$")
 string quotaIdType
 
@@ -216,10 +217,10 @@ list quotaListType {
     member: Quota
 }
 
-@length(min: 1)
+@length(min: 1, max: 64)
 string quotaNameType
 
-@length(min: 1)
+@length(min: 1, max: 64)
 @pattern("^[-/a-zA-Z]+$")
 string quotaUnitType
 
@@ -238,11 +239,11 @@ list regionListType {
     member: Region
 }
 
-@length(min: 1)
+@length(min: 1, max: 64)
 @pattern("^[-a-z0-9]+$")
 string regionNameType
 
-@length(min: 1)
+@length(min: 1, max: 32)
 @pattern("^[-a-z0-9]+$")
 string serviceIdType
 

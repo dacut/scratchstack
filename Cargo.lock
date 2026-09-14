@@ -2572,6 +2572,7 @@ dependencies = [
  "ascii-casing",
  "base32",
  "base64 0.23.1",
+ "bigdecimal",
  "bon",
  "chrono",
  "env_logger",

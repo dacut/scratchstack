@@ -16,7 +16,7 @@ use {
         operation::{CreateQuotaDefinitionRequest, CreateQuotaDefinitionResponse},
         types::{QuotaDefinition, QuotaScope},
     },
-    sqlx::{FromRow, QueryBuilder, postgres::PgTransaction, query_as},
+    sqlx::{Acquire as _, FromRow, QueryBuilder, postgres::PgTransaction, query_as},
 };
 
 /// The columns every path through this operation reports back, whether the definition was just
@@ -85,13 +85,35 @@ impl RequestExecutor for CreateQuotaDefinitionRequest {
 
         log::info!("SQL: {}", sql.sql().as_str());
 
-        let row = match sql.build_query_as::<QuotaDefinitionRow>().fetch_one(tx.as_mut()).await {
-            Ok(row) => row,
+        // The insert runs inside a savepoint. A failed statement aborts the whole transaction in
+        // PostgreSQL -- every command after it is refused until a rollback -- so the duplicate
+        // arm below could not run its UPDATE without one: the conflict it recovers from is what
+        // put the transaction in that state.
+        let mut savepoint = tx.begin().await.map_err(
+            |e| cloud_internal_failure!(request_id; "Failed to open a savepoint for the quota definition insert: {e}"),
+        )?;
+        let insert = sql.build_query_as::<QuotaDefinitionRow>().fetch_one(savepoint.as_mut()).await;
+
+        let row = match insert {
+            Ok(row) => {
+                savepoint.commit().await.map_err(
+                    |e| cloud_internal_failure!(request_id; "Failed to release the quota definition savepoint: {e}"),
+                )?;
+                row
+            }
             Err(e) => match classify_quota_definition_insert_failure(&e) {
                 // The service already has a definition under this name. CreateQuotaDefinition is
                 // idempotent, so a redefinition replaces the one already stored rather than
                 // failing.
-                QuotaDefinitionInsertFailure::Duplicate => update_existing(self, tx, request_id).await?,
+                QuotaDefinitionInsertFailure::Duplicate => {
+                    savepoint.rollback().await.map_err(|e| {
+                        cloud_internal_failure!(
+                            request_id;
+                            "Failed to roll back to the quota definition savepoint: {e}"
+                        )
+                    })?;
+                    update_existing(self, tx, request_id).await?
+                }
 
                 // The two foreign keys are the only way the caller can name something that does
                 // not exist, and each one says which.
