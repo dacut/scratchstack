@@ -1103,6 +1103,23 @@
                     "target": "net.scratchstack.cloud#UpdateQuotaDefinition"
                 }
             ],
+            "errors": [
+                {
+                    "target": "net.scratchstack.cloud#InternalFailure"
+                },
+                {
+                    "target": "net.scratchstack.cloud#UnknownQuotaError"
+                },
+                {
+                    "target": "net.scratchstack.cloud#UnknownRegionError"
+                },
+                {
+                    "target": "net.scratchstack.cloud#UnknownServiceError"
+                },
+                {
+                    "target": "net.scratchstack.cloud#UnknownUnitError"
+                }
+            ],
             "traits": {
                 "aws.protocols#awsJson1_1": {},
                 "smithy.api#documentation": "The Scratchstack Cloud Service allows for management of the cloud/partition that Scratchstack\nservices are running in.",
@@ -1775,6 +1792,15 @@
                 "smithy.api#unstable": {}
             }
         },
+        "net.scratchstack.cloud#InternalFailure": {
+            "type": "structure",
+            "members": {},
+            "traits": {
+                "smithy.api#documentation": "Internal failure.",
+                "smithy.api#error": "server",
+                "smithy.api#httpError": 500
+            }
+        },
         "net.scratchstack.cloud#ListQuotaDefinitions": {
             "type": "operation",
             "input": {
@@ -2132,6 +2158,13 @@
         "net.scratchstack.cloud#Quota": {
             "type": "structure",
             "members": {
+                "QuotaId": {
+                    "target": "net.scratchstack.cloud#quotaIdType",
+                    "traits": {
+                        "smithy.api#documentation": "The identifier for this quota.",
+                        "smithy.api#required": {}
+                    }
+                },
                 "ServiceId": {
                     "target": "net.scratchstack.cloud#serviceIdType",
                     "traits": {
@@ -2139,7 +2172,7 @@
                         "smithy.api#required": {}
                     }
                 },
-                "Name": {
+                "QuotaName": {
                     "target": "net.scratchstack.cloud#quotaNameType",
                     "traits": {
                         "smithy.api#documentation": "The name of the quota.",
@@ -2155,8 +2188,7 @@
                 "RegionName": {
                     "target": "net.scratchstack.cloud#regionNameType",
                     "traits": {
-                        "smithy.api#documentation": "The region the quota is scoped to, or `\"global\"` if this is a global quota.",
-                        "smithy.api#required": {}
+                        "smithy.api#documentation": "The region the quota is scoped to; if this is a global quota, this is unset."
                     }
                 },
                 "AccountId": {
@@ -2222,7 +2254,7 @@
                         "smithy.api#required": {}
                     }
                 },
-                "Name": {
+                "QuotaName": {
                     "target": "net.scratchstack.cloud#quotaNameType",
                     "traits": {
                         "smithy.api#documentation": "The name of the quota.",
@@ -2235,18 +2267,17 @@
                         "smithy.api#documentation": "The description of the quota."
                     }
                 },
-                "RegionName": {
-                    "target": "net.scratchstack.cloud#regionNameType",
-                    "traits": {
-                        "smithy.api#documentation": "The region quotas is scoped to, or `\"global\"` if this is a global quota.",
-                        "smithy.api#required": {}
-                    }
-                },
                 "Unit": {
                     "target": "net.scratchstack.cloud#quotaUnitType",
                     "traits": {
                         "smithy.api#documentation": "The units of quotas created with this definition.",
                         "smithy.api#required": {}
+                    }
+                },
+                "DefaultValue": {
+                    "target": "net.scratchstack.cloud#quotaValueType",
+                    "traits": {
+                        "smithy.api#documentation": "The default value for this quota."
                     }
                 },
                 "MinValue": {
@@ -2511,6 +2542,42 @@
                 "smithy.api#documentation": "Response from the SetQuota endpoint.",
                 "smithy.api#output": {},
                 "smithy.api#unstable": {}
+            }
+        },
+        "net.scratchstack.cloud#UnknownQuotaError": {
+            "type": "structure",
+            "members": {},
+            "traits": {
+                "smithy.api#documentation": "The specified quota is not known.",
+                "smithy.api#error": "client",
+                "smithy.api#httpError": 400
+            }
+        },
+        "net.scratchstack.cloud#UnknownRegionError": {
+            "type": "structure",
+            "members": {},
+            "traits": {
+                "smithy.api#documentation": "The specified region is not known.",
+                "smithy.api#error": "client",
+                "smithy.api#httpError": 400
+            }
+        },
+        "net.scratchstack.cloud#UnknownServiceError": {
+            "type": "structure",
+            "members": {},
+            "traits": {
+                "smithy.api#documentation": "The specified service id is not known.",
+                "smithy.api#error": "client",
+                "smithy.api#httpError": 400
+            }
+        },
+        "net.scratchstack.cloud#UnknownUnitError": {
+            "type": "structure",
+            "members": {},
+            "traits": {
+                "smithy.api#documentation": "The specified unit is not known.",
+                "smithy.api#error": "client",
+                "smithy.api#httpError": 400
             }
         },
         "net.scratchstack.cloud#UpdateQuotaDefinition": {

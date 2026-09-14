@@ -22,32 +22,67 @@ service Cloud {
         GetCurrentPartition,
         GetQuota,
         GetQuotaDefinition,
-        ListQuotas,
         ListQuotaDefinitions,
+        ListQuotas,
         ListQuotaUnits,
         ListRegions,
         SetCurrentPartition,
         SetQuota,
         UpdateQuotaDefinition
     ]
+    errors: [
+        InternalFailure,
+        UnknownQuotaError,
+        UnknownRegionError,
+        UnknownServiceError,
+        UnknownUnitError,
+    ]
 }
+
+/// Internal failure.
+@error("server")
+@httpError(500)
+structure InternalFailure {}
+
+/// The specified quota is not known.
+@error("client")
+@httpError(400)
+structure UnknownQuotaError {}
+
+/// The specified region is not known.
+@error("client")
+@httpError(400)
+structure UnknownRegionError {}
+
+/// The specified service id is not known.
+@error("client")
+@httpError(400)
+structure UnknownServiceError {}
+
+/// The specified unit is not known.
+@error("client")
+@httpError(400)
+structure UnknownUnitError {}
 
 /// A quota applied to an account.
 @unstable
 structure Quota {
+    /// The identifier for this quota.
+    @required
+    QuotaId: quotaIdType
+
     /// The service this quota is scoped to.
     @required
     ServiceId: serviceIdType
 
     /// The name of the quota.
     @required
-    Name: quotaNameType
+    QuotaName: quotaNameType
 
     /// The description of the quota.
     Description: descriptionType
 
-    /// The region the quota is scoped to, or `"global"` if this is a global quota.
-    @required
+    /// The region the quota is scoped to; if this is a global quota, this is unset.
     RegionName: regionNameType
 
     /// The 12-digit account id this quota applies to.
@@ -87,18 +122,17 @@ structure QuotaDefinition {
 
     /// The name of the quota.
     @required
-    Name: quotaNameType
+    QuotaName: quotaNameType
 
     /// The description of the quota.
     Description: descriptionType
 
-    /// The region quotas is scoped to, or `"global"` if this is a global quota.
-    @required
-    RegionName: regionNameType
-
     /// The units of quotas created with this definition.
     @required
     Unit: quotaUnitType
+
+    /// The default value for this quota.
+    DefaultValue: quotaValueType,
 
     /// The minimum value of quotas created with this definition.
     MinValue: quotaValueType
