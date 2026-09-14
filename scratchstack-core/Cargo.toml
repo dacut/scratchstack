@@ -33,7 +33,7 @@ http.workspace = true
 log.workspace = true
 quick-xml = { workspace = true, optional = true, features = ["serialize"] }
 rand = { workspace = true, features = ["std", "std_rng"] }
-scratchstack-hakari = { path = "../scratchstack-hakari" }
+scratchstack-hakari.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["macros", "rt"] }

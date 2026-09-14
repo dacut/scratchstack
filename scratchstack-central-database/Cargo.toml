@@ -31,17 +31,15 @@ postgresql_embedded = { workspace = true, optional = true, features = [
 ] }
 rand = { workspace = true, features = ["std", "std_rng"] }
 regex.workspace = true
-scratchstack-arn = { path = "../scratchstack-arn", features = ["iam"] }
-scratchstack-aspen.path = "../scratchstack-aspen"
-scratchstack-aws-principal.path = "../scratchstack-aws-principal"
-scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features = [
-    "unstable",
-] }
-scratchstack-core.path = "../scratchstack-core"
-scratchstack-hakari = { path = "../scratchstack-hakari" }
-scratchstack-pagination.path = "../scratchstack-pagination"
-scratchstack-shapes-iam.path = "../scratchstack-shapes-iam"
-scratchstack-shapes-sts.path = "../scratchstack-shapes-sts"
+scratchstack-arn = { workspace = true, features = ["iam"] }
+scratchstack-aspen.workspace = true
+scratchstack-aws-principal.workspace = true
+scratchstack-aws-signature = { workspace = true, features = ["unstable"] }
+scratchstack-core.workspace = true
+scratchstack-hakari = { workspace = true }
+scratchstack-pagination.workspace = true
+scratchstack-shapes-iam.workspace = true
+scratchstack-shapes-sts.workspace = true
 serde = { workspace = true, features = ["derive"] }
 sqlx = { workspace = true, features = [
     "chrono",

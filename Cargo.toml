@@ -6,11 +6,11 @@ members = [
     "scratchstack-aws-principal",
     "scratchstack-aws-signature",
     "scratchstack-bootstrap",
+    "scratchstack-central-database",
     "scratchstack-cli-utils",
     "scratchstack-config",
     "scratchstack-core",
     "scratchstack-hakari",
-    "scratchstack-central-database",
     "scratchstack-pagination",
     "scratchstack-service-common",
     "scratchstack-service-iam",
@@ -103,7 +103,26 @@ rpassword = "7.4"
 rustls = "0.23"
 rustls-pemfile = "2.2"
 rustls-pki-types = "1.12"
-scratchstack_hakari = { path = "scratchstack-hakari" }
+scratchstack-arn.path = "scratchstack-arn"
+scratchstack-aspen.path = "scratchstack-aspen"
+scratchstack-aws-principal.path = "scratchstack-aws-principal"
+scratchstack-aws-signature.path = "scratchstack-aws-signature"
+scratchstack-bootstrap.path = "scratchstack-bootstrap"
+scratchstack-central-database.path = "scratchstack-central-database"
+scratchstack-cli-utils.path = "scratchstack-cli-utils"
+scratchstack-config.path = "scratchstack-config"
+scratchstack-core.path = "scratchstack-core"
+scratchstack-hakari.path = "scratchstack-hakari"
+scratchstack-pagination.path = "scratchstack-pagination"
+scratchstack-service-common.path = "scratchstack-service-common"
+scratchstack-service-iam.path = "scratchstack-service-iam"
+scratchstack-service-sts.path = "scratchstack-service-sts"
+scratchstack-shapegen.path = "scratchstack-shapegen"
+scratchstack-shapegen-conformance.path = "scratchstack-shapegen-conformance"
+scratchstack-shapes-access.path = "scratchstack-shapes-access"
+scratchstack-shapes-cloud.path = "scratchstack-shapes-cloud"
+scratchstack-shapes-iam.path = "scratchstack-shapes-iam"
+scratchstack-shapes-sts.path = "scratchstack-shapes-sts"
 serde = "1"
 serde_json = "1"
 serde_urlencoded = "0.7"

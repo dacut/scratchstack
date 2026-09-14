@@ -19,14 +19,12 @@ chrono.workspace = true
 env_logger.workspace = true
 log.workspace = true
 rpassword.workspace = true
-scratchstack-cli-utils = { path = "../scratchstack-cli-utils" }
-scratchstack-core.path = "../scratchstack-core"
-scratchstack-hakari = { path = "../scratchstack-hakari" }
-scratchstack-central-database = { path = "../scratchstack-central-database", features = [
-    "utils",
-] }
-scratchstack-shapes-iam = { path = "../scratchstack-shapes-iam" }
-scratchstack-shapes-sts = { path = "../scratchstack-shapes-sts" }
+scratchstack-central-database = { workspace = true, features = ["utils"] }
+scratchstack-cli-utils.workspace = true
+scratchstack-core.workspace = true
+scratchstack-hakari.workspace = true
+scratchstack-shapes-iam.workspace = true
+scratchstack-shapes-sts.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sqlx = { workspace = true, features = [

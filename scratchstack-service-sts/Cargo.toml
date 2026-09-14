@@ -11,13 +11,12 @@ version.workspace = true
 
 [dependencies]
 log.workspace = true
-scratchstack-arn.path = "../scratchstack-arn"
-scratchstack-aspen.path = "../scratchstack-aspen"
-scratchstack-aws-signature = { path = "../scratchstack-aws-signature", features = [
-    "unstable",
-] }
-scratchstack-aws-principal.path = "../scratchstack-aws-principal"
-scratchstack-core = { path = "../scratchstack-core", features = [
+scratchstack-arn.workspace = true
+scratchstack-aspen.workspace = true
+scratchstack-aws-signature = { workspace = true, features = ["unstable"] }
+scratchstack-aws-principal.workspace = true
+scratchstack-central-database.workspace = true
+scratchstack-core = { workspace = true, features = [
     "form",
     "http1",
     "http2",
@@ -29,11 +28,10 @@ scratchstack-core = { path = "../scratchstack-core", features = [
     "tower-log",
     "tracing",
 ] }
-scratchstack-hakari.path = "../scratchstack-hakari"
-scratchstack-central-database.path = "../scratchstack-central-database"
-scratchstack-service-common.path = "../scratchstack-service-common"
-scratchstack-shapes-iam.path = "../scratchstack-shapes-iam"
-scratchstack-shapes-sts.path = "../scratchstack-shapes-sts"
+scratchstack-hakari.workspace = true
+scratchstack-service-common.workspace = true
+scratchstack-shapes-iam.workspace = true
+scratchstack-shapes-sts.workspace = true
 sqlx = { workspace = true, features = [
     "all-databases",
     "chrono",

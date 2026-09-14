@@ -30,10 +30,10 @@ ipnet.workspace = true
 lazy_static.workspace = true
 log.workspace = true
 regex.workspace = true
-scratchstack-arn.path = "../scratchstack-arn"
-scratchstack-aws-principal.path = "../scratchstack-aws-principal"
-scratchstack-core = { path = "../scratchstack-core", default-features = false }
-scratchstack-hakari = { path = "../scratchstack-hakari" }
+scratchstack-arn.workspace = true
+scratchstack-aws-principal.workspace = true
+scratchstack-core = { workspace = true, default-features = false }
+scratchstack-hakari.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 
