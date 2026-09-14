@@ -2543,6 +2543,7 @@ dependencies = [
 name = "scratchstack-bootstrap"
 version = "0.12.0"
 dependencies = [
+ "bigdecimal",
  "chrono",
  "clap",
  "env_logger",

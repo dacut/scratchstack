@@ -13,6 +13,7 @@
 #![cfg_attr(doc, feature(doc_cfg))]
 
 mod account;
+mod cloud;
 mod error;
 mod group;
 mod migrate;
@@ -28,11 +29,15 @@ mod tests;
 
 use {
     crate::{
-        account::*, error::*, group::*, partition::*, policy::*, role::*, session_token_encryption_key::*, user::*,
+        account::*, cloud::*, error::*, group::*, partition::*, policy::*, role::*, session_token_encryption_key::*,
+        user::*,
     },
     clap::{Parser, Subcommand},
     scratchstack_central_database::RequestExecutor,
     scratchstack_core::{RequestId, error::ProvideErrorMetadata},
+    scratchstack_shapes_cloud::{
+        error_meta::Error as CloudError, types::error::InternalFailure as CloudInternalFailure,
+    },
     scratchstack_shapes_iam::{error_meta::Error as IamError, types::error::InternalFailure as IamInternalFailure},
     serde::Serialize as _,
     serde_json::ser::{PrettyFormatter, Serializer as JsonSerializer},
@@ -113,6 +118,10 @@ struct Cli {
 /// The service whose subcommand should be run.
 #[derive(Debug, Subcommand)]
 enum ServiceCommands {
+    /// Cloud commands.
+    #[command(name = "cloud", subcommand)]
+    Cloud(CloudCommands),
+
     /// Database commands.
     #[command(name = "db", subcommand)]
     Db(DbCommands),
@@ -120,6 +129,13 @@ enum ServiceCommands {
     /// Identity and Access Management (IAM) and Security Token Service (STS) commands.
     #[command(name = "iam", subcommand)]
     Iam(IamCommands),
+}
+
+#[derive(Debug, Subcommand)]
+enum CloudCommands {
+    /// Create a new quota definition.
+    #[command(name = "create-quota-definition")]
+    CreateQuotaDefinition(CreateQuotaDefinitionCommand),
 }
 
 #[derive(Debug, Subcommand)]
@@ -457,8 +473,18 @@ impl ServiceCommands {
     /// Return the AWS-style operation name for the service subcommand this wraps.
     fn operation_name(&self) -> &'static str {
         match self {
+            ServiceCommands::Cloud(command) => command.operation_name(),
             ServiceCommands::Db(command) => command.operation_name(),
             ServiceCommands::Iam(command) => command.operation_name(),
+        }
+    }
+}
+
+impl CloudCommands {
+    /// Return the AWS-style operation name for this command.
+    fn operation_name(&self) -> &'static str {
+        match self {
+            CloudCommands::CreateQuotaDefinition(_) => "CreateQuotaDefinition",
         }
     }
 }
@@ -603,6 +629,7 @@ where
         let mut writer = JsonSerializer::with_formatter(&mut buffer, formatter);
 
         match &cli.command {
+            ServiceCommands::Cloud(command) => boxed_future(|| run_cloud(&cli, command, vars, &mut writer)).await?,
             ServiceCommands::Db(_) => unreachable!(),
             ServiceCommands::Iam(command) => boxed_future(|| run_iam(&cli, command, vars, &mut writer)).await?,
         }
@@ -615,6 +642,31 @@ where
                     IamInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into(),
                 ))
             })?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Execute a cloud subcommand, serializing any response into `writer`.
+async fn run_cloud<I>(
+    cli: &Cli,
+    command: &CloudCommands,
+    vars: I,
+    writer: &mut ResponseSerializer<'_>,
+) -> Result<(), CloudError>
+where
+    I: IntoIterator<Item = (OsString, String)> + Clone + Send,
+{
+    match command {
+        CloudCommands::CreateQuotaDefinition(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                CloudError::InternalFailure(
+                    CloudInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into(),
+                )
+            })?
         }
     }
 
