@@ -88,6 +88,12 @@ impl Member {
         self.as_enum().is_some()
     }
 
+    /// Indicates whether this member targets a `bigDecimal`.
+    #[must_use]
+    pub(crate) fn is_big_decimal(&self) -> bool {
+        matches!(&*self.inner().borrow(), Shape::BigDecimal(_))
+    }
+
     /// Indicates whether this member holds sensitive data.
     ///
     /// Smithy allows `@sensitive` on the member or on the shape it targets, and in practice it is

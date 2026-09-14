@@ -45,6 +45,7 @@ structure ListQuotasRequest {
 @unstable
 structure ListQuotasResponse {
     /// The next page of quotas.
+    @required
     Quotas: quotaListType,
 
     /// A boolean indicating whether more results are available.

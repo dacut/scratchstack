@@ -2027,7 +2027,8 @@
                 "Quotas": {
                     "target": "net.scratchstack.cloud#quotaListType",
                     "traits": {
-                        "smithy.api#documentation": "The next page of quotas."
+                        "smithy.api#documentation": "The next page of quotas.",
+                        "smithy.api#required": {}
                     }
                 },
                 "Truncated": {
