@@ -20,6 +20,7 @@ COMMENT ON TABLE cloud.quota_units IS 'The units used for cloud quotas.';
 CREATE TABLE cloud.services(
     service_id VARCHAR(32) PRIMARY KEY,
     service_dns_name VARCHAR(256) NOT NULL,
+    description TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uk_service_dns_name UNIQUE (service_dns_name)
@@ -48,9 +49,15 @@ CREATE TABLE cloud.regional_quota_definitions(
     max_value NUMERIC,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT ck_rqd_bounds CHECK (
+        (min_value IS NULL OR max_value IS NULL OR min_value <= max_value) AND
+        (default_value IS NULL OR min_value IS NULL OR default_value >= min_value) AND
+        (default_value IS NULL OR max_value IS NULL OR default_value <= max_value)
+    ),
+    CONSTRAINT uk_rqd_svcid_quota UNIQUE (service_id, regional_quota_id),
     CONSTRAINT fk_service FOREIGN KEY (service_id) REFERENCES cloud.services(service_id),
     CONSTRAINT fk_units FOREIGN KEY (units) REFERENCES cloud.quota_units(units)
-); 
+);
 COMMENT ON TABLE cloud.regional_quota_definitions IS 'Definitions of regional quotas for cloud services.';
 
 CREATE TABLE cloud.global_quota_definitions(
@@ -64,6 +71,11 @@ CREATE TABLE cloud.global_quota_definitions(
     max_value NUMERIC,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT ck_gqd_bounds CHECK (
+        (min_value IS NULL OR max_value IS NULL OR min_value <= max_value) AND
+        (default_value IS NULL OR min_value IS NULL OR default_value >= min_value) AND
+        (default_value IS NULL OR max_value IS NULL OR default_value <= max_value)
+    ),
     CONSTRAINT fk_service FOREIGN KEY (service_id) REFERENCES cloud.services(service_id),
     CONSTRAINT fk_units FOREIGN KEY (units) REFERENCES cloud.quota_units(units)
 );
@@ -71,14 +83,20 @@ COMMENT ON TABLE cloud.global_quota_definitions IS 'Definitions of global quotas
 
 CREATE TABLE cloud.account_regional_quotas(
     account_id CHAR(12) NOT NULL,
+    service_id VARCHAR(32) NOT NULL,
     region_name VARCHAR(64) NOT NULL,
     regional_quota_id VARCHAR(64) NOT NULL,
     quota_value NUMERIC,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT pk_account_regional_quotas PRIMARY KEY (account_id, region_name, regional_quota_id),
-    CONSTRAINT fk_region FOREIGN KEY (region_name) REFERENCES cloud.regions(region_name),
-    CONSTRAINT fk_regional_quota FOREIGN KEY (regional_quota_id) REFERENCES cloud.regional_quota_definitions(regional_quota_id)
+    -- service_id is carried so these two keys can be composite. Referencing the region and the
+    -- quota definition independently would let a quota be assigned in a region its service is not
+    -- available in; together they cannot disagree about which service is being talked about.
+    CONSTRAINT fk_service_region FOREIGN KEY (service_id, region_name)
+        REFERENCES cloud.service_regions(service_id, region_name),
+    CONSTRAINT fk_regional_quota FOREIGN KEY (service_id, regional_quota_id)
+        REFERENCES cloud.regional_quota_definitions(service_id, regional_quota_id)
 );
 COMMENT ON TABLE cloud.account_regional_quotas IS 'Regional quotas assigned to cloud accounts.';
 
