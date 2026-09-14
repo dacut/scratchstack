@@ -4,11 +4,11 @@ use {
     pretty_assertions::assert_eq,
     scratchstack_aspen::{Context, Decision, PolicySet, PolicySource, authorize},
     scratchstack_aws_principal::{AssumedRole, Principal as PrincipalActor, SessionData, SessionValue, User},
-    scratchstack_core::RequestId,
-    scratchstack_iam_database::{
+    scratchstack_central_database::{
         authz::{get_policies_by_ids, get_policies_for_role, get_policies_for_user},
         user::put_user_policy,
     },
+    scratchstack_core::RequestId,
 };
 
 const EXAMPLE_ACCOUNT_1: &str = "123456789012";

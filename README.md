@@ -32,7 +32,7 @@ earlier release is covered by the migration guides:
 At the service layer, IAM dispatches 69 operations and STS dispatches `AssumeRole` and
 `GetCallerIdentity`. The database layer tracks the full AWS surface as a checklist —
 70 of 176 IAM APIs, plus nine Scratchstack extensions with no AWS counterpart — in
-[the `scratchstack-iam-database` README](scratchstack-iam-database/README.md).
+[the `scratchstack-central-database` README](scratchstack-central-database/README.md).
 
 ## Crates
 
@@ -63,7 +63,7 @@ These have no dependency on the server and are useful on their own.
 | Crate | What it does |
 |---|---|
 | [`scratchstack-core`](scratchstack-core) | Types shared across everything else: the error traits, `RequestId` (a UUIDv7 carrying request arrival time), AWS query-protocol deserialization, XML response serialization, and response envelopes. See [its README](scratchstack-core/README.md). |
-| [`scratchstack-iam-database`](scratchstack-iam-database) | The PostgreSQL schema, its [migrations](scratchstack-iam-database/migrations), and the typed API each IAM and STS operation runs against it. |
+| [`scratchstack-central-database`](scratchstack-central-database) | The PostgreSQL schema, its [migrations](scratchstack-central-database/migrations), and the typed API each IAM and STS operation runs against it. |
 | [`scratchstack-pagination`](scratchstack-pagination) | Tamper-resistant pagination tokens, encrypted with AES256-GCM under service-supplied keys that can be rotated. |
 | [`scratchstack-cli-utils`](scratchstack-cli-utils) | Argument-parsing helpers for the command-line tools: list parsing and AWS-style shorthand syntax. |
 
@@ -100,7 +100,7 @@ well as `cargo doc`, so on stable both fail outright rather than merely dropping
 Tests spin up an **embedded PostgreSQL** instance rather than talking to an external database, so
 the suite needs no network access and no local server. That makes the database-backed tests closer
 to integration tests than unit tests; they live in
-[`scratchstack-iam-database/tests/iam_database.rs`](scratchstack-iam-database/tests/iam_database.rs)
+[`scratchstack-central-database/tests/iam.rs`](scratchstack-central-database/tests/iam.rs)
 and [`scratchstack-bootstrap/src/tests.rs`](scratchstack-bootstrap/src/tests.rs).
 
 CI runs formatting, clippy, tests, and the doc build — see

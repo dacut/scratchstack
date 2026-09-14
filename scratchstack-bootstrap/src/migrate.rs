@@ -2,7 +2,7 @@
 use {
     crate::{Cli, MSG_INTERNAL_FAILURE, Runnable},
     clap::Args,
-    scratchstack_iam_database::migrate::MIGRATOR,
+    scratchstack_central_database::migrate::MIGRATOR,
     scratchstack_shapes_iam::{error_meta::Error as IamError, types::error::InternalFailure},
     serde::{Deserialize, Serialize},
     std::ffi::OsString,

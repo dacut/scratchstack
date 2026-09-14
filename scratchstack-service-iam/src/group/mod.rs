@@ -31,12 +31,12 @@ pub(crate) use {
 use {
     crate::{constants::*, service::internal_failure},
     scratchstack_arn::Arn,
+    scratchstack_central_database::{group::get_group_path_and_name, partition::get_current_partition_or_fail},
     scratchstack_core::{
         RequestId,
         axum::{body::Body, response::Response},
         response::Responder as _,
     },
-    scratchstack_iam_database::{group::get_group_path_and_name, partition::get_current_partition_or_fail},
     sqlx::postgres::PgTransaction,
 };
 

@@ -1,6 +1,6 @@
 [package]
-name = "scratchstack-iam-database"
-description = "IAM database schema and types for Scratchstack services"
+name = "scratchstack-central-database"
+description = "Central Scratchstack database schema and accessors."
 
 authors.workspace = true
 homepage.workspace = true

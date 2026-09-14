@@ -56,7 +56,7 @@ const RESOURCE_ID_BITS: u32 = 39;
 /// non-breaking change. The fields remain public for reading.
 ///
 /// ```compile_fail,E0639
-/// # use scratchstack_iam_database::id::IamId;
+/// # use scratchstack_central_database::id::IamId;
 /// let _ = IamId {
 ///     account_id: 557925715019,
 /// };
@@ -94,7 +94,7 @@ impl IamId {
     /// # Example
     ///
     /// ```
-    /// # use scratchstack_iam_database::id::IamId;
+    /// # use scratchstack_central_database::id::IamId;
     /// # use scratchstack_aws_principal::IamResourceType;
     /// let id = IamId::builder()
     ///     .resource_type(IamResourceType::AccessKey)

@@ -6,13 +6,13 @@ use {
     },
     scratchstack_arn::IamResourceArn,
     scratchstack_aws_principal::{Principal, SessionData},
+    scratchstack_central_database::RequestExecutor as _,
     scratchstack_core::{
         RequestId,
         axum::{body::Body, response::Response},
         query::from_query_str,
         response::Responder as _,
     },
-    scratchstack_iam_database::RequestExecutor as _,
     scratchstack_shapes_sts::{
         operation::{AssumeRoleRequest, AssumeRoleResponseEnvelope},
         types::error::ValidationError,

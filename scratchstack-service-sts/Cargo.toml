@@ -30,7 +30,7 @@ scratchstack-core = { path = "../scratchstack-core", features = [
     "tracing",
 ] }
 scratchstack-hakari.path = "../scratchstack-hakari"
-scratchstack-iam-database.path = "../scratchstack-iam-database"
+scratchstack-central-database.path = "../scratchstack-central-database"
 scratchstack-service-common.path = "../scratchstack-service-common"
 scratchstack-shapes-iam.path = "../scratchstack-shapes-iam"
 scratchstack-shapes-sts.path = "../scratchstack-shapes-sts"

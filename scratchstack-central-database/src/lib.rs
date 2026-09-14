@@ -1,4 +1,4 @@
-//! IAM database schema and types for Scratchstack services.
+//! Central Scratchstack database schema and accessors.
 #![warn(clippy::all)]
 #![allow(clippy::manual_range_contains)]
 #![deny(

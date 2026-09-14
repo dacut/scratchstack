@@ -13,12 +13,12 @@ use {
     scratchstack_aspen::{AwsPrincipal, Effect, Policy as AspenPolicy, PolicySet, PolicySource},
     scratchstack_aws_principal::{IamResourceType, Principal, SessionData, SessionValue},
     scratchstack_aws_signature::SessionPolicies,
+    scratchstack_central_database::role::get_role,
     scratchstack_core::{
         RequestId,
         axum::{body::Body, response::Response},
         response::Responder as _,
     },
-    scratchstack_iam_database::role::get_role,
     scratchstack_service_common::authz::{
         AuthorizationError, access_denied_message, check_authorization, evaluate, request_session_data,
     },

@@ -34,7 +34,7 @@ scratchstack-core = { path = "../scratchstack-core", features = [
     "tracing",
 ] }
 scratchstack-hakari = { path = "../scratchstack-hakari" }
-scratchstack-iam-database.path = "../scratchstack-iam-database"
+scratchstack-central-database.path = "../scratchstack-central-database"
 scratchstack-shapes-iam.path = "../scratchstack-shapes-iam"
 sqlx = { workspace = true, features = [
     "all-databases",

@@ -3,8 +3,8 @@
 use {
     super::common::VALID_POLICY_DOCUMENT,
     pretty_assertions::assert_eq,
+    scratchstack_central_database::RequestExecutor,
     scratchstack_core::RequestId,
-    scratchstack_iam_database::RequestExecutor,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{

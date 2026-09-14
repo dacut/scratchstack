@@ -1,6 +1,6 @@
 //! Tests for the IAM database model and related functionality.
 //!
-//! The body of each test lives in a submodule under [tests/iam_database/](iam_database/); this
+//! The body of each test lives in a submodule under [tests/iam/](iam/); this
 //! file orchestrates a single end-to-end run because the test database is stateful between calls.
 #![cfg(feature = "utils")]
 #![warn(clippy::all)]
@@ -17,36 +17,36 @@
 #![cfg_attr(doc, feature(doc_cfg))]
 
 use {
-    scratchstack_iam_database::{migrate::MIGRATOR, utils::TempDatabase},
+    scratchstack_central_database::{migrate::MIGRATOR, utils::TempDatabase},
     sqlx::{PgPool, raw_sql},
 };
 
-#[path = "iam_database/account.rs"]
+#[path = "iam/account.rs"]
 mod account;
-#[path = "iam_database/authz.rs"]
+#[path = "iam/authz.rs"]
 mod authz;
-#[path = "iam_database/common.rs"]
+#[path = "iam/common.rs"]
 mod common;
-#[path = "iam_database/group.rs"]
+#[path = "iam/group.rs"]
 mod group;
-#[path = "iam_database/gsk.rs"]
+#[path = "iam/gsk.rs"]
 mod gsk;
-#[path = "iam_database/partition.rs"]
+#[path = "iam/partition.rs"]
 mod partition;
-#[path = "iam_database/policy_attachment.rs"]
+#[path = "iam/policy_attachment.rs"]
 mod policy_attachment;
-#[path = "iam_database/policy_crud.rs"]
+#[path = "iam/policy_crud.rs"]
 mod policy_crud;
-#[path = "iam_database/policy_delete.rs"]
+#[path = "iam/policy_delete.rs"]
 mod policy_delete;
-#[path = "iam_database/policy_query.rs"]
+#[path = "iam/policy_query.rs"]
 mod policy_query;
-#[path = "iam_database/role.rs"]
+#[path = "iam/role.rs"]
 mod role;
-#[path = "iam_database/user.rs"]
+#[path = "iam/user.rs"]
 mod user;
 
-const IAM_DATA: &str = include_str!("iam_database.sql");
+const IAM_DATA: &str = include_str!("iam.sql");
 
 /// Test all of the features of the database.
 ///

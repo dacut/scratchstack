@@ -22,7 +22,7 @@ rpassword.workspace = true
 scratchstack-cli-utils = { path = "../scratchstack-cli-utils" }
 scratchstack-core.path = "../scratchstack-core"
 scratchstack-hakari = { path = "../scratchstack-hakari" }
-scratchstack-iam-database = { path = "../scratchstack-iam-database", features = [
+scratchstack-central-database = { path = "../scratchstack-central-database", features = [
     "utils",
 ] }
 scratchstack-shapes-iam = { path = "../scratchstack-shapes-iam" }

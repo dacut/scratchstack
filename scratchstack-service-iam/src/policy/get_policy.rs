@@ -8,13 +8,13 @@ use {
     scratchstack_arn::Arn,
     scratchstack_aws_principal::{Principal, SessionData, SessionValue},
     scratchstack_aws_signature::SessionPolicies,
+    scratchstack_central_database::policy::get_policy as read_policy,
     scratchstack_core::{
         RequestId,
         axum::{body::Body, response::Response},
         query::from_query_str,
         response::Responder as _,
     },
-    scratchstack_iam_database::policy::get_policy as read_policy,
     scratchstack_shapes_iam::{
         action::Action,
         error_meta::Error as IamError,

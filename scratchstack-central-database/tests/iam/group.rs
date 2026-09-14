@@ -1,8 +1,8 @@
 //! Group test suite, including group membership tests.
 use {
     pretty_assertions::assert_eq,
+    scratchstack_central_database::{RequestExecutor, group::get_group_path_and_name},
     scratchstack_core::RequestId,
-    scratchstack_iam_database::{RequestExecutor, group::get_group_path_and_name},
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{

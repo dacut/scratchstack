@@ -5,7 +5,7 @@ use {
     chrono::{DateTime, Utc},
     pretty_assertions::assert_eq,
     scratchstack_core::error::ProvideErrorMetadata,
-    scratchstack_iam_database::utils::TempDatabase,
+    scratchstack_central_database::utils::TempDatabase,
     scratchstack_shapes_iam::{error_meta::Error as IamError, types::ListSessionTokenEncryptionKeysFilterName},
     serde_json::Value as JsonValue,
     std::{collections::HashSet, ffi::OsString, future::Future},

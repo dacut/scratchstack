@@ -4,8 +4,8 @@ use {
     pretty_assertions::assert_eq,
     scratchstack_aws_principal::{Principal, SessionValue},
     scratchstack_aws_signature::{GetSigningKeyRequest, SignatureError},
+    scratchstack_central_database::GetSigningKeyFromDatabase,
     scratchstack_core::RequestId,
-    scratchstack_iam_database::GetSigningKeyFromDatabase,
     std::sync::Arc,
     tower::{Service as _, ServiceExt as _},
 };

@@ -1,6 +1,6 @@
-# scratchstack-iam-database
+# scratchstack-central-database
 
-IAM database schema and types for Scratchstack services.
+Central Scratchstack database schema and accessors.
 
 ## API Implementation Checklist
 

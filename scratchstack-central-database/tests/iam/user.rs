@@ -1,8 +1,8 @@
 //! User test suite.
 use {
     pretty_assertions::assert_eq,
+    scratchstack_central_database::RequestExecutor,
     scratchstack_core::{ProvideRequestId as _, RequestId},
-    scratchstack_iam_database::RequestExecutor,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{

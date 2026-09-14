@@ -3,11 +3,11 @@
 use {
     super::common::VALID_POLICY_DOCUMENT,
     pretty_assertions::assert_eq,
-    scratchstack_core::RequestId,
-    scratchstack_iam_database::{
+    scratchstack_central_database::{
         RequestExecutor,
         policy::{get_policy, list_entities_for_policy},
     },
+    scratchstack_core::RequestId,
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
@@ -87,7 +87,7 @@ pub async fn test_get_policy_aws_account(pool: &sqlx::PgPool) {
 /// account is told about its own entities and no others.
 ///
 /// That cross-account attachment is raw seed data, and the API no longer lets one be made -- see
-/// [`resolve_policy_account_id`][scratchstack_iam_database::policy] and the attachment tests. It
+/// [`resolve_policy_account_id`][scratchstack_central_database::policy] and the attachment tests. It
 /// stands here because counting has to be right about rows it finds, however they got there, and
 /// because it is the same shape as the case that is reachable: an AWS-managed policy attached in
 /// more than one account.

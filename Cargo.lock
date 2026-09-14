@@ -2549,10 +2549,10 @@ dependencies = [
  "log",
  "pretty_assertions",
  "rpassword",
+ "scratchstack-central-database",
  "scratchstack-cli-utils",
  "scratchstack-core",
  "scratchstack-hakari",
- "scratchstack-iam-database",
  "scratchstack-shapes-iam",
  "scratchstack-shapes-sts",
  "serde",
@@ -2561,6 +2561,44 @@ dependencies = [
  "test-log",
  "tokio",
  "whoami",
+]
+
+[[package]]
+name = "scratchstack-central-database"
+version = "0.12.0"
+dependencies = [
+ "ascii-casing",
+ "base32",
+ "base64 0.23.1",
+ "bon",
+ "chrono",
+ "env_logger",
+ "indoc",
+ "log",
+ "pct-str",
+ "postgresql_commands",
+ "postgresql_embedded",
+ "pretty_assertions",
+ "rand",
+ "regex",
+ "scratchstack-arn",
+ "scratchstack-aspen",
+ "scratchstack-aws-principal",
+ "scratchstack-aws-signature",
+ "scratchstack-core",
+ "scratchstack-hakari",
+ "scratchstack-pagination",
+ "scratchstack-shapes-iam",
+ "scratchstack-shapes-sts",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "test-log",
+ "tokio",
+ "tower",
+ "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -2699,44 +2737,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "scratchstack-iam-database"
-version = "0.12.0"
-dependencies = [
- "ascii-casing",
- "base32",
- "base64 0.23.1",
- "bon",
- "chrono",
- "env_logger",
- "indoc",
- "log",
- "pct-str",
- "postgresql_commands",
- "postgresql_embedded",
- "pretty_assertions",
- "rand",
- "regex",
- "scratchstack-arn",
- "scratchstack-aspen",
- "scratchstack-aws-principal",
- "scratchstack-aws-signature",
- "scratchstack-core",
- "scratchstack-hakari",
- "scratchstack-pagination",
- "scratchstack-shapes-iam",
- "scratchstack-shapes-sts",
- "serde",
- "serde_json",
- "sqlx",
- "tempfile",
- "test-log",
- "tokio",
- "tower",
- "uuid",
- "zeroize",
-]
-
-[[package]]
 name = "scratchstack-pagination"
 version = "0.12.0"
 dependencies = [
@@ -2771,10 +2771,10 @@ dependencies = [
  "scratchstack-aspen",
  "scratchstack-aws-principal",
  "scratchstack-aws-signature",
+ "scratchstack-central-database",
  "scratchstack-config",
  "scratchstack-core",
  "scratchstack-hakari",
- "scratchstack-iam-database",
  "scratchstack-shapes-iam",
  "sqlx",
  "tokio",
@@ -2794,10 +2794,10 @@ dependencies = [
  "scratchstack-aspen",
  "scratchstack-aws-principal",
  "scratchstack-aws-signature",
+ "scratchstack-central-database",
  "scratchstack-config",
  "scratchstack-core",
  "scratchstack-hakari",
- "scratchstack-iam-database",
  "scratchstack-service-common",
  "scratchstack-shapes-iam",
  "serde_urlencoded",
@@ -2820,9 +2820,9 @@ dependencies = [
  "scratchstack-aspen",
  "scratchstack-aws-principal",
  "scratchstack-aws-signature",
+ "scratchstack-central-database",
  "scratchstack-core",
  "scratchstack-hakari",
- "scratchstack-iam-database",
  "scratchstack-service-common",
  "scratchstack-shapes-iam",
  "scratchstack-shapes-sts",

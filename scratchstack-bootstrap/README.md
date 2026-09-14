@@ -155,6 +155,6 @@ decrypting outstanding ones.
 ## Related
 
 The schema, migrations, and the typed API these commands run against live in
-[`scratchstack-iam-database`](../scratchstack-iam-database). The services that serve the same
+[`scratchstack-central-database`](../scratchstack-central-database). The services that serve the same
 operations over HTTP are [`scratchstack-service-iam`](../scratchstack-service-iam) and
 [`scratchstack-service-sts`](../scratchstack-service-sts).

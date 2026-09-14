@@ -7,13 +7,13 @@ use {
     },
     scratchstack_aws_principal::{Principal, SessionData, SessionValue},
     scratchstack_aws_signature::SessionPolicies,
+    scratchstack_central_database::policy::list_entities_for_policy as read_entities_for_policy,
     scratchstack_core::{
         RequestId,
         axum::{body::Body, response::Response},
         query::from_query_str,
         response::Responder as _,
     },
-    scratchstack_iam_database::policy::list_entities_for_policy as read_entities_for_policy,
     scratchstack_shapes_iam::{
         action::Action,
         operation::{ListEntitiesForPolicyRequest, ListEntitiesForPolicyResponseEnvelope},

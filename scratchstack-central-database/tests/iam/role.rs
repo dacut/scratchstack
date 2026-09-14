@@ -10,8 +10,8 @@ use {
         SessionTokenEncryptionAlgorithm as SigSessionTokenEncryptionAlgorithm, SessionTokenEncryptionKeyInfo,
         SignatureError, StaticKeyService,
     },
+    scratchstack_central_database::{GetSigningKeyFromDatabase, RequestExecutor},
     scratchstack_core::RequestId,
-    scratchstack_iam_database::{GetSigningKeyFromDatabase, RequestExecutor},
     scratchstack_shapes_iam::{
         error_meta::Error as IamError,
         operation::{
