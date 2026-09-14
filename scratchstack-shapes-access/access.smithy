@@ -24,6 +24,29 @@ enum Decision {
     DEFAULT_DENY = "DefaultDeny"
 }
 
+/// The identity details of an assumed IAM role.
+@unstable
+structure AssumedRole {
+    /// The ARN of the assumed-role session.
+    @required
+    Arn: arnType
+
+    /// The AWS account ID the role belongs to.
+    @required
+    AccountId: accountIdType
+
+    /// The name of the role that was assumed.
+    @required
+    RoleName: roleNameType
+
+    /// The session name supplied when the role was assumed.
+    @required
+    SessionName: sessionNameType
+
+    /// Tags applied to the session.
+    Tags: tagListType
+}
+
 /// The identifiers for a federated user.
 @unstable
 structure FederatedUser {
@@ -42,15 +65,36 @@ structure FederatedUser {
 }
 
 /// An acting principal for a given request.
+///
+/// `PrincipalSource` and `PrincipalType` say which kind of identity this is; exactly one of the
+/// detail members below is populated, the one `PrincipalType` names. A caller that only needs to
+/// branch on the kind can read the discriminators alone, and one that needs to know *who* the
+/// caller is reads the matching detail.
 @unstable
 structure Principal {
     /// The source of the principal, one of `Aws`, `Federated`, or `Service`.
     @required
     PrincipalSource: PrincipalSource
 
-    /// The type of the principal, one of `AssumedRole`, `FederatedUser`, `Service`, or `User`.
+    /// The type of the principal, one of `AssumedRole`, `FederatedUser`, `RootUser`, `Service`,
+    /// or `User`.
     @required
     PrincipalType: PrincipalType
+
+    /// The assumed-role session, set when `PrincipalType` is `AssumedRole`.
+    AssumedRole: AssumedRole
+
+    /// The federated user, set when `PrincipalType` is `FederatedUser`.
+    FederatedUser: FederatedUser
+
+    /// The account root user, set when `PrincipalType` is `RootUser`.
+    RootUser: RootUser
+
+    /// The service, set when `PrincipalType` is `Service`.
+    Service: Service
+
+    /// The IAM user, set when `PrincipalType` is `User`.
+    User: User
 }
 
 /// A policy attached to a principal
@@ -139,6 +183,21 @@ structure Resource {
     Tags: tagListType
 }
 
+/// The identity details of an AWS account root user.
+///
+/// Scratchstack does not issue root user credentials; this exists so that a principal arriving
+/// from a system that does can still be described.
+@unstable
+structure RootUser {
+    /// The ARN of the root user.
+    @required
+    Arn: arnType
+
+    /// The AWS account ID of the root user.
+    @required
+    AccountId: accountIdType
+}
+
 /// The identity details of an AWS-like service.
 @unstable
 structure Service {
@@ -188,7 +247,7 @@ structure User {
 string accessKeyIdType
 
 @length(min: 12, max: 12)
-@pattern("^[0-9]$")
+@pattern("^[0-9]{12}$")
 string accountIdType
 
 string actionNameType
@@ -243,6 +302,10 @@ list resourceListType {
 }
 
 string serviceDnsNameType
+
+@length(min: 1, max: 64)
+@pattern("^[\\w+=,.@-]*$")
+string roleNameType
 
 @pattern("^[a-z0-9](-[a-z0-9]|[a-z0-9])*$")
 string serviceNameType

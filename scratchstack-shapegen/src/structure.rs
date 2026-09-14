@@ -104,23 +104,36 @@ impl ShapeInfo for Structure {
 
 impl Structure {
     /// For error structures, returns the AWS error code (string) to use for this structure.
+    ///
+    /// The code is the protocol's, not the shape's. Query-protocol services drop a trailing
+    /// `Exception` -- `AccessDeniedException` goes on the wire as `AccessDenied` -- and may name
+    /// a code outright with `awsQueryError`. The JSON protocols do neither: the code travels in
+    /// `x-amzn-ErrorType`, where a client matches it against the shape name it modelled, so
+    /// stripping the suffix there leaves an SDK unable to recognize its own error type.
+    /// `awsQueryError` is a query-protocol trait and is ignored under the JSON protocols, which
+    /// matters because the synthesized common errors carry one whatever the service speaks.
     #[must_use]
-    fn error_code(&self) -> String {
-        // An explicit awsQueryError code wins; otherwise the type name without its `Exception`
-        // suffix, which is the convention the AWS models follow.
-        if let Some(code) = self
-            .base
-            .traits
-            .aws_query_error()
-            .as_ref()
-            .and_then(|query_error| query_error.get("code"))
-            .and_then(|code| code.as_str())
-        {
-            return code.to_string();
-        }
-
+    fn error_code(&self, protocol: Protocol) -> String {
         let rust_typename = self.base.rust_typename();
-        rust_typename.strip_suffix("Exception").unwrap_or(&rust_typename).to_string()
+
+        match protocol {
+            Protocol::AwsJson1_0 | Protocol::AwsJson1_1 | Protocol::RestJson1 => rust_typename,
+
+            Protocol::AwsQuery | Protocol::Ec2Query | Protocol::RestXml => {
+                if let Some(code) = self
+                    .base
+                    .traits
+                    .aws_query_error()
+                    .as_ref()
+                    .and_then(|query_error| query_error.get("code"))
+                    .and_then(|code| code.as_str())
+                {
+                    return code.to_string();
+                }
+
+                rust_typename.strip_suffix("Exception").unwrap_or(&rust_typename).to_string()
+            }
+        }
     }
 
     /// Indicates whether this structure is eligible for CLI shorthand parsing.
@@ -164,12 +177,91 @@ impl Structure {
             }
         });
 
+        // A structure with a `@sensitive` member cannot derive `Debug`: the derive prints every
+        // field, so `{:?}` on a request carrying a session token or a signing key writes the
+        // secret to whatever the log is. Such a structure gets a hand-written `Debug` that
+        // redacts those fields instead.
+        let debug = self.debug_impl();
+        let derives = if self.has_sensitive_member() {
+            quote! {
+                #[derive(::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::PartialEq)]
+            }
+        } else {
+            quote! {
+                #[derive(::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::PartialEq, ::std::fmt::Debug)]
+            }
+        };
+
         quote! {
             #docs
-            #[derive(::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::PartialEq, ::std::fmt::Debug)]
+            #derives
             #[derive(::serde::Deserialize, ::serde::Serialize)]
             pub struct #name {
                 #(#fields)*
+            }
+
+            #debug
+        }
+    }
+
+    /// Indicates whether any member of this structure holds sensitive data.
+    #[must_use]
+    fn has_sensitive_member(&self) -> bool {
+        self.members.values().any(Member::is_sensitive)
+    }
+
+    /// A `Debug` implementation that redacts the sensitive members, or nothing at all when the
+    /// structure has none and can derive one.
+    ///
+    /// The redaction is the field's presence, not its value: `Some("...")` and `None` still read
+    /// differently, because whether a caller sent a session token is worth seeing in a log and
+    /// what the token was is not.
+    fn debug_impl(&self) -> TokenStream {
+        if !self.has_sensitive_member() {
+            return TokenStream::new();
+        }
+
+        let type_name = self.base.rust_typename();
+        let name = ident(&type_name);
+
+        let fields = self.members.iter().map(|(member_name, member)| {
+            let field = ident(&member_name.to_rust_ident());
+            let optional = !(member.is_required() || member.is_list());
+
+            if !member.is_sensitive() {
+                return quote! {
+                    f.field(#member_name, &self.#field);
+                };
+            }
+
+            if optional {
+                quote! {
+                    f.field(#member_name, &self.#field.as_ref().map(|_| REDACTED));
+                }
+            } else {
+                quote! {
+                    f.field(#member_name, &REDACTED);
+                }
+            }
+        });
+
+        quote! {
+            impl ::std::fmt::Debug for #name {
+                fn fmt(&self, fmt: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                    /// Stands in for a sensitive value. A bare `&str` would be quoted by `Debug`,
+                    /// which would read as though the value really were this string.
+                    struct Redacted;
+                    impl ::std::fmt::Debug for Redacted {
+                        fn fmt(&self, fmt: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                            fmt.write_str("<redacted>")
+                        }
+                    }
+                    const REDACTED: Redacted = Redacted;
+
+                    let mut f = fmt.debug_struct(#type_name);
+                    #(#fields)*
+                    f.finish()
+                }
             }
         }
     }
@@ -430,7 +522,8 @@ impl Structure {
         let type_name = self.base.rust_typename();
         let name = ident(&type_name);
         let visitor = ident(&format!("{type_name}Visitor"));
-        let code = self.error_code();
+        let protocol = model.protocol.expect("the model has no protocol; call resolve() before generate()");
+        let code = self.error_code(protocol);
         let http_status = type_tokens(status_code_const(
             self.base
                 .traits
@@ -448,8 +541,6 @@ impl Structure {
         };
         let error_type = ident(error_type_name);
         let display_prefix = type_name.clone();
-
-        let protocol = model.protocol.expect("the model has no protocol; call resolve() before generate()");
 
         // How an error goes on the wire is the protocol's business rather than the shape's. The
         // query protocol renders an `<Error>` element carrying the type, code and message; the
@@ -734,5 +825,71 @@ impl Structure {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::{CliShorthand, Protocol, ShapeBase, Structure},
+        crate::TraitMap,
+        serde_json::{Map as JsonMap, Value as JsonValue},
+        std::collections::BTreeMap,
+    };
+
+    /// An error structure named `type_name`, optionally carrying an `awsQueryError` code.
+    fn error_structure(type_name: &str, query_code: Option<&str>) -> Structure {
+        let mut traits = TraitMap::new();
+        traits.set_error("client");
+        traits.set_http_error(400);
+        if let Some(code) = query_code {
+            let mut query_error = JsonMap::new();
+            query_error.insert("code".to_string(), JsonValue::String(code.to_string()));
+            traits.set_aws_query_error(JsonValue::Object(query_error));
+        }
+
+        Structure {
+            base: ShapeBase {
+                smithy_name: Some(type_name.to_string()),
+                rust_typename: Some(type_name.to_string()),
+                traits,
+            },
+            cli_shorthand: CliShorthand::default(),
+            members: BTreeMap::new(),
+            xmlns: None,
+        }
+    }
+
+    #[test]
+    fn json_protocols_report_the_modelled_shape_name() {
+        // An SDK matches `x-amzn-ErrorType` against the name it generated its error type from, so
+        // stripping the suffix here is what stops it recognizing its own error.
+        let e = error_structure("AccessDeniedException", None);
+        assert_eq!(e.error_code(Protocol::AwsJson1_0), "AccessDeniedException");
+        assert_eq!(e.error_code(Protocol::AwsJson1_1), "AccessDeniedException");
+        assert_eq!(e.error_code(Protocol::RestJson1), "AccessDeniedException");
+    }
+
+    #[test]
+    fn json_protocols_ignore_the_query_error_code() {
+        // `awsQueryError` is a query-protocol trait, but the synthesized common errors carry one
+        // whatever the service speaks.
+        let e = error_structure("ThrottlingException", Some("Throttling"));
+        assert_eq!(e.error_code(Protocol::AwsJson1_1), "ThrottlingException");
+    }
+
+    #[test]
+    fn the_query_protocol_strips_the_exception_suffix() {
+        let e = error_structure("AccessDeniedException", None);
+        assert_eq!(e.error_code(Protocol::AwsQuery), "AccessDenied");
+
+        let plain = error_structure("InvalidAction", None);
+        assert_eq!(plain.error_code(Protocol::AwsQuery), "InvalidAction");
+    }
+
+    #[test]
+    fn an_explicit_query_error_code_wins_under_the_query_protocol() {
+        let e = error_structure("SomethingException", Some("DeliberatelyDifferent"));
+        assert_eq!(e.error_code(Protocol::AwsQuery), "DeliberatelyDifferent");
     }
 }

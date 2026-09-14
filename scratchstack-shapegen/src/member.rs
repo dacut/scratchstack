@@ -88,6 +88,16 @@ impl Member {
         self.as_enum().is_some()
     }
 
+    /// Indicates whether this member holds sensitive data.
+    ///
+    /// Smithy allows `@sensitive` on the member or on the shape it targets, and in practice it is
+    /// the shape that carries it -- a `sessionTokenType` is sensitive wherever it appears, rather
+    /// than at each of its uses. Both are checked so neither spelling silently does nothing.
+    #[must_use]
+    pub(crate) fn is_sensitive(&self) -> bool {
+        self.traits.is_sensitive() || self.inner().borrow().traits().is_sensitive()
+    }
+
     /// Indicates whether the inner shape is a list type.
     #[must_use]
     pub(crate) fn is_list(&self) -> bool {

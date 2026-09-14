@@ -69,10 +69,6 @@ pub enum TraitId {
     #[strum(serialize = "aws.api#taggable")]
     AwsApiTaggable,
 
-    /// Adds support for Amazon Cognito User Pools to a service: `aws.api#cognitoUserPools`
-    #[strum(serialize = "aws.api#cognitoUserPools")]
-    AwsApiCognitoUserPools,
-
     /// Indicates that an operation requires an API key for API Gateway usage plan enforcement:
     /// `aws.apigateway#apiKeyRequired`
     #[strum(serialize = "aws.apigateway#apiKeyRequired")]
@@ -131,6 +127,10 @@ pub enum TraitId {
     /// Defines a resource policy for an API Gateway REST API: `aws.apigateway#resourcePolicy`
     #[strum(serialize = "aws.apigateway#resourcePolicy")]
     AwsApigatewayResourcePolicy,
+
+    /// Adds support for Amazon Cognito User Pools to a service: `aws.auth#cognitoUserPools`
+    #[strum(serialize = "aws.auth#cognitoUserPools")]
+    AwsAuthCognitoUserPools,
 
     /// Defines the list of OAuth scopes required to invoke an operation that uses an
     /// `aws.auth#cognitoUserPools` trait authorizer: `aws.auth#cognitoUserPoolsScopes`

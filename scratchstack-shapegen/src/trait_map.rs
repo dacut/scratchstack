@@ -204,4 +204,10 @@ impl TraitMap {
     pub fn is_output(&self) -> bool {
         self.0.contains_key(&TraitId::SmithyApiOutput)
     }
+
+    /// Indicates whether the trait map marks the shape or member as sensitive.
+    #[inline(always)]
+    pub fn is_sensitive(&self) -> bool {
+        self.0.contains_key(&TraitId::SmithyApiSensitive)
+    }
 }

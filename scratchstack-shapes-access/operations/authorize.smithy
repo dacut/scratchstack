@@ -34,7 +34,7 @@ structure AuthorizeRequest {
     @required
     RequestMethod: requestMethodType
 
-    /// The HTTP request path send by the client.
+    /// The HTTP request path sent by the client.
     RequestPath: requestPathType
 
     /// The HTTP query parameters sent by the client.

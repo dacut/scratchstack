@@ -1058,6 +1058,49 @@
                 "smithy.api#unstable": {}
             }
         },
+        "net.scratchstack.access#AssumedRole": {
+            "type": "structure",
+            "members": {
+                "Arn": {
+                    "target": "net.scratchstack.access#arnType",
+                    "traits": {
+                        "smithy.api#documentation": "The ARN of the assumed-role session.",
+                        "smithy.api#required": {}
+                    }
+                },
+                "AccountId": {
+                    "target": "net.scratchstack.access#accountIdType",
+                    "traits": {
+                        "smithy.api#documentation": "The AWS account ID the role belongs to.",
+                        "smithy.api#required": {}
+                    }
+                },
+                "RoleName": {
+                    "target": "net.scratchstack.access#roleNameType",
+                    "traits": {
+                        "smithy.api#documentation": "The name of the role that was assumed.",
+                        "smithy.api#required": {}
+                    }
+                },
+                "SessionName": {
+                    "target": "net.scratchstack.access#sessionNameType",
+                    "traits": {
+                        "smithy.api#documentation": "The session name supplied when the role was assumed.",
+                        "smithy.api#required": {}
+                    }
+                },
+                "Tags": {
+                    "target": "net.scratchstack.access#tagListType",
+                    "traits": {
+                        "smithy.api#documentation": "Tags applied to the session."
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#documentation": "The identity details of an assumed IAM role.",
+                "smithy.api#unstable": {}
+            }
+        },
         "net.scratchstack.access#Authorize": {
             "type": "operation",
             "input": {
@@ -1112,7 +1155,7 @@
                 "RequestPath": {
                     "target": "net.scratchstack.access#requestPathType",
                     "traits": {
-                        "smithy.api#documentation": "The HTTP request path send by the client."
+                        "smithy.api#documentation": "The HTTP request path sent by the client."
                     }
                 },
                 "RequestQueryParameters": {
@@ -1332,13 +1375,43 @@
                 "PrincipalType": {
                     "target": "net.scratchstack.access#PrincipalType",
                     "traits": {
-                        "smithy.api#documentation": "The type of the principal, one of `AssumedRole`, `FederatedUser`, `Service`, or `User`.",
+                        "smithy.api#documentation": "The type of the principal, one of `AssumedRole`, `FederatedUser`, `RootUser`, `Service`,\nor `User`.",
                         "smithy.api#required": {}
+                    }
+                },
+                "AssumedRole": {
+                    "target": "net.scratchstack.access#AssumedRole",
+                    "traits": {
+                        "smithy.api#documentation": "The assumed-role session, set when `PrincipalType` is `AssumedRole`."
+                    }
+                },
+                "FederatedUser": {
+                    "target": "net.scratchstack.access#FederatedUser",
+                    "traits": {
+                        "smithy.api#documentation": "The federated user, set when `PrincipalType` is `FederatedUser`."
+                    }
+                },
+                "RootUser": {
+                    "target": "net.scratchstack.access#RootUser",
+                    "traits": {
+                        "smithy.api#documentation": "The account root user, set when `PrincipalType` is `RootUser`."
+                    }
+                },
+                "Service": {
+                    "target": "net.scratchstack.access#Service",
+                    "traits": {
+                        "smithy.api#documentation": "The service, set when `PrincipalType` is `Service`."
+                    }
+                },
+                "User": {
+                    "target": "net.scratchstack.access#User",
+                    "traits": {
+                        "smithy.api#documentation": "The IAM user, set when `PrincipalType` is `User`."
                     }
                 }
             },
             "traits": {
-                "smithy.api#documentation": "An acting principal for a given request.",
+                "smithy.api#documentation": "An acting principal for a given request.\n\n`PrincipalSource` and `PrincipalType` say which kind of identity this is; exactly one of the\ndetail members below is populated, the one `PrincipalType` names. A caller that only needs to\nbranch on the kind can read the discriminators alone, and one that needs to know *who* the\ncaller is reads the matching detail.",
                 "smithy.api#unstable": {}
             }
         },
@@ -1520,6 +1593,29 @@
                 "smithy.api#unstable": {}
             }
         },
+        "net.scratchstack.access#RootUser": {
+            "type": "structure",
+            "members": {
+                "Arn": {
+                    "target": "net.scratchstack.access#arnType",
+                    "traits": {
+                        "smithy.api#documentation": "The ARN of the root user.",
+                        "smithy.api#required": {}
+                    }
+                },
+                "AccountId": {
+                    "target": "net.scratchstack.access#accountIdType",
+                    "traits": {
+                        "smithy.api#documentation": "The AWS account ID of the root user.",
+                        "smithy.api#required": {}
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#documentation": "The identity details of an AWS account root user.\n\nScratchstack does not issue root user credentials; this exists so that a principal arriving\nfrom a system that does can still be described.",
+                "smithy.api#unstable": {}
+            }
+        },
         "net.scratchstack.access#Service": {
             "type": "structure",
             "members": {
@@ -1619,6 +1715,10 @@
         "net.scratchstack.access#accountIdType": {
             "type": "string",
             "traits": {
+                "smithy.api#length": {
+                    "min": 12,
+                    "max": 12
+                },
                 "smithy.api#pattern": "^[0-9]{12}$"
             }
         },
@@ -1715,6 +1815,16 @@
             "type": "list",
             "member": {
                 "target": "net.scratchstack.access#Resource"
+            }
+        },
+        "net.scratchstack.access#roleNameType": {
+            "type": "string",
+            "traits": {
+                "smithy.api#length": {
+                    "min": 1,
+                    "max": 64
+                },
+                "smithy.api#pattern": "^[\\w+=,.@-]*$"
             }
         },
         "net.scratchstack.access#serviceDnsNameType": {
