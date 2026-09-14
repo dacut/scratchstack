@@ -35,6 +35,7 @@ structure CreateQuotaDefinitionRequest {
     DefaultValue: quotaValueType
 
     /// The unit of quota values.
+    @required
     Unit: quotaUnitType
 
     /// The minimum value of the quota.

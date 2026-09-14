@@ -1168,7 +1168,8 @@
                 "Unit": {
                     "target": "net.scratchstack.cloud#quotaUnitType",
                     "traits": {
-                        "smithy.api#documentation": "The unit of quota values."
+                        "smithy.api#documentation": "The unit of quota values.",
+                        "smithy.api#required": {}
                     }
                 },
                 "MinValue": {
