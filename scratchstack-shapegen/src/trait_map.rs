@@ -1,8 +1,8 @@
 use {
-    crate::{LengthConstraint, RangeConstraint, TraitId},
+    crate::{LengthConstraint, Protocol, RangeConstraint, TraitId},
     serde::{Deserialize, Serialize},
     serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue},
-    std::collections::BTreeMap,
+    std::collections::{BTreeMap, HashSet},
 };
 
 /// A map of trait identifiers to their corresponding values.
@@ -128,6 +128,30 @@ impl TraitMap {
         self.0.insert(TraitId::SmithyApiPattern, JsonValue::String(pattern.into()));
     }
 
+    /// Returns the protocols, if any, for this shape.
+    pub fn protocols(&self) -> HashSet<Protocol> {
+        let mut protocols = HashSet::new();
+        if self.0.contains_key(&TraitId::AwsProtocolsAwsJson1_0) {
+            protocols.insert(Protocol::AwsJson1_0);
+        }
+        if self.0.contains_key(&TraitId::AwsProtocolsAwsJson1_1) {
+            protocols.insert(Protocol::AwsJson1_1);
+        }
+        if self.0.contains_key(&TraitId::AwsProtocolsAwsQuery) {
+            protocols.insert(Protocol::AwsQuery);
+        }
+        if self.0.contains_key(&TraitId::AwsProtocolsEc2Query) {
+            protocols.insert(Protocol::Ec2Query);
+        }
+        if self.0.contains_key(&TraitId::AwsProtocolsRestJson1) {
+            protocols.insert(Protocol::RestJson1);
+        }
+        if self.0.contains_key(&TraitId::AwsProtocolsRestXml) {
+            protocols.insert(Protocol::RestXml);
+        }
+        protocols
+    }
+
     /// Returns the range constraint, if any, for this shape.
     pub fn range_constraint(&self) -> Option<RangeConstraint> {
         let range = self.0.get(&TraitId::SmithyApiRange)?.as_object()?;
@@ -179,5 +203,11 @@ impl TraitMap {
     #[inline(always)]
     pub fn is_output(&self) -> bool {
         self.0.contains_key(&TraitId::SmithyApiOutput)
+    }
+
+    /// Indicates whether the trait map marks the shape or member as sensitive.
+    #[inline(always)]
+    pub fn is_sensitive(&self) -> bool {
+        self.0.contains_key(&TraitId::SmithyApiSensitive)
     }
 }

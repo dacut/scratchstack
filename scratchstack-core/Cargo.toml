@@ -12,7 +12,7 @@ version.workspace = true
 
 [features]
 default = ["axum"]
-axum = ["dep:axum", "dep:quick-xml"]
+axum = ["dep:axum", "dep:quick-xml", "dep:serde_json"]
 form = ["axum/form"]
 http1 = ["axum/http1"]
 http2 = ["axum/http2"]
@@ -35,6 +35,7 @@ quick-xml = { workspace = true, optional = true, features = ["serialize"] }
 rand = { workspace = true, features = ["std", "std_rng"] }
 scratchstack-hakari = { path = "../scratchstack-hakari" }
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 tokio-rustls = { workspace = true, optional = true }
 uuid = { workspace = true, features = ["serde", "v7"] }

@@ -2824,6 +2824,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "scratchstack-shapes-access"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "bon",
+ "chrono",
+ "clap",
+ "env_logger",
+ "regex",
+ "scratchstack-cli-utils",
+ "scratchstack-core",
+ "scratchstack-hakari",
+ "scratchstack-shapegen",
+ "serde",
+ "serde_json",
+ "test-log",
+]
+
+[[package]]
 name = "scratchstack-shapes-iam"
 version = "0.12.0"
 dependencies = [

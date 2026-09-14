@@ -18,7 +18,7 @@ use {
 /// A build script declares its inputs and transformations and calls [`run`][Self::run]; the ordering
 /// of the pipeline is fixed here rather than restated by each caller:
 ///
-/// 1. parse the base model and add Smithy's built-in shapes,
+/// 1. parse the base model, drop the shapes outside its namespace, and add Smithy's built-in shapes,
 /// 2. apply pattern rewrites, then documentation rewrites,
 /// 3. derive additional structures from operation inputs,
 /// 4. merge extension models,
@@ -35,7 +35,7 @@ use {
 ///     .namespace("com.amazonaws.sts")
 ///     .model("sts-2011-06-15.json")
 ///     .extensions(vec!["scratchstack-sts-ext.json".into()])
-///     .common_errors(CommonErrors::aws_query())
+///     .common_errors(CommonErrors::aws_standard())
 ///     .build()
 ///     .run()
 /// # }
@@ -60,7 +60,8 @@ impl ShapeGenerator {
     /// # Fields
     ///
     /// * `namespace`: the Smithy namespace of the service, such as `com.amazonaws.iam`. Transforms
-    ///   that create or scan shapes are scoped to it.
+    ///   that create or scan shapes are scoped to it, and the base model's shapes outside it are
+    ///   dropped; see [`SmithyModel::retain_namespace`].
     /// * `model`: path to the base Smithy model, relative to the crate root.
     /// * `extensions`: additional models merged over the base, in order.
     /// * `cli_shorthand`: which shapes get CLI shorthand parsers. Defaults to value types only.
@@ -113,6 +114,11 @@ impl ShapeGenerator {
         }
 
         let mut model = load_model(&self.model)?;
+
+        // Before anything reads the model: a built model imports the trait definitions it used,
+        // and those are not shapes of this service. Extension models are this project's own and
+        // are merged as authored.
+        model.retain_namespace(&self.namespace);
         model.add_default_shapes();
 
         for rewrite in &self.pattern_rewrites {

@@ -17,6 +17,7 @@ members = [
     "scratchstack-service-sts",
     "scratchstack-shapegen",
     "scratchstack-shapegen-conformance",
+    "scratchstack-shapes-access",
     "scratchstack-shapes-iam",
     "scratchstack-shapes-sts",
 ]

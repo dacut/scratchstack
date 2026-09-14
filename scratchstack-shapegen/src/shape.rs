@@ -269,8 +269,8 @@ impl ShapeInfo for Shape {
     }
 
     #[inline(always)]
-    fn generate(&self, m: &mut Modules) {
-        unwrap_inner!(self => generate(m))
+    fn generate(&self, model: &SmithyModel, m: &mut Modules) {
+        unwrap_inner!(self => generate(model, m))
     }
 
     #[inline(always)]

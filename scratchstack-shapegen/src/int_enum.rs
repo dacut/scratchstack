@@ -1,5 +1,5 @@
 use {
-    crate::{Member, Modules, ShapeBase, ShapeInfo, StrExt, doc_tokens, ident},
+    crate::{Member, Modules, ShapeBase, ShapeInfo, SmithyModel, StrExt, doc_tokens, ident},
     proc_macro2::{Literal, TokenStream},
     quote::quote,
     serde::{Deserialize, Serialize},
@@ -32,23 +32,23 @@ impl ShapeInfo for IntEnum {
         }
     }
 
-    fn resolve(&mut self, shape_name: &str, _model: &crate::SmithyModel) {
+    fn resolve(&mut self, shape_name: &str, _model: &SmithyModel) {
         self.base.resolve(shape_name);
     }
 
-    fn generate(&self, m: &mut Modules) {
+    fn generate(&self, model: &SmithyModel, m: &mut Modules) {
         let module = if self.base.traits.is_error() {
             &mut m.types_error
         } else {
             &mut m.types
         };
-        module.extend(self.rust_decl());
+        module.extend(self.rust_decl(model));
     }
 }
 
 impl IntEnum {
     /// The Rust declaration for this enum, a discriminant per variant.
-    fn rust_decl(&self) -> TokenStream {
+    fn rust_decl(&self, _model: &SmithyModel) -> TokenStream {
         // The bare name: `rust_typename` is module-qualified, for naming the type from elsewhere.
         let type_name = self.base.rust_typename();
         let name = ident(&type_name);

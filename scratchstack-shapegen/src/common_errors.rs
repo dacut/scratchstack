@@ -31,12 +31,12 @@ pub struct CommonError {
 
 /// The set of common errors to attach to every operation in a model.
 ///
-/// [`CommonErrors::aws_query`] supplies the standard AWS query-protocol set. The list is open, so a
-/// service can add entries or drop ones that do not apply:
+/// [`CommonErrors::aws_standard`] supplies the standard AWS set. The list is open, so a service can
+/// add entries or drop ones that do not apply:
 ///
 /// ```
 /// # use scratchstack_shapegen::{CommonError, CommonErrors};
-/// let mut errors = CommonErrors::aws_query();
+/// let mut errors = CommonErrors::aws_standard();
 /// errors.retain(|e| e.name != "OptInRequired");
 /// errors.push(CommonError::new("PolicyEvaluationException", "Evaluation failed.", 500));
 /// ```
@@ -62,12 +62,15 @@ impl CommonError {
 }
 
 impl CommonErrors {
-    /// The errors common to every AWS query-protocol service.
+    /// The errors common to AWS services.
     ///
     /// The first three are absent from the published common-error lists but are returned by the
-    /// services regardless; the remainder are the documented set.
+    /// services regardless; the remainder are the documented set. A handful of them -- the ones
+    /// naming an action or a query string -- can only arise under the query protocol, and a
+    /// service on another protocol simply never raises them; `retain` drops any that do not
+    /// belong.
     #[must_use]
-    pub fn aws_query() -> Self {
+    pub fn aws_standard() -> Self {
         Self(vec![
             CommonError::new(
                 "InvalidAction",
@@ -314,8 +317,8 @@ mod tests {
     }
 
     #[test]
-    fn aws_query_set_is_the_documented_size() {
-        let errors = CommonErrors::aws_query();
+    fn aws_standard_set_is_the_documented_size() {
+        let errors = CommonErrors::aws_standard();
         assert_eq!(errors.iter().count(), 21);
         assert!(errors.iter().any(|e| e.name == "ThrottlingException"));
     }

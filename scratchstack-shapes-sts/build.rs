@@ -25,7 +25,7 @@ fn main() -> AnyResult<()> {
         .namespace(STS_NAMESPACE)
         .model("sts-2011-06-15.json")
         .extensions(vec!["scratchstack-sts-ext.json".into()])
-        .common_errors(CommonErrors::aws_query())
+        .common_errors(CommonErrors::aws_standard())
         .doc_rewrites(vec![
             DocRewrite::new(STS_PROBLEMATIC_HTML_SHAPE_IDS)
                 .replacing(STS_SPLIT_PARAGRAPH, STS_SPLIT_PARAGRAPH_REPLACEMENT),

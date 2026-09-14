@@ -75,7 +75,7 @@ fn main() -> AnyResult<()> {
         .namespace(IAM_NAMESPACE)
         .model("iam-2010-05-08.json")
         .extensions(vec!["scratchstack-iam-ext.json".into()])
-        .common_errors(CommonErrors::aws_query())
+        .common_errors(CommonErrors::aws_standard())
         .pattern_rewrites(vec![
             PatternRewrite::new(IAM_PROBLEMATIC_REGEX_1, IAM_PROBLEMATIC_REGEX_1_REPLACEMENT)
                 .with_length(LengthConstraint::new(Some(3), Some(63))),
