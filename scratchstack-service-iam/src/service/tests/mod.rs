@@ -1546,7 +1546,7 @@ static TEST_ACCOUNT_COUNT: AtomicU64 = AtomicU64::new(0);
 /// account of the caller making it. Keeping the handle alive keeps the instance running, so it
 /// has to outlive the requests made against the [`ServiceState`] it hands out.
 ///
-/// What the tests still share, beyond the schema, is the row in `iam.partition` and the
+/// What the tests still share, beyond the schema, is the row in `cloud.partition` and the
 /// AWS-managed policies in account `000000000000`, neither of which belongs to any one account.
 /// Tests seeding an AWS-managed policy have to keep its name distinct from every other test's.
 struct TestDatabase {
@@ -1787,7 +1787,7 @@ async fn shared_server() -> Arc<TempDatabase> {
 
     // Every test reads this and none of them owns it, so it is recorded once here rather than by
     // the seed data. The service fails any request unless the table holds exactly one row.
-    raw_sql("INSERT INTO iam.partition(partition) VALUES ('aws');")
+    raw_sql("INSERT INTO cloud.partition(partition) VALUES ('aws');")
         .execute(&mut *c)
         .await
         .expect("Failed to record the partition");
