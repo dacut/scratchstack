@@ -20,29 +20,29 @@ set before anything else in the database will work.
 
 ```sh
 # 1. Create or update the schema.
-ssbs migrate
+ssbs db migrate
 
 # 2. Set the partition. Required before any other feature of the database works.
-ssbs set-current-partition --partition aws
+ssbs iam set-current-partition --partition aws
 
 # 3. Create an account. Omit --account-id to have one chosen at random.
-ssbs create-account --email admin@example.com --account-alias example
+ssbs iam create-account --email admin@example.com --account-alias example
 
 # 4. Create a user in it.
-ssbs create-user --account-id 123456789012 --user-name admin
+ssbs iam create-user --account-id 123456789012 --user-name admin
 
 # 5. Issue credentials. The secret access key is shown once and never again.
-ssbs create-access-key --account-id 123456789012 --user-name admin
+ssbs iam create-access-key --account-id 123456789012 --user-name admin
 ```
 
-From there the user needs permissions — `ssbs create-policy` and `ssbs attach-user-policy`, or an
-inline `ssbs put-user-policy` — before it can do anything through the IAM service itself.
+From there the user needs permissions — `ssbs iam create-policy` and `ssbs iam attach-user-policy`, or an
+inline `ssbs iam put-user-policy` — before it can do anything through the IAM service itself.
 
-`ssbs migrate --downgrade-to <VERSION>` reverses migrations instead of applying them.
+`ssbs db migrate --downgrade-to <VERSION>` reverses migrations instead of applying them.
 
 ## Connecting to the database
 
-Connection options are global and go **before** the subcommand. They follow `psql`'s environment
+Connection options are global and go **before** the service name and subcommand. They follow `psql`'s environment
 variables, so an existing PostgreSQL environment mostly works unchanged:
 
 | Option | Environment | Default | Notes |
@@ -58,7 +58,7 @@ By default `ssbs` behaves like `psql`: it uses `PGPASSWORD` if set, otherwise tr
 password, and prompts only if the server issues an auth challenge it cannot answer.
 
 ```sh
-ssbs --host db.example.com --port 5432 --username scratchstack list-accounts
+ssbs --host db.example.com --port 5432 --username scratchstack iam list-accounts
 ```
 
 ## Output
@@ -71,7 +71,9 @@ they do in the service.
 
 ## Subcommands
 
-`ssbs --help` lists all 79; `ssbs <command> --help` documents one. They mirror the IAM and STS APIs
+Subcommands are grouped by the service they belong to, so every command below is reached as
+`ssbs iam <command>`. `ssbs --help` lists the services, `ssbs iam --help` lists all 79 of its
+commands, and `ssbs iam <command> --help` documents one. They mirror the IAM and STS APIs
 they are named after, so an operation behaves as its AWS counterpart does unless its help says
 otherwise.
 
@@ -79,7 +81,7 @@ otherwise.
 
 | Command | Description |
 |---|---|
-| `migrate` | Apply migrations, or reverse them with `--downgrade-to` |
+| `migrate` | Apply migrations, or reverse them with `--downgrade-to`. Reached as `ssbs db migrate`, not `ssbs iam migrate` |
 | `get-current-partition` | Show the database's partition |
 | `set-current-partition` | Set it — required before anything else works |
 
