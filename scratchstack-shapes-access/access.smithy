@@ -1,137 +1,14 @@
 $version: "2"
 namespace net.scratchstack.access
-// use aws.api#service
-// use aws.auth#sigv4
- use aws.protocols#awsJson1_1
+use aws.protocols#awsJson1_1
 
 /// The Scratchstack Access Service provides authentication and authorization capabilities to
 /// services implementing AWS SigV4 signature authentication.
-// @auth([sigv4])
-// @sigv4(name: "access")
 @awsJson1_1
 @unstable
 service Access {
     version: "2026-09-03"
     operations: [Authorize, GetSigningKey]
-}
-
-/// Checks whether an HTTP request made to a service is valid.
-///
-/// If the request is valid, this returns the principal making the request.
-@http(method: "POST", uri: "/Authorize/{Service}/{Region}/{Action}")
-@unstable
-operation Authorize {
-    input: AuthorizeRequest
-    output: AuthorizeResponse
-}
-
-/// Input parameters to the Authorize endpoint.
-@input
-@unstable
-structure AuthorizeRequest {
-    /// The service the request is being authorized for.
-    @required
-    @httpLabel
-    Service: serviceNameType
-
-    /// The region where the request is being made.
-    @required
-    @httpLabel
-    Region: regionType
-
-    /// The action for which the request is being authorized.
-    @required
-    @httpLabel
-    Action: actionNameType
-
-    /// The HTTP request method from the client.
-    @required
-    RequestMethod: requestMethodType
-
-    /// The HTTP request path send by the client.
-    RequestPath: requestPathType
-
-    /// The HTTP query parameters sent by the client.
-    RequestQueryParameters: requestQueryParametersType
-
-    /// The HTTP request headers sent by the client.
-    @required
-    RequestHeaders: requestHeaderListType
-
-    /// The hexadecimal SHA-256 hash of the HTTP request body sent by the caller.
-    ///
-    /// If no body was sent, this field should be omitted.
-    RequestBodySha256: requestBodyHashType
-
-    /// The resources being accessed.
-    Resources: resourceListType
-}
-
-/// Output result from the Authorize endpoint.
-@output
-@unstable
-structure AuthorizeResponse {
-    /// The decision for this request.
-    @required
-    Decision: Decision
-
-    /// If the request was denied, this provides the reason for the authorization decision.
-    Reason: reasonType
-
-    /// The principal identified as the caller, if available.
-    ///
-    /// This may be present on denied authorizations. Presence of this field does not indicate
-    /// an authorization was successful.
-    Principal: Principal
-}
-
-/// Retrieves the signing key for a credential, allowing a service to perform authentication and
-/// authorization checks locally.
-@http(method: "POST", uri: "/SigningKey/{Service}/{Region}")
-@unstable
-operation GetSigningKey {
-    input: GetSigningKeyRequest
-    output: GetSigningKeyResponse
-}
-
-/// Input parameters to the GetSigningKey endpoint.
-@input
-@unstable
-structure GetSigningKeyRequest {
-    /// The service the request is being authorized for.
-    @required
-    @httpLabel
-    Service: serviceNameType
-
-    /// The region where the request is being made.
-    @required
-    @httpLabel
-    Region: regionType
-
-    /// The credential for which the signing key is being requested. This must be in
-    /// <code><i>access-key</i>/<i>yyyymmdd</i>/<i>region</i>/<i>service</i>/aws4_request</code>
-    /// format.
-    @required
-    Credential: credentialType
-
-    /// The session token sent by the client. If the client did not send a session token, this
-    /// field must be omitted.
-    SessionToken: sessionTokenType
-}
-
-/// Output result from the GetSigningKey endpoint.
-@output
-@unstable
-structure GetSigningKeyResponse {
-    /// The signing key corresponding to the requested credential.
-    SigningKey: signingKeyType
-
-    /// The expiration time when the signing key should no longer be used. This is typically
-    /// five minutes after the request was made.
-    NotValidAfter: dateType
-
-    /// The principal associated with the signing key.
-    Principal: Principal
 }
 
 /// The decision made on an authorization request.
@@ -310,7 +187,8 @@ structure User {
 @pattern("^[\\w]*$")
 string accessKeyIdType
 
-@pattern("^[0-9]{12}$")
+@length(min: 12, max: 12)
+@pattern("^[0-9]$")
 string accountIdType
 
 string actionNameType

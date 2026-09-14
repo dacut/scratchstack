@@ -2,7 +2,7 @@
     "$schema": "smithy-build-schema.json",
     "version": "1.0",
     "outputDirectory": "generated-clients",
-    "sources": ["access.smithy"],
+    "sources": ["access.smithy", "operations/authorize.smithy"],
     "maven": {
         "dependencies": [
             "software.amazon.smithy:smithy-model:[1.54.0,2.0)",

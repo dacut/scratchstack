@@ -1,9 +1,9 @@
-//! Scratchstack STS service API shapes.
+//! Scratchstack Access service API shapes.
 //!
-//! This crate contains the shapes used in the API of the AWS STS service implemented by Scratchstack.
+//! This crate contains the shapes used in the API of the Scratchstack Access service.
 //! These shapes are used in the request and response bodies of the API. This crate is intended to
 //! be used as a dependency by the service implementations and clients that need to interact with
-//! the STS service.
+//! the Scratchstack Access service.
 #![warn(clippy::all)]
 #![allow(clippy::manual_range_contains)]
 #![deny(
@@ -17,13 +17,25 @@
 #![cfg_attr(doc, feature(doc_cfg))]
 
 /// The actions (operation names) callable on this service, and the API version.
-pub mod action;
+pub mod action {
+    include!(concat!(env!("OUT_DIR"), "/action.rs"));
+}
 
 /// Error metadata type that contains a union of all possible errors returned by operations in this service.
-pub mod error_meta;
+pub mod error_meta {
+    include!(concat!(env!("OUT_DIR"), "/error_meta.rs"));
+}
 
 /// Operation input and output shapes.
-pub mod operation;
+pub mod operation {
+    include!(concat!(env!("OUT_DIR"), "/operation.rs"));
+}
 
 /// General types used in the API.
-pub mod types;
+pub mod types {
+    /// Error types
+    pub mod error {
+        include!(concat!(env!("OUT_DIR"), "/types_error.rs"));
+    }
+    include!(concat!(env!("OUT_DIR"), "/types.rs"));
+}
