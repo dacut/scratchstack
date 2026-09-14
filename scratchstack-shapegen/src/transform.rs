@@ -17,7 +17,7 @@ use {
     },
 };
 
-/// A member to add to each structure produced by a [`DerivedStructs`] rule.
+/// A member to add to the structures produced by a [`DerivedStructs`] rule.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DerivedMember {
     /// Documentation for the member, used as its doc comment.
@@ -25,6 +25,9 @@ pub struct DerivedMember {
 
     /// The member name, as it appears on the wire and in the Smithy model.
     pub name: String,
+
+    /// Simple operation names whose derived structures carry this member. Empty means all of them.
+    pub operations: BTreeSet<String>,
 
     /// Whether the member is required.
     pub required: bool,
@@ -37,8 +40,10 @@ pub struct DerivedMember {
 ///
 /// For each operation in the configured namespace, the operation's input structure is cloned under
 /// a new name -- the operation's simple name plus [`suffix`][Self::suffix] -- and the configured
-/// members are added to it. The clone keeps the original's traits, so a derived structure carries
-/// the same `smithy.api#input` marker and is generated into the same module as its source.
+/// members are added to it. A member goes on every derived structure unless it names the
+/// operations it belongs to; see [`DerivedMember::only_for`]. The clone keeps the original's
+/// traits, so a derived structure carries the same `smithy.api#input` marker and is generated into
+/// the same module as its source.
 ///
 /// The result is a plain structure shape. Nothing downstream of this transform can tell it was
 /// derived rather than declared, which is the point: `scratchstack-shapes-iam` uses it to add an
@@ -93,9 +98,21 @@ impl DerivedMember {
         Self {
             documentation: documentation.into(),
             name: name.into(),
+            operations: BTreeSet::new(),
             required: true,
             target: target.into(),
         }
+    }
+
+    /// Restricts the member to the structures derived from the named operations.
+    ///
+    /// A member only a few operations need is limited here rather than expressed as a second rule:
+    /// two rules sharing a suffix would derive the same structure twice, and the later one would
+    /// replace the earlier.
+    #[must_use]
+    pub fn only_for<S: AsRef<str>>(mut self, names: impl IntoIterator<Item = S>) -> Self {
+        self.operations.extend(names.into_iter().map(|n| n.as_ref().to_string()));
+        self
     }
 
     /// Marks the member optional.
@@ -103,6 +120,11 @@ impl DerivedMember {
     pub fn optional(mut self) -> Self {
         self.required = false;
         self
+    }
+
+    /// Whether this member belongs on the structure derived from `operation`.
+    fn applies_to(&self, operation: &str) -> bool {
+        self.operations.is_empty() || self.operations.contains(operation)
     }
 }
 
@@ -136,10 +158,13 @@ impl DerivedStructs {
     /// # Panics
     ///
     /// Panics if an operation names an input shape that is missing from the model or that is not a
-    /// structure. Either means the model is inconsistent, which no caller can recover from.
+    /// structure. Either means the model is inconsistent, which no caller can recover from. Panics
+    /// as well if a member is limited to an operation that derives nothing -- a name misspelled or
+    /// excluded, which would otherwise drop the member without a word.
     pub fn apply(&self, model: &mut SmithyModel, namespace: &str) {
         let prefix = format!("{namespace}#");
         let mut derived = Vec::new();
+        let mut operations = BTreeSet::new();
 
         for (shape_id, shape) in &model.shapes {
             let Shape::Operation(operation) = &*shape.borrow() else {
@@ -163,7 +188,14 @@ impl DerivedStructs {
                 panic!("operation {shape_id} names input shape {input_id}, which is not a structure")
             };
 
-            derived.push((format!("{prefix}{simple_name}{}", self.suffix), self.derive(input_structure)));
+            derived.push((format!("{prefix}{simple_name}{}", self.suffix), self.derive(input_structure, simple_name)));
+            operations.insert(simple_name.to_string());
+        }
+
+        for member in &self.members {
+            if let Some(operation) = member.operations.difference(&operations).next() {
+                panic!("derived member {} names operation {operation}, which derives no structure", member.name);
+            }
         }
 
         for (shape_id, structure) in derived {
@@ -171,11 +203,15 @@ impl DerivedStructs {
         }
     }
 
-    /// Clones `source` and adds this rule's members to the clone.
-    fn derive(&self, source: &Structure) -> Structure {
+    /// Clones `source` and adds the members that apply to `operation` to the clone.
+    fn derive(&self, source: &Structure, operation: &str) -> Structure {
         let mut derived = source.clone();
 
         for member in &self.members {
+            if !member.applies_to(operation) {
+                continue;
+            }
+
             let mut traits = TraitMap::new();
             traits.set_required(member.required);
             traits.set_documentation(member.documentation.clone());
@@ -297,4 +333,115 @@ pub fn merge_extension(model: &mut SmithyModel, extension: SmithyModel, source: 
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::{CliShorthand, ShapeBase},
+        std::collections::BTreeMap,
+    };
+
+    /// A rule adding one member to every derived structure and one to a single operation's.
+    fn rule() -> DerivedStructs {
+        DerivedStructs::new("InternalRequest")
+            .with_member(DerivedMember::new("account_id", "com.example#accountIdType", "The account."))
+            .with_member(
+                DerivedMember::new("is_service", "com.example#booleanType", "Service-owned.")
+                    .optional()
+                    .only_for(["CreateRole"]),
+            )
+    }
+
+    /// A structure with no members of its own, standing in for an operation's input.
+    fn source() -> Structure {
+        Structure {
+            base: ShapeBase::default(),
+            cli_shorthand: CliShorthand::default(),
+            members: BTreeMap::new(),
+            xmlns: None,
+        }
+    }
+
+    fn member_names(structure: &Structure) -> Vec<&str> {
+        structure.members.keys().map(String::as_str).collect()
+    }
+
+    /// A model with `CreateUser` and its input structure, and nothing else.
+    fn model_with_create_user() -> SmithyModel {
+        serde_json::from_str(
+            r#"{
+                "smithy": "2.0",
+                "shapes": {
+                    "com.example#CreateUser": {
+                        "type": "operation",
+                        "input": {"target": "com.example#CreateUserRequest"},
+                        "output": {"target": "com.example#CreateUserResponse"}
+                    },
+                    "com.example#CreateUserRequest": {"type": "structure"},
+                    "com.example#CreateUserResponse": {"type": "structure"}
+                }
+            }"#,
+        )
+        .expect("the test model should parse")
+    }
+
+    #[test]
+    fn apply_derives_a_structure_per_operation() {
+        let mut model = model_with_create_user();
+        DerivedStructs::new("InternalRequest")
+            .with_member(DerivedMember::new("account_id", "com.example#accountIdType", "The account."))
+            .apply(&mut model, "com.example");
+
+        let derived = model.get_shape("com.example#CreateUserInternalRequest").expect("CreateUser should derive one");
+        let borrowed = derived.borrow();
+        let Shape::Structure(structure) = &*borrowed else {
+            panic!("the derived shape should be a structure");
+        };
+        assert_eq!(member_names(structure), ["account_id"]);
+    }
+
+    #[test]
+    #[should_panic(expected = "names operation CreateRole, which derives no structure")]
+    fn apply_rejects_a_scoped_member_naming_an_operation_that_derives_nothing() {
+        // The model has no CreateRole, so `only_for(["CreateRole"])` would put the member nowhere.
+        // Silently dropping it is the failure this check exists to prevent.
+        let mut model = model_with_create_user();
+        rule().apply(&mut model, "com.example");
+    }
+
+    #[test]
+    #[should_panic(expected = "names operation CreateUser, which derives no structure")]
+    fn apply_rejects_a_scoped_member_naming_an_excluded_operation() {
+        // Excluding the only operation that would have carried the member leaves it homeless in
+        // exactly the same way, and is the easier mistake to make.
+        let mut model = model_with_create_user();
+        DerivedStructs::new("InternalRequest")
+            .excluding(["CreateUser"])
+            .with_member(
+                DerivedMember::new("is_service", "com.example#booleanType", "Service-owned.")
+                    .optional()
+                    .only_for(["CreateUser"]),
+            )
+            .apply(&mut model, "com.example");
+    }
+
+    #[test]
+    fn a_scoped_member_lands_only_on_the_operations_it_names() {
+        assert_eq!(member_names(&rule().derive(&source(), "CreateRole")), ["account_id", "is_service"]);
+        assert_eq!(member_names(&rule().derive(&source(), "CreateUser")), ["account_id"]);
+    }
+
+    #[test]
+    fn a_derived_member_carries_its_target_and_traits() {
+        let derived = rule().derive(&source(), "CreateRole");
+
+        let account_id = &derived.members["account_id"];
+        assert_eq!(account_id.target, "com.example#accountIdType");
+        assert_eq!(account_id.traits.documentation(), Some("The account."));
+        assert!(account_id.traits.is_required());
+
+        assert!(!derived.members["is_service"].traits.is_required());
+    }
 }

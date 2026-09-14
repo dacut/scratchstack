@@ -304,6 +304,35 @@ pub async fn test_create_role_nonexistent_permissions_boundary(pool: &sqlx::PgPo
     assert!(result.is_err(), "Creating a role with a nonexistent permissions boundary must fail");
 }
 
+/// The service flag is written as given, and a role created without it is stored as false rather
+/// than left NULL.
+pub async fn test_create_role_is_service(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    CreateRoleInternalRequest::builder()
+        .role_name("ServiceOwnedRole")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .is_service(true)
+        .build()
+        .expect("Failed to build CreateRoleInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to create ServiceOwnedRole");
+    CreateRoleInternalRequest::builder()
+        .role_name("PlainRole")
+        .account_id("123456789012")
+        .assume_role_policy_document(TRUST_POLICY.to_string())
+        .build()
+        .expect("Failed to build CreateRoleInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to create PlainRole");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    assert!(role_is_service(pool, "serviceownedrole").await, "ServiceOwnedRole must be service-owned");
+    assert!(!role_is_service(pool, "plainrole").await, "PlainRole must not be service-owned");
+}
+
 /// Delete a role that has no attached or inline policies — success path.
 pub async fn test_delete_role_simple(pool: &sqlx::PgPool) {
     // Create a fresh role so this test is self-contained.
@@ -1405,6 +1434,81 @@ pub async fn test_update_role_no_fields(pool: &sqlx::PgPool) {
     assert_eq!(resp.role.max_session_duration, Some(10800));
 }
 
+/// UpdateRole with only the service flag: the column is changed, and the columns the caller did
+/// not mention are left alone. Clearing the flag is a real update, not an omission, so a role can
+/// be handed back from a service.
+pub async fn test_update_role_is_service_only(pool: &sqlx::PgPool) {
+    // PlainRole was committed by an earlier create_role test with the flag unset and nothing else
+    // set on it.
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UpdateRoleInternalRequest::builder()
+        .role_name("PlainRole")
+        .account_id("123456789012")
+        .is_service(true)
+        .build()
+        .expect("Failed to build UpdateRoleInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to mark PlainRole as service-owned");
+    tx.commit().await.expect("Failed to commit transaction");
+    assert!(role_is_service(pool, "plainrole").await, "UpdateRole must set the flag");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetRoleInternalRequest::builder()
+        .role_name("PlainRole")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build GetRoleInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to get PlainRole after UpdateRole");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert!(resp.role.description.is_none(), "description must remain NULL");
+    assert!(resp.role.max_session_duration.is_none(), "max_session_duration must remain NULL");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UpdateRoleInternalRequest::builder()
+        .role_name("PlainRole")
+        .account_id("123456789012")
+        .description("Handed back to the account.")
+        .is_service(false)
+        .build()
+        .expect("Failed to build UpdateRoleInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to clear the service flag on PlainRole");
+    tx.commit().await.expect("Failed to commit transaction");
+    assert!(!role_is_service(pool, "plainrole").await, "UpdateRole must clear the flag when given false");
+
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    let resp = GetRoleInternalRequest::builder()
+        .role_name("PlainRole")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build GetRoleInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("Failed to get PlainRole after clearing the service flag");
+    tx.rollback().await.expect("Failed to rollback transaction");
+    assert_eq!(resp.role.description.as_deref(), Some("Handed back to the account."));
+}
+
+/// UpdateRole naming no fields at all must leave the service flag where it was.
+pub async fn test_update_role_no_fields_keeps_is_service(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.expect("Failed to begin transaction");
+    UpdateRoleInternalRequest::builder()
+        .role_name("ServiceOwnedRole")
+        .account_id("123456789012")
+        .build()
+        .expect("Failed to build UpdateRoleInternalRequest")
+        .execute(&mut tx, RequestId::new())
+        .await
+        .expect("UpdateRole with no fields on an existing role must succeed");
+    tx.commit().await.expect("Failed to commit transaction");
+
+    assert!(role_is_service(pool, "serviceownedrole").await, "A no-op UpdateRole must leave the flag set");
+}
+
 /// UpdateRole on a nonexistent role must fail with NoSuchEntity.
 pub async fn test_update_role_nonexistent(pool: &sqlx::PgPool) {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
@@ -2378,6 +2482,17 @@ pub async fn test_assume_role_with_session_policies(pool: &sqlx::PgPool) {
     let inline_policy = session_policies.inline_policy().expect("Inline session policy should be present");
     assert!(inline_policy.to_string().contains("s3:ListBucket"));
     assert_eq!(session_policies.managed_policy_ids(), ["ANPAAAAABBBBCCCCDDDD".to_string()]);
+}
+
+/// Reads the `is_service` column of a role in 123456789012 straight from the table: no API reports
+/// the flag, which is the point of it.
+async fn role_is_service(pool: &sqlx::PgPool, role_name_lower: &str) -> bool {
+    sqlx::query_scalar("SELECT is_service FROM iam.roles WHERE account_id = $1 AND role_name_lower = $2")
+        .bind("123456789012")
+        .bind(role_name_lower)
+        .fetch_one(pool)
+        .await
+        .expect("Failed to fetch the is_service column")
 }
 
 /// Creates a session token encryption key and assumes `example-role-1`, returning the temporary

@@ -5705,6 +5705,112 @@ async fn test_roles(database: &TempDatabase) {
         .await
         .expect_err("delete-role-policy with an invalid role name should fail");
     assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
+
+    // -- the service flag ------------------------------------------------------
+    // No command reports it, so each step is checked against the column itself.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "ServiceOwnedRole",
+            "--assume-role-policy-document",
+            trust_policy,
+            "--is-service",
+        ])
+        .await
+        .expect("Failed to run create-role with --is-service");
+    assert!(role_is_service(database, "555566667777", "serviceownedrole").await, "--is-service must set the flag");
+
+    // A role created without the flag is not service-owned.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "create-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PlainRole",
+            "--assume-role-policy-document",
+            trust_policy,
+        ])
+        .await
+        .expect("Failed to run create-role without --is-service");
+    assert!(
+        !role_is_service(database, "555566667777", "plainrole").await,
+        "create-role without --is-service must leave the flag clear"
+    );
+
+    // update-role sets the flag when it is given bare, and leaves it alone when it is omitted.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PlainRole",
+            "--is-service",
+        ])
+        .await
+        .expect("Failed to run update-role with --is-service");
+    assert!(role_is_service(database, "555566667777", "plainrole").await, "update-role --is-service must set the flag");
+
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PlainRole",
+            "--description",
+            "Still service-owned.",
+        ])
+        .await
+        .expect("Failed to run update-role without --is-service");
+    assert!(
+        role_is_service(database, "555566667777", "plainrole").await,
+        "an update-role that omits the flag must leave it alone"
+    );
+
+    // `--is-service false` clears it.
+    database
+        .run([
+            "ssbs",
+            "--port",
+            &port,
+            "--username",
+            "scratchstack",
+            "update-role",
+            "--account-id",
+            "555566667777",
+            "--role-name",
+            "PlainRole",
+            "--is-service",
+            "false",
+        ])
+        .await
+        .expect("Failed to run update-role with --is-service false");
+    assert!(!role_is_service(database, "555566667777", "plainrole").await, "--is-service false must clear the flag");
 }
 
 async fn test_policy_attachments(database: &TempDatabase) {
@@ -7027,6 +7133,18 @@ fn list_stek_filters_unknown_field() {
     let err =
         list_session_token_encryption_keys_filters_from_shorthand(&filters).expect_err("unknown field should fail");
     assert_eq!(err.code(), "ValidationError", "Expected ValidationError, got: {err}");
+}
+
+/// Reads the `is_service` column of a role straight from the table. The flag is internal, so no
+/// ssbs command reports it back.
+async fn role_is_service(database: &TempDatabase, account_id: &str, role_name_lower: &str) -> bool {
+    let pool = database.get_scratchstack_pool().await.expect("Failed to connect to the test database");
+    sqlx::query_scalar("SELECT is_service FROM iam.roles WHERE account_id = $1 AND role_name_lower = $2")
+        .bind(account_id)
+        .bind(role_name_lower)
+        .fetch_one(&pool)
+        .await
+        .expect("Failed to fetch the is_service column")
 }
 
 /// Convert a Vec<String-like> to a Vec<OsString>.

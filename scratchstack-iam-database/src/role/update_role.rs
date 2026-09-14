@@ -21,6 +21,7 @@ impl RequestExecutor for UpdateRoleInternalRequest {
             &self.account_id,
             &self.role_name,
             self.description.as_deref(),
+            self.is_service,
             self.max_session_duration,
             request_id,
         )
@@ -28,13 +29,15 @@ impl RequestExecutor for UpdateRoleInternalRequest {
     }
 }
 
-/// Update the description and/or max session duration of a role. Either or both of the optional
-/// fields may be left unset, in which case the corresponding column on the role is unchanged.
+/// Update the description, service flag, and/or max session duration of a role. Any of the
+/// optional fields may be left unset, in which case the corresponding column on the role is
+/// unchanged.
 pub async fn update_role(
     tx: &mut PgTransaction<'_>,
     account_id: &str,
     role_name: &str,
     description: Option<&str>,
+    is_service: Option<bool>,
     max_session_duration: Option<i32>,
     request_id: RequestId,
 ) -> Result<UpdateRoleResponse, IamError> {
@@ -52,16 +55,18 @@ pub async fn update_role(
         return Err(ValidationError::builder().message(message).request_id(request_id).build().into());
     }
 
-    if description.is_some() || max_session_duration.is_some() {
+    if description.is_some() || is_service.is_some() || max_session_duration.is_some() {
         let result = match query(indoc! {"
                 UPDATE iam.roles
                 SET description = COALESCE($3, description),
-                    max_session_duration = COALESCE($4, max_session_duration)
+                    is_service = COALESCE($4, is_service),
+                    max_session_duration = COALESCE($5, max_session_duration)
                 WHERE account_id = $1 AND role_name_lower = $2
             "})
         .bind(account_id)
         .bind(role_name.to_lowercase())
         .bind(description)
+        .bind(is_service)
         .bind(max_session_duration)
         .execute(tx.as_mut())
         .await

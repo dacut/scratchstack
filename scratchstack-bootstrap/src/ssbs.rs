@@ -414,7 +414,7 @@ enum Commands {
     #[command(name = "update-group")]
     UpdateGroup(UpdateGroupInternalCommand),
 
-    /// Update an IAM role's description and/or max session duration in an account.
+    /// Update an IAM role's description, max session duration, and/or service flag in an account.
     #[command(name = "update-role")]
     UpdateRole(UpdateRoleInternalCommand),
 

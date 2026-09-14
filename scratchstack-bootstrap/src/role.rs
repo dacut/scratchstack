@@ -85,6 +85,11 @@ pub(crate) struct CreateRoleInternalCommand {
     #[clap(long)]
     pub description: Option<String>,
 
+    /// Mark the role as belonging to a Scratchstack service. This flag is internal; it cannot be
+    /// set through the IAM API.
+    #[clap(long, action = clap::ArgAction::SetTrue)]
+    pub is_service: bool,
+
     /// The maximum session duration (in seconds) that you want to set for the role. Must be
     /// between 3600 (1 hour) and 43200 (12 hours).
     #[clap(long)]
@@ -333,6 +338,7 @@ impl Runnable for CreateRoleInternalCommand {
             .account_id(self.account_id.clone())
             .assume_role_policy_document(self.assume_role_policy_document.clone())
             .set_description(self.description.clone())
+            .is_service(self.is_service)
             .set_max_session_duration(self.max_session_duration)
             .path(self.path.clone())
             .set_permissions_boundary(self.permissions_boundary.clone())
@@ -633,8 +639,8 @@ impl Runnable for UntagRoleInternalCommand {
     }
 }
 
-/// Update the description and/or max session duration of a role in a given account in the
-/// Scratchstack IAM service. Fields that are not specified are left unchanged.
+/// Update the description, max session duration, and/or service flag of a role in a given account
+/// in the Scratchstack IAM service. Fields that are not specified are left unchanged.
 #[derive(Debug, Parser)]
 pub(crate) struct UpdateRoleInternalCommand {
     /// The unique identifier for the account the role belongs to.
@@ -644,6 +650,12 @@ pub(crate) struct UpdateRoleInternalCommand {
     /// The new description for the role.
     #[clap(long)]
     pub description: Option<String>,
+
+    /// Whether the role belongs to a Scratchstack service. Given without a value, the flag is set;
+    /// given as `--is-service false`, it is cleared. This flag is internal; it cannot be set
+    /// through the IAM API.
+    #[clap(long, num_args = 0..=1, default_missing_value = "true")]
+    pub is_service: Option<bool>,
 
     /// The new maximum session duration (in seconds) for the role. Must be between 3600 (1 hour)
     /// and 43200 (12 hours).
@@ -682,6 +694,7 @@ impl Runnable for UpdateRoleInternalCommand {
         let request = UpdateRoleInternalRequest::builder()
             .account_id(self.account_id.clone())
             .set_description(self.description.clone())
+            .set_is_service(self.is_service)
             .set_max_session_duration(self.max_session_duration)
             .role_name(self.role_name.clone())
             .build()?;
