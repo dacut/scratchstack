@@ -1,7 +1,5 @@
-DROP TABLE IF EXISTS cloud.account_global_quotas;
-DROP TABLE IF EXISTS cloud.account_regional_quotas;
-DROP TABLE IF EXISTS cloud.global_quota_definitions;
-DROP TABLE IF EXISTS cloud.regional_quota_definitions;
+DROP TABLE IF EXISTS cloud.account_quotas;
+DROP TABLE IF EXISTS cloud.quota_definitions;
 DROP TABLE IF EXISTS cloud.service_regions;
 DROP TABLE IF EXISTS cloud.services;
 DROP TABLE IF EXISTS cloud.quota_units;
