@@ -1,0 +1,114 @@
+name: Dependency update
+
+# Weekly Cargo dependency update, replacing Dependabot's cargo ecosystem. Dependabot cannot be
+# used for this workspace: every crate path-depends on scratchstack-hakari, whose manifest is
+# generated from the resolved dependency graph, and Dependabot has no way to read a manifest
+# without also rewriting it. Doing the update on the real toolchain lets us regenerate the
+# workspace-hack package as part of the same change.
+
+on:
+  schedule:
+    # 04:23 America/Los_Angeles. GitHub schedules are UTC only, so this drifts by an hour when
+    # daylight saving time starts and ends.
+    - cron: "23 11 * * 2"
+  workflow_dispatch:
+
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_TERM_COLOR: never
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    name: Update dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v6
+    - name: Install Rust nightly
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: nightly
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2.9.1
+      with:
+        shared-key: scratchstack-dependency-update
+    - name: Install cargo-edit and cargo-hakari
+      run: cargo install cargo-edit cargo-hakari --locked
+
+    # Only semver-incompatible bumps are written into the manifests; compatible ones are left to
+    # Cargo.lock so that the published crates keep the lowest requirement that works. Pinned
+    # requirements are left alone (cargo upgrade ignores them unless asked with --pinned).
+    - name: Upgrade semver-incompatible requirements
+      run: cargo upgrade --incompatible allow --compatible ignore
+
+    # scratchstack-hakari/Cargo.toml is generated, and the version requirements in it are dictated
+    # by the resolved graph rather than chosen. cargo upgrade rewrites them anyway — it wants to
+    # bump transitive-only entries such as libsqlite3-sys and num-bigint — which would pull a
+    # second copy of those crates in as direct dependencies of the hack package and defeat the
+    # unification it exists for. Throw those edits away; the regeneration step below rewrites the
+    # section from the graph that actually resolves.
+    - name: Discard cargo upgrade's edits to the generated Hakari manifest
+      run: git checkout -- scratchstack-hakari/Cargo.toml
+
+    - name: Update Cargo.lock
+      run: cargo update
+
+    # A bumped dependency can change the unified feature set, so the workspace-hack package has to
+    # be regenerated alongside the bump or it silently stops unifying.
+    - name: Regenerate the Hakari workspace-hack package
+      run: |
+        cargo hakari generate
+        cargo hakari manage-deps
+
+    # Recorded in the pull request body rather than gating it: a bump that fails to compile is
+    # exactly what the pull request needs to show.
+    - name: Check that the workspace still builds
+      id: check
+      continue-on-error: true
+      run: cargo check --workspace --all-targets
+
+    - name: Summarize the update
+      run: |
+        {
+          echo "Automated weekly dependency update."
+          echo
+          echo '- `cargo upgrade --incompatible allow --compatible ignore`, discarding its edits to'
+          echo '  the generated `scratchstack-hakari/Cargo.toml`'
+          echo '- `cargo update`'
+          echo '- `cargo hakari generate && cargo hakari manage-deps`'
+          echo '- `cargo check --workspace --all-targets`: **${{ steps.check.outcome }}**'
+          echo
+          reqs=$(git diff -- '*Cargo.toml' ':(exclude)scratchstack-hakari/Cargo.toml' | grep -E '^[-+][A-Za-z0-9_-]+ *=' | sort -u || true)
+          if [ -n "$reqs" ]; then
+            echo '### Version requirement changes'
+            echo
+            echo '```diff'
+            echo "$reqs"
+            echo '```'
+          else
+            echo 'No version requirement changes: `Cargo.lock` and the workspace-hack package only.'
+          fi
+        } > "${RUNNER_TEMP}/pr-body.md"
+
+    # No pull request is created when the steps above changed nothing.
+    - name: Create pull request
+      uses: peter-evans/create-pull-request@v8.1.1
+      with:
+        # A pull request opened with the default GITHUB_TOKEN does not start other workflows, so
+        # the Rust workflow will not run on it. Add a DEPENDENCY_UPDATE_TOKEN secret (a PAT or
+        # GitHub App token with contents and pull-requests write) to get CI on these pull requests;
+        # without it, close and reopen the pull request to start a run. Using the default token
+        # also requires "Allow GitHub Actions to create and approve pull requests" to be enabled
+        # for the repository.
+        token: ${{ secrets.DEPENDENCY_UPDATE_TOKEN || secrets.GITHUB_TOKEN }}
+        base: main
+        branch: dependency-update/cargo
+        delete-branch: true
+        title: Update dependencies
+        body-path: ${{ runner.temp }}/pr-body.md
+        commit-message: Update dependencies
+        labels: dependencies

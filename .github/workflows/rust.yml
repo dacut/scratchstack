@@ -52,6 +52,29 @@ jobs:
     - name: Run Clippy check.
       run: cargo clippy --all-targets -- -Dwarnings
 
+  hakari:
+    name: Workspace-hack check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v6
+    - name: Install Rust nightly
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: nightly
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2.9.1
+      with:
+        shared-key: scratchstack-ci-${{ github.head_ref || github.ref_name }}
+    - name: Install cargo-hakari
+      run: cargo install cargo-hakari --locked
+    # Any dependency bump can change the unified feature set, so the generated Hakari manifest has
+    # to be regenerated alongside it. Run `cargo hakari generate` locally to fix a failure here.
+    - name: Check that scratchstack-hakari is up to date
+      run: cargo hakari generate --diff
+    - name: Check that all crates depend on scratchstack-hakari
+      run: cargo hakari manage-deps --dry-run
+
   test:
     name: Tests and coverage
     runs-on: ubuntu-latest
