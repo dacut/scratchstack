@@ -70,7 +70,7 @@ sqlx-mysql = { version = "0.9", default-features = false, features = ["any", "bi
 sqlx-postgres = { version = "0.9", default-features = false, features = ["any", "bigdecimal", "chrono", "migrate", "offline"] }
 sqlx-sqlite = { version = "0.9", default-features = false, features = ["any", "bundled", "chrono", "deserialize", "json", "load-extension", "migrate", "offline", "unlock-notify"] }
 subtle = { version = "2" }
-syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
+syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
 sync_wrapper = { version = "1", default-features = false, features = ["futures"] }
 thiserror = { version = "2" }
 tokio = { version = "1", features = ["full", "test-util"] }
@@ -142,8 +142,8 @@ sqlx-mysql = { version = "0.9", default-features = false, features = ["any", "bi
 sqlx-postgres = { version = "0.9", default-features = false, features = ["any", "bigdecimal", "chrono", "migrate", "offline"] }
 sqlx-sqlite = { version = "0.9", default-features = false, features = ["any", "bundled", "chrono", "deserialize", "json", "load-extension", "migrate", "offline", "unlock-notify"] }
 subtle = { version = "2" }
-syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", features = ["extra-traits", "full", "visit", "visit-mut"] }
-syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
+syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
+syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-traits", "full", "visit", "visit-mut"] }
 sync_wrapper = { version = "1", default-features = false, features = ["futures"] }
 thiserror = { version = "2" }
 tokio = { version = "1", features = ["full", "test-util"] }
