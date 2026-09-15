@@ -27,13 +27,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: Install Rust nightly
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: nightly
     - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2.9.1
+      uses: Swatinem/rust-cache@v2.9.2
       with:
         shared-key: scratchstack-dependency-update
     - name: Install cargo-edit and cargo-hakari
