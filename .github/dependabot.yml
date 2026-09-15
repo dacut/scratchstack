@@ -1,18 +1,17 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for more information:
+# Cargo dependencies are NOT handled here; see .github/workflows/dependency-update.yml. Dependabot
+# cannot resolve this workspace without rewriting scratchstack-hakari/Cargo.toml, which is
+# generated from the resolved dependency graph, and it has no option for reading a manifest without
+# updating it (exclude-paths omits the file from the checkout entirely, which makes every crate in
+# the workspace unresolvable).
+#
 # https://docs.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
-# https://containers.dev/guide/dependabot
 
 version: 2
 updates:
-  - package-ecosystem: "cargo"
+  - package-ecosystem: "github-actions"
     directory: "/"
-    exclude-paths:
-      - "scratchstack-hakari/**"
-      - "scratchstack-services/**"
     groups:
-      all-dependencies:
+      all-actions:
         patterns:
           - "*"
     schedule:
