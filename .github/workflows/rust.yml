@@ -21,14 +21,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: Install Rust nightly
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: nightly
         components: "rustfmt"
     - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2.9.1
+      uses: Swatinem/rust-cache@v2.9.2
       with:
         shared-key: scratchstack-ci-${{ github.head_ref || github.ref_name }}
     - name: Run formatting check.
@@ -39,14 +39,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: Install Rust nightly
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: nightly
         components: "clippy"
     - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2.9.1
+      uses: Swatinem/rust-cache@v2.9.2
       with:
         shared-key: scratchstack-ci-${{ github.head_ref || github.ref_name }}
     - name: Run Clippy check.
@@ -57,13 +57,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: Install Rust nightly
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: nightly
     - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2.9.1
+      uses: Swatinem/rust-cache@v2.9.2
       with:
         shared-key: scratchstack-ci-${{ github.head_ref || github.ref_name }}
     - name: Install cargo-hakari
@@ -83,10 +83,10 @@ jobs:
       RUSTFLAGS: '-Ccodegen-units=1 -Cinstrument-coverage -Copt-level=0'
       RUSTDOCFLAGS: '-Ccodegen-units=1 -Cinstrument-coverage -Copt-level=0'
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - id: aws_creds
       name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v6.0.0
+      uses: aws-actions/configure-aws-credentials@v6.2.4
       with:
         role-to-assume: arn:aws:iam::557925715019:role/github-scratchstack-actions
         role-session-name: github-scratchstack-actions
@@ -97,7 +97,7 @@ jobs:
         toolchain: nightly
         components: "llvm-tools"
     - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2.9.1
+      uses: Swatinem/rust-cache@v2.9.2
       with:
         shared-key: scratchstack-ci-${{ github.head_ref || github.ref_name }}
     - name: Install cargo-llvm-cov
@@ -121,10 +121,10 @@ jobs:
       RUSTFLAGS: '-Ccodegen-units=1 -Cinstrument-coverage -Copt-level=0'
       RUSTDOCFLAGS: '-Ccodegen-units=1 -Cinstrument-coverage -Copt-level=0'
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - id: aws_creds
       name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v6.0.0
+      uses: aws-actions/configure-aws-credentials@v6.2.4
       with:
         role-to-assume: arn:aws:iam::557925715019:role/github-scratchstack-actions
         role-session-name: github-scratchstack-actions
@@ -135,7 +135,7 @@ jobs:
         toolchain: nightly
         components: "llvm-tools"
     - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2.9.1
+      uses: Swatinem/rust-cache@v2.9.2
       with:
         shared-key: scratchstack-ci-${{ github.head_ref || github.ref_name }}
     - name: Run doctests
@@ -148,10 +148,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - id: aws_creds
       name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v6.0.0
+      uses: aws-actions/configure-aws-credentials@v6.2.4
       with:
         role-to-assume: arn:aws:iam::557925715019:role/github-scratchstack-actions
         role-session-name: github-scratchstack-actions
@@ -161,7 +161,7 @@ jobs:
       with:
         toolchain: nightly
     - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2.9.1
+      uses: Swatinem/rust-cache@v2.9.2
       with:
         shared-key: scratchstack-ci-${{ github.head_ref || github.ref_name }}
     - name: Build documentation
