@@ -531,14 +531,14 @@ mod tests {
         loop {
             match reader.read_event().expect("fallback body is not well-formed XML") {
                 Event::Eof => break,
-                Event::Start(e) => inside = e.name().as_ref() == element.as_bytes(),
+                Event::Start(e) => inside = e.name().as_ref() == element,
                 Event::End(_) => inside = false,
                 Event::Text(e) if inside => {
-                    let decoded = e.decode().expect("text is not valid UTF-8");
-                    found.get_or_insert_default().push_str(&decoded);
+                    let decoded = &*e;
+                    found.get_or_insert_default().push_str(decoded);
                 }
                 Event::GeneralRef(e) if inside => {
-                    let name = e.decode().expect("entity name is not valid UTF-8");
+                    let name = &*e;
                     let resolved = unescape(&format!("&{name};")).expect("unknown entity").into_owned();
                     found.get_or_insert_default().push_str(&resolved);
                 }
@@ -606,7 +606,7 @@ mod tests {
         loop {
             match reader.read_event().expect("fallback body is not well-formed XML") {
                 Event::Eof => break,
-                Event::Start(e) if e.name().as_ref() == b"ErrorResponse" => {
+                Event::Start(e) if e.name().as_ref() == "ErrorResponse" => {
                     let attr = e.try_get_attribute("xmlns").expect("malformed attributes").expect("no xmlns attribute");
                     namespace =
                         Some(attr.normalized_value(XmlVersion::Implicit1_0).expect("unescapable value").into_owned());
