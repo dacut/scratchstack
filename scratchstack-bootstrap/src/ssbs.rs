@@ -132,10 +132,23 @@ enum ServiceCommands {
 }
 
 #[derive(Debug, Subcommand)]
+#[allow(clippy::enum_variant_names)] // Will be fixed once we add non-create commands
 enum CloudCommands {
     /// Create a new quota definition.
     #[command(name = "create-quota-definition")]
     CreateQuotaDefinition(CreateQuotaDefinitionCommand),
+
+    /// Create a new quota unit.
+    #[command(name = "create-quota-unit")]
+    CreateQuotaUnit(CreateQuotaUnitCommand),
+
+    /// Create a new region.
+    #[command(name = "create-region")]
+    CreateRegion(CreateRegionCommand),
+
+    /// Create a new service.
+    #[command(name = "create-service")]
+    CreateService(CreateServiceCommand),
 }
 
 #[derive(Debug, Subcommand)]
@@ -485,6 +498,9 @@ impl CloudCommands {
     fn operation_name(&self) -> &'static str {
         match self {
             CloudCommands::CreateQuotaDefinition(_) => "CreateQuotaDefinition",
+            CloudCommands::CreateQuotaUnit(_) => "CreateQuotaUnit",
+            CloudCommands::CreateRegion(_) => "CreateRegion",
+            CloudCommands::CreateService(_) => "CreateService",
         }
     }
 }
@@ -660,6 +676,33 @@ where
 {
     match command {
         CloudCommands::CreateQuotaDefinition(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                CloudError::InternalFailure(
+                    CloudInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into(),
+                )
+            })?
+        }
+        CloudCommands::CreateQuotaUnit(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                CloudError::InternalFailure(
+                    CloudInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into(),
+                )
+            })?
+        }
+        CloudCommands::CreateRegion(sub) => {
+            let response = boxed_future(|| sub.run(cli, vars)).await?;
+            response.serialize(&mut *writer).map_err(|e| {
+                log::error!("Failed to serialize response: {e}");
+                CloudError::InternalFailure(
+                    CloudInternalFailure::builder().message(MSG_INTERNAL_FAILURE).build().into(),
+                )
+            })?
+        }
+        CloudCommands::CreateService(sub) => {
             let response = boxed_future(|| sub.run(cli, vars)).await?;
             response.serialize(&mut *writer).map_err(|e| {
                 log::error!("Failed to serialize response: {e}");
