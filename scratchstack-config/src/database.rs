@@ -17,16 +17,7 @@ fn pct_encode(s: &str) -> String {
 
 /// Database configuration for a service.
 ///
-/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
-/// [`DatabaseConfig::builder`] rather than struct literal syntax, so that adding a field stays a
-/// non-breaking change. The fields remain public for reading.
-///
-/// ```compile_fail,E0639
-/// # use scratchstack_config::DatabaseConfig;
-/// let _ = DatabaseConfig {
-///     url: Some("postgresql://localhost/scratchstack".to_string()),
-/// };
-/// ```
+/// To create a `DatabaseConfig` instance programmatically, use [`DatabaseConfig::builder()`][DatabaseConfig::builder].
 #[derive(Builder, Clone, Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[non_exhaustive]
@@ -107,16 +98,8 @@ pub struct DatabaseConfig {
 
 /// The resolved database configuration after validating fields and resolving any references.
 ///
-/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
-/// [`ResolvedDatabaseConfig::builder`] rather than struct literal syntax, so that adding a field stays a
-/// non-breaking change. The fields remain public for reading.
-///
-/// ```compile_fail,E0639
-/// # use scratchstack_config::ResolvedDatabaseConfig;
-/// let _ = ResolvedDatabaseConfig {
-///     url: "postgresql://localhost/scratchstack".to_string(),
-/// };
-/// ```
+/// This is typically obtained by calling [`resolve()`][DatabaseConfig::resolve] on a
+/// [`DatabaseConfig`] instance.
 #[derive(Builder, Clone, Debug)]
 #[non_exhaustive]
 pub struct ResolvedDatabaseConfig {
@@ -310,4 +293,27 @@ impl Resolvable for DatabaseConfig {
             pool_options,
         })
     }
+}
+
+#[cfg(any(test, doctest))]
+mod tests {
+    /// Ensure `DatabaseConfig` cannot be created outside of the builder.
+    /// ```compile_fail,E0639
+    /// # use scratchstack_config::DatabaseConfig;
+    /// let _ = DatabaseConfig {
+    ///     max_connections: Some(10),
+    /// };
+    /// ```
+    #[allow(dead_code)]
+    struct DatabaseConfigBuilderCannotBeBuilt;
+
+    /// Ensure `ResolvedDatabaseConfig` cannot be created outside of the builder.
+    /// ```compile_fail,E0639
+    /// # use scratchstack_config::ResolvedDatabaseConfig;
+    /// let _ = ResolvedDatabaseConfig {
+    ///     url: "postgresql://localhost/scratchstack".to_string(),
+    /// };
+    /// ```
+    #[allow(dead_code)]
+    struct ResolvedDatabaseConfigBuilderCannotBeBuilt;
 }

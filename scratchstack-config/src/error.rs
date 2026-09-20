@@ -12,6 +12,7 @@ use {
 
 /// Errors that can occur when reading or resolving the configuration.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ConfigError {
     /// An error occurred while deserializing the configuration from TOML.
     DeserError(TomlDeError),

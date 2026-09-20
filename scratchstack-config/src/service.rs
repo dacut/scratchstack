@@ -53,16 +53,8 @@ pub const DEFAULT_DATABASE_NAME: &str = "default";
 /// taken from here. Note that a listener `port` set here would be inherited by every service and
 /// leave all but one of them unable to bind, so ports belong in the service sections.
 ///
-/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
-/// [`DefaultsConfig::builder`] rather than struct literal syntax, so that adding a field stays a
-/// non-breaking change. The fields remain public for reading.
-///
-/// ```compile_fail,E0639
-/// # use scratchstack_config::DefaultsConfig;
-/// let _ = DefaultsConfig {
-///     scope: None,
-/// };
-/// ```
+/// To create a `DefaultsConfig` instance programmatically, use
+/// [`DefaultsConfig::builder()`][DefaultsConfig::builder].
 #[derive(Builder, Clone, Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[non_exhaustive]
@@ -78,16 +70,8 @@ pub struct DefaultsConfig {
 
 /// Configuration for a single Scratchstack service.
 ///
-/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
-/// [`ServiceConfig::builder`] rather than struct literal syntax, so that adding a field stays a
-/// non-breaking change. The fields remain public for reading.
-///
-/// ```compile_fail,E0639
-/// # use scratchstack_config::ServiceConfig;
-/// let _ = ServiceConfig {
-///     scope: None,
-/// };
-/// ```
+/// To create a `ServiceConfig` instance programmatically, use
+/// [`ServiceConfig::builder()`][ServiceConfig::builder].
 #[derive(Builder, Clone, Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[non_exhaustive]
@@ -125,16 +109,8 @@ fn default_enabled() -> bool {
 /// built with. Use [`ScratchstackConfig::validate_service_names`] to reject names no service in
 /// the project claims.
 ///
-/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
-/// [`ScratchstackConfig::builder`] rather than struct literal syntax, so that adding a field stays
-/// a non-breaking change. The fields remain public for reading.
-///
-/// ```compile_fail,E0639
-/// # use scratchstack_config::ScratchstackConfig;
-/// let _ = ScratchstackConfig {
-///     runtime: None,
-/// };
-/// ```
+/// To create a `ScratchstackConfig` instance programmatically, use
+/// [`ScratchstackConfig::builder()`][ScratchstackConfig::builder].
 #[derive(Builder, Clone, Debug, Default, Deserialize)]
 #[non_exhaustive]
 pub struct ScratchstackConfig {
@@ -160,16 +136,8 @@ pub struct ScratchstackConfig {
 
 /// Resolved configuration for a single Scratchstack service.
 ///
-/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
-/// [`ResolvedServiceConfig::builder`] rather than struct literal syntax, so that adding a field
-/// stays a non-breaking change. The fields remain public for reading.
-///
-/// ```compile_fail,E0639
-/// # use scratchstack_config::ResolvedServiceConfig;
-/// let _ = ResolvedServiceConfig {
-///     database_name: "default".to_string(),
-/// };
-/// ```
+/// This is typically obtained by calling [`resolve_service()`][ScratchstackConfig::resolve_service] on a
+/// [`ScratchstackConfig`] instance.
 #[derive(Builder, Clone, Debug)]
 #[non_exhaustive]
 pub struct ResolvedServiceConfig {

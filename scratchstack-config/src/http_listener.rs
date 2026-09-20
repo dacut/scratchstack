@@ -19,8 +19,12 @@ pub const DEFAULT_ADDRESS: IpAddr = IpAddr::V6(Ipv6Addr::LOCALHOST);
 
 /// HTTP listener configuration data for a service. This allows for optional fields and references
 /// to files for the TLS configuration.
+///
+/// To create an `HttpListenerConfig` instance programmatically, use
+/// [`HttpListenerConfig::builder()`][HttpListenerConfig::builder].
 #[derive(Builder, Clone, Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct HttpListenerConfig {
     /// The IP address to listen on. Defaults to the localhost address (`::1`), which does
     /// not accept external connections.
@@ -45,16 +49,8 @@ pub struct HttpListenerConfig {
 /// Resolved HTTP listener configuration data for a service. Optional fields and references to files
 /// from [`HttpListenerConfig`] have been resolved and defaults have been applied.
 ///
-/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
-/// [`ResolvedHttpListenerConfig::builder`] rather than struct literal syntax, so that adding a field stays a
-/// non-breaking change. The fields remain public for reading.
-///
-/// ```compile_fail,E0639
-/// # use scratchstack_config::ResolvedHttpListenerConfig;
-/// let _ = ResolvedHttpListenerConfig {
-///     tls: None,
-/// };
-/// ```
+/// This is typically obtained by calling [`resolve()`][HttpListenerConfig::resolve] on a
+/// [`HttpListenerConfig`] instance.
 #[derive(Builder, Clone)]
 #[non_exhaustive]
 pub struct ResolvedHttpListenerConfig {
