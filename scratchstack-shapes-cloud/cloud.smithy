@@ -31,38 +31,26 @@ service Cloud {
         UpdateQuotaDefinition
     ]
     errors: [
+        EntityAlreadyExistsException,
         InternalFailure,
-        UnknownQuotaError,
-        UnknownRegionError,
-        UnknownServiceError,
-        UnknownUnitError,
+        ResourceNotFoundException,
     ]
 }
+
+/// The specified quota, service, region, or unit already exists.
+@error("client")
+@httpError(400)
+structure EntityAlreadyExistsException {}
 
 /// Internal failure.
 @error("server")
 @httpError(500)
 structure InternalFailure {}
 
-/// The specified quota is not known.
+/// The specified quota, service, region, or unit was not found.
 @error("client")
 @httpError(400)
-structure UnknownQuotaError {}
-
-/// The specified region is not known.
-@error("client")
-@httpError(400)
-structure UnknownRegionError {}
-
-/// The specified service id is not known.
-@error("client")
-@httpError(400)
-structure UnknownServiceError {}
-
-/// The specified unit is not known.
-@error("client")
-@httpError(400)
-structure UnknownUnitError {}
+structure ResourceNotFoundException {}
 
 /// A quota applied to an account.
 @unstable
@@ -154,6 +142,19 @@ enum QuotaScope {
 
     /// The quota is regional.
     REGIONAL = "Regional"
+}
+
+/// A quota unit definition.
+@unstable
+structure QuotaUnit {
+    /// The name of the unit
+    Unit: quotaUnitType,
+
+    /// The timestamp when the unit was initially created.
+    CreatedAt: timestamp
+
+    /// The timestamp when the unit was last updated.
+    UpdatedAt: timestamp
 }
 
 /// A region definition.

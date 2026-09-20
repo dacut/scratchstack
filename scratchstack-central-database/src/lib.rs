@@ -33,6 +33,7 @@ use {
 
 pub mod account;
 pub mod authz;
+pub mod cloud;
 #[allow(unused)]
 pub mod constants;
 pub mod group;
@@ -41,7 +42,6 @@ pub mod migrate;
 pub mod partition;
 pub mod path;
 pub mod policy;
-pub mod quota;
 pub mod role;
 pub mod session_token_encryption_key;
 pub mod tag;

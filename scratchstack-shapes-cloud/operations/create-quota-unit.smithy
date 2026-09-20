@@ -24,13 +24,5 @@ structure CreateQuotaUnitRequest {
 @output
 @unstable
 structure CreateQuotaUnitResponse {
-    /// The name of the unit.
-    @required
-    Unit: quotaUnitType
-
-    /// The timestamp when the unit was initially created.
-    CreatedAt: timestamp
-
-    /// The timestamp when the unit was last updated.
-    UpdatedAt: timestamp
+    QuotaUnit: QuotaUnit
 }

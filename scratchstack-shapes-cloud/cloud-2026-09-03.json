@@ -1105,19 +1105,13 @@
             ],
             "errors": [
                 {
+                    "target": "net.scratchstack.cloud#EntityAlreadyExistsException"
+                },
+                {
                     "target": "net.scratchstack.cloud#InternalFailure"
                 },
                 {
-                    "target": "net.scratchstack.cloud#UnknownQuotaError"
-                },
-                {
-                    "target": "net.scratchstack.cloud#UnknownRegionError"
-                },
-                {
-                    "target": "net.scratchstack.cloud#UnknownServiceError"
-                },
-                {
-                    "target": "net.scratchstack.cloud#UnknownUnitError"
+                    "target": "net.scratchstack.cloud#ResourceNotFoundException"
                 }
             ],
             "traits": {
@@ -1263,24 +1257,8 @@
         "net.scratchstack.cloud#CreateQuotaUnitResponse": {
             "type": "structure",
             "members": {
-                "Unit": {
-                    "target": "net.scratchstack.cloud#quotaUnitType",
-                    "traits": {
-                        "smithy.api#documentation": "The name of the unit.",
-                        "smithy.api#required": {}
-                    }
-                },
-                "CreatedAt": {
-                    "target": "net.scratchstack.cloud#timestamp",
-                    "traits": {
-                        "smithy.api#documentation": "The timestamp when the unit was initially created."
-                    }
-                },
-                "UpdatedAt": {
-                    "target": "net.scratchstack.cloud#timestamp",
-                    "traits": {
-                        "smithy.api#documentation": "The timestamp when the unit was last updated."
-                    }
+                "QuotaUnit": {
+                    "target": "net.scratchstack.cloud#QuotaUnit"
                 }
             },
             "traits": {
@@ -1618,6 +1596,15 @@
                 "smithy.api#documentation": "Input parameters to the DeleteService endpoint.",
                 "smithy.api#input": {},
                 "smithy.api#unstable": {}
+            }
+        },
+        "net.scratchstack.cloud#EntityAlreadyExistsException": {
+            "type": "structure",
+            "members": {},
+            "traits": {
+                "smithy.api#documentation": "The specified quota, service, region, or unit already exists.",
+                "smithy.api#error": "client",
+                "smithy.api#httpError": 400
             }
         },
         "net.scratchstack.cloud#GetCurrentPartition": {
@@ -2332,6 +2319,33 @@
                 "smithy.api#documentation": "The scope of a quota."
             }
         },
+        "net.scratchstack.cloud#QuotaUnit": {
+            "type": "structure",
+            "members": {
+                "Unit": {
+                    "target": "net.scratchstack.cloud#quotaUnitType",
+                    "traits": {
+                        "smithy.api#documentation": "The name of the unit"
+                    }
+                },
+                "CreatedAt": {
+                    "target": "net.scratchstack.cloud#timestamp",
+                    "traits": {
+                        "smithy.api#documentation": "The timestamp when the unit was initially created."
+                    }
+                },
+                "UpdatedAt": {
+                    "target": "net.scratchstack.cloud#timestamp",
+                    "traits": {
+                        "smithy.api#documentation": "The timestamp when the unit was last updated."
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#documentation": "A quota unit definition.",
+                "smithy.api#unstable": {}
+            }
+        },
         "net.scratchstack.cloud#Region": {
             "type": "structure",
             "members": {
@@ -2358,6 +2372,15 @@
             "traits": {
                 "smithy.api#documentation": "A region definition.",
                 "smithy.api#unstable": {}
+            }
+        },
+        "net.scratchstack.cloud#ResourceNotFoundException": {
+            "type": "structure",
+            "members": {},
+            "traits": {
+                "smithy.api#documentation": "The specified quota, service, region, or unit was not found.",
+                "smithy.api#error": "client",
+                "smithy.api#httpError": 400
             }
         },
         "net.scratchstack.cloud#Service": {
@@ -2542,42 +2565,6 @@
                 "smithy.api#documentation": "Response from the SetQuota endpoint.",
                 "smithy.api#output": {},
                 "smithy.api#unstable": {}
-            }
-        },
-        "net.scratchstack.cloud#UnknownQuotaError": {
-            "type": "structure",
-            "members": {},
-            "traits": {
-                "smithy.api#documentation": "The specified quota is not known.",
-                "smithy.api#error": "client",
-                "smithy.api#httpError": 400
-            }
-        },
-        "net.scratchstack.cloud#UnknownRegionError": {
-            "type": "structure",
-            "members": {},
-            "traits": {
-                "smithy.api#documentation": "The specified region is not known.",
-                "smithy.api#error": "client",
-                "smithy.api#httpError": 400
-            }
-        },
-        "net.scratchstack.cloud#UnknownServiceError": {
-            "type": "structure",
-            "members": {},
-            "traits": {
-                "smithy.api#documentation": "The specified service id is not known.",
-                "smithy.api#error": "client",
-                "smithy.api#httpError": 400
-            }
-        },
-        "net.scratchstack.cloud#UnknownUnitError": {
-            "type": "structure",
-            "members": {},
-            "traits": {
-                "smithy.api#documentation": "The specified unit is not known.",
-                "smithy.api#error": "client",
-                "smithy.api#httpError": 400
             }
         },
         "net.scratchstack.cloud#UpdateQuotaDefinition": {
