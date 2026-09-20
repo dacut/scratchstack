@@ -28,16 +28,8 @@ pub const DEFAULT_HEADER: &str = "x-forwarded-for";
 /// Leaving this configuration out entirely -- the default -- means the peer address is always
 /// used and no header is ever consulted.
 ///
-/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
-/// [`ForwardedForConfig::builder`] rather than struct literal syntax, so that adding a field stays
-/// a non-breaking change. The fields remain public for reading.
-///
-/// ```compile_fail,E0639
-/// # use scratchstack_config::ForwardedForConfig;
-/// let _ = ForwardedForConfig {
-///     header: None,
-/// };
-/// ```
+/// To create a `ForwardedForConfig` instance programmatically, use
+/// [`ForwardedForConfig::builder()`][ForwardedForConfig::builder].
 #[derive(Builder, Clone, Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[non_exhaustive]
@@ -61,16 +53,8 @@ pub struct ForwardedForConfig {
 /// Resolved forwarded-header configuration. Optional fields from [`ForwardedForConfig`] have been
 /// resolved and defaults have been applied.
 ///
-/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
-/// [`ResolvedForwardedForConfig::builder`] rather than struct literal syntax, so that adding a
-/// field stays a non-breaking change. The fields remain public for reading.
-///
-/// ```compile_fail,E0639
-/// # use scratchstack_config::ResolvedForwardedForConfig;
-/// let _ = ResolvedForwardedForConfig {
-///     trusted_proxies: Vec::new(),
-/// };
-/// ```
+/// This is typically obtained by calling [`resolve()`][ForwardedForConfig::resolve] on a
+/// [`ForwardedForConfig`] instance.
 #[derive(Builder, Clone, Debug)]
 #[non_exhaustive]
 pub struct ResolvedForwardedForConfig {

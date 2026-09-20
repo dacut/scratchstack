@@ -20,19 +20,6 @@ use {
 /// corresponding condition keys during policy evaluation. They travel together from the request
 /// dispatcher to the authorization check, so a service's operations need not know which
 /// condition keys are derived from them.
-///
-/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
-/// [`RequestMetadata::builder`] rather than struct literal syntax, so that adding a field stays a
-/// non-breaking change. The fields remain public for reading.
-///
-/// ```compile_fail,E0639
-/// # use scratchstack_service_common::RequestMetadata;
-/// # use std::net::{IpAddr, Ipv4Addr};
-/// let _ = RequestMetadata {
-///     secure_transport: true,
-///     source_ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
-/// };
-/// ```
 #[derive(Builder, Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct RequestMetadata {

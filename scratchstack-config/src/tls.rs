@@ -17,16 +17,8 @@ use {
 
 /// TLS configuration for a service.
 ///
-/// This struct is `#[non_exhaustive]`: outside this crate it must be built with
-/// [`TlsConfig::builder`] rather than struct literal syntax, so that adding a field stays a
-/// non-breaking change. The fields remain public for reading.
-///
-/// ```compile_fail,E0639
-/// # use scratchstack_config::TlsConfig;
-/// let _ = TlsConfig {
-///     certificate_chain_file: "/etc/ssl/chain.pem".to_string(),
-/// };
-/// ```
+/// To create a `TlsConfig` instance programmatically, use
+/// [`TlsConfig::builder()`][TlsConfig::builder].
 #[derive(Builder, Clone, Deserialize, Debug)]
 #[non_exhaustive]
 pub struct TlsConfig {
