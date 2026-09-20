@@ -25,6 +25,15 @@ use {
 #[path = "cloud/quota.rs"]
 mod quota;
 
+#[path = "cloud/quota_unit.rs"]
+mod quota_unit;
+
+#[path = "cloud/region.rs"]
+mod region;
+
+#[path = "cloud/service.rs"]
+mod service;
+
 const CLOUD_DATA: &str = include_str!("cloud.sql");
 
 /// Test the features of the cloud database model.
@@ -45,17 +54,48 @@ async fn test_cloud_database() {
     drop(c);
 
     subtest_create_quota_definition(&pool).await;
+    subtest_create_quota_unit(&pool).await;
+    subtest_create_region(&pool).await;
+    subtest_create_service(&pool).await;
     subtest_quota_definition_failures(&pool).await;
+    subtest_service_failures(&pool).await;
 }
 
 async fn subtest_create_quota_definition(pool: &PgPool) {
     quota::test_create_quota_definition(pool).await;
-    quota::test_create_quota_definition_redefines(pool).await;
+    quota::test_create_quota_definition_idempotent(pool).await;
+}
+
+async fn subtest_create_quota_unit(pool: &PgPool) {
+    quota_unit::test_create_quota_unit(pool).await;
+    quota_unit::test_create_quota_unit_idempotent(pool).await;
+    quota_unit::test_create_quota_unit_already_seeded(pool).await;
+}
+
+async fn subtest_create_region(pool: &PgPool) {
+    region::test_create_region(pool).await;
+    region::test_create_region_duplicate(pool).await;
+}
+
+async fn subtest_create_service(pool: &PgPool) {
+    service::test_create_service(pool).await;
+    service::test_create_service_with_description(pool).await;
+    service::test_create_service_idempotent(pool).await;
 }
 
 async fn subtest_quota_definition_failures(pool: &PgPool) {
     quota::test_create_quota_definition_unknown_service(pool).await;
     quota::test_create_quota_definition_unknown_unit(pool).await;
-    quota::test_redefine_quota_definition_unknown_unit(pool).await;
     quota::test_create_quota_definition_contradictory_bounds(pool).await;
+    quota::test_create_quota_definition_conflicting_scope(pool).await;
+    quota::test_create_quota_definition_conflicting_unit(pool).await;
+    quota::test_create_quota_definition_conflicting_description(pool).await;
+    quota::test_create_quota_definition_conflicting_bounds(pool).await;
+    quota::test_create_quota_definition_conflict_names_every_field(pool).await;
+}
+
+async fn subtest_service_failures(pool: &PgPool) {
+    service::test_create_service_conflicting_dns_name(pool).await;
+    service::test_create_service_conflicting_description(pool).await;
+    service::test_create_service_duplicate_dns_name(pool).await;
 }
