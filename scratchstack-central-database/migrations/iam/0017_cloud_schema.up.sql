@@ -69,7 +69,20 @@ CREATE TABLE cloud.account_quotas(
     quota_value NUMERIC,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (account_id, quota_id, region_name),
+    -- A global quota leaves region_name NULL, so this cannot be a primary key: PostgreSQL makes
+    -- every primary key column NOT NULL, which would leave global quotas nowhere to go. NULLS NOT
+    -- DISTINCT gives the same uniqueness a primary key would, and treats the NULL of a global
+    -- quota as a value, so an account gets one global row per quota rather than any number of
+    -- them.
+    UNIQUE NULLS NOT DISTINCT (account_id, quota_id, region_name),
+    -- service_id is carried so these two keys can be composite. Referencing the region and the
+    -- quota definition independently would let a quota be assigned in a region its service is not
+    -- available in; together they cannot disagree about which service is being talked about.
+    -- A global quota leaves region_name NULL, and a composite foreign key with a NULL in it is
+    -- satisfied without being checked (MATCH SIMPLE, the default) -- there is no region for it to
+    -- be wrong about.
+    FOREIGN KEY (service_id, region_name)
+        REFERENCES cloud.service_regions(service_id, region_name),
     FOREIGN KEY (service_id, quota_id)
         REFERENCES cloud.quota_definitions(service_id, quota_id)
 );

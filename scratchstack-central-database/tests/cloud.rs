@@ -22,6 +22,9 @@ use {
     sqlx::{PgPool, raw_sql},
 };
 
+#[path = "cloud/account_quota.rs"]
+mod account_quota;
+
 #[path = "cloud/quota.rs"]
 mod quota;
 
@@ -53,12 +56,20 @@ async fn test_cloud_database() {
     raw_sql(CLOUD_DATA).execute(&mut *c).await.expect("Failed to load cloud data into database");
     drop(c);
 
+    subtest_account_quota_constraints(&pool).await;
     subtest_create_quota_definition(&pool).await;
     subtest_create_quota_unit(&pool).await;
     subtest_create_region(&pool).await;
     subtest_create_service(&pool).await;
     subtest_quota_definition_failures(&pool).await;
     subtest_service_failures(&pool).await;
+}
+
+async fn subtest_account_quota_constraints(pool: &PgPool) {
+    account_quota::test_global_quota_stores_a_null_region(pool).await;
+    account_quota::test_global_quota_is_unique_per_account(pool).await;
+    account_quota::test_regional_quotas_are_per_region(pool).await;
+    account_quota::test_regional_quota_requires_the_service_in_that_region(pool).await;
 }
 
 async fn subtest_create_quota_definition(pool: &PgPool) {
