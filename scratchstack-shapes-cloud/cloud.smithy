@@ -148,6 +148,7 @@ enum QuotaScope {
 @unstable
 structure QuotaUnit {
     /// The name of the unit
+    @required
     Unit: quotaUnitType,
 
     /// The timestamp when the unit was initially created.

@@ -24,5 +24,7 @@ structure CreateQuotaUnitRequest {
 @output
 @unstable
 structure CreateQuotaUnitResponse {
+    /// The resulting quota unit.
+    @required
     QuotaUnit: QuotaUnit
 }

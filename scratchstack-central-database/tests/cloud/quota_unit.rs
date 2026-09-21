@@ -18,7 +18,7 @@ async fn create(pool: &PgPool, unit: &str) -> QuotaUnit {
     let mut tx = pool.begin().await.expect("Failed to begin transaction");
     let resp = request(unit).execute(&mut tx, RequestId::new()).await.expect("Failed to create quota unit");
     tx.commit().await.expect("Failed to commit transaction");
-    resp.quota_unit.expect("the response should carry the unit")
+    resp.quota_unit
 }
 
 /// Reads the stored timestamps for `unit` on a pooled connection, outside whatever transaction
@@ -41,7 +41,7 @@ async fn stored(pool: &PgPool, unit: &str) -> Option<(DateTime<Utc>, DateTime<Ut
 pub async fn test_create_quota_unit(pool: &PgPool) {
     let unit = create(pool, "widgets").await;
 
-    assert_eq!(unit.unit.as_deref(), Some("widgets"));
+    assert_eq!(unit.unit, "widgets");
     let created_at = unit.created_at.expect("the response should carry a creation time");
     let updated_at = unit.updated_at.expect("the response should carry an update time");
     assert_eq!(created_at, updated_at, "a unit that was just created should not report a later update");
@@ -80,7 +80,7 @@ pub async fn test_create_quota_unit_already_seeded(pool: &PgPool) {
     let before = stored(pool, "requests").await.expect("migration 0017 should have seeded the requests unit");
 
     let unit = create(pool, "requests").await;
-    assert_eq!(unit.unit.as_deref(), Some("requests"));
+    assert_eq!(unit.unit, "requests");
     assert_eq!(unit.created_at, Some(before.0), "recreating a seeded unit should report its original creation time");
     assert_eq!(unit.updated_at, Some(before.1), "recreating a seeded unit should report its original update time");
 
