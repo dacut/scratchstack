@@ -1258,7 +1258,11 @@
             "type": "structure",
             "members": {
                 "QuotaUnit": {
-                    "target": "net.scratchstack.cloud#QuotaUnit"
+                    "target": "net.scratchstack.cloud#QuotaUnit",
+                    "traits": {
+                        "smithy.api#documentation": "The resulting quota unit.",
+                        "smithy.api#required": {}
+                    }
                 }
             },
             "traits": {
@@ -2325,7 +2329,8 @@
                 "Unit": {
                     "target": "net.scratchstack.cloud#quotaUnitType",
                     "traits": {
-                        "smithy.api#documentation": "The name of the unit"
+                        "smithy.api#documentation": "The name of the unit",
+                        "smithy.api#required": {}
                     }
                 },
                 "CreatedAt": {
