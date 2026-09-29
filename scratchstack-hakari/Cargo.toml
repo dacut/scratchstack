@@ -37,7 +37,7 @@ futures-sink = { version = "0.3" }
 futures-task = { version = "0.3", default-features = false, features = ["std"] }
 futures-util = { version = "0.3", features = ["channel", "io", "sink"] }
 ghash = { version = "0.6", default-features = false, features = ["zeroize"] }
-hashbrown = { version = "0.17" }
+hashbrown = { version = "0.17", default-features = false, features = ["default-hasher", "inline-more"] }
 hmac = { version = "0.13", default-features = false, features = ["zeroize"] }
 hyper = { version = "1", features = ["http1", "http2", "server"] }
 hyper-util = { version = "0.1", features = ["http1", "http2", "server", "service", "tokio"] }
@@ -107,7 +107,7 @@ futures-sink = { version = "0.3" }
 futures-task = { version = "0.3", default-features = false, features = ["std"] }
 futures-util = { version = "0.3", features = ["channel", "io", "sink"] }
 ghash = { version = "0.6", default-features = false, features = ["zeroize"] }
-hashbrown = { version = "0.17" }
+hashbrown = { version = "0.17", default-features = false, features = ["default-hasher", "inline-more"] }
 hmac = { version = "0.13", default-features = false, features = ["zeroize"] }
 hyper = { version = "1", features = ["http1", "http2", "server"] }
 hyper-util = { version = "0.1", features = ["http1", "http2", "server", "service", "tokio"] }
@@ -155,7 +155,6 @@ whoami = { version = "2" }
 zeroize = { version = "1", features = ["zeroize_derive"] }
 
 [target.aarch64-apple-darwin.dependencies]
-base64 = { version = "0.22" }
 bitflags = { version = "2", default-features = false, features = ["std"] }
 hyper = { version = "1", default-features = false, features = ["client"] }
 hyper-util = { version = "0.1", default-features = false, features = ["client-legacy", "client-proxy"] }
@@ -164,7 +163,6 @@ tokio-rustls = { version = "0.26", features = ["aws-lc-rs"] }
 tower = { version = "0.5", default-features = false, features = ["retry", "timeout"] }
 
 [target.aarch64-apple-darwin.build-dependencies]
-base64 = { version = "0.22" }
 bitflags = { version = "2", default-features = false, features = ["std"] }
 hyper = { version = "1", default-features = false, features = ["client"] }
 hyper-util = { version = "0.1", default-features = false, features = ["client-legacy", "client-proxy"] }
@@ -173,7 +171,6 @@ tokio-rustls = { version = "0.26", features = ["aws-lc-rs"] }
 tower = { version = "0.5", default-features = false, features = ["retry", "timeout"] }
 
 [target.aarch64-unknown-linux-gnu.dependencies]
-base64 = { version = "0.22" }
 bitflags = { version = "2", default-features = false, features = ["std"] }
 hyper = { version = "1", default-features = false, features = ["client"] }
 hyper-util = { version = "0.1", default-features = false, features = ["client-legacy", "client-proxy"] }
@@ -182,7 +179,6 @@ tokio-rustls = { version = "0.26", features = ["aws-lc-rs"] }
 tower = { version = "0.5", default-features = false, features = ["retry", "timeout"] }
 
 [target.aarch64-unknown-linux-gnu.build-dependencies]
-base64 = { version = "0.22" }
 bitflags = { version = "2", default-features = false, features = ["std"] }
 hyper = { version = "1", default-features = false, features = ["client"] }
 hyper-util = { version = "0.1", default-features = false, features = ["client-legacy", "client-proxy"] }
