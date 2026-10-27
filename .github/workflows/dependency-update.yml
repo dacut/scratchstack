@@ -33,7 +33,7 @@ jobs:
       with:
         toolchain: nightly
     - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2.9.2
+      uses: Swatinem/rust-cache@v2.9.3
       with:
         shared-key: scratchstack-dependency-update
     - name: Install cargo-edit and cargo-hakari
