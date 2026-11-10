@@ -33,7 +33,7 @@ jobs:
       with:
         toolchain: nightly
     - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2.9.2
+      uses: Swatinem/rust-cache@v2.9.3
       with:
         shared-key: scratchstack-dependency-update
     - name: Install cargo-edit and cargo-hakari
@@ -96,7 +96,7 @@ jobs:
 
     # No pull request is created when the steps above changed nothing.
     - name: Create pull request
-      uses: peter-evans/create-pull-request@v8.1.1
+      uses: peter-evans/create-pull-request@v8.1.2
       with:
         # A pull request opened with the default GITHUB_TOKEN does not start other workflows, so
         # the Rust workflow will not run on it. Add a DEPENDENCY_UPDATE_TOKEN secret (a PAT or
