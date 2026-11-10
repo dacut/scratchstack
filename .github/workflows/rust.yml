@@ -28,7 +28,7 @@ jobs:
         toolchain: nightly
         components: "rustfmt"
     - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2.9.2
+      uses: Swatinem/rust-cache@v2.9.3
       with:
         shared-key: scratchstack-ci-${{ github.head_ref || github.ref_name }}
     - name: Run formatting check.
@@ -46,7 +46,7 @@ jobs:
         toolchain: nightly
         components: "clippy"
     - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2.9.2
+      uses: Swatinem/rust-cache@v2.9.3
       with:
         shared-key: scratchstack-ci-${{ github.head_ref || github.ref_name }}
     - name: Run Clippy check.
@@ -63,7 +63,7 @@ jobs:
       with:
         toolchain: nightly
     - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2.9.2
+      uses: Swatinem/rust-cache@v2.9.3
       with:
         shared-key: scratchstack-ci-${{ github.head_ref || github.ref_name }}
     - name: Install cargo-hakari
@@ -97,7 +97,7 @@ jobs:
         toolchain: nightly
         components: "llvm-tools"
     - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2.9.2
+      uses: Swatinem/rust-cache@v2.9.3
       with:
         shared-key: scratchstack-ci-${{ github.head_ref || github.ref_name }}
     - name: Install cargo-llvm-cov
@@ -135,7 +135,7 @@ jobs:
         toolchain: nightly
         components: "llvm-tools"
     - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2.9.2
+      uses: Swatinem/rust-cache@v2.9.3
       with:
         shared-key: scratchstack-ci-${{ github.head_ref || github.ref_name }}
     - name: Run doctests
@@ -161,7 +161,7 @@ jobs:
       with:
         toolchain: nightly
     - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2.9.2
+      uses: Swatinem/rust-cache@v2.9.3
       with:
         shared-key: scratchstack-ci-${{ github.head_ref || github.ref_name }}
     - name: Build documentation
