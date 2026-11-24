@@ -24,10 +24,8 @@ byteorder = { version = "1", default-features = false, features = ["std"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4", features = ["derive", "env"] }
 clap_builder = { version = "4", default-features = false, features = ["color", "env", "help", "std", "suggestions", "usage"] }
-crypto-common-6f8ce4dd05d13bba = { package = "crypto-common", version = "0.2", default-features = false, features = ["getrandom"] }
-crypto-common-c65f7effa3be6d31 = { package = "crypto-common", version = "0.1", default-features = false, features = ["std"] }
-digest-93f6ce9d446188ac = { package = "digest", version = "0.10", features = ["std"] }
-digest-a6292c17cd707f01 = { package = "digest", version = "0.11", features = ["alloc", "mac", "oid", "zeroize"] }
+crypto-common = { version = "0.2", default-features = false, features = ["getrandom"] }
+digest = { version = "0.11", features = ["alloc", "mac", "oid", "zeroize"] }
 env_filter = { version = "2", default-features = false, features = ["regex", "std"] }
 env_logger = { version = "0.11" }
 form_urlencoded = { version = "1" }
@@ -60,8 +58,7 @@ rustls-webpki = { version = "0.103", default-features = false, features = ["aws-
 serde = { version = "1", features = ["alloc", "derive", "rc"] }
 serde_core = { version = "1", features = ["alloc", "rc"] }
 serde_json = { version = "1", features = ["alloc", "arbitrary_precision", "raw_value"] }
-sha2-93f6ce9d446188ac = { package = "sha2", version = "0.10" }
-sha2-a6292c17cd707f01 = { package = "sha2", version = "0.11", features = ["zeroize"] }
+sha2 = { version = "0.11", features = ["zeroize"] }
 slab = { version = "0.4" }
 smallvec = { version = "1", default-features = false, features = ["const_new", "serde"] }
 sqlx = { version = "0.9", features = ["all-databases", "bigdecimal", "chrono", "runtime-tokio", "tls-rustls", "tls-rustls-aws-lc-rs"] }
@@ -94,10 +91,8 @@ cc = { version = "1", default-features = false, features = ["parallel"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4", features = ["derive", "env"] }
 clap_builder = { version = "4", default-features = false, features = ["color", "env", "help", "std", "suggestions", "usage"] }
-crypto-common-6f8ce4dd05d13bba = { package = "crypto-common", version = "0.2", default-features = false, features = ["getrandom"] }
-crypto-common-c65f7effa3be6d31 = { package = "crypto-common", version = "0.1", default-features = false, features = ["std"] }
-digest-93f6ce9d446188ac = { package = "digest", version = "0.10", features = ["std"] }
-digest-a6292c17cd707f01 = { package = "digest", version = "0.11", features = ["alloc", "mac", "oid", "zeroize"] }
+crypto-common = { version = "0.2", default-features = false, features = ["getrandom"] }
+digest = { version = "0.11", features = ["alloc", "mac", "oid", "zeroize"] }
 env_filter = { version = "2", default-features = false, features = ["regex", "std"] }
 env_logger = { version = "0.11" }
 form_urlencoded = { version = "1" }
@@ -130,8 +125,7 @@ rustls-webpki = { version = "0.103", default-features = false, features = ["aws-
 serde = { version = "1", features = ["alloc", "derive", "rc"] }
 serde_core = { version = "1", features = ["alloc", "rc"] }
 serde_json = { version = "1", features = ["alloc", "arbitrary_precision", "raw_value"] }
-sha2-93f6ce9d446188ac = { package = "sha2", version = "0.10" }
-sha2-a6292c17cd707f01 = { package = "sha2", version = "0.11", features = ["zeroize"] }
+sha2 = { version = "0.11", features = ["zeroize"] }
 slab = { version = "0.4" }
 smallvec = { version = "1", default-features = false, features = ["const_new", "serde"] }
 sqlx = { version = "0.9", features = ["all-databases", "bigdecimal", "chrono", "runtime-tokio", "tls-rustls", "tls-rustls-aws-lc-rs"] }
